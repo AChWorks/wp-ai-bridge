@@ -67,3 +67,6 @@ jobs:
 
       - name: Run Issue 46 multisite source-editing suite
         run: bash bin/run-issue46-multisite.sh '${{ matrix.wordpress_tag }}'
+
+      - name: Run Issue 47 exact-base identity migration suite
+        run: bash bin/run-issue47-migration.sh '${{ matrix.wordpress_tag }}'
