@@ -8,6 +8,7 @@ stage_root="$build_dir/stage"
 # upgrades the existing plugin in place instead of creating a duplicate plugin.
 plugin_dir="$stage_root/wp-native-builder-bridge"
 zip_file="$build_dir/wp-ai-bridge.zip"
+legacy_zip_alias="$build_dir/wp-native-builder-bridge.zip"
 
 rm -rf "$stage_root"
 mkdir -p "$plugin_dir"
@@ -19,7 +20,7 @@ cp "$root/CHANGELOG.md" "$plugin_dir/"
 cp "$root/LICENSE" "$plugin_dir/"
 cp -R "$root/src" "$plugin_dir/src"
 cp -R "$root/languages" "$plugin_dir/languages"
-rm -f "$zip_file"
+rm -f "$zip_file" "$legacy_zip_alias"
 
 php -r '
 $source = $argv[1];
@@ -92,5 +93,9 @@ while IFS= read -r -d '' file; do
     php -l "$file" >/dev/null
 done < <(find "$extract_dir/wp-native-builder-bridge" -type f -name '*.php' -print0)
 rm -rf "$stage_root" "$extract_dir"
+
+# Transitional local alias only: existing integration helpers may still consume the
+# old filename, while CI/release surfaces publish only build/wp-ai-bridge.zip.
+cp "$zip_file" "$legacy_zip_alias"
 
 echo "PASS: installable WP AI Bridge ZIP validated at build/wp-ai-bridge.zip"
