@@ -79,7 +79,7 @@ A PHP runtime validation failure can restore the previous file bytes, but it can
 
 ## Workspace data is not visible through content tools
 
-That is intentional. Workspace documents/tasks are private internal objects and are accessible only through `workspace-resume`, `workspace-document`, `workspace-task`, and the WP Native Builder admin screens.
+That is intentional. Workspace documents/tasks are private internal objects and are accessible only through `workspace-resume`, `workspace-document`, `workspace-task`, and the WP AI Bridge admin screens.
 
 ## Reconnecting after an update
 

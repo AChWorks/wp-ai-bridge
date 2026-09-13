@@ -53,7 +53,7 @@ Gravity Forms automated coverage uses a test-only GFAPI contract fixture; it is 
 
 ```text
 src/Abilities/   typed WordPress/provider abilities
-src/Admin/       WP Native Builder admin screens
+src/Admin/       WP AI Bridge admin screens
 src/Auth/        direct OAuth and MCP authorization
 src/Support/     settings, permissions, environment, mutation log
 src/Workspace/   private durable Workspace storage
