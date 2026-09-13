@@ -38,12 +38,31 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `site-settings-update` | Site Configuration | Update bounded site settings. |
 | `extensions-read` | Site Read | Read installed plugin/theme metadata. |
 | `extension-lifecycle` | Code & Extensions | WordPress.org install/update/activate/deactivate; deletion is destructive. |
+| `source-files-read` | Code & Extensions + Source Editing | List or read exact installed plugin/theme editable source targets; source payloads require the elevated boundary. |
+| `source-file-preview` | Code & Extensions + Source Editing | Validate and bind an exact candidate to the current target/preimage without writing. |
+| `source-file-apply` | Code & Extensions + Source Editing | Apply one preview-bound candidate with exact persistence verification and recovery ownership. |
+| `source-file-recover` | Code & Extensions + Source Editing | Restore the Bridge-owned exact preimage only while current bytes still match the owned candidate. |
 | `users-read` | Site Read | Read bounded user/role information without credential material. |
 | `user-upsert` | Users & Destructive | Create/update a user and assign an editable role. |
 | `user-remove` | Users & Destructive | Remove a user with explicit reassignment. |
 | `workspace-resume` | Site Read | Return compact durable Workspace orientation. |
 | `workspace-document` | Site Read / Builder Write | List/read/create/update/archive private Workspace documents. |
 | `workspace-task` | Site Read / Builder Write | List/read/create/update/transition/archive private Workspace tasks. |
+
+
+## Installed source editing boundary
+
+`Source Editing` is a separate elevated access group and defaults off on both fresh installs and upgrades. Existing `Code & Extensions` consent never enables it implicitly. Source read, preview, apply, and recovery require both groups plus the current WordPress `edit_plugins` or `edit_themes` authority for the selected installed target. WordPress file-modification policy remains authoritative.
+
+Targets are provider-neutral: callers identify one installed plugin main file or theme stylesheet plus one relative editable file. The Bridge starts from WordPress's editable-file inventory, then adds canonical real-path containment. Traversal, symlink escape, arbitrary OS paths, unrelated configuration files, and target switching are rejected. Ordinary discovery returns identities and bounded state only; source bytes are returned only by the elevated exact-read operation.
+
+Preview parses PHP candidates without executing them and returns an exact preimage hash, candidate hash, and target-bound candidate identity. Apply rechecks all of that state immediately before mutation. The fixed-purpose replacement protocol fully stages bytes in a recovery-token-keyed artifact on the exact source filesystem, atomically quarantines the live pathname, verifies the bytes actually moved, and publishes only with hard-link no-replace semantics. If another writer recreates the live pathname, that writer wins and Bridge never overwrites it. Private stage/probe/hold retirement is verified before recovery ownership can be cleared. If an artifact cannot be retired, Bridge keeps recovery ownership and returns recovery-required instead of reporting terminal success. The source filesystem must support hard links plus preservation of the quarantined file's mode/owner/group; unsupported environments fail closed. Persisted bytes are reverified, opcode/theme caches are invalidated as applicable, and FTP/SSH filesystem credentials are never collected.
+
+The concurrency contract follows the installed **pathname/current generation**, not an indefinitely retained descriptor to a superseded inode. Once no-replace publication commits, a file descriptor opened before quarantine still refers to the old generation and cannot overwrite the newly published installed path. Bridge rechecks the quarantined generation before retiring it and preserves any mutation already observable there, but portable PHP exposes no compare-and-unlink primitive and cannot revoke a non-cooperating descriptor opened before the atomic replacement. A process that keeps such a descriptor must reopen the installed pathname before making a later source edit. Bridge does not claim advisory `flock` serializes non-participants.
+
+Active PHP additionally uses WordPress's edited-file scrape protocol against normal WordPress boot without fabricating an administrator session or editor nonce. Missing/invalid scrape sentinels fail closed, including network-active plugin failures that can occur before Core registers the scraper. Runtime failure, explicit recovery, and shutdown recovery all use the same guarded no-overwrite replacement boundary: restoration proceeds only while the candidate still owns the live pathname, and a non-cooperating writer that recreates or changes the path is preserved. Crash reconciliation does not recreate an absent live pathname merely because a known hold exists, because pre-publication absence cannot be distinguished safely from a legitimate post-publication delete/rename. One private bounded recovery record is retained when state or artifact cleanup cannot be verified safely, including across uninstall. Mutation logs contain operation/status metadata only, not source payloads or full diffs.
+
+Explicitly authorized PHP source has normal WordPress-runtime authority. **Source Editing is administrator-level code trust, not a sandbox.**
 
 ## Advanced Metadata boundary
 

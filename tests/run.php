@@ -54,12 +54,18 @@ $defaults = $settings->defaults();
 wpnb_assert( 1 === $defaults[ Settings::GROUP_SITE_READ ], 'Site Read defaults to enabled.' );
 wpnb_assert( 0 === $defaults[ Settings::GROUP_BUILDER_WRITE ], 'Builder Write defaults to disabled.' );
 wpnb_assert( 0 === $defaults[ Settings::GROUP_LIVE_CONTENT ], 'Live Content defaults to disabled.' );
+wpnb_assert( 0 === $defaults[ Settings::GROUP_SOURCE_EDITING ], 'Source Editing defaults to disabled.' );
+$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = array( Settings::GROUP_CODE_EXTENSIONS => 1 );
+$upgrade_settings = $settings->all();
+wpnb_assert( 1 === $upgrade_settings[ Settings::GROUP_CODE_EXTENSIONS ], 'Existing Code & Extensions consent is preserved on upgrade.' );
+wpnb_assert( 0 === $upgrade_settings[ Settings::GROUP_SOURCE_EDITING ], 'Existing Code & Extensions consent does not silently enable Source Editing on upgrade.' );
+$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = array();
 
 $sanitized = $settings->sanitize(
 	array(
-		Settings::GROUP_SITE_READ     => '1',
+		Settings::GROUP_SITE_READ      => '1',
 		Settings::GROUP_BUILDER_WRITE => 'yes',
-		'unknown_group'               => '1',
+		'unknown_group'                => '1',
 	)
 );
 wpnb_assert( ! isset( $sanitized['unknown_group'] ), 'Unknown access groups are discarded.' );
@@ -245,6 +251,10 @@ wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-bui
 wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/site-settings-update'] ), 'Bounded site settings update ability is registered.' );
 wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/extensions-read'] ), 'Extension inspection ability is registered.' );
 wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/extension-lifecycle'] ), 'Extension lifecycle ability is registered.' );
+wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/source-files-read'] ), 'Elevated installed source inspection ability is registered.' );
+wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/source-file-preview'] ), 'Elevated source preview ability is registered.' );
+wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/source-file-apply'] ), 'Elevated source apply ability is registered.' );
+wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/source-file-recover'] ), 'Elevated source recovery ability is registered.' );
 wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/users-read'] ), 'User and role inspection ability is registered.' );
 wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/user-upsert'] ), 'Bounded user mutation ability is registered.' );
 wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/user-remove'] ), 'Explicit reassignment user removal ability is registered.' );

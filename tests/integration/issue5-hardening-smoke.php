@@ -71,17 +71,19 @@ try {
 		}
 	}
 	sort( $names );
-	wpnb_issue5_assert( 38 === count( $names ), 'Baseline Bridge registry must contain exactly 38 abilities without optional provider fallbacks.' );
-	wpnb_issue5_assert( 38 === count( array_unique( $names ) ), 'Bridge ability names are not unique.' );
+	wpnb_issue5_assert( 42 === count( $names ), 'Baseline Bridge registry must contain exactly 42 abilities without optional provider fallbacks.' );
+	wpnb_issue5_assert( 42 === count( array_unique( $names ) ), 'Bridge ability names are not unique.' );
 	$term_metadata_names = array( 'wp-native-builder/term-meta-read', 'wp-native-builder/term-meta-update', 'wp-native-builder/term-meta-delete' );
-	wpnb_issue5_assert( 3 === count( array_intersect( $names, $term_metadata_names ) ) && 35 === count( array_diff( $names, $term_metadata_names ) ), 'Registry changed outside the three term metadata abilities.' );
+	wpnb_issue5_assert( 3 === count( array_intersect( $names, $term_metadata_names ) ) && 39 === count( array_diff( $names, $term_metadata_names ) ), 'Registry changed outside the three term metadata abilities.' );
 	wpnb_issue5_assert( in_array( 'wp-native-builder/abilities-read', $names, true ), 'Integrated public Ability catalog is missing.' );
 	wpnb_issue5_assert( in_array( 'wp-native-builder/media-import-url', $names, true ), 'URL import Ability is missing.' );
-	wpnb_issue5_assert( 33 === count( array_diff( $names, array_merge( $term_metadata_names, array( 'wp-native-builder/abilities-read', 'wp-native-builder/media-import-url' ) ) ) ), 'The pre-existing 33-Ability boundary changed unexpectedly.' );
+	$source_editing_names = array( 'wp-native-builder/source-files-read', 'wp-native-builder/source-file-preview', 'wp-native-builder/source-file-apply', 'wp-native-builder/source-file-recover' );
+	wpnb_issue5_assert( 4 === count( array_intersect( $names, $source_editing_names ) ), 'Issue #46 source-editing Ability family is incomplete.' );
+	wpnb_issue5_assert( 33 === count( array_diff( $names, array_merge( $term_metadata_names, $source_editing_names, array( 'wp-native-builder/abilities-read', 'wp-native-builder/media-import-url' ) ) ) ), 'The pre-existing 33-Ability boundary changed unexpectedly.' );
 
 	$defaults = $settings->defaults();
 	wpnb_issue5_assert( 1 === $defaults[ Settings::GROUP_SITE_READ ], 'Site Read is not the sole enabled default group.' );
-	foreach ( array( Settings::GROUP_BUILDER_WRITE, Settings::GROUP_REMOTE_MEDIA, Settings::GROUP_LIVE_CONTENT, Settings::GROUP_SITE_CONFIG, Settings::GROUP_ADVANCED_METADATA, Settings::GROUP_CODE_EXTENSIONS, Settings::GROUP_USERS_DESTRUCTIVE ) as $group ) {
+	foreach ( array( Settings::GROUP_BUILDER_WRITE, Settings::GROUP_REMOTE_MEDIA, Settings::GROUP_LIVE_CONTENT, Settings::GROUP_SITE_CONFIG, Settings::GROUP_ADVANCED_METADATA, Settings::GROUP_CODE_EXTENSIONS, Settings::GROUP_SOURCE_EDITING, Settings::GROUP_USERS_DESTRUCTIVE ) as $group ) {
 		wpnb_issue5_assert( 0 === $defaults[ $group ], 'Sensitive group is enabled by default: ' . $group );
 	}
 	update_option( Settings::OPTION_NAME, $defaults, false );
@@ -90,8 +92,8 @@ try {
 	wpnb_issue5_assert( is_wp_error( wpnb_issue5_execute( 'wp-native-builder/workspace-document', array( 'action'=>'create', 'title'=>'Denied Workspace document' ) ) ), 'Builder Write disabled group allowed Workspace mutation.' );
 	wpnb_issue5_assert( is_wp_error( wpnb_issue5_execute( 'wp-native-builder/site-settings-update', array( 'tagline'=>'Denied config' ) ) ), 'Site Configuration disabled group allowed configuration mutation.' );
 	wpnb_issue5_assert( is_wp_error( wpnb_issue5_execute( 'wp-native-builder/extension-lifecycle', array( 'kind'=>'plugin', 'action'=>'activate', 'target'=>'mcp-adapter/mcp-adapter.php' ) ) ), 'Code & Extensions disabled group allowed extension mutation.' );
+	wpnb_issue5_assert( is_wp_error( wpnb_issue5_execute( 'wp-native-builder/source-files-read', array( 'action'=>'list', 'kind'=>'plugin' ) ) ), 'Source Editing disabled group allowed source inspection.' );
 	wpnb_issue5_assert( is_wp_error( wpnb_issue5_execute( 'wp-native-builder/user-upsert', array( 'action'=>'create', 'username'=>'wpnb_denied_issue5', 'email'=>'wpnb_denied_issue5@example.invalid', 'role'=>'subscriber' ) ) ), 'Users & Destructive disabled group allowed user creation.' );
-
 
 	wpnb_issue5_assert( is_wp_error( wpnb_issue5_execute( 'wp-native-builder/content-upsert', array( 'action'=>'update' ) ) ), 'Incomplete content update was not rejected.' );
 	wpnb_issue5_assert( is_wp_error( wpnb_issue5_execute( 'wp-native-builder/term-upsert', array( 'action'=>'create' ) ) ), 'Incomplete taxonomy create was not rejected.' );

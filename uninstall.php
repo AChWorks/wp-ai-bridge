@@ -10,14 +10,16 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 }
 
 /**
- * Deletes only disposable Bridge settings, activity, and OAuth metadata.
+ * Deletes only disposable Bridge settings, activity, lock, and OAuth metadata.
  *
  * Removing the OAuth installation identity invalidates every outstanding
  * consent/code/access/refresh artifact. The fixed ChatGPT metadata/JWKS caches,
  * short-lived client-assertion replay claims, and their cleanup events are also
  * removed. Persistent Workspace documents/tasks are intentionally preserved on
  * uninstall. Their explicit destructive lifecycle is WP Native Builder -> Settings
- * -> Clear Workspace, which requires administrator/destructive authorization.
+ * -> Clear Workspace, which requires administrator/destructive authorization. A pending
+ * source-recovery record is also preserved: it owns bounded exact-preimage/replacement
+ * artifacts that may still require reconciliation after reinstall.
  *
  * @return void
  */
@@ -40,6 +42,7 @@ function wp_native_builder_bridge_uninstall_site_options() {
 }
 
 if ( is_multisite() ) {
+	delete_site_option( 'wp_native_builder_bridge_source_lock' );
 	$site_ids = get_sites(
 		array(
 			'fields' => 'ids',
@@ -53,5 +56,6 @@ if ( is_multisite() ) {
 		restore_current_blog();
 	}
 } else {
+	delete_option( 'wp_native_builder_bridge_source_lock' );
 	wp_native_builder_bridge_uninstall_site_options();
 }

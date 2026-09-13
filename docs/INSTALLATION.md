@@ -58,6 +58,7 @@ A conservative starting point is:
 - Live Content: leave disabled until publishing is intentionally required.
 - Site Configuration: enable only for site/theme configuration work.
 - Code & Extensions: enable only for managed snippets or extension lifecycle work.
+- Source Editing: leave disabled unless installed plugin/theme source must be read or changed. It is separate from Code & Extensions and grants administrator-level code trust, not sandboxed execution. Source apply/recovery additionally require guarded same-filesystem no-overwrite replacement with hard-link support; unsupported filesystems fail closed rather than falling back to an in-place write.
 - Users & Destructive: leave disabled unless the requested operation genuinely requires it.
 
 ## Update
@@ -68,7 +69,7 @@ Upload the new release ZIP from **Plugins → Add Plugin → Upload Plugin** and
 
 Deactivation stops Bridge execution but preserves its configuration and Workspace data.
 
-Uninstall removes Bridge settings and activity-log configuration, removes Bridge-owned OAuth metadata, and invalidates outstanding Bridge OAuth artifacts. Persistent Workspace content is intentionally preserved so uninstalling the transport plugin does not silently destroy project state.
+Uninstall removes disposable Bridge settings, activity-log configuration, locks, and Bridge-owned OAuth metadata, and invalidates outstanding Bridge OAuth artifacts. Persistent Workspace content is intentionally preserved so uninstalling the transport plugin does not silently destroy project state. A genuinely pending Source Editing recovery record is also preserved because it may still own exact preimage/private replacement artifacts; reinstall the Bridge and reconcile/recover that state before deleting it manually.
 
 If Workspace data is no longer wanted, clear it explicitly from **WP Native Builder** before uninstalling.
 

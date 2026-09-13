@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 
 forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir)[[:space:]]*\('
 
-if grep -R -nE "$forbidden" src --include='*.php' --exclude='class-media-abilities.php'; then
+if grep -R -nE "$forbidden" src --include='*.php' --exclude='class-media-abilities.php' --exclude='class-source-editing-abilities.php'; then
     echo "ERROR: forbidden direct execution/filesystem primitive found in production source." >&2
     exit 1
 fi
@@ -29,6 +29,76 @@ if grep -nE "$media_forbidden" src/Abilities/class-media-abilities.php; then
 fi
 if [[ "$(grep -cF 'wp_safe_remote_get(' src/Abilities/class-media-abilities.php || true)" != "1" ]]; then
     echo "ERROR: media import must retain exactly one safe WordPress HTTP request surface." >&2
+    exit 1
+fi
+
+# Issue #46 source editing is a fixed-purpose installed-extension lifecycle, not a generic filesystem proxy.
+source_editor='src/Abilities/class-source-editing-abilities.php'
+if [[ ! -f "$source_editor" ]]; then
+    echo "ERROR: bounded source-editing provider is missing." >&2
+    exit 1
+fi
+if [[ "$(grep -cF 'new \WP_Filesystem_Direct( null )' "$source_editor" || true)" != "1" ]]; then
+    echo "ERROR: source editing must retain exactly one direct WordPress filesystem constructor." >&2
+    exit 1
+fi
+if [[ "$(grep -cF 'new \SplFileObject(' "$source_editor" || true)" != "2" ]]; then
+    echo "ERROR: source editing must retain exactly the stable coordination lock plus the exact target-inode lock." >&2
+    exit 1
+fi
+if [[ "$(grep -cF "new \\SplFileObject( \$target['canonical_path'], 'rb' )" "$source_editor" || true)" != "1" ]]; then
+    echo "ERROR: source editing must retain exactly one read-only advisory lock on the confined target inode." >&2
+    exit 1
+fi
+if [[ "$(grep -cF 'new \SplFileObject( $this->coordination_lock_path( $canonical_path )' "$source_editor" || true)" != "1" ]]; then
+    echo "ERROR: source editing must retain exactly one stable path-keyed coordination lock." >&2
+    exit 1
+fi
+if [[ "$(grep -cF -- '->flock( LOCK_EX | LOCK_NB )' "$source_editor" || true)" != "2" || "$(grep -cF -- '->flock( LOCK_UN )' "$source_editor" || true)" != "2" ]]; then
+    echo "ERROR: source editing stable/path-inode advisory lock counts changed unexpectedly." >&2
+    exit 1
+fi
+if [[ "$(grep -cF 'wp_remote_get(' "$source_editor" || true)" != "1" ]]; then
+    echo "ERROR: source editing runtime validation must retain one bounded Core-compatible loopback request call site." >&2
+    exit 1
+fi
+if [[ "$(grep -cF "wp_is_file_mod_allowed( 'wp_native_builder_bridge_source_editing' )" "$source_editor" || true)" != "2" ]]; then
+    echo "ERROR: source editing must recheck WordPress file-modification policy for normal execution and recovery." >&2
+    exit 1
+fi
+if grep -nE "['\"](server_path|file_path|absolute_path|filesystem_path|ftp_password|ssh_password|private_key)['\"][[:space:]]*=>" "$source_editor"; then
+    echo "ERROR: source editing exposed a caller-selected server path or filesystem credential field." >&2
+    exit 1
+fi
+# F-001 remediation permits only the exact fixed-purpose path-CAS primitives below. They stage
+# complete bytes privately, quarantine the current pathname, and publish with hard-link no-replace
+# semantics so a non-cooperating writer that recreates the live path is never overwritten.
+if grep -nE '(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|copy|mkdir|rmdir|symlink)[[:space:]]*\(' "$source_editor"; then
+    echo "ERROR: source editing grew an execution/filesystem primitive outside its fixed guarded replacement surface." >&2
+    exit 1
+fi
+if [[ "$(grep -cF '@fopen(' "$source_editor" || true)" != "1" ]]; then
+    echo "ERROR: source editing must retain exactly one exclusive private stage-file open." >&2
+    exit 1
+fi
+if [[ "$(grep -cF '@fwrite(' "$source_editor" || true)" != "1" ]]; then
+    echo "ERROR: source editing must retain exactly one bounded stage-file write loop." >&2
+    exit 1
+fi
+if [[ "$(grep -cF '@rename(' "$source_editor" || true)" != "1" ]]; then
+    echo "ERROR: source editing must retain exactly one live-path-to-quarantine rename boundary." >&2
+    exit 1
+fi
+if [[ "$(grep -cF '@link(' "$source_editor" || true)" != "3" ]]; then
+    echo "ERROR: source editing must retain exactly three no-replace hard-link call sites (probe, publish, restore)." >&2
+    exit 1
+fi
+if [[ "$(grep -cF '@unlink(' "$source_editor" || true)" != "1" ]]; then
+    echo "ERROR: source editing guarded-replacement cleanup surface changed unexpectedly." >&2
+    exit 1
+fi
+if [[ "$(grep -cF '@chmod(' "$source_editor" || true)" != "2" || "$(grep -cF '@chown(' "$source_editor" || true)" != "1" || "$(grep -cF '@chgrp(' "$source_editor" || true)" != "1" ]]; then
+    echo "ERROR: source editing must preserve mode/owner/group only through the single staged replacement metadata path." >&2
     exit 1
 fi
 

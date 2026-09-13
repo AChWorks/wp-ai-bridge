@@ -32,6 +32,7 @@ $required = array(
 	'Authorize ChatGPT'  => 'تأیید دسترسی ChatGPT',
 	'Access groups'      => 'گروه‌های دسترسی',
 	'Live Content'       => 'محتوای زنده',
+	'Source Editing'      => 'ویرایش کد منبع',
 	'Read Content'       => 'خواندن محتوا',
 );
 foreach ( $required as $source => $translation ) {

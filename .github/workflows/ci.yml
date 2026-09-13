@@ -64,3 +64,6 @@ jobs:
         env:
           RUN_OPTIONAL_PROVIDERS: '${{ matrix.optional_providers }}'
         run: bash bin/run-integration.sh '${{ matrix.wordpress_tag }}'
+
+      - name: Run Issue 46 multisite source-editing suite
+        run: bash bin/run-issue46-multisite.sh '${{ matrix.wordpress_tag }}'

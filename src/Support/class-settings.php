@@ -21,6 +21,7 @@ final class Settings {
 	const GROUP_SITE_CONFIG       = 'site_configuration';
 	const GROUP_ADVANCED_METADATA = 'advanced_metadata';
 	const GROUP_CODE_EXTENSIONS   = 'code_extensions';
+	const GROUP_SOURCE_EDITING    = 'source_editing';
 	const GROUP_USERS_DESTRUCTIVE = 'users_destructive';
 
 	/**
@@ -87,6 +88,12 @@ final class Settings {
 			self::GROUP_CODE_EXTENSIONS   => array(
 				'label'       => __( 'Code & Extensions', 'wp-native-builder-bridge' ),
 				'description' => __( 'Allow supported managed snippets and plugin/theme lifecycle operations. This does not expose arbitrary code execution.', 'wp-native-builder-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_SOURCE_EDITING    => array(
+				'label'       => __( 'Source Editing', 'wp-native-builder-bridge' ),
+				'description' => __( 'Allow installed plugin/theme source read, preview, apply, and recovery. Code & Extensions and WordPress file-editor capabilities are also required. Executable PHP is administrator-level code trust, not a sandbox.', 'wp-native-builder-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
