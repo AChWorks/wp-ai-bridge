@@ -52,7 +52,7 @@ final class Store {
 			array_merge(
 				$common,
 				array(
-					'label'  => __( 'WP Native Builder Documents', 'wp-native-builder-bridge' ),
+					'label'  => __( 'WP AI Bridge Documents', 'wp-native-builder-bridge' ),
 					'labels' => array(
 						'name'          => __( 'Workspace Documents', 'wp-native-builder-bridge' ),
 						'singular_name' => __( 'Workspace Document', 'wp-native-builder-bridge' ),
@@ -66,7 +66,7 @@ final class Store {
 			array_merge(
 				$common,
 				array(
-					'label'  => __( 'WP Native Builder Tasks', 'wp-native-builder-bridge' ),
+					'label'  => __( 'WP AI Bridge Tasks', 'wp-native-builder-bridge' ),
 					'labels' => array(
 						'name'          => __( 'Workspace Tasks', 'wp-native-builder-bridge' ),
 						'singular_name' => __( 'Workspace Task', 'wp-native-builder-bridge' ),

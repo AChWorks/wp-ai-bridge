@@ -903,13 +903,13 @@ final class OAuth_Server {
 	/**
 	 * Returns whether an OAuth resource is one of the two exact migration endpoints.
 	 *
-	 * @param string $resource Candidate resource URL.
+	 * @param string $resource_url Candidate resource URL.
 	 * @return bool Whether the resource is canonical or the retained legacy alias.
 	 */
-	private function is_supported_resource_url( $resource ) {
-		$resource = (string) $resource;
+	private function is_supported_resource_url( $resource_url ) {
+		$resource_url = (string) $resource_url;
 		foreach ( array( $this->mcp_endpoint_url(), $this->legacy_mcp_endpoint_url() ) as $supported ) {
-			if ( hash_equals( $supported, $resource ) ) {
+			if ( hash_equals( $supported, $resource_url ) ) {
 				return true;
 			}
 		}
@@ -942,13 +942,13 @@ final class OAuth_Server {
 	/**
 	 * Builds a protected-resource metadata document for one exact resource.
 	 *
-	 * @param string $resource      Exact resource URL.
+	 * @param string $resource_url  Exact resource URL.
 	 * @param string $resource_name Public resource label.
 	 * @return array<string,mixed> Metadata document.
 	 */
-	private function protected_resource_metadata_for( $resource, $resource_name ) {
+	private function protected_resource_metadata_for( $resource_url, $resource_name ) {
 		return array(
-			'resource'                 => (string) $resource,
+			'resource'                 => (string) $resource_url,
 			'authorization_servers'    => array( $this->issuer_url() ),
 			'scopes_supported'         => $this->supported_scopes(),
 			'bearer_methods_supported' => array( 'header' ),

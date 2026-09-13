@@ -4,7 +4,7 @@ set -euo pipefail
 base_url="${WPNB_HTTP_BASE_URL:-http://127.0.0.1:18080}"
 public_origin="${WPNB_PUBLIC_ORIGIN:-https://localhost}"
 host_header="${WPNB_HTTP_HOST:-localhost}"
-resource="${public_origin}/wp-json/wp-native-builder/v1/mcp"
+resource="${public_origin}/wp-json/wp-ai-bridge/v1/mcp"
 protected_metadata="${public_origin}/.well-known/oauth-protected-resource"
 authorization_metadata="${public_origin}/.well-known/oauth-authorization-server"
 
@@ -34,8 +34,8 @@ jq -e \
 curl -fsS -H "Host: ${host_header}" "${base_url}/.well-known/oauth-authorization-server" > "$authorization_file"
 jq -e \
     --arg issuer "$public_origin" \
-    --arg authorization_endpoint "${public_origin}/wp-native-builder/oauth/authorize" \
-    --arg token_endpoint "${public_origin}/wp-json/wp-native-builder/v1/oauth/token" \
+    --arg authorization_endpoint "${public_origin}/wp-ai-bridge/oauth/authorize" \
+    --arg token_endpoint "${public_origin}/wp-json/wp-ai-bridge/v1/oauth/token" \
     '.issuer == $issuer
      and .authorization_endpoint == $authorization_endpoint
      and .token_endpoint == $token_endpoint
@@ -57,7 +57,7 @@ status="$(curl -sS \
     -w '%{http_code}' \
     -X POST \
     --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"wpnb-direct-http-smoke","version":"1.0.0"}}}' \
-    "${base_url}/wp-json/wp-native-builder/v1/mcp")"
+    "${base_url}/wp-json/wp-ai-bridge/v1/mcp")"
 
 if [[ "$status" != "401" ]]; then
     echo "ERROR: unauthenticated direct MCP request returned HTTP ${status}, expected 401." >&2
@@ -84,7 +84,7 @@ authorize_status="$(curl -sS \
     --data-urlencode 'state=wpnb-http-state' \
     --data-urlencode 'code_challenge=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
     --data-urlencode 'code_challenge_method=S256' \
-    "${base_url}/wp-native-builder/oauth/authorize")"
+    "${base_url}/wp-ai-bridge/oauth/authorize")"
 
 if [[ "$authorize_status" != "302" ]]; then
     echo "ERROR: valid ChatGPT callback did not receive an OAuth error redirect; HTTP ${authorize_status}." >&2
@@ -121,7 +121,7 @@ open_redirect_status="$(curl -sS \
     --data-urlencode 'state=wpnb-open-redirect-test' \
     --data-urlencode 'code_challenge=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
     --data-urlencode 'code_challenge_method=S256' \
-    "${base_url}/wp-native-builder/oauth/authorize")"
+    "${base_url}/wp-ai-bridge/oauth/authorize")"
 
 if [[ "$open_redirect_status" != "400" ]]; then
     echo "ERROR: untrusted OAuth redirect URI returned HTTP ${open_redirect_status}, expected 400." >&2

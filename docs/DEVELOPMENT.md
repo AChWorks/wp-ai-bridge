@@ -32,7 +32,7 @@ The quality gate includes:
 The generated package is:
 
 ```text
-build/wp-native-builder-bridge.zip
+build/wp-ai-bridge.zip
 ```
 
 ## Integration tests

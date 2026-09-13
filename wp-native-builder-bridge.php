@@ -33,7 +33,7 @@ spl_autoload_register(
 
 		$relative   = substr( $class_name, strlen( $prefix ) );
 		$parts      = explode( '\\', $relative );
-		$class_file = 'class-' . strtolower( str_replace( '_', '-', array_pop( $parts ) ) . '.php';
+		$class_file = 'class-' . strtolower( str_replace( '_', '-', array_pop( $parts ) ) ) . '.php';
 		$directory  = $parts ? implode( '/', $parts ) . '/' : '';
 		$path       = WP_NATIVE_BUILDER_BRIDGE_DIR . '/src/' . $directory . $class_file;
 

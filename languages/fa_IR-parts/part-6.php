@@ -19,7 +19,7 @@ return array(
 	'Post metadata changed after it was read. Refresh the metadata state before deleting it.' => 'فرادادهٔ نوشته پس از خوانده‌شدن تغییر کرده است. پیش از حذف، وضعیت فراداده را دوباره دریافت کنید.',
 	'WordPress could not delete the requested metadata key.' => 'وردپرس نتوانست کلید فرادادهٔ درخواستی را حذف کند.',
 	'WordPress cannot condition this metadata value atomically. The generic Bridge refuses the mutation to avoid a stale write.' => 'وردپرس نمی‌تواند این مقدار فراداده را به‌صورت اتمی مشروط کند. Bridge عمومی برای جلوگیری از نوشتن روی وضعیت قدیمی، از انجام این تغییر خودداری می‌کند.',
-	'Advanced Metadata access is disabled in WP Native Builder settings.' => 'دسترسی «فرادادهٔ پیشرفته» در تنظیمات WP Native Builder غیرفعال است.',
+	'Advanced Metadata access is disabled in WP AI Bridge settings.' => 'دسترسی «فرادادهٔ پیشرفته» در تنظیمات WP AI Bridge غیرفعال است.',
 	'The requested post does not exist, belongs to Bridge-private Workspace storage, or cannot be edited by the current WordPress user.' => 'نوشتهٔ درخواستی وجود ندارد، متعلق به فضای کاری خصوصی Bridge است، یا کاربر فعلی وردپرس اجازهٔ ویرایش آن را ندارد.',
 	'Credential-like metadata keys are outside the generic Bridge metadata surface.' => 'کلیدهای فرادادهٔ شبیه اطلاعات احراز هویت و محرمانه خارج از سطح عمومی فرادادهٔ Bridge هستند.',
 	'The current WordPress user is not allowed to perform this metadata operation.' => 'کاربر فعلی وردپرس اجازهٔ انجام این عملیات فراداده را ندارد.',

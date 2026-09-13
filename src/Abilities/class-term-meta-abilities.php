@@ -527,7 +527,7 @@ final class Term_Meta_Abilities {
 	 */
 	private function validated_term( $input ) {
 		if ( ! $this->permissions->allowed( Settings::GROUP_ADVANCED_METADATA, 'read' ) ) {
-			return new WP_Error( 'advanced_metadata_access_disabled', __( 'Advanced Metadata access is disabled in WP Native Builder settings.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'advanced_metadata_access_disabled', __( 'Advanced Metadata access is disabled in WP AI Bridge settings.', 'wp-native-builder-bridge' ) );
 		}
 		$term = $this->authorized_term( $input );
 		if ( ! $term ) {
