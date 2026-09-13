@@ -1,10 +1,10 @@
-# WP Native Builder Bridge
+# WP AI Bridge
 
-[![CI](https://github.com/ach1992/wp-native-builder-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ach1992/wp-native-builder-bridge/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/ach1992/wp-native-builder-bridge)](https://github.com/ach1992/wp-native-builder-bridge/releases/latest)
+[![CI](https://github.com/ach1992/wp-ai-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ach1992/wp-ai-bridge/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/ach1992/wp-ai-bridge)](https://github.com/ach1992/wp-ai-bridge/releases/latest)
 [![License](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](./LICENSE)
 
-WP Native Builder Bridge connects a WordPress site to ChatGPT through a direct HTTPS MCP endpoint, WordPress-backed OAuth, the official WordPress MCP Adapter, and the WordPress Abilities API.
+WP AI Bridge connects a WordPress site to ChatGPT through a direct HTTPS MCP endpoint, WordPress-backed OAuth, the official WordPress MCP Adapter, and the WordPress Abilities API.
 
 It exposes bounded, typed site-management abilities while keeping WordPress capabilities and explicit Bridge access groups in control.
 
@@ -13,10 +13,11 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 - Direct ChatGPT Workspace App connection over HTTPS with OAuth 2.1 and PKCE.
 - Read and update posts, pages, supported custom post types, revisions, and Gutenberg blocks.
 - Admin-controlled generic post/term metadata access for exact WordPress objects the connected user may edit, including protected/private metadata without provider/post-type/taxonomy/meta-key allowlists.
-- Media Library read, upload, update, and delete operations.
+- Media Library read, upload, safe URL import, update, and delete operations.
 - Taxonomy and classic navigation management.
 - Bounded WordPress site settings.
 - WordPress.org plugin/theme lifecycle operations.
+- Separately enabled installed plugin/theme source read, preview, apply, and conflict-safe recovery using native WordPress authority.
 - User and role administration behind an explicit destructive-access group.
 - Persistent Workspace documents and tasks for durable project context.
 - Native Astra Ability reuse when Astra Abilities are enabled.
@@ -33,20 +34,22 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 
 ## Install
 
-1. Download `wp-native-builder-bridge.zip` from the [latest GitHub release](https://github.com/ach1992/wp-native-builder-bridge/releases/latest).
+1. Download `wp-ai-bridge.zip` from the [latest GitHub release](https://github.com/ach1992/wp-ai-bridge/releases/latest).
 2. In WordPress open **Plugins → Add Plugin → Upload Plugin**.
-3. Upload the ZIP, install it, and activate **WP Native Builder Bridge**.
+3. Upload the ZIP, install it, and activate **WP AI Bridge**.
 4. Install and activate the official WordPress MCP Adapter if it is not already active.
-5. Open **WP Native Builder → Settings**.
+5. Open **WP AI Bridge → Settings**.
+
+Existing installations upgrade in place: the public product/artifact name changed, but the installed plugin directory and persisted storage identifiers remain compatible so the rename does not create a second plugin or data store.
 
 See [Installation and connection](./docs/INSTALLATION.md) for the complete setup.
 
 ## Connect ChatGPT
 
-On an HTTPS WordPress site, **WP Native Builder → Settings** shows the exact MCP endpoint for the site:
+On an HTTPS WordPress site, **WP AI Bridge → Settings** shows the canonical MCP endpoint for the site:
 
 ```text
-https://YOUR-SITE.example/wp-json/wp-native-builder/v1/mcp
+https://YOUR-SITE.example/wp-json/wp-ai-bridge/v1/mcp
 ```
 
 In a ChatGPT workspace with Developer Mode enabled:
@@ -58,17 +61,21 @@ In a ChatGPT workspace with Developer Mode enabled:
 5. Sign in to WordPress when prompted.
 6. Review the WordPress consent page and authorize ChatGPT.
 
+Connections created with the former `wp-native-builder` MCP/OAuth routes remain supported as migration aliases. New connections and all UI/documentation use the WP AI Bridge routes.
+
 No tunnel or separate proxy service is required for the direct HTTPS setup.
 
 ## WordPress admin
 
-The plugin adds a top-level **WP Native Builder** menu:
+The plugin adds a top-level **WP AI Bridge** menu:
 
 - **Dashboard** — Workspace summary and connection status.
 - **Documents** — durable project documents.
 - **Tasks** — durable work items with independent progress, review, and delivery state.
 - **Activity** — bounded mutation activity.
 - **Settings** — ChatGPT connection details and Bridge access groups.
+
+Existing bookmarks that use the former `wp-native-builder...` admin slugs are retained as compatibility aliases; new navigation uses `wp-ai-bridge...` slugs.
 
 Workspace state is private to WordPress and is not exposed through ordinary post, Gutenberg, or generic metadata abilities.
 
@@ -85,6 +92,7 @@ Bridge permissions are additive to normal WordPress capabilities. Enabling a Bri
 | **Site Configuration** | Permit bounded global WordPress/theme configuration changes. |
 | **Advanced Metadata** | Permit generic read/update of protected/private post and term metadata for exact objects the connected user may edit, including private/non-REST CPTs and taxonomies; credential-like keys, options, user meta, and Workspace internals remain excluded. |
 | **Code & Extensions** | Permit supported managed-snippet and plugin/theme lifecycle operations. |
+| **Source Editing** | Separately permit installed plugin/theme source read/preview/apply/recovery. Code & Extensions and native WordPress source-edit authority are still required. Disabled by default, including upgrades. |
 | **Users & Destructive** | Permit user/role administration and destructive operations when WordPress also permits them. Metadata deletion requires this group in addition to Advanced Metadata. |
 
 Only **Site Read** is enabled by default.
@@ -95,7 +103,11 @@ Only **Site Read** is enabled by default.
 
 `wp-native-builder/media-import-url` accepts a public HTTP(S) URL and a filename, streams it within the current WordPress upload limit, and creates a normal attachment. It requires explicit **Remote Media** plus **Builder Write** access; upgrades do not enable it automatically. See [URL media import](./docs/ABILITIES.md#url-media-import).
 
-Plugin/theme installation is deliberately narrower: it accepts WordPress.org slugs through WordPress administration APIs. The Bridge does **not** expose arbitrary ZIP/PHP upload, arbitrary package URLs, shell commands, SQL, generic filesystem access, arbitrary WordPress options/user-meta administration, or credential retrieval.
+Plugin/theme installation is deliberately narrower: it accepts WordPress.org slugs through WordPress administration APIs. Source Editing is a separate administrator-level trust boundary and is not enabled by Code & Extensions alone. The Bridge does **not** expose arbitrary package URLs, shell commands, generic SQL, unrestricted filesystem access, arbitrary WordPress options/user-meta administration, or credential retrieval.
+
+## Compatibility identifiers
+
+The public product is WP AI Bridge, but several established machine identifiers intentionally remain `wp-native-builder...` to preserve existing sites and clients. This includes the `wp-native-builder/*` Ability names, plugin installation directory/entrypoint, text domain, PHP namespace/constants, and persisted storage keys. These are compatibility contracts, not the current public brand.
 
 ## Optional integrations
 
@@ -110,17 +122,17 @@ See [Integrations](./docs/INTEGRATIONS.md) for details.
 
 ## Security model
 
-The Bridge is intentionally not a general remote-administration shell. It combines:
+WP AI Bridge is intentionally not a general remote-administration shell. It combines:
 
 - WordPress OAuth identity;
 - WordPress capabilities and object-level checks;
 - explicit Bridge access groups;
 - closed input/output schemas;
-- stale-write protection for overwrite-sensitive operations;
+- stale-write/concurrency protection for overwrite-sensitive operations;
 - bounded mutation logging;
 - provider-native permission checks where integrations are used.
 
-Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, or destructive access on an important site.
+Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Source Editing, or destructive access on an important site.
 
 ## Documentation
 
@@ -136,7 +148,7 @@ Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, or
 
 ## License
 
-WP Native Builder Bridge is licensed under **GPL-2.0-or-later**. See [LICENSE](./LICENSE).
+WP AI Bridge is licensed under **GPL-2.0-or-later**. See [LICENSE](./LICENSE).
 
 ## Author
 
