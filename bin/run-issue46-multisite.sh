@@ -27,11 +27,11 @@ for attempt in $(seq 1 30); do
     sleep 2
 done
 
-"${compose[@]}" cp "$root/build/wp-native-builder-bridge.zip" wordpress:/var/www/html/wp-native-builder-bridge.zip
+"${compose[@]}" cp "$root/build/wp-ai-bridge.zip" wordpress:/var/www/html/wp-ai-bridge.zip
 wp=("${compose[@]}" run --rm cli)
 "${wp[@]}" core multisite-install \
     --url=http://wordpress \
-    --title='WP Native Builder Bridge Issue 46 Multisite' \
+    --title='WP AI Bridge Issue 46 Multisite' \
     --admin_user=admin \
     --admin_password='integration-only-password' \
     --admin_email=admin@example.invalid \
@@ -40,8 +40,8 @@ wp=("${compose[@]}" run --rm cli)
 "${wp[@]}" site create --slug=secondary --title="Issue 46 Secondary Site" --email=admin@example.invalid --allow-root >/dev/null
 mcp_adapter_url="${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.6.1/mcp-adapter.zip}"
 "${wp[@]}" plugin install "$mcp_adapter_url" --activate-network --allow-root
-"${wp[@]}" plugin install /var/www/html/wp-native-builder-bridge.zip --activate-network --allow-root
-"${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-native-builder-bridge.zip
+"${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate-network --allow-root
+"${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge.zip
 
 tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \
     | "${compose[@]}" exec -T wordpress tar -xf - -C /var/www/html/wp-content/plugins/wp-native-builder-bridge
