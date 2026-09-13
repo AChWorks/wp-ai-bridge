@@ -23,10 +23,10 @@ bash "$root/bin/build-zip.sh"
 
 # Build the exact pre-rename integrated baseline independently. GitHub pull-request
 # checkouts can be shallow, so fetch only this immutable commit when it is absent.
-if ! git -C "$root" cat-file -e "${legacy_base}^{commit}" 2>/dev/null; then
-    git -C "$root" fetch --no-tags --depth=1 origin "$legacy_base"
+if ! git -c "safe.directory=$root" -C "$root" cat-file -e "${legacy_base}^{commit}" 2>/dev/null; then
+    git -c "safe.directory=$root" -C "$root" fetch --no-tags --depth=1 origin "$legacy_base"
 fi
-git -C "$root" archive "$legacy_base" | tar -x -C "$legacy_root"
+git -c "safe.directory=$root" -C "$root" archive "$legacy_base" | tar -x -C "$legacy_root"
 bash "$legacy_root/bin/build-zip.sh"
 legacy_zip="$legacy_root/build/wp-native-builder-bridge.zip"
 candidate_zip="$root/build/wp-ai-bridge.zip"
@@ -72,25 +72,55 @@ $doc = $store->create_document(array("key" => "issue47-upgrade", "title" => "Iss
 $task = $store->create_task(array("title" => "Issue 47 upgrade task", "progress" => "in_progress", "review" => "pending", "delivery" => "not_applicable"));
 if (is_wp_error($doc) || is_wp_error($task)) { exit(1); }
 $oauth_store = new WP_Native_Builder_Bridge\Auth\OAuth_Store();
+$oauth_instance = $oauth_store->instance_id();
 $legacy_resource = rest_url("wp-native-builder/v1/mcp");
+$session_claims = array(
+    "user_id" => 1,
+    "client_id" => WP_Native_Builder_Bridge\Auth\OAuth_Server::CHATGPT_CLIENT_ID,
+    "resource" => $legacy_resource,
+    "scope" => WP_Native_Builder_Bridge\Auth\OAuth_Server::SCOPE_MCP . " " . WP_Native_Builder_Bridge\Auth\OAuth_Server::SCOPE_OFFLINE,
+    "redirect_uri" => WP_Native_Builder_Bridge\Auth\OAuth_Server::CHATGPT_REDIRECT_URI,
+    "migration_marker" => "issue47",
+);
 $token = $oauth_store->issue(
     WP_Native_Builder_Bridge\Auth\OAuth_Store::TYPE_ACCESS,
-    array(
-        "user_id" => 1,
-        "client_id" => WP_Native_Builder_Bridge\Auth\OAuth_Server::CHATGPT_CLIENT_ID,
-        "resource" => $legacy_resource,
-        "scope" => WP_Native_Builder_Bridge\Auth\OAuth_Server::SCOPE_MCP,
-    ),
+    $session_claims,
     WP_Native_Builder_Bridge\Auth\OAuth_Server::ACCESS_TTL
 );
+$refresh_token = $oauth_store->issue(
+    WP_Native_Builder_Bridge\Auth\OAuth_Store::TYPE_REFRESH,
+    $session_claims,
+    WP_Native_Builder_Bridge\Auth\OAuth_Server::REFRESH_TTL
+);
+$plugin_root = wp_normalize_path(realpath(WP_PLUGIN_DIR . "/wp-native-builder-bridge"));
+$plugin_path = wp_normalize_path(realpath(WP_PLUGIN_DIR . "/wp-native-builder-bridge/wp-native-builder-bridge.php"));
+$preimage = file_get_contents($plugin_path);
+if (!$plugin_root || !$plugin_path || false === $preimage) { exit(1); }
+$recovery = array(
+    "version" => 1,
+    "token" => bin2hex(random_bytes(16)),
+    "kind" => "plugin",
+    "extension" => "wp-native-builder-bridge/wp-native-builder-bridge.php",
+    "file" => "wp-native-builder-bridge.php",
+    "canonical_root" => $plugin_root,
+    "canonical_path" => $plugin_path,
+    "preimage_sha256" => hash("sha256", $preimage),
+    "candidate_sha256" => hash("sha256", $preimage . "\n/* issue47-pending-candidate */\n"),
+    "preimage" => $preimage,
+    "created_gmt" => gmdate("c"),
+);
+update_option(WP_Native_Builder_Bridge\Abilities\Source_Editing_Abilities::RECOVERY_OPTION, $recovery, false);
 update_option("wpnb_issue47_upgrade_fixture", array(
     "settings" => $values,
     "document_id" => (int) $doc["id"],
     "document_hash" => (string) $doc["state_hash"],
     "task_id" => (int) $task["id"],
     "task_hash" => (string) $task["state_hash"],
+    "oauth_instance" => $oauth_instance,
     "legacy_token" => $token,
+    "legacy_refresh_token" => $refresh_token,
     "legacy_resource" => $legacy_resource,
+    "recovery" => $recovery,
 ), false);
 ' --user=1 --allow-root >/dev/null
 
@@ -118,7 +148,14 @@ $store = new WP_Native_Builder_Bridge\Workspace\Store();
 $doc = $store->get_document((int) $fixture["document_id"]);
 $task = $store->get_task((int) $fixture["task_id"]);
 if (is_wp_error($doc) || is_wp_error($task) || !hash_equals((string) $fixture["document_hash"], (string) $doc["state_hash"]) || !hash_equals((string) $fixture["task_hash"], (string) $task["state_hash"])) { exit(1); }
-$oauth = new WP_Native_Builder_Bridge\Auth\OAuth_Server(new WP_Native_Builder_Bridge\Auth\OAuth_Store());
+$oauth_store = new WP_Native_Builder_Bridge\Auth\OAuth_Store();
+if (!hash_equals((string) $fixture["oauth_instance"], $oauth_store->instance_id())) { exit(1); }
+$access_claims = $oauth_store->read(WP_Native_Builder_Bridge\Auth\OAuth_Store::TYPE_ACCESS, (string) $fixture["legacy_token"], false);
+$refresh_claims = $oauth_store->read(WP_Native_Builder_Bridge\Auth\OAuth_Store::TYPE_REFRESH, (string) $fixture["legacy_refresh_token"], false);
+if (!is_array($access_claims) || !is_array($refresh_claims) || "issue47" !== ($access_claims["migration_marker"] ?? "") || "issue47" !== ($refresh_claims["migration_marker"] ?? "") || !hash_equals((string) $fixture["legacy_resource"], (string) ($access_claims["resource"] ?? "")) || !hash_equals((string) $fixture["legacy_resource"], (string) ($refresh_claims["resource"] ?? ""))) { exit(1); }
+$recovery = get_option(WP_Native_Builder_Bridge\Abilities\Source_Editing_Abilities::RECOVERY_OPTION, false);
+if ($recovery !== $fixture["recovery"]) { exit(1); }
+$oauth = new WP_Native_Builder_Bridge\Auth\OAuth_Server($oauth_store);
 $legacy = new WP_REST_Request("POST", WP_Native_Builder_Bridge\Auth\OAuth_Server::LEGACY_MCP_REQUEST_ROUTE);
 $legacy->set_header("Authorization", "Bearer " . $fixture["legacy_token"]);
 if (!$oauth->authenticate_mcp_request($legacy)) { exit(1); }
