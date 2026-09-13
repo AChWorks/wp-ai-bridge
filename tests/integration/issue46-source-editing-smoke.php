@@ -21,6 +21,8 @@ $plugin              = 'wpnb-source-fixture/wpnb-source-fixture.php';
 $plugin_dir          = WP_PLUGIN_DIR . '/wpnb-source-fixture';
 $plugin_file         = $plugin_dir . '/wpnb-source-fixture.php';
 $plugin_helper       = $plugin_dir . '/helper.php';
+$post_publish_explicit_removed = $plugin_dir . '/post-publish-explicit-removed.php';
+$post_publish_shutdown_removed = $plugin_dir . '/post-publish-shutdown-removed.php';
 $outside_file        = WP_CONTENT_DIR . '/wpnb-source-outside.php';
 $symlink_file        = $plugin_dir . '/escape.php';
 $outside_plugin_dir  = WP_CONTENT_DIR . '/wpnb-source-outside-plugin';
@@ -289,6 +291,107 @@ try {
 	file_put_contents( $plugin_file, $plugin_original );
 	chmod( $plugin_file, 0666 );
 
+	// Private artifact cleanup is part of the recovery boundary: probe/stage/hold removal failures
+	// must keep recovery ownership and must never produce terminal success.
+	$cleanup_repair = new Source_Editing_Abilities( new Permissions( $settings ), new Mutation_Log() );
+
+	$probe_cleanup_candidate = str_replace( "'original'", "'probe-cleanup-candidate'", $plugin_original );
+	$probe_cleanup = new Source_Editing_Abilities(
+		new Permissions( $settings ),
+		new Mutation_Log(),
+		null,
+		static function ( $artifact ) {
+			return '.probe' !== substr( $artifact, -6 );
+		}
+	);
+	$probe_cleanup_preview = $probe_cleanup->preview( array_merge( $target, array( 'candidate' => $probe_cleanup_candidate ) ) );
+	wpnb_issue46_assert( ! is_wp_error( $probe_cleanup_preview ), 'Probe-cleanup failure preview failed.' );
+	$probe_cleanup_result = $probe_cleanup->apply(
+		array_merge(
+			$target,
+			array(
+				'candidate'        => $probe_cleanup_candidate,
+				'preimage_sha256'  => $probe_cleanup_preview['preimage_sha256'],
+				'candidate_sha256' => $probe_cleanup_preview['candidate_sha256'],
+				'candidate_id'     => $probe_cleanup_preview['candidate_id'],
+			)
+		)
+	);
+	wpnb_issue46_assert( is_wp_error( $probe_cleanup_result ) && 'source_recovery_artifact_pending' === $probe_cleanup_result->get_error_code(), 'Probe cleanup failure did not fail closed.' );
+	wpnb_issue46_assert( $plugin_original === file_get_contents( $plugin_file ), 'Probe cleanup failure crossed into live-path mutation.' );
+	$probe_cleanup_record = get_option( Source_Editing_Abilities::RECOVERY_OPTION, false );
+	wpnb_issue46_assert( is_array( $probe_cleanup_record ), 'Probe cleanup failure discarded recovery ownership.' );
+	wpnb_issue46_assert( count( glob( $plugin_dir . '/.ht-wpnb-source-cas-*.*' ) ) >= 2, 'Probe cleanup failure did not retain identifiable private artifacts.' );
+	$probe_cleanup_recovered = $cleanup_repair->recover( array( 'candidate_sha256' => $probe_cleanup_record['candidate_sha256'] ) );
+	wpnb_issue46_assert( ! is_wp_error( $probe_cleanup_recovered ) && true === $probe_cleanup_recovered['recovered'], 'Probe cleanup artifacts could not be reconciled by the retained recovery owner.' );
+	wpnb_issue46_assert( false === get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ), 'Probe cleanup reconciliation left recovery ownership behind.' );
+	wpnb_issue46_assert( 0 === count( glob( $plugin_dir . '/.ht-wpnb-source-cas-*.*' ) ), 'Probe cleanup reconciliation left private artifacts behind.' );
+
+	file_put_contents( $plugin_file, $plugin_original );
+	chmod( $plugin_file, 0666 );
+	$stage_cleanup_candidate = str_replace( "'original'", "'stage-cleanup-candidate'", $plugin_original );
+	$stage_cleanup = new Source_Editing_Abilities(
+		new Permissions( $settings ),
+		new Mutation_Log(),
+		null,
+		static function ( $artifact ) {
+			return '.stage' !== substr( $artifact, -6 );
+		}
+	);
+	$stage_cleanup_preview = $stage_cleanup->preview( array_merge( $target, array( 'candidate' => $stage_cleanup_candidate ) ) );
+	$stage_cleanup_result  = $stage_cleanup->apply(
+		array_merge(
+			$target,
+			array(
+				'candidate'        => $stage_cleanup_candidate,
+				'preimage_sha256'  => $stage_cleanup_preview['preimage_sha256'],
+				'candidate_sha256' => $stage_cleanup_preview['candidate_sha256'],
+				'candidate_id'     => $stage_cleanup_preview['candidate_id'],
+			)
+		)
+	);
+	wpnb_issue46_assert( is_wp_error( $stage_cleanup_result ) && 'source_recovery_artifact_pending' === $stage_cleanup_result->get_error_code(), 'Stage cleanup failure produced terminal success.' );
+	wpnb_issue46_assert( $stage_cleanup_candidate === file_get_contents( $plugin_file ), 'Stage cleanup failure did not preserve the published candidate generation.' );
+	$stage_cleanup_record = get_option( Source_Editing_Abilities::RECOVERY_OPTION, false );
+	wpnb_issue46_assert( is_array( $stage_cleanup_record ), 'Stage cleanup failure discarded recovery ownership.' );
+	$stage_cleanup_recovered = $cleanup_repair->recover( array( 'candidate_sha256' => $stage_cleanup_record['candidate_sha256'] ) );
+	wpnb_issue46_assert( ! is_wp_error( $stage_cleanup_recovered ) && true === $stage_cleanup_recovered['recovered'], 'Stage cleanup failure could not be reconciled through recovery.' );
+	wpnb_issue46_assert( $plugin_original === file_get_contents( $plugin_file ), 'Stage cleanup reconciliation did not restore the exact preimage.' );
+
+	file_put_contents( $plugin_file, $plugin_original );
+	chmod( $plugin_file, 0666 );
+	$hold_cleanup_candidate = str_replace( "'original'", "'hold-cleanup-candidate'", $plugin_original );
+	$hold_cleanup = new Source_Editing_Abilities(
+		new Permissions( $settings ),
+		new Mutation_Log(),
+		null,
+		static function ( $artifact ) {
+			return '.hold' !== substr( $artifact, -5 );
+		}
+	);
+	$hold_cleanup_preview = $hold_cleanup->preview( array_merge( $target, array( 'candidate' => $hold_cleanup_candidate ) ) );
+	$hold_cleanup_result  = $hold_cleanup->apply(
+		array_merge(
+			$target,
+			array(
+				'candidate'        => $hold_cleanup_candidate,
+				'preimage_sha256'  => $hold_cleanup_preview['preimage_sha256'],
+				'candidate_sha256' => $hold_cleanup_preview['candidate_sha256'],
+				'candidate_id'     => $hold_cleanup_preview['candidate_id'],
+			)
+		)
+	);
+	wpnb_issue46_assert( is_wp_error( $hold_cleanup_result ) && 'source_recovery_artifact_pending' === $hold_cleanup_result->get_error_code(), 'Hold cleanup failure produced terminal success.' );
+	wpnb_issue46_assert( $hold_cleanup_candidate === file_get_contents( $plugin_file ), 'Hold cleanup failure changed the published candidate generation.' );
+	$hold_cleanup_record = get_option( Source_Editing_Abilities::RECOVERY_OPTION, false );
+	wpnb_issue46_assert( is_array( $hold_cleanup_record ), 'Hold cleanup failure discarded recovery ownership.' );
+	wpnb_issue46_assert( 1 === count( glob( $plugin_dir . '/.ht-wpnb-source-cas-*.hold' ) ), 'Hold cleanup failure did not preserve the exact private hold.' );
+	$hold_cleanup_recovered = $cleanup_repair->recover( array( 'candidate_sha256' => $hold_cleanup_record['candidate_sha256'] ) );
+	wpnb_issue46_assert( ! is_wp_error( $hold_cleanup_recovered ) && true === $hold_cleanup_recovered['recovered'], 'Hold cleanup failure could not be reconciled through recovery.' );
+	wpnb_issue46_assert( $plugin_original === file_get_contents( $plugin_file ), 'Hold cleanup reconciliation did not restore the exact preimage.' );
+	wpnb_issue46_assert( false === get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ), 'Hold cleanup reconciliation discarded terminal ownership state incorrectly.' );
+	wpnb_issue46_assert( 0 === count( glob( $plugin_dir . '/.ht-wpnb-source-cas-*.*' ) ), 'Hold cleanup reconciliation left private artifacts behind.' );
+
 	// Atomic publication defines a new installed generation. A descriptor opened before replacement
 	// remains attached to the superseded inode and must not be able to mutate the live pathname later.
 	$late_stale_inode = fopen( $plugin_file, 'r+b' );
@@ -466,9 +569,19 @@ try {
 	wpnb_issue46_assert( rename( $registered_theme_style, $registered_paths['hold'] ), 'Could not create registered-theme style quarantine fixture.' );
 	wp_clean_themes_cache( true );
 	$registered_shutdown = new Source_Editing_Abilities( new Permissions( $settings ), new Mutation_Log() );
+	$registered_absent_recovery = $registered_shutdown->recover( array( 'candidate_sha256' => $registered_shutdown_record['candidate_sha256'] ) );
+	wpnb_issue46_assert( is_wp_error( $registered_absent_recovery ) && 'source_recovery_artifact_pending' === $registered_absent_recovery->get_error_code(), 'Registered non-default theme absent-path recovery did not reach fail-closed artifact reconciliation.' );
+	wpnb_issue46_assert( ! file_exists( $registered_theme_style ), 'Registered non-default theme absent-path recovery recreated style.css speculatively.' );
+	wpnb_issue46_assert( $registered_style_candidate === file_get_contents( $registered_paths['hold'] ), 'Registered non-default theme absent-path recovery changed the retained hold.' );
+	wpnb_issue46_assert( is_array( get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ) ), 'Registered non-default theme absent-path recovery discarded ownership.' );
 	$registered_shutdown->shutdown_recover( $registered_shutdown_record['token'] );
-	wpnb_issue46_assert( $registered_theme_style_original === file_get_contents( $registered_theme_style ), 'Registered non-default theme shutdown/artifact recovery did not restore exact style preimage.' );
-	wpnb_issue46_assert( false === get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ), 'Registered non-default theme shutdown/artifact recovery left recovery ownership behind.' );
+	wpnb_issue46_assert( ! file_exists( $registered_theme_style ), 'Registered non-default theme shutdown recovery recreated an ambiguous absent style.css pathname.' );
+	wpnb_issue46_assert( $registered_style_candidate === file_get_contents( $registered_paths['hold'] ), 'Registered non-default theme shutdown recovery changed the retained hold.' );
+	wpnb_issue46_assert( is_array( get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ) ), 'Registered non-default theme shutdown recovery discarded ambiguous ownership.' );
+	wpnb_issue46_assert( link( $registered_paths['hold'], $registered_theme_style ), 'Could not restore registered-theme style fixture after fail-closed reconciliation test.' );
+	@unlink( $registered_paths['hold'] );
+	file_put_contents( $registered_theme_style, $registered_theme_style_original );
+	delete_option( Source_Editing_Abilities::RECOVERY_OPTION );
 	wp_clean_themes_cache( true );
 
 	// An unregistered out-of-default-root theme record must remain fail-closed.
@@ -505,6 +618,88 @@ try {
 		'preimage'         => $plugin_original,
 		'created_gmt'      => gmdate( 'c' ),
 	);
+	// Once publication has happened, later pathname deletion/rename belongs to the current generation.
+	// If Bridge still owns a hold but cannot prove whether absence is pre- or post-publication, recovery
+	// must preserve the ambiguity rather than recreating the pathname from the old preimage.
+	delete_option( Source_Editing_Abilities::RECOVERY_OPTION );
+	file_put_contents( $plugin_file, $plugin_original );
+	@unlink( $post_publish_explicit_removed );
+	$post_publish_candidate = str_replace( "'original'", "'post-publish-explicit-candidate'", $plugin_original );
+	$post_publish_explicit = new Source_Editing_Abilities(
+		new Permissions( $settings ),
+		new Mutation_Log(),
+		null,
+		static function ( $artifact ) use ( $plugin_file, $post_publish_explicit_removed ) {
+			if ( '.stage' === substr( $artifact, -6 ) && file_exists( $plugin_file ) && ! file_exists( $post_publish_explicit_removed ) ) {
+				rename( $plugin_file, $post_publish_explicit_removed );
+			}
+			return true;
+		}
+	);
+	$post_publish_preview = $post_publish_explicit->preview( array_merge( $target, array( 'candidate' => $post_publish_candidate ) ) );
+	$post_publish_result  = $post_publish_explicit->apply(
+		array_merge(
+			$target,
+			array(
+				'candidate'        => $post_publish_candidate,
+				'preimage_sha256'  => $post_publish_preview['preimage_sha256'],
+				'candidate_sha256' => $post_publish_preview['candidate_sha256'],
+				'candidate_id'     => $post_publish_preview['candidate_id'],
+			)
+		)
+	);
+	wpnb_issue46_assert( is_wp_error( $post_publish_result ) && 'source_write_state_uncertain' === $post_publish_result->get_error_code(), 'Post-publication rename did not produce uncertain state.' );
+	$post_publish_record = get_option( Source_Editing_Abilities::RECOVERY_OPTION, false );
+	wpnb_issue46_assert( is_array( $post_publish_record ), 'Post-publication rename discarded recovery ownership.' );
+	wpnb_issue46_assert( ! file_exists( $plugin_file ) && $post_publish_candidate === file_get_contents( $post_publish_explicit_removed ), 'Post-publication rename fixture did not preserve the published candidate under its new pathname.' );
+	$post_publish_holds = glob( $plugin_dir . '/.ht-wpnb-source-cas-*.hold' );
+	wpnb_issue46_assert( is_array( $post_publish_holds ) && 1 === count( $post_publish_holds ), 'Post-publication rename did not retain the preimage hold.' );
+	$post_publish_recover = ( new Source_Editing_Abilities( new Permissions( $settings ), new Mutation_Log() ) )->recover( array( 'candidate_sha256' => $post_publish_record['candidate_sha256'] ) );
+	wpnb_issue46_assert( is_wp_error( $post_publish_recover ) && 'source_recovery_artifact_pending' === $post_publish_recover->get_error_code(), 'Explicit recovery recreated an ambiguously absent post-publication pathname.' );
+	wpnb_issue46_assert( ! file_exists( $plugin_file ) && $post_publish_candidate === file_get_contents( $post_publish_explicit_removed ), 'Explicit recovery changed the concurrent post-publication rename state.' );
+	wpnb_issue46_assert( is_array( get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ) ), 'Explicit recovery discarded ambiguous post-publication ownership.' );
+	rename( $post_publish_explicit_removed, $plugin_file );
+	foreach ( $post_publish_holds as $post_publish_hold ) { @unlink( $post_publish_hold ); }
+	delete_option( Source_Editing_Abilities::RECOVERY_OPTION );
+
+	file_put_contents( $plugin_file, $plugin_original );
+	@unlink( $post_publish_shutdown_removed );
+	$post_shutdown_candidate = str_replace( "'original'", "'post-publish-shutdown-candidate'", $plugin_original );
+	$post_publish_shutdown = new Source_Editing_Abilities(
+		new Permissions( $settings ),
+		new Mutation_Log(),
+		null,
+		static function ( $artifact ) use ( $plugin_file, $post_publish_shutdown_removed ) {
+			if ( '.stage' === substr( $artifact, -6 ) && file_exists( $plugin_file ) && ! file_exists( $post_publish_shutdown_removed ) ) {
+				rename( $plugin_file, $post_publish_shutdown_removed );
+			}
+			return true;
+		}
+	);
+	$post_shutdown_preview = $post_publish_shutdown->preview( array_merge( $target, array( 'candidate' => $post_shutdown_candidate ) ) );
+	$post_shutdown_result  = $post_publish_shutdown->apply(
+		array_merge(
+			$target,
+			array(
+				'candidate'        => $post_shutdown_candidate,
+				'preimage_sha256'  => $post_shutdown_preview['preimage_sha256'],
+				'candidate_sha256' => $post_shutdown_preview['candidate_sha256'],
+				'candidate_id'     => $post_shutdown_preview['candidate_id'],
+			)
+		)
+	);
+	wpnb_issue46_assert( is_wp_error( $post_shutdown_result ) && 'source_write_state_uncertain' === $post_shutdown_result->get_error_code(), 'Post-publication shutdown rename did not produce uncertain state.' );
+	$post_shutdown_record = get_option( Source_Editing_Abilities::RECOVERY_OPTION, false );
+	$post_shutdown_holds  = glob( $plugin_dir . '/.ht-wpnb-source-cas-*.hold' );
+	wpnb_issue46_assert( is_array( $post_shutdown_record ) && is_array( $post_shutdown_holds ) && 1 === count( $post_shutdown_holds ), 'Post-publication shutdown fixture did not retain recoverable ownership.' );
+	$post_publish_shutdown->shutdown_recover( $post_shutdown_record['token'] );
+	wpnb_issue46_assert( ! file_exists( $plugin_file ) && $post_shutdown_candidate === file_get_contents( $post_publish_shutdown_removed ), 'Shutdown recovery recreated or changed an ambiguously absent post-publication pathname.' );
+	wpnb_issue46_assert( is_array( get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ) ), 'Shutdown recovery discarded ambiguous post-publication ownership.' );
+	rename( $post_publish_shutdown_removed, $plugin_file );
+	foreach ( $post_shutdown_holds as $post_shutdown_hold ) { @unlink( $post_shutdown_hold ); }
+	delete_option( Source_Editing_Abilities::RECOVERY_OPTION );
+
+	file_put_contents( $plugin_file, $candidate_b );
 	update_option( Source_Editing_Abilities::RECOVERY_OPTION, $recovery_record, false );
 	$newer = str_replace( "'original'", "'newer-legitimate-edit'", $plugin_original );
 	file_put_contents( $plugin_file, $newer );
@@ -585,6 +780,9 @@ try {
 	@unlink( $outside_plugin_file );
 	@rmdir( $outside_plugin_dir );
 	@unlink( $plugin_helper );
+	@unlink( $post_publish_explicit_removed );
+	@unlink( $post_publish_shutdown_removed );
+	foreach ( (array) glob( $plugin_dir . '/.ht-wpnb-source-cas-*.*' ) as $leftover_artifact ) { @unlink( $leftover_artifact ); }
 	@unlink( $plugin_file );
 	@rmdir( $plugin_dir );
 	@unlink( $outside_file );

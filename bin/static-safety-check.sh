@@ -93,7 +93,7 @@ if [[ "$(grep -cF '@link(' "$source_editor" || true)" != "3" ]]; then
     echo "ERROR: source editing must retain exactly three no-replace hard-link call sites (probe, publish, restore)." >&2
     exit 1
 fi
-if [[ "$(grep -cF '@unlink(' "$source_editor" || true)" != "17" ]]; then
+if [[ "$(grep -cF '@unlink(' "$source_editor" || true)" != "1" ]]; then
     echo "ERROR: source editing guarded-replacement cleanup surface changed unexpectedly." >&2
     exit 1
 fi

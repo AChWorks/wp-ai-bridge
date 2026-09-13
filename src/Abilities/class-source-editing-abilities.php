@@ -34,19 +34,24 @@ final class Source_Editing_Abilities {
 	/** @var callable|null Deterministic replacement-boundary hook used only by direct test instances. */
 	private $replacement_boundary_hook;
 
+	/** @var callable|null Deterministic private-artifact cleanup hook used only by direct test instances. */
+	private $replacement_artifact_cleanup_hook;
+
 	/**
 	 * Creates the provider.
 	 *
 	 * @param Permissions  $permissions Bridge permission service.
 	 * @param Mutation_Log  $log                       Bounded mutation log.
-	 * @param callable|null $replacement_boundary_hook Optional deterministic CAS-boundary test hook.
+	 * @param callable|null $replacement_boundary_hook         Optional deterministic CAS-boundary test hook.
+	 * @param callable|null $replacement_artifact_cleanup_hook Optional deterministic private-artifact cleanup test hook.
 	 */
-	public function __construct( Permissions $permissions, Mutation_Log $log, $replacement_boundary_hook = null ) {
-		$this->permissions               = $permissions;
-		$this->log                       = $log;
-		$this->file_lock                 = null;
-		$this->coordination_lock         = null;
-		$this->replacement_boundary_hook = is_callable( $replacement_boundary_hook ) ? $replacement_boundary_hook : null;
+	public function __construct( Permissions $permissions, Mutation_Log $log, $replacement_boundary_hook = null, $replacement_artifact_cleanup_hook = null ) {
+		$this->permissions                       = $permissions;
+		$this->log                               = $log;
+		$this->file_lock                         = null;
+		$this->coordination_lock                 = null;
+		$this->replacement_boundary_hook         = is_callable( $replacement_boundary_hook ) ? $replacement_boundary_hook : null;
+		$this->replacement_artifact_cleanup_hook = is_callable( $replacement_artifact_cleanup_hook ) ? $replacement_artifact_cleanup_hook : null;
 	}
 
 	/**
@@ -861,20 +866,26 @@ final class Source_Editing_Abilities {
 		// Prove same-directory hard-link/no-replace support before moving the live pathname.
 		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- guarded CAS converts primitive failure to fail-closed state.
 		if ( ! @link( $paths['stage'], $paths['probe'] ) ) {
-			@unlink( $paths['stage'] );
-			return new WP_Error( 'source_atomic_replace_unavailable', __( 'This filesystem cannot provide the no-overwrite replacement primitive required for safe source editing.', 'wp-native-builder-bridge' ) );
+			$cleanup = $this->remove_replacement_artifact( $paths['stage'] );
+			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_atomic_replace_unavailable', __( 'This filesystem cannot provide the no-overwrite replacement primitive required for safe source editing.', 'wp-native-builder-bridge' ) );
 		}
-		@unlink( $paths['probe'] );
+		$probe_cleanup = $this->remove_replacement_artifact( $paths['probe'] );
+		if ( is_wp_error( $probe_cleanup ) ) {
+			return $probe_cleanup;
+		}
 
 		if ( ! @rename( $path, $paths['hold'] ) ) {
-			@unlink( $paths['stage'] );
-			return new WP_Error( 'source_target_changed', __( 'The installed source target changed before the guarded replacement boundary.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
+			$cleanup = $this->remove_replacement_artifact( $paths['stage'] );
+			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_target_changed', __( 'The installed source target changed before the guarded replacement boundary.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
 		}
 
 		$held = $this->read_regular_path( $paths['hold'] );
 		if ( is_wp_error( $held ) ) {
 			$restored = $this->restore_quarantined_path( $paths['hold'], $path );
-			@unlink( $paths['stage'] );
+			$cleanup  = $this->remove_replacement_artifact( $paths['stage'] );
+			if ( is_wp_error( $cleanup ) ) {
+				return $cleanup;
+			}
 			if ( true === $restored ) {
 				return new WP_Error( 'source_recovery_required', __( 'Bridge restored the quarantined source pathname but could not verify its bytes. Recovery ownership was retained.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
@@ -883,7 +894,10 @@ final class Source_Editing_Abilities {
 		$held_hash = hash( 'sha256', $held );
 		if ( ! hash_equals( strtolower( $expected_hash ), $held_hash ) ) {
 			$restored = $this->restore_quarantined_path( $paths['hold'], $path );
-			@unlink( $paths['stage'] );
+			$cleanup  = $this->remove_replacement_artifact( $paths['stage'] );
+			if ( is_wp_error( $cleanup ) ) {
+				return $cleanup;
+			}
 			if ( true === $restored ) {
 				return new WP_Error( 'source_concurrent_write_detected', __( 'The source path changed at the replacement boundary. The newer bytes were preserved and no Bridge replacement was published.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
 			}
@@ -893,7 +907,10 @@ final class Source_Editing_Abilities {
 		$metadata = $this->match_stage_metadata( $paths['stage'], $paths['hold'] );
 		if ( is_wp_error( $metadata ) ) {
 			$restored = $this->restore_quarantined_path( $paths['hold'], $path );
-			@unlink( $paths['stage'] );
+			$cleanup  = $this->remove_replacement_artifact( $paths['stage'] );
+			if ( is_wp_error( $cleanup ) ) {
+				return $cleanup;
+			}
 			if ( true !== $restored ) {
 				return new WP_Error( 'source_recovery_required', __( 'Bridge could not restore the quarantined source after replacement preparation failed. Recovery ownership was retained.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
@@ -907,26 +924,38 @@ final class Source_Editing_Abilities {
 			$competing_path = $this->path_exists( $path );
 			if ( $competing_path ) {
 				$held_after = $this->read_regular_path( $paths['hold'] );
-				@unlink( $paths['stage'] );
+				$cleanup    = $this->remove_replacement_artifact( $paths['stage'] );
+				if ( is_wp_error( $cleanup ) ) {
+					return $cleanup;
+				}
 				if ( is_wp_error( $held_after ) || ! hash_equals( $held_hash, hash( 'sha256', (string) $held_after ) ) ) {
 					return new WP_Error( 'source_recovery_required', __( 'Another writer recreated the source path and also changed the quarantined source inode. Bridge preserved both versions for administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
 				// The competing live pathname already owns the installed generation. The verified hold is the
 				// superseded preimage, not a second live target; descriptors retained from before quarantine
 				// remain attached to that old inode and cannot mutate the winning installed pathname.
-				@unlink( $paths['hold'] );
+				$hold_cleanup = $this->remove_replacement_artifact( $paths['hold'] );
+				if ( is_wp_error( $hold_cleanup ) ) {
+					return $hold_cleanup;
+				}
 				return new WP_Error( 'source_concurrent_write_detected', __( 'Another writer recreated the source path during guarded replacement. Its bytes were preserved and Bridge did not overwrite them.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
 			}
 
 			$restored = $this->restore_quarantined_path( $paths['hold'], $path );
-			@unlink( $paths['stage'] );
+			$cleanup  = $this->remove_replacement_artifact( $paths['stage'] );
+			if ( is_wp_error( $cleanup ) ) {
+				return $cleanup;
+			}
 			if ( true === $restored ) {
 				return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not publish the guarded replacement and restored the exact previous pathname without overwriting another writer.', 'wp-native-builder-bridge' ), array( 'outcome' => 'validation_failed_restored' ) );
 			}
 			return new WP_Error( 'source_recovery_required', __( 'Bridge could not publish or safely restore the guarded replacement pathname. Recovery ownership was retained.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 
-		@unlink( $paths['stage'] );
+		$stage_cleanup = $this->remove_replacement_artifact( $paths['stage'] );
+		if ( is_wp_error( $stage_cleanup ) ) {
+			return $stage_cleanup;
+		}
 		$published = $this->read_regular_path( $path );
 		$wanted    = hash( 'sha256', $bytes );
 		if ( is_wp_error( $published ) || ! hash_equals( $wanted, hash( 'sha256', (string) $published ) ) ) {
@@ -946,7 +975,10 @@ final class Source_Editing_Abilities {
 		// No-replace publication has committed a new installed generation and that live pathname was
 		// verified above. Retire the unchanged preimage generation; a descriptor opened before quarantine
 		// is stale after this boundary and cannot alter the verified installed pathname.
-		@unlink( $paths['hold'] );
+		$hold_cleanup = $this->remove_replacement_artifact( $paths['hold'] );
+		if ( is_wp_error( $hold_cleanup ) ) {
+			return $hold_cleanup;
+		}
 		wp_opcache_invalidate( $path, true );
 		if ( 'theme' === $target['kind'] ) {
 			wp_clean_themes_cache( true );
@@ -969,8 +1001,8 @@ final class Source_Editing_Abilities {
 		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- failure is checked and the private stage is removed.
 		if ( ! @chmod( $path, 0600 ) ) {
 			fclose( $handle );
-			@unlink( $path );
-			return new WP_Error( 'source_stage_failed', __( 'Bridge could not create a private source replacement stage file.', 'wp-native-builder-bridge' ) );
+			$cleanup = $this->remove_replacement_artifact( $path );
+			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_stage_failed', __( 'Bridge could not create a private source replacement stage file.', 'wp-native-builder-bridge' ) );
 		}
 		$length = strlen( $bytes );
 		$offset = 0;
@@ -979,15 +1011,15 @@ final class Source_Editing_Abilities {
 			$written = @fwrite( $handle, substr( $bytes, $offset ) );
 			if ( false === $written || 0 === $written ) {
 				fclose( $handle );
-				@unlink( $path );
-				return new WP_Error( 'source_stage_failed', __( 'Bridge could not write the complete source replacement stage file.', 'wp-native-builder-bridge' ) );
+				$cleanup = $this->remove_replacement_artifact( $path );
+				return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_stage_failed', __( 'Bridge could not write the complete source replacement stage file.', 'wp-native-builder-bridge' ) );
 			}
 			$offset += $written;
 		}
 		if ( ! fflush( $handle ) ) {
 			fclose( $handle );
-			@unlink( $path );
-			return new WP_Error( 'source_stage_failed', __( 'Bridge could not flush the complete source replacement stage file.', 'wp-native-builder-bridge' ) );
+			$cleanup = $this->remove_replacement_artifact( $path );
+			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_stage_failed', __( 'Bridge could not flush the complete source replacement stage file.', 'wp-native-builder-bridge' ) );
 		}
 		if ( function_exists( 'fsync' ) ) {
 			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- guarded CAS converts primitive failure to fail-closed state.
@@ -1043,8 +1075,8 @@ final class Source_Editing_Abilities {
 		if ( ! @link( $hold, $path ) ) {
 			return new WP_Error( 'source_recovery_required' );
 		}
-		@unlink( $hold );
-		return true;
+		$cleanup = $this->remove_replacement_artifact( $hold );
+		return is_wp_error( $cleanup ) ? $cleanup : true;
 	}
 
 	/**
@@ -1069,6 +1101,31 @@ final class Source_Editing_Abilities {
 	/** @param string $path Path. @return bool */
 	private function path_exists( $path ) {
 		return file_exists( $path ) || is_link( $path );
+	}
+
+	/**
+	 * Retires one Bridge-owned private replacement artifact and verifies pathname disappearance.
+	 *
+	 * @param string $path Exact private artifact pathname.
+	 * @return true|WP_Error
+	 */
+	private function remove_replacement_artifact( $path ) {
+		if ( ! $this->path_exists( $path ) ) {
+			return true;
+		}
+		if ( is_callable( $this->replacement_artifact_cleanup_hook )
+			&& false === call_user_func( $this->replacement_artifact_cleanup_hook, $path ) ) {
+			return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+		}
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- removal is verified immediately below and failure keeps recovery ownership.
+		if ( ! @unlink( $path ) ) {
+			return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+		}
+		clearstatcache( true, $path );
+		if ( $this->path_exists( $path ) ) {
+			return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+		}
+		return true;
 	}
 
 	/**
@@ -1269,7 +1326,10 @@ final class Source_Editing_Abilities {
 			}
 			// The live pathname has already been verified at a known terminal generation. This hold is a
 			// known superseded generation, so retiring it cannot overwrite the installed source target.
-			@unlink( $paths['hold'] );
+			$cleanup = $this->remove_replacement_artifact( $paths['hold'] );
+			if ( is_wp_error( $cleanup ) ) {
+				return $cleanup;
+			}
 		}
 		return true;
 	}
@@ -1277,9 +1337,10 @@ final class Source_Editing_Abilities {
 	/**
 	 * Reconciles private same-directory replacement artifacts left by abrupt process termination.
 	 *
-	 * If the live pathname disappeared after quarantine, the exact quarantined inode is linked back only
-	 * while that pathname is still absent. A recreated live pathname always wins. Unknown artifact bytes
-	 * are retained for administrator reconciliation rather than being deleted speculatively.
+	 * Artifact reconciliation never treats pathname absence as proof that Bridge still owns the absence.
+	 * A crash before publication and a legitimate delete/rename after publication are indistinguishable
+	 * without durable phase evidence, so an absent live pathname plus a hold fails closed. Unknown or
+	 * unremovable artifacts are retained for administrator reconciliation rather than changed speculatively.
 	 *
 	 * @param array<string,mixed> $record Recovery record.
 	 * @return true|WP_Error
@@ -1307,12 +1368,9 @@ final class Source_Editing_Abilities {
 					return new WP_Error( 'source_recovery_artifact_pending', __( 'A concurrent writer changed a quarantined source inode. Bridge preserved it for administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
 				if ( ! $this->path_exists( $path ) ) {
-					$restored = $this->restore_quarantined_path( $paths['hold'], $path );
-					if ( true !== $restored ) {
-						return new WP_Error( 'source_recovery_required', __( 'Bridge could not restore the quarantined source pathname without overwriting another writer.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
-					}
-				} elseif ( ! in_array( $held_hash, $known, true ) ) {
-					return new WP_Error( 'source_recovery_artifact_pending', __( 'A concurrent writer changed a quarantined source inode. Bridge preserved it for administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+					// Absence is ambiguous: publication may not have happened, or a later writer may have
+					// legitimately deleted/renamed the published pathname. Never recreate it speculatively.
+					return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
 			}
 
@@ -1325,7 +1383,10 @@ final class Source_Editing_Abilities {
 				if ( is_wp_error( $artifact_bytes ) || ! in_array( hash( 'sha256', (string) $artifact_bytes ), $known, true ) ) {
 					return new WP_Error( 'source_recovery_artifact_pending', __( 'A private source replacement artifact has unexpected bytes and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
-				@unlink( $artifact );
+				$cleanup = $this->remove_replacement_artifact( $artifact );
+				if ( is_wp_error( $cleanup ) ) {
+					return $cleanup;
+				}
 			}
 		}
 		return true;
