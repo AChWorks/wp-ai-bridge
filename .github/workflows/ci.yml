@@ -33,8 +33,8 @@ jobs:
       - name: Upload validated plugin ZIP
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: wp-native-builder-bridge
-          path: build/wp-native-builder-bridge.zip
+          name: wp-ai-bridge
+          path: build/wp-ai-bridge.zip
           if-no-files-found: error
           retention-days: 7
 
