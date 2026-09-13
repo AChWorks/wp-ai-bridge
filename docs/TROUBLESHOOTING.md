@@ -73,6 +73,8 @@ The Bridge does not collect FTP/SSH filesystem credentials. If the exact install
 
 If apply returns a stale/conflict result, read and preview the exact file again before deciding whether to retry. `source_concurrent_write_detected` specifically means another writer won the live pathname at the guarded replacement boundary; its bytes were preserved. If apply returns `recovery_required`, a recovery-artifact error, or an uncertain-partial-state result, do not start another source write: inspect the exact target and use `source-file-recover` only with the pending candidate hash. Recovery and shutdown compensation use the same no-overwrite path boundary and refuse to replace bytes owned by a newer writer.
 
+Source replacement is atomic at the installed pathname. An external editor/process that opened the old inode before replacement must reopen the pathname after Bridge commits the new generation; continuing to write through that stale descriptor cannot change the installed live file and is outside the current-path CAS guarantee. `flock` is only cooperative and is not used to claim otherwise.
+
 A PHP runtime validation failure can restore the previous file bytes, but it cannot undo arbitrary side effects that candidate code may already have performed before failing. Source Editing is administrator-level code trust, not a sandbox.
 
 ## Workspace data is not visible through content tools

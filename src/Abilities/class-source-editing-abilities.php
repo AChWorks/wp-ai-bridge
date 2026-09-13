@@ -911,6 +911,9 @@ final class Source_Editing_Abilities {
 				if ( is_wp_error( $held_after ) || ! hash_equals( $held_hash, hash( 'sha256', (string) $held_after ) ) ) {
 					return new WP_Error( 'source_recovery_required', __( 'Another writer recreated the source path and also changed the quarantined source inode. Bridge preserved both versions for administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
+				// The competing live pathname already owns the installed generation. The verified hold is the
+				// superseded preimage, not a second live target; descriptors retained from before quarantine
+				// remain attached to that old inode and cannot mutate the winning installed pathname.
 				@unlink( $paths['hold'] );
 				return new WP_Error( 'source_concurrent_write_detected', __( 'Another writer recreated the source path during guarded replacement. Its bytes were preserved and Bridge did not overwrite them.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
 			}
@@ -940,6 +943,9 @@ final class Source_Editing_Abilities {
 			return new WP_Error( 'source_recovery_required', __( 'A writer changed the previous source inode during replacement. Bridge preserved that quarantined version and requires administrator reconciliation instead of overwriting it.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 
+		// No-replace publication has committed a new installed generation and that live pathname was
+		// verified above. Retire the unchanged preimage generation; a descriptor opened before quarantine
+		// is stale after this boundary and cannot alter the verified installed pathname.
 		@unlink( $paths['hold'] );
 		wp_opcache_invalidate( $path, true );
 		if ( 'theme' === $target['kind'] ) {
@@ -1261,6 +1267,8 @@ final class Source_Editing_Abilities {
 			if ( is_wp_error( $held ) || ! in_array( hash( 'sha256', (string) $held ), $known, true ) ) {
 				return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
+			// The live pathname has already been verified at a known terminal generation. This hold is a
+			// known superseded generation, so retiring it cannot overwrite the installed source target.
 			@unlink( $paths['hold'] );
 		}
 		return true;
@@ -1330,21 +1338,37 @@ final class Source_Editing_Abilities {
 	 * @return array<string,string>|WP_Error
 	 */
 	private function trusted_record_path( $record ) {
-		if ( ! isset( $record['kind'], $record['file'], $record['canonical_root'], $record['canonical_path'] )
-			|| ! is_string( $record['kind'] ) || ! is_string( $record['file'] ) || ! is_string( $record['canonical_root'] ) || ! is_string( $record['canonical_path'] )
-			|| ! in_array( $record['kind'], array( 'plugin', 'theme' ), true ) || 0 !== validate_file( $record['file'] ) ) {
+		if ( ! isset( $record['kind'], $record['extension'], $record['file'], $record['canonical_root'], $record['canonical_path'] )
+			|| ! is_string( $record['kind'] ) || ! is_string( $record['extension'] ) || ! is_string( $record['file'] ) || ! is_string( $record['canonical_root'] ) || ! is_string( $record['canonical_path'] )
+			|| ! in_array( $record['kind'], array( 'plugin', 'theme' ), true ) || '' === $record['extension'] || 0 !== validate_file( $record['extension'] ) || 0 !== validate_file( $record['file'] ) ) {
 			return new WP_Error( 'source_recovery_record_invalid' );
 		}
 
 		$root      = wp_normalize_path( $record['canonical_root'] );
 		$path      = wp_normalize_path( $record['canonical_path'] );
 		$root_real = realpath( $root );
-		$base_real = 'plugin' === $record['kind'] ? realpath( WP_PLUGIN_DIR ) : realpath( get_theme_root() );
-		if ( false === $root_real || false === $base_real || wp_normalize_path( $root_real ) !== $root ) {
+		if ( false === $root_real || wp_normalize_path( $root_real ) !== $root ) {
 			return new WP_Error( 'source_recovery_target_changed' );
 		}
-		$base = wp_normalize_path( $base_real );
-		if ( ( $root !== $base && ! $this->path_is_within( $root, $base ) ) || ! $this->path_is_within( $path, $root ) ) {
+
+		// Bind the private canonical path back to the exact relative file originally resolved.
+		// This remains checkable while the live pathname is temporarily absent in quarantine.
+		$expected_path = wp_normalize_path( trailingslashit( $root ) . wp_normalize_path( $record['file'] ) );
+		if ( $expected_path !== $path || ! $this->path_is_within( $path, $root ) ) {
+			return new WP_Error( 'source_recovery_target_changed' );
+		}
+
+		if ( 'plugin' === $record['kind'] ) {
+			$base_real = realpath( WP_PLUGIN_DIR );
+			if ( false === $base_real ) {
+				return new WP_Error( 'source_recovery_target_changed' );
+			}
+			$base          = wp_normalize_path( $base_real );
+			$expected_root = realpath( dirname( WP_PLUGIN_DIR . '/' . $record['extension'] ) );
+			if ( false === $expected_root || wp_normalize_path( $expected_root ) !== $root || ( $root !== $base && ! $this->path_is_within( $root, $base ) ) ) {
+				return new WP_Error( 'source_recovery_target_changed' );
+			}
+		} elseif ( ! $this->trusted_registered_theme_root( $record['extension'], $root ) ) {
 			return new WP_Error( 'source_recovery_target_changed' );
 		}
 
@@ -1352,6 +1376,40 @@ final class Source_Editing_Abilities {
 			'canonical_root' => $root,
 			'canonical_path' => $path,
 		);
+	}
+
+	/**
+	 * Confirms an exact recorded theme directory against current WordPress theme-root registration.
+	 *
+	 * The exact theme-aware root is preferred. Registered theme directories are also checked directly so
+	 * crash recovery still works when the edited live file (including style.css) is temporarily quarantined
+	 * and therefore cannot participate in a fresh theme-directory scan.
+	 *
+	 * @param string $stylesheet Exact recorded stylesheet identity.
+	 * @param string $root       Exact canonical recorded theme directory.
+	 * @return bool
+	 */
+	private function trusted_registered_theme_root( $stylesheet, $root ) {
+		$theme_base = realpath( get_theme_root( $stylesheet ) );
+		if ( false !== $theme_base ) {
+			$expected = realpath( trailingslashit( $theme_base ) . $stylesheet );
+			if ( false !== $expected && wp_normalize_path( $expected ) === $root ) {
+				return true;
+			}
+		}
+
+		global $wp_theme_directories;
+		foreach ( (array) $wp_theme_directories as $registered_directory ) {
+			$registered = realpath( $registered_directory );
+			if ( false === $registered ) {
+				continue;
+			}
+			$expected = realpath( trailingslashit( $registered ) . $stylesheet );
+			if ( false !== $expected && wp_normalize_path( $expected ) === $root ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** @param array<string,mixed> $record Recovery record. @return array<string,mixed>|WP_Error */

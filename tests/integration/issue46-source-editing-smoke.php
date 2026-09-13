@@ -27,19 +27,33 @@ $outside_plugin_dir  = WP_CONTENT_DIR . '/wpnb-source-outside-plugin';
 $outside_plugin_file = $outside_plugin_dir . '/wpnb-source-linked.php';
 $linked_plugin_dir   = WP_PLUGIN_DIR . '/wpnb-source-linked';
 $linked_plugin       = 'wpnb-source-linked/wpnb-source-linked.php';
-$theme_slug          = 'wpnb-source-theme';
-$theme_dir           = get_theme_root() . '/' . $theme_slug;
-$theme_style         = $theme_dir . '/style.css';
-$theme_functions     = $theme_dir . '/functions.php';
+$theme_slug                 = 'wpnb-source-theme';
+$theme_dir                  = get_theme_root() . '/' . $theme_slug;
+$theme_style                = $theme_dir . '/style.css';
+$theme_functions            = $theme_dir . '/functions.php';
+$registered_theme_root      = WP_CONTENT_DIR . '/wpnb-registered-theme-root';
+$registered_theme_slug      = 'wpnb-registered-source-theme';
+$registered_theme_dir       = $registered_theme_root . '/' . $registered_theme_slug;
+$registered_theme_style     = $registered_theme_dir . '/style.css';
+$registered_theme_functions = $registered_theme_dir . '/functions.php';
+$unregistered_theme_root    = WP_CONTENT_DIR . '/wpnb-unregistered-theme-root';
+$unregistered_theme_slug    = 'wpnb-unregistered-source-theme';
+$unregistered_theme_dir     = $unregistered_theme_root . '/' . $unregistered_theme_slug;
+$unregistered_theme_style   = $unregistered_theme_dir . '/style.css';
+$unregistered_theme_file    = $unregistered_theme_dir . '/functions.php';
 $plugin_original     = "<?php\n/*\nPlugin Name: WPNB Source Fixture\n*/\nfunction wpnb_source_fixture_value() { return 'original'; }\n";
 $helper_original     = "<?php\nfunction wpnb_source_fixture_helper() { return 'helper'; }\n";
-$theme_original      = "<?php\nfunction wpnb_source_theme_value() { return 'theme-original'; }\n";
-$external_lock       = null;
+$theme_original                = "<?php\nfunction wpnb_source_theme_value() { return 'theme-original'; }\n";
+$registered_theme_style_original = "/*\nTheme Name: WPNB Registered Source Theme\nVersion: 1.0.0\n*/\n";
+$external_lock                 = null;
 $retained_inode      = null;
+$late_stale_inode    = null;
 
 try {
 	wp_mkdir_p( $plugin_dir );
 	wp_mkdir_p( $theme_dir );
+	wp_mkdir_p( $registered_theme_dir );
+	wp_mkdir_p( $unregistered_theme_dir );
 	wp_mkdir_p( $outside_plugin_dir );
 	file_put_contents( $plugin_file, $plugin_original );
 	file_put_contents( $plugin_helper, $helper_original );
@@ -47,6 +61,10 @@ try {
 	file_put_contents( $outside_plugin_file, "<?php\n/* Plugin Name: WPNB Linked Outside Source */\n" );
 	file_put_contents( $theme_style, "/*\nTheme Name: WPNB Source Theme\nVersion: 1.0.0\n*/\n" );
 	file_put_contents( $theme_functions, $theme_original );
+	file_put_contents( $registered_theme_style, $registered_theme_style_original );
+	file_put_contents( $registered_theme_functions, $theme_original );
+	file_put_contents( $unregistered_theme_style, "/*\nTheme Name: WPNB Unregistered Source Theme\nVersion: 1.0.0\n*/\n" );
+	file_put_contents( $unregistered_theme_file, $theme_original );
 	@unlink( $linked_plugin_dir );
 	symlink( $outside_plugin_dir, $linked_plugin_dir );
 	@unlink( $symlink_file );
@@ -56,6 +74,11 @@ try {
 	chmod( $outside_plugin_file, 0666 );
 	chmod( $theme_style, 0666 );
 	chmod( $theme_functions, 0666 );
+	chmod( $registered_theme_style, 0666 );
+	chmod( $registered_theme_functions, 0666 );
+	chmod( $unregistered_theme_style, 0666 );
+	chmod( $unregistered_theme_file, 0666 );
+	wpnb_issue46_assert( register_theme_directory( $registered_theme_root ), 'Could not register non-default theme root fixture.' );
 	wp_clean_plugins_cache( true );
 	wp_clean_themes_cache( true );
 
@@ -266,6 +289,10 @@ try {
 	file_put_contents( $plugin_file, $plugin_original );
 	chmod( $plugin_file, 0666 );
 
+	// Atomic publication defines a new installed generation. A descriptor opened before replacement
+	// remains attached to the superseded inode and must not be able to mutate the live pathname later.
+	$late_stale_inode = fopen( $plugin_file, 'r+b' );
+	wpnb_issue46_assert( is_resource( $late_stale_inode ), 'Could not open late stale-descriptor fixture.' );
 	$candidate_b = str_replace( "'original'", "'candidate-b-private-marker'", $plugin_original );
 	$preview_b   = $preview->execute( array_merge( $target, array( 'candidate' => $candidate_b ) ) );
 	$applied_b   = $apply->execute(
@@ -282,6 +309,16 @@ try {
 	wpnb_issue46_assert( ! is_wp_error( $applied_b ) && 'success' === $applied_b['outcome'], 'Inactive plugin source apply failed.' );
 	wpnb_issue46_assert( hash( 'sha256', $candidate_b ) === hash_file( 'sha256', $plugin_file ), 'Successful source apply did not persist exact candidate bytes.' );
 	wpnb_issue46_assert( 0666 === ( fileperms( $plugin_file ) & 0777 ), 'Successful source apply changed the existing file mode.' );
+	$late_stale_bytes = str_replace( "'original'", "'late-stale-descriptor'", $plugin_original );
+	rewind( $late_stale_inode );
+	ftruncate( $late_stale_inode, 0 );
+	fwrite( $late_stale_inode, $late_stale_bytes );
+	fflush( $late_stale_inode );
+	rewind( $late_stale_inode );
+	wpnb_issue46_assert( $late_stale_bytes === stream_get_contents( $late_stale_inode ), 'Late stale-descriptor fixture did not mutate its superseded inode.' );
+	wpnb_issue46_assert( $candidate_b === file_get_contents( $plugin_file ), 'A late write through a superseded descriptor changed the installed source pathname.' );
+	fclose( $late_stale_inode );
+	$late_stale_inode = null;
 	$log_json = wp_json_encode( get_option( Mutation_Log::OPTION_NAME, array() ) );
 	wpnb_issue46_assert( false === strpos( $log_json, 'candidate-b-private-marker' ) && false === strpos( $log_json, $candidate_b ), 'Mutation log retained source payload or diff material.' );
 
@@ -359,6 +396,101 @@ try {
 	wpnb_issue46_assert( ! is_wp_error( $theme_apply ) && 'success' === $theme_apply['outcome'], 'Inactive theme source apply failed.' );
 	wpnb_issue46_assert( $theme_candidate === file_get_contents( $theme_functions ), 'Theme source apply did not persist exact candidate bytes.' );
 
+	// WordPress supports full-path registered theme roots outside the default wp-content/themes root.
+	$registered_theme = wp_get_theme( $registered_theme_slug );
+	wpnb_issue46_assert( $registered_theme->exists(), 'Registered non-default theme root was not discovered by WordPress.' );
+	wpnb_issue46_assert( wp_normalize_path( realpath( $registered_theme_root ) ) === wp_normalize_path( realpath( get_theme_root( $registered_theme_slug ) ) ), 'WordPress did not resolve the exact registered theme root.' );
+	$registered_target = array(
+		'kind'      => 'theme',
+		'extension' => $registered_theme_slug,
+		'file'      => 'functions.php',
+	);
+	$registered_candidate = str_replace( "'theme-original'", "'registered-theme-edited'", $theme_original );
+	$registered_preview   = $preview->execute( array_merge( $registered_target, array( 'candidate' => $registered_candidate ) ) );
+	wpnb_issue46_assert( ! is_wp_error( $registered_preview ), 'Registered non-default theme preview failed.' );
+	$registered_apply = $apply->execute(
+		array_merge(
+			$registered_target,
+			array(
+				'candidate'        => $registered_candidate,
+				'preimage_sha256'  => $registered_preview['preimage_sha256'],
+				'candidate_sha256' => $registered_preview['candidate_sha256'],
+				'candidate_id'     => $registered_preview['candidate_id'],
+			)
+		)
+	);
+	wpnb_issue46_assert( ! is_wp_error( $registered_apply ) && 'success' === $registered_apply['outcome'], 'Registered non-default theme apply failed.' );
+	wpnb_issue46_assert( $registered_candidate === file_get_contents( $registered_theme_functions ), 'Registered non-default theme apply did not persist exact bytes.' );
+
+	$registered_record = array(
+		'version'          => 1,
+		'token'            => wp_generate_uuid4(),
+		'kind'             => 'theme',
+		'extension'        => $registered_theme_slug,
+		'file'             => 'functions.php',
+		'canonical_root'   => realpath( $registered_theme_dir ),
+		'canonical_path'   => realpath( $registered_theme_functions ),
+		'preimage_sha256'  => hash( 'sha256', $theme_original ),
+		'candidate_sha256' => hash( 'sha256', $registered_candidate ),
+		'preimage'         => $theme_original,
+		'created_gmt'      => gmdate( 'c' ),
+	);
+	update_option( Source_Editing_Abilities::RECOVERY_OPTION, $registered_record, false );
+	$registered_recovered = $recover->execute( array( 'candidate_sha256' => $registered_record['candidate_sha256'] ) );
+	wpnb_issue46_assert( ! is_wp_error( $registered_recovered ) && true === $registered_recovered['recovered'], 'Registered non-default theme explicit recovery failed.' );
+	wpnb_issue46_assert( $theme_original === file_get_contents( $registered_theme_functions ), 'Registered non-default theme recovery did not restore exact preimage.' );
+	wpnb_issue46_assert( false === get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ), 'Registered non-default theme recovery left recovery ownership behind.' );
+
+	// Crash reconciliation must trust the exact registered root even when style.css itself is quarantined.
+	// Cleaning the theme cache after the rename forces recovery to rely on current registered roots rather
+	// than a previously discovered theme object.
+	$registered_style_candidate = $registered_theme_style_original . "/* bridge-crash-candidate */\n";
+	file_put_contents( $registered_theme_style, $registered_style_candidate );
+	$registered_shutdown_record = array(
+		'version'          => 1,
+		'token'            => wp_generate_uuid4(),
+		'kind'             => 'theme',
+		'extension'        => $registered_theme_slug,
+		'file'             => 'style.css',
+		'canonical_root'   => realpath( $registered_theme_dir ),
+		'canonical_path'   => realpath( $registered_theme_style ),
+		'preimage_sha256'  => hash( 'sha256', $registered_theme_style_original ),
+		'candidate_sha256' => hash( 'sha256', $registered_style_candidate ),
+		'preimage'         => $registered_theme_style_original,
+		'created_gmt'      => gmdate( 'c' ),
+	);
+	update_option( Source_Editing_Abilities::RECOVERY_OPTION, $registered_shutdown_record, false );
+	$replacement_paths = new ReflectionMethod( Source_Editing_Abilities::class, 'replacement_paths' );
+	$registered_paths  = $replacement_paths->invoke( new Source_Editing_Abilities( new Permissions( $settings ), new Mutation_Log() ), $registered_shutdown_record['canonical_path'], $registered_shutdown_record['token'], 'apply' );
+	wpnb_issue46_assert( is_array( $registered_paths ), 'Could not derive registered-theme crash reconciliation paths.' );
+	wpnb_issue46_assert( rename( $registered_theme_style, $registered_paths['hold'] ), 'Could not create registered-theme style quarantine fixture.' );
+	wp_clean_themes_cache( true );
+	$registered_shutdown = new Source_Editing_Abilities( new Permissions( $settings ), new Mutation_Log() );
+	$registered_shutdown->shutdown_recover( $registered_shutdown_record['token'] );
+	wpnb_issue46_assert( $registered_theme_style_original === file_get_contents( $registered_theme_style ), 'Registered non-default theme shutdown/artifact recovery did not restore exact style preimage.' );
+	wpnb_issue46_assert( false === get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ), 'Registered non-default theme shutdown/artifact recovery left recovery ownership behind.' );
+	wp_clean_themes_cache( true );
+
+	// An unregistered out-of-default-root theme record must remain fail-closed.
+	$unregistered_record = array(
+		'version'          => 1,
+		'token'            => wp_generate_uuid4(),
+		'kind'             => 'theme',
+		'extension'        => $unregistered_theme_slug,
+		'file'             => 'functions.php',
+		'canonical_root'   => realpath( $unregistered_theme_dir ),
+		'canonical_path'   => realpath( $unregistered_theme_file ),
+		'preimage_sha256'  => hash( 'sha256', $theme_original ),
+		'candidate_sha256' => hash( 'sha256', $theme_original ),
+		'preimage'         => $theme_original,
+		'created_gmt'      => gmdate( 'c' ),
+	);
+	update_option( Source_Editing_Abilities::RECOVERY_OPTION, $unregistered_record, false );
+	$unregistered_recovery = $recover->execute( array( 'candidate_sha256' => $unregistered_record['candidate_sha256'] ) );
+	wpnb_issue46_assert( is_wp_error( $unregistered_recovery ) && 'source_recovery_target_changed' === $unregistered_recovery->get_error_code(), 'Unregistered theme root was trusted during recovery.' );
+	wpnb_issue46_assert( $theme_original === file_get_contents( $unregistered_theme_file ), 'Denied unregistered theme recovery changed source bytes.' );
+	delete_option( Source_Editing_Abilities::RECOVERY_OPTION );
+
 	file_put_contents( $plugin_file, $candidate_b );
 	$recovery_record = array(
 		'version'          => 1,
@@ -434,6 +566,9 @@ try {
 	if ( is_resource( $retained_inode ) ) {
 		fclose( $retained_inode );
 	}
+	if ( is_resource( $late_stale_inode ) ) {
+		fclose( $late_stale_inode );
+	}
 	if ( $external_lock instanceof SplFileObject ) {
 		$external_lock->flock( LOCK_UN );
 	}
@@ -456,6 +591,14 @@ try {
 	@unlink( $theme_functions );
 	@unlink( $theme_style );
 	@rmdir( $theme_dir );
+	@unlink( $registered_theme_functions );
+	@unlink( $registered_theme_style );
+	@rmdir( $registered_theme_dir );
+	@rmdir( $registered_theme_root );
+	@unlink( $unregistered_theme_file );
+	@unlink( $unregistered_theme_style );
+	@rmdir( $unregistered_theme_dir );
+	@rmdir( $unregistered_theme_root );
 	wp_clean_plugins_cache( true );
 	wp_clean_themes_cache( true );
 }
