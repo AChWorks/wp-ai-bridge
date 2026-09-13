@@ -3,6 +3,7 @@
 
 use WP_Native_Builder_Bridge\Abilities\Source_Editing_Abilities;
 use WP_Native_Builder_Bridge\Support\Mutation_Log;
+use WP_Native_Builder_Bridge\Support\Permissions;
 use WP_Native_Builder_Bridge\Support\Settings;
 
 function wpnb_issue46_assert( $condition, $message ) {
@@ -34,6 +35,7 @@ $plugin_original     = "<?php\n/*\nPlugin Name: WPNB Source Fixture\n*/\nfunctio
 $helper_original     = "<?php\nfunction wpnb_source_fixture_helper() { return 'helper'; }\n";
 $theme_original      = "<?php\nfunction wpnb_source_theme_value() { return 'theme-original'; }\n";
 $external_lock       = null;
+$retained_inode      = null;
 
 try {
 	wp_mkdir_p( $plugin_dir );
@@ -186,6 +188,84 @@ try {
 	$external_lock->flock( LOCK_UN );
 	$external_lock = null;
 
+	// A non-cooperating writer that recreates the target after Bridge's final ownership check wins.
+	$apply_race_bytes     = str_replace( "'original'", "'third-party-apply-race'", $plugin_original );
+	$apply_race           = new Source_Editing_Abilities(
+		new Permissions( $settings ),
+		new Mutation_Log(),
+		static function ( $phase ) use ( $plugin_file, $apply_race_bytes ) {
+			if ( 'apply' === $phase ) {
+				file_put_contents( $plugin_file, $apply_race_bytes );
+			}
+		}
+	);
+	$apply_race_candidate = str_replace( "'original'", "'bridge-apply-race'", $plugin_original );
+	$apply_race_preview   = $apply_race->preview( array_merge( $target, array( 'candidate' => $apply_race_candidate ) ) );
+	wpnb_issue46_assert( ! is_wp_error( $apply_race_preview ), 'Adversarial apply preview failed.' );
+	$apply_race_result = $apply_race->apply(
+		array_merge(
+			$target,
+			array(
+				'candidate'        => $apply_race_candidate,
+				'preimage_sha256'  => $apply_race_preview['preimage_sha256'],
+				'candidate_sha256' => $apply_race_preview['candidate_sha256'],
+				'candidate_id'     => $apply_race_preview['candidate_id'],
+			)
+		)
+	);
+	wpnb_issue46_assert( is_wp_error( $apply_race_result ) && 'source_concurrent_write_detected' === $apply_race_result->get_error_code(), 'Non-locking apply race was not rejected at the publish boundary.' );
+	wpnb_issue46_assert( $apply_race_bytes === file_get_contents( $plugin_file ), 'Bridge overwrote the non-locking apply race bytes.' );
+	wpnb_issue46_assert( is_array( get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ) ), 'Apply race did not retain exact recovery ownership.' );
+	delete_option( Source_Editing_Abilities::RECOVERY_OPTION );
+	file_put_contents( $plugin_file, $plugin_original );
+	chmod( $plugin_file, 0666 );
+
+	// A writer retaining the pre-replacement inode may mutate that inode while also recreating the live pathname.
+	$retained_inode_bytes = str_replace( "'original'", "'third-party-retained-inode'", $plugin_original );
+	$retained_path_bytes  = str_replace( "'original'", "'third-party-retained-path'", $plugin_original );
+	$retained_inode       = fopen( $plugin_file, 'r+b' );
+	wpnb_issue46_assert( is_resource( $retained_inode ), 'Could not open retained-inode race fixture.' );
+	$retained_race = new Source_Editing_Abilities(
+		new Permissions( $settings ),
+		new Mutation_Log(),
+		static function ( $phase ) use ( $plugin_file, $retained_inode, $retained_inode_bytes, $retained_path_bytes ) {
+			if ( 'apply' !== $phase ) {
+				return;
+			}
+			rewind( $retained_inode );
+			ftruncate( $retained_inode, 0 );
+			fwrite( $retained_inode, $retained_inode_bytes );
+			fflush( $retained_inode );
+			file_put_contents( $plugin_file, $retained_path_bytes );
+		}
+	);
+	$retained_candidate = str_replace( "'original'", "'bridge-retained-race'", $plugin_original );
+	$retained_preview   = $retained_race->preview( array_merge( $target, array( 'candidate' => $retained_candidate ) ) );
+	wpnb_issue46_assert( ! is_wp_error( $retained_preview ), 'Retained-inode adversarial preview failed.' );
+	$retained_result = $retained_race->apply(
+		array_merge(
+			$target,
+			array(
+				'candidate'        => $retained_candidate,
+				'preimage_sha256'  => $retained_preview['preimage_sha256'],
+				'candidate_sha256' => $retained_preview['candidate_sha256'],
+				'candidate_id'     => $retained_preview['candidate_id'],
+			)
+		)
+	);
+	wpnb_issue46_assert( is_wp_error( $retained_result ) && 'source_recovery_required' === $retained_result->get_error_code(), 'Retained-inode race did not fail closed for reconciliation.' );
+	wpnb_issue46_assert( $retained_path_bytes === file_get_contents( $plugin_file ), 'Bridge overwrote the recreated live pathname in the retained-inode race.' );
+	$retained_holds = glob( $plugin_dir . '/.ht-wpnb-source-cas-*.hold' );
+	wpnb_issue46_assert( is_array( $retained_holds ) && 1 === count( $retained_holds ), 'Retained-inode race did not preserve exactly one quarantined version.' );
+	wpnb_issue46_assert( $retained_inode_bytes === file_get_contents( $retained_holds[0] ), 'Bridge discarded or altered newer bytes written through the retained inode.' );
+	wpnb_issue46_assert( is_array( get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ) ), 'Retained-inode race discarded pending recovery ownership.' );
+	fclose( $retained_inode );
+	$retained_inode = null;
+	@unlink( $retained_holds[0] );
+	delete_option( Source_Editing_Abilities::RECOVERY_OPTION );
+	file_put_contents( $plugin_file, $plugin_original );
+	chmod( $plugin_file, 0666 );
+
 	$candidate_b = str_replace( "'original'", "'candidate-b-private-marker'", $plugin_original );
 	$preview_b   = $preview->execute( array_merge( $target, array( 'candidate' => $candidate_b ) ) );
 	$applied_b   = $apply->execute(
@@ -230,6 +310,12 @@ try {
 	$fatal_candidate = "<?php\n/* Plugin Name: WPNB Source Fixture */\nthrow new RuntimeException('wpnb issue46 runtime fatal');\n";
 	$fatal_preview   = $preview->execute( array_merge( $target, array( 'candidate' => $fatal_candidate ) ) );
 	wpnb_issue46_assert( ! is_wp_error( $fatal_preview ), 'Parse-valid runtime-fatal candidate failed preview unexpectedly.' );
+	// Integration mutates through the separate WP-CLI container while runtime validation boots through Apache.
+	// Wait past the image's OPcache revalidation interval so Apache cannot reuse the immediately prior valid fixture.
+	$opcache_revalidate_freq = max( 0, (int) ini_get( 'opcache.revalidate_freq' ) );
+	if ( $opcache_revalidate_freq > 0 ) {
+		sleep( $opcache_revalidate_freq + 1 );
+	}
 	$before_fatal = file_get_contents( $plugin_file );
 	$fatal_apply  = $apply->execute(
 		array_merge(
@@ -251,7 +337,7 @@ try {
 	update_option( 'siteurl', $original_siteurl, false );
 	update_option( 'home', $original_home, false );
 
-	$theme_target = array(
+	$theme_target    = array(
 		'kind'      => 'theme',
 		'extension' => $theme_slug,
 		'file'      => 'functions.php',
@@ -280,6 +366,8 @@ try {
 		'kind'             => 'plugin',
 		'extension'        => $plugin,
 		'file'             => 'wpnb-source-fixture.php',
+		'canonical_root'   => realpath( $plugin_dir ),
+		'canonical_path'   => realpath( $plugin_file ),
 		'preimage_sha256'  => hash( 'sha256', $plugin_original ),
 		'candidate_sha256' => hash( 'sha256', $candidate_b ),
 		'preimage'         => $plugin_original,
@@ -293,6 +381,47 @@ try {
 	wpnb_issue46_assert( $newer === file_get_contents( $plugin_file ), 'Recovery conflict changed newer legitimate bytes.' );
 	delete_option( Source_Editing_Abilities::RECOVERY_OPTION );
 
+	// Explicit recovery must also lose to a non-cooperating writer at the exact publish boundary.
+	file_put_contents( $plugin_file, $candidate_b );
+	$recovery_race_record          = $recovery_record;
+	$recovery_race_record['token'] = wp_generate_uuid4();
+	update_option( Source_Editing_Abilities::RECOVERY_OPTION, $recovery_race_record, false );
+	$recovery_race_bytes  = str_replace( "'original'", "'third-party-recovery-race'", $plugin_original );
+	$recovery_race        = new Source_Editing_Abilities(
+		new Permissions( $settings ),
+		new Mutation_Log(),
+		static function ( $phase ) use ( $plugin_file, $recovery_race_bytes ) {
+			if ( 'recovery' === $phase ) {
+				file_put_contents( $plugin_file, $recovery_race_bytes );
+			}
+		}
+	);
+	$recovery_race_result = $recovery_race->recover( array( 'candidate_sha256' => $recovery_race_record['candidate_sha256'] ) );
+	wpnb_issue46_assert( is_wp_error( $recovery_race_result ) && 'source_concurrent_write_detected' === $recovery_race_result->get_error_code(), 'Non-locking explicit-recovery race was not rejected.' );
+	wpnb_issue46_assert( $recovery_race_bytes === file_get_contents( $plugin_file ), 'Explicit recovery overwrote newer non-locking bytes.' );
+	wpnb_issue46_assert( is_array( get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ) ), 'Explicit recovery race discarded pending recovery ownership.' );
+	delete_option( Source_Editing_Abilities::RECOVERY_OPTION );
+
+	// Shutdown recovery is routed through the same guarded primitive and must preserve a racing writer.
+	file_put_contents( $plugin_file, $candidate_b );
+	$shutdown_race_record          = $recovery_record;
+	$shutdown_race_record['token'] = wp_generate_uuid4();
+	update_option( Source_Editing_Abilities::RECOVERY_OPTION, $shutdown_race_record, false );
+	$shutdown_race_bytes = str_replace( "'original'", "'third-party-shutdown-race'", $plugin_original );
+	$shutdown_race       = new Source_Editing_Abilities(
+		new Permissions( $settings ),
+		new Mutation_Log(),
+		static function ( $phase ) use ( $plugin_file, $shutdown_race_bytes ) {
+			if ( 'recovery' === $phase ) {
+				file_put_contents( $plugin_file, $shutdown_race_bytes );
+			}
+		}
+	);
+	$shutdown_race->shutdown_recover( $shutdown_race_record['token'] );
+	wpnb_issue46_assert( $shutdown_race_bytes === file_get_contents( $plugin_file ), 'Shutdown recovery overwrote newer non-locking bytes.' );
+	wpnb_issue46_assert( is_array( get_option( Source_Editing_Abilities::RECOVERY_OPTION, false ) ), 'Shutdown recovery race discarded pending recovery ownership.' );
+	delete_option( Source_Editing_Abilities::RECOVERY_OPTION );
+
 	file_put_contents( $plugin_file, $candidate_b );
 	update_option( Source_Editing_Abilities::RECOVERY_OPTION, $recovery_record, false );
 	$recovered = $recover->execute( array( 'candidate_sha256' => $recovery_record['candidate_sha256'] ) );
@@ -302,6 +431,9 @@ try {
 
 	echo "PASS: Issue #46 source editing gates, confinement, concurrency, locking, persistence, runtime validation, recovery, MCP exposure, theme handling, and log privacy.\n";
 } finally {
+	if ( is_resource( $retained_inode ) ) {
+		fclose( $retained_inode );
+	}
 	if ( $external_lock instanceof SplFileObject ) {
 		$external_lock->flock( LOCK_UN );
 	}

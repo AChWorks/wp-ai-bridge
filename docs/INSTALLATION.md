@@ -58,7 +58,7 @@ A conservative starting point is:
 - Live Content: leave disabled until publishing is intentionally required.
 - Site Configuration: enable only for site/theme configuration work.
 - Code & Extensions: enable only for managed snippets or extension lifecycle work.
-- Source Editing: leave disabled unless installed plugin/theme source must be read or changed. It is separate from Code & Extensions and grants administrator-level code trust, not sandboxed execution.
+- Source Editing: leave disabled unless installed plugin/theme source must be read or changed. It is separate from Code & Extensions and grants administrator-level code trust, not sandboxed execution. Source apply/recovery additionally require guarded same-filesystem no-overwrite replacement with hard-link support; unsupported filesystems fail closed rather than falling back to an in-place write.
 - Users & Destructive: leave disabled unless the requested operation genuinely requires it.
 
 ## Update
