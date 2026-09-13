@@ -1,7 +1,7 @@
 <?php
 /**
- * Plugin Name: WP Native Builder Bridge
- * Plugin URI: https://github.com/ach1992/wp-native-builder-bridge
+ * Plugin Name: WP AI Bridge
+ * Plugin URI: https://github.com/ach1992/wp-ai-bridge
  * Description: Connects ChatGPT to WordPress through OAuth, MCP, and permission-checked WordPress Abilities.
  * Version: 0.2.0
  * Requires at least: 6.9
@@ -33,7 +33,7 @@ spl_autoload_register(
 
 		$relative   = substr( $class_name, strlen( $prefix ) );
 		$parts      = explode( '\\', $relative );
-		$class_file = 'class-' . strtolower( str_replace( '_', '-', array_pop( $parts ) ) ) . '.php';
+		$class_file = 'class-' . strtolower( str_replace( '_', '-', array_pop( $parts ) ) . '.php';
 		$directory  = $parts ? implode( '/', $parts ) . '/' : '';
 		$path       = WP_NATIVE_BUILDER_BRIDGE_DIR . '/src/' . $directory . $class_file;
 
