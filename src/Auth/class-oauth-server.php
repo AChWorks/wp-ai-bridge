@@ -11,13 +11,18 @@ namespace WP_Native_Builder_Bridge\Auth;
  * Provides a WordPress-native OAuth 2.1 compatibility layer for direct ChatGPT MCP Apps.
  */
 final class OAuth_Server {
-	const MCP_SERVER_ID         = 'wp-native-builder-direct';
-	const MCP_ROUTE_NAMESPACE   = 'wp-native-builder/v1';
-	const MCP_ROUTE             = 'mcp';
-	const MCP_REQUEST_ROUTE     = '/wp-native-builder/v1/mcp';
-	const AUTHORIZATION_PATH    = '/wp-native-builder/oauth/authorize';
-	const PROTECTED_META_PATH   = '/.well-known/oauth-protected-resource';
-	const AUTH_SERVER_META_PATH = '/.well-known/oauth-authorization-server';
+	const MCP_SERVER_ID              = 'wp-ai-bridge-direct';
+	const LEGACY_MCP_SERVER_ID       = 'wp-native-builder-direct';
+	const MCP_ROUTE_NAMESPACE        = 'wp-ai-bridge/v1';
+	const LEGACY_MCP_ROUTE_NAMESPACE = 'wp-native-builder/v1';
+	const MCP_ROUTE                  = 'mcp';
+	const MCP_REQUEST_ROUTE          = '/wp-ai-bridge/v1/mcp';
+	const LEGACY_MCP_REQUEST_ROUTE   = '/wp-native-builder/v1/mcp';
+	const AUTHORIZATION_PATH         = '/wp-ai-bridge/oauth/authorize';
+	const LEGACY_AUTHORIZATION_PATH  = '/wp-native-builder/oauth/authorize';
+	const PROTECTED_META_PATH        = '/.well-known/oauth-protected-resource';
+	const LEGACY_PROTECTED_META_PATH = '/.well-known/oauth-protected-resource/wp-native-builder/v1/mcp';
+	const AUTH_SERVER_META_PATH      = '/.well-known/oauth-authorization-server';
 
 	const CHATGPT_CLIENT_ID    = 'https://chatgpt.com/oauth/client.json';
 	const CHATGPT_REDIRECT_URI = 'https://chatgpt.com/connector_platform_oauth_redirect';
@@ -77,7 +82,7 @@ final class OAuth_Server {
 	}
 
 	/**
-	 * Registers a Bridge-owned direct HTTP server through the official MCP Adapter.
+	 * Registers canonical and migration-compatibility HTTP servers through MCP Adapter.
 	 *
 	 * @param object $adapter MCP Adapter instance.
 	 * @return void
@@ -93,52 +98,61 @@ final class OAuth_Server {
 			return;
 		}
 
-		$adapter->create_server(
-			self::MCP_SERVER_ID,
-			self::MCP_ROUTE_NAMESPACE,
-			self::MCP_ROUTE,
-			'WP Native Builder Bridge',
-			'Direct ChatGPT MCP endpoint for WordPress-native site building.',
-			WP_NATIVE_BUILDER_BRIDGE_VERSION,
-			array( '\\WP\\MCP\\Transport\\HttpTransport' ),
-			'\\WP\\MCP\\Infrastructure\\ErrorHandling\\NullMcpErrorHandler',
-			'\\WP\\MCP\\Infrastructure\\Observability\\NullMcpObservabilityHandler',
-			array(
-				'mcp-adapter/discover-abilities',
-				'mcp-adapter/get-ability-info',
-				'mcp-adapter/execute-ability',
-			),
-			array(),
-			array(),
-			array( $this, 'authenticate_mcp_request' )
+		$servers = array(
+			array( self::MCP_SERVER_ID, self::MCP_ROUTE_NAMESPACE, 'WP AI Bridge' ),
+			array( self::LEGACY_MCP_SERVER_ID, self::LEGACY_MCP_ROUTE_NAMESPACE, 'WP AI Bridge (legacy endpoint)' ),
 		);
+
+		foreach ( $servers as $server ) {
+			$adapter->create_server(
+				$server[0],
+				$server[1],
+				self::MCP_ROUTE,
+				$server[2],
+				'Direct ChatGPT MCP endpoint for WordPress-native administration.',
+				WP_NATIVE_BUILDER_BRIDGE_VERSION,
+				array( '\\WP\\MCP\\Transport\\HttpTransport' ),
+				'\\WP\\MCP\\Infrastructure\\ErrorHandling\\NullMcpErrorHandler',
+				'\\WP\\MCP\\Infrastructure\\Observability\\NullMcpObservabilityHandler',
+				array(
+					'mcp-adapter/discover-abilities',
+					'mcp-adapter/get-ability-info',
+					'mcp-adapter/execute-ability',
+				),
+				array(),
+				array(),
+				array( $this, 'authenticate_mcp_request' )
+			);
+		}
 	}
 
 	/**
-	 * Registers OAuth token and revocation endpoints.
+	 * Registers OAuth token and revocation endpoints under canonical and legacy namespaces.
 	 *
 	 * @return void
 	 */
 	public function register_oauth_routes() {
-		register_rest_route(
-			self::MCP_ROUTE_NAMESPACE,
-			'/oauth/token',
-			array(
-				'methods'             => 'POST',
-				'callback'            => array( $this, 'handle_token_request' ),
-				'permission_callback' => '__return_true',
-			)
-		);
+		foreach ( array( self::MCP_ROUTE_NAMESPACE, self::LEGACY_MCP_ROUTE_NAMESPACE ) as $namespace ) {
+			register_rest_route(
+				$namespace,
+				'/oauth/token',
+				array(
+					'methods'             => 'POST',
+					'callback'            => array( $this, 'handle_token_request' ),
+					'permission_callback' => '__return_true',
+				)
+			);
 
-		register_rest_route(
-			self::MCP_ROUTE_NAMESPACE,
-			'/oauth/revoke',
-			array(
-				'methods'             => 'POST',
-				'callback'            => array( $this, 'handle_revoke_request' ),
-				'permission_callback' => '__return_true',
-			)
-		);
+			register_rest_route(
+				$namespace,
+				'/oauth/revoke',
+				array(
+					'methods'             => 'POST',
+					'callback'            => array( $this, 'handle_revoke_request' ),
+					'permission_callback' => '__return_true',
+				)
+			);
+		}
 	}
 
 	/**
@@ -151,6 +165,15 @@ final class OAuth_Server {
 	}
 
 	/**
+	 * Returns the legacy MCP resource URL retained for existing connections.
+	 *
+	 * @return string Legacy MCP endpoint URL.
+	 */
+	public function legacy_mcp_endpoint_url() {
+		return rest_url( self::LEGACY_MCP_ROUTE_NAMESPACE . '/' . self::MCP_ROUTE );
+	}
+
+	/**
 	 * Returns the authorization server issuer identifier.
 	 *
 	 * @return string Issuer URL.
@@ -160,12 +183,21 @@ final class OAuth_Server {
 	}
 
 	/**
-	 * Returns the protected-resource metadata URL.
+	 * Returns the canonical protected-resource metadata URL.
 	 *
 	 * @return string Metadata URL.
 	 */
 	public function protected_resource_metadata_url() {
 		return home_url( self::PROTECTED_META_PATH );
+	}
+
+	/**
+	 * Returns the protected-resource metadata URL for the retained legacy resource.
+	 *
+	 * @return string Legacy metadata URL.
+	 */
+	public function legacy_protected_resource_metadata_url() {
+		return home_url( self::LEGACY_PROTECTED_META_PATH );
 	}
 
 	/**
@@ -187,12 +219,30 @@ final class OAuth_Server {
 	}
 
 	/**
+	 * Returns the legacy browser authorization endpoint retained as an alias.
+	 *
+	 * @return string Legacy authorization URL.
+	 */
+	public function legacy_authorization_endpoint_url() {
+		return home_url( self::LEGACY_AUTHORIZATION_PATH );
+	}
+
+	/**
 	 * Returns the token endpoint URL.
 	 *
 	 * @return string Token URL.
 	 */
 	public function token_endpoint_url() {
 		return rest_url( self::MCP_ROUTE_NAMESPACE . '/oauth/token' );
+	}
+
+	/**
+	 * Returns the legacy OAuth token endpoint retained for existing clients.
+	 *
+	 * @return string Legacy token URL.
+	 */
+	public function legacy_token_endpoint_url() {
+		return rest_url( self::LEGACY_MCP_ROUTE_NAMESPACE . '/oauth/token' );
 	}
 
 	/**
@@ -205,6 +255,15 @@ final class OAuth_Server {
 	}
 
 	/**
+	 * Returns the legacy revocation endpoint retained for existing clients.
+	 *
+	 * @return string Legacy revocation URL.
+	 */
+	public function legacy_revocation_endpoint_url() {
+		return rest_url( self::LEGACY_MCP_ROUTE_NAMESPACE . '/oauth/revoke' );
+	}
+
+	/**
 	 * Returns whether the canonical MCP endpoint is HTTPS.
 	 *
 	 * @return bool True for HTTPS deployment.
@@ -214,18 +273,21 @@ final class OAuth_Server {
 	}
 
 	/**
-	 * Returns OAuth Protected Resource Metadata (RFC 9728).
+	 * Returns OAuth Protected Resource Metadata (RFC 9728) for the canonical resource.
 	 *
 	 * @return array<string,mixed> Metadata document.
 	 */
 	public function protected_resource_metadata() {
-		return array(
-			'resource'                 => $this->mcp_endpoint_url(),
-			'authorization_servers'    => array( $this->issuer_url() ),
-			'scopes_supported'         => $this->supported_scopes(),
-			'bearer_methods_supported' => array( 'header' ),
-			'resource_name'            => 'WP Native Builder Bridge',
-		);
+		return $this->protected_resource_metadata_for( $this->mcp_endpoint_url(), 'WP AI Bridge' );
+	}
+
+	/**
+	 * Returns OAuth Protected Resource Metadata for the retained legacy resource.
+	 *
+	 * @return array<string,mixed> Metadata document.
+	 */
+	public function legacy_protected_resource_metadata() {
+		return $this->protected_resource_metadata_for( $this->legacy_mcp_endpoint_url(), 'WP AI Bridge (legacy endpoint)' );
 	}
 
 	/**
@@ -253,7 +315,7 @@ final class OAuth_Server {
 	}
 
 	/**
-	 * Serves the two well-known documents and browser authorization endpoint.
+	 * Serves canonical/legacy protected-resource metadata, authorization metadata, and authorization aliases.
 	 *
 	 * @return void
 	 */
@@ -267,19 +329,25 @@ final class OAuth_Server {
 			return;
 		}
 
-		$protected_path = wp_parse_url( $this->protected_resource_metadata_url(), PHP_URL_PATH );
-		$server_path    = wp_parse_url( $this->authorization_server_metadata_url(), PHP_URL_PATH );
-		$authorize_path = wp_parse_url( $this->authorization_endpoint_url(), PHP_URL_PATH );
+		$protected_path        = wp_parse_url( $this->protected_resource_metadata_url(), PHP_URL_PATH );
+		$legacy_protected_path = wp_parse_url( $this->legacy_protected_resource_metadata_url(), PHP_URL_PATH );
+		$server_path           = wp_parse_url( $this->authorization_server_metadata_url(), PHP_URL_PATH );
+		$authorize_path        = wp_parse_url( $this->authorization_endpoint_url(), PHP_URL_PATH );
+		$legacy_authorize_path = wp_parse_url( $this->legacy_authorization_endpoint_url(), PHP_URL_PATH );
 
 		if ( $request_path === $protected_path ) {
 			$this->serve_metadata_document( $this->protected_resource_metadata() );
+		}
+
+		if ( $request_path === $legacy_protected_path ) {
+			$this->serve_metadata_document( $this->legacy_protected_resource_metadata() );
 		}
 
 		if ( $request_path === $server_path ) {
 			$this->serve_metadata_document( $this->authorization_server_metadata() );
 		}
 
-		if ( $request_path === $authorize_path ) {
+		if ( $request_path === $authorize_path || $request_path === $legacy_authorize_path ) {
 			$this->handle_authorization_endpoint();
 		}
 	}
@@ -318,11 +386,13 @@ final class OAuth_Server {
 			return false;
 		}
 
+		$expected_resource = $this->request_resource_url( $request );
 		if (
+			'' === $expected_resource ||
 			empty( $claims['client_id'] ) ||
 			! hash_equals( self::CHATGPT_CLIENT_ID, (string) $claims['client_id'] ) ||
 			empty( $claims['resource'] ) ||
-			! hash_equals( $this->mcp_endpoint_url(), (string) $claims['resource'] ) ||
+			! hash_equals( $expected_resource, (string) $claims['resource'] ) ||
 			empty( $claims['scope'] ) ||
 			! in_array( self::SCOPE_MCP, $this->parse_scope( (string) $claims['scope'] ), true ) ||
 			empty( $claims['user_id'] )
@@ -356,7 +426,7 @@ final class OAuth_Server {
 	 * @return mixed REST response.
 	 */
 	public function add_mcp_authentication_challenge( $response, $server, $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- WordPress filter signature.
-		if ( ! $request instanceof \WP_REST_Request || self::MCP_REQUEST_ROUTE !== $request->get_route() ) {
+		if ( ! $request instanceof \WP_REST_Request || ! in_array( $request->get_route(), array( self::MCP_REQUEST_ROUTE, self::LEGACY_MCP_REQUEST_ROUTE ), true ) ) {
 			return $response;
 		}
 
@@ -366,7 +436,7 @@ final class OAuth_Server {
 
 		$response = rest_ensure_response( $response );
 		$response->set_status( 401 );
-		$response->header( 'WWW-Authenticate', $this->www_authenticate_header() );
+		$response->header( 'WWW-Authenticate', $this->www_authenticate_header( $request ) );
 		$response->header( 'Cache-Control', 'no-store' );
 
 		return $response;
@@ -386,7 +456,7 @@ final class OAuth_Server {
 		$client_auth = $this->client_assertions->validate(
 			$request,
 			self::CHATGPT_CLIENT_ID,
-			array( $this->token_endpoint_url(), $this->issuer_url() )
+			array( $this->token_endpoint_url(), $this->legacy_token_endpoint_url(), $this->issuer_url() )
 		);
 		if ( is_wp_error( $client_auth ) ) {
 			return $this->oauth_error( $client_auth->get_error_code(), $client_auth->get_error_message() );
@@ -418,7 +488,13 @@ final class OAuth_Server {
 		$client_auth = $this->client_assertions->validate(
 			$request,
 			self::CHATGPT_CLIENT_ID,
-			array( $this->revocation_endpoint_url(), $this->token_endpoint_url(), $this->issuer_url() )
+			array(
+				$this->revocation_endpoint_url(),
+				$this->legacy_revocation_endpoint_url(),
+				$this->token_endpoint_url(),
+				$this->legacy_token_endpoint_url(),
+				$this->issuer_url(),
+			)
 		);
 		if ( is_wp_error( $client_auth ) ) {
 			return $this->oauth_error( $client_auth->get_error_code(), $client_auth->get_error_message() );
@@ -512,8 +588,8 @@ final class OAuth_Server {
 			return new \WP_Error( 'invalid_request', 'PKCE with an S256 code challenge is required.' );
 		}
 
-		if ( ! hash_equals( $this->mcp_endpoint_url(), $resource ) ) {
-			return new \WP_Error( 'invalid_target', 'The OAuth resource does not match this MCP endpoint.' );
+		if ( ! $this->is_supported_resource_url( $resource ) ) {
+			return new \WP_Error( 'invalid_target', 'The OAuth resource does not match a supported WP AI Bridge MCP endpoint.' );
 		}
 
 		$normalized_scope = $this->normalize_scope( $scope );
@@ -682,7 +758,7 @@ final class OAuth_Server {
 			return $this->oauth_error( 'invalid_client', 'The OAuth client is invalid.' );
 		}
 
-		if ( ! hash_equals( $this->mcp_endpoint_url(), $resource ) ) {
+		if ( ! $this->is_supported_resource_url( $resource ) ) {
 			return $this->oauth_error( 'invalid_target', 'The OAuth resource is invalid.' );
 		}
 
@@ -723,7 +799,7 @@ final class OAuth_Server {
 			return $this->oauth_error( 'invalid_client', 'The OAuth client is invalid.' );
 		}
 
-		if ( ! hash_equals( $this->mcp_endpoint_url(), $resource ) ) {
+		if ( ! $this->is_supported_resource_url( $resource ) ) {
 			return $this->oauth_error( 'invalid_target', 'The OAuth resource is invalid.' );
 		}
 
@@ -757,7 +833,12 @@ final class OAuth_Server {
 		$scope     = isset( $claims['scope'] ) ? (string) $claims['scope'] : '';
 		$user      = $user_id ? get_user_by( 'id', $user_id ) : false;
 
-		if ( ! $user || ! user_can( $user, 'read' ) || self::CHATGPT_CLIENT_ID !== $client_id || ! hash_equals( $this->mcp_endpoint_url(), $resource ) ) {
+		if (
+			! $user ||
+			! user_can( $user, 'read' ) ||
+			self::CHATGPT_CLIENT_ID !== $client_id ||
+			! $this->is_supported_resource_url( $resource )
+		) {
 			return $this->oauth_error( 'invalid_grant', 'The WordPress authorization is no longer valid.' );
 		}
 
@@ -820,6 +901,62 @@ final class OAuth_Server {
 	}
 
 	/**
+	 * Returns whether an OAuth resource is one of the two exact migration endpoints.
+	 *
+	 * @param string $resource_url Candidate resource URL.
+	 * @return bool Whether the resource is canonical or the retained legacy alias.
+	 */
+	private function is_supported_resource_url( $resource_url ) {
+		$resource_url = (string) $resource_url;
+		foreach ( array( $this->mcp_endpoint_url(), $this->legacy_mcp_endpoint_url() ) as $supported ) {
+			if ( hash_equals( $supported, $resource_url ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Maps one exact MCP REST route to its own audience URL.
+	 *
+	 * @param \WP_REST_Request $request MCP request.
+	 * @return string Exact audience URL, or an empty string for another route.
+	 */
+	private function request_resource_url( $request ) {
+		if ( ! $request instanceof \WP_REST_Request ) {
+			return '';
+		}
+
+		$route = $request->get_route();
+		if ( self::MCP_REQUEST_ROUTE === $route ) {
+			return $this->mcp_endpoint_url();
+		}
+		if ( self::LEGACY_MCP_REQUEST_ROUTE === $route ) {
+			return $this->legacy_mcp_endpoint_url();
+		}
+
+		return '';
+	}
+
+	/**
+	 * Builds a protected-resource metadata document for one exact resource.
+	 *
+	 * @param string $resource_url  Exact resource URL.
+	 * @param string $resource_name Public resource label.
+	 * @return array<string,mixed> Metadata document.
+	 */
+	private function protected_resource_metadata_for( $resource_url, $resource_name ) {
+		return array(
+			'resource'                 => (string) $resource_url,
+			'authorization_servers'    => array( $this->issuer_url() ),
+			'scopes_supported'         => $this->supported_scopes(),
+			'bearer_methods_supported' => array( 'header' ),
+			'resource_name'            => (string) $resource_name,
+		);
+	}
+
+	/**
 	 * Returns supported OAuth scopes in stable order.
 	 *
 	 * @return array<int,string> Scope list.
@@ -856,14 +993,20 @@ final class OAuth_Server {
 	}
 
 	/**
-	 * Returns the OAuth Bearer challenge for the Bridge MCP resource.
+	 * Returns the OAuth Bearer challenge for the exact MCP resource route.
 	 *
+	 * @param \WP_REST_Request|null $request Optional MCP request.
 	 * @return string WWW-Authenticate value.
 	 */
-	private function www_authenticate_header() {
+	private function www_authenticate_header( $request = null ) {
+		$metadata_url = $this->protected_resource_metadata_url();
+		if ( $request instanceof \WP_REST_Request && self::LEGACY_MCP_REQUEST_ROUTE === $request->get_route() ) {
+			$metadata_url = $this->legacy_protected_resource_metadata_url();
+		}
+
 		return sprintf(
 			'Bearer resource_metadata="%s", scope="%s"',
-			$this->protected_resource_metadata_url(),
+			$metadata_url,
 			implode( ' ', $this->supported_scopes() )
 		);
 	}
@@ -964,7 +1107,7 @@ final class OAuth_Server {
 		}
 
 		$url = add_query_arg( $values, $redirect_uri );
-		wp_redirect( $url, 302, 'WP Native Builder Bridge' ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Destination is the exact hard-coded ChatGPT callback above.
+		wp_redirect( $url, 302, 'WP AI Bridge' ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Destination is the exact hard-coded ChatGPT callback above.
 		exit;
 	}
 
@@ -993,7 +1136,7 @@ final class OAuth_Server {
 <body>
 	<main class="wpnb-oauth">
 		<h1><?php echo esc_html__( 'Authorize ChatGPT for this WordPress site', 'wp-native-builder-bridge' ); ?></h1>
-		<p><?php echo esc_html__( 'ChatGPT is requesting an OAuth connection to WP Native Builder Bridge. The connection acts as your current WordPress account, and every Bridge ability still checks its access group and WordPress capabilities.', 'wp-native-builder-bridge' ); ?></p>
+		<p><?php echo esc_html__( 'ChatGPT is requesting an OAuth connection to WP AI Bridge. The connection acts as your current WordPress account, and every Bridge ability still checks its access group and WordPress capabilities.', 'wp-native-builder-bridge' ); ?></p>
 		<p><strong><?php echo esc_html__( 'WordPress account:', 'wp-native-builder-bridge' ); ?></strong> <?php echo esc_html( $user->display_name ); ?></p>
 		<p><strong><?php echo esc_html__( 'Site:', 'wp-native-builder-bridge' ); ?></strong> <?php echo esc_html( get_bloginfo( 'name' ) ); ?></p>
 		<p><strong><?php echo esc_html__( 'MCP resource:', 'wp-native-builder-bridge' ); ?></strong><br><code><?php echo esc_html( $request['resource'] ); ?></code></p>
@@ -1001,7 +1144,7 @@ final class OAuth_Server {
 		<?php if ( in_array( self::SCOPE_OFFLINE, $this->parse_scope( (string) $request['scope'] ), true ) ) : ?>
 			<p><?php echo esc_html__( 'The offline_access scope lets ChatGPT refresh this OAuth connection without asking you to sign in again each time. It does not enable any Bridge access group or add WordPress capabilities.', 'wp-native-builder-bridge' ); ?></p>
 		<?php endif; ?>
-		<p><?php echo esc_html__( 'Access remains limited by the enabled groups under WP Native Builder → Settings. You can deny this request without changing those settings.', 'wp-native-builder-bridge' ); ?></p>
+		<p><?php echo esc_html__( 'Access remains limited by the enabled groups under WP AI Bridge → Settings. You can deny this request without changing those settings.', 'wp-native-builder-bridge' ); ?></p>
 		<form method="post" action="<?php echo esc_url( $this->authorization_endpoint_url() ); ?>">
 			<input type="hidden" name="consent_id" value="<?php echo esc_attr( $consent_id ); ?>">
 			<?php wp_nonce_field( 'wpnb_oauth_consent_' . $consent_id ); ?>

@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<ruleset name="WP Native Builder Bridge">
+<ruleset name="WP AI Bridge">
     <description>Production WordPress coding and PHP 8.4+ compatibility checks.</description>
 
     <arg name="extensions" value="php" />

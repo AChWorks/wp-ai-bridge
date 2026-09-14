@@ -1,6 +1,6 @@
 # Security model
 
-WP Native Builder Bridge is designed as a bounded WordPress capability layer, not a general remote shell.
+WP AI Bridge is designed as a bounded WordPress capability layer, not a general remote shell.
 
 ## Layered authorization
 

@@ -1,6 +1,6 @@
 # Integrations
 
-The default runtime is intentionally small: **WordPress MCP Adapter + WP Native Builder Bridge**. Optional plugins/themes remain normal site components, not additional AI infrastructure.
+The default runtime is intentionally small: **WordPress MCP Adapter + WP AI Bridge**. Optional plugins/themes remain normal site components, not additional AI infrastructure.
 
 The canonical integration policy is documented in [Architecture](./ARCHITECTURE.md#discovery-first-provider-architecture). In short, the Bridge discovers and reuses provider-owned Abilities first, uses a bounded public-API fallback only for a real gap, and otherwise reports the surface as unavailable. A newly installed plugin or theme that already exposes compatible public WordPress Abilities should normally require no Bridge source change.
 

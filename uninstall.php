@@ -1,6 +1,6 @@
 <?php
 /**
- * Uninstall cleanup for WP Native Builder Bridge-owned settings and OAuth metadata.
+ * Uninstall cleanup for WP AI Bridge-owned settings and OAuth metadata.
  *
  * @package WP_Native_Builder_Bridge
  */
@@ -16,7 +16,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
  * consent/code/access/refresh artifact. The fixed ChatGPT metadata/JWKS caches,
  * short-lived client-assertion replay claims, and their cleanup events are also
  * removed. Persistent Workspace documents/tasks are intentionally preserved on
- * uninstall. Their explicit destructive lifecycle is WP Native Builder -> Settings
+ * uninstall. Their explicit destructive lifecycle is WP AI Bridge -> Settings
  * -> Clear Workspace, which requires administrator/destructive authorization. A pending
  * source-recovery record is also preserved: it owns bounded exact-preimage/replacement
  * artifacts that may still require reconciliation after reinstall.

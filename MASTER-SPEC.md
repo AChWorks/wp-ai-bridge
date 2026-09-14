@@ -1,8 +1,10 @@
-# WP Native Builder Bridge - Master Specification
+# WP AI Bridge - Master Specification
 
 Status: Canonical project specification
 
-Repository: `ach1992/wp-native-builder-bridge`
+Current repository during the identity-migration integration: `ach1992/wp-native-builder-bridge`
+
+Accepted canonical repository identity after the separately sequenced repository rename: `ach1992/wp-ai-bridge`
 
 Companion project: `ach1992/wp-native-builder`
 
@@ -18,7 +20,7 @@ Historical documents under `docs/maintainer/reference/` are design evidence only
 
 ## 1. Purpose
 
-`wp-native-builder-bridge` is a small, free, self-hosted WordPress plugin whose goal is to make the full range of administration available to a real WordPress administrator discoverable and delegable to an AI through the Bridge.
+WP AI Bridge is a small, free, self-hosted WordPress plugin whose goal is to make the full range of administration available to a real WordPress administrator discoverable and delegable to an AI through the Bridge. The installed plugin directory/entrypoint may retain `wp-native-builder-bridge` as a compatibility identity so existing WordPress installations upgrade in place.
 
 The intended experience is an additional WordPress administrator whose effective access the principal site administrator can increase, reduce, or revoke in WordPress settings. The AI must be able to discover the operations available on the actual installation, understand their inputs and required permissions, and perform the operations the administrator has delegated. Broad administrator-equivalent access and narrower grants must use the same simple access model.
 

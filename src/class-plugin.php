@@ -20,85 +20,34 @@ use WP_Native_Builder_Bridge\Workspace\Store;
  * Wires the bridge services into WordPress.
  */
 final class Plugin {
-	/**
-	 * Singleton instance.
-	 *
-	 * @var self|null
-	 */
+	/** @var self|null */
 	private static $instance = null;
-
-	/**
-	 * Whether hooks have already been registered.
-	 *
-	 * @var bool
-	 */
+	/** @var bool */
 	private $booted = false;
-
-	/**
-	 * Runtime dependency inspector.
-	 *
-	 * @var Environment
-	 */
+	/** @var Environment */
 	private $environment;
-
-	/**
-	 * Bridge settings service.
-	 *
-	 * @var Settings
-	 */
+	/** @var Settings */
 	private $settings;
-
-	/**
-	 * Ability permission service.
-	 *
-	 * @var Permissions
-	 */
+	/** @var Permissions */
 	private $permissions;
-
-	/**
-	 * Ability registrar.
-	 *
-	 * @var Registrar
-	 */
+	/** @var Registrar */
 	private $registrar;
-
-	/**
-	 * Direct ChatGPT OAuth/MCP service.
-	 *
-	 * @var OAuth_Server
-	 */
+	/** @var OAuth_Server */
 	private $oauth_server;
-
-	/**
-	 * Admin settings page.
-	 *
-	 * @var Settings_Page
-	 */
+	/** @var Settings_Page */
 	private $settings_page;
-
-	/**
-	 * Persistent Workspace store.
-	 *
-	 * @var Store
-	 */
+	/** @var Store */
 	private $workspace;
 
-	/**
-	 * Gets the plugin singleton.
-	 *
-	 * @return self
-	 */
+	/** @return self */
 	public static function instance() {
 		if ( null === self::$instance ) {
 			self::$instance = new self();
 		}
-
 		return self::$instance;
 	}
 
-	/**
-	 * Prevents direct construction.
-	 */
+	/** Prevents direct construction. */
 	private function __construct() {}
 
 	/**
@@ -135,7 +84,7 @@ final class Plugin {
 	}
 
 	/**
-	 * Loads bundled translations for self-hosted installations.
+	 * Loads the stable legacy text domain so existing translation files continue to work.
 	 *
 	 * @return void
 	 */
@@ -183,7 +132,7 @@ final class Plugin {
 		if ( ! $this->environment->abilities_api_available() ) {
 			printf(
 				'<div class="notice notice-error"><p>%s</p></div>',
-				esc_html__( 'WP Native Builder Bridge requires WordPress 6.9 or newer with the Abilities API available.', 'wp-native-builder-bridge' )
+				esc_html__( 'WP AI Bridge requires WordPress 6.9 or newer with the Abilities API available.', 'wp-native-builder-bridge' )
 			);
 			return;
 		}
@@ -191,7 +140,7 @@ final class Plugin {
 		if ( ! $this->environment->mcp_adapter_available() ) {
 			printf(
 				'<div class="notice notice-warning"><p>%1$s <a href="%2$s" target="_blank" rel="noopener noreferrer">%3$s</a></p></div>',
-				esc_html__( 'WP Native Builder Bridge is active, but the official WordPress MCP Adapter is not available.', 'wp-native-builder-bridge' ),
+				esc_html__( 'WP AI Bridge is active, but the official WordPress MCP Adapter is not available.', 'wp-native-builder-bridge' ),
 				esc_url( 'https://github.com/WordPress/mcp-adapter/releases/latest' ),
 				esc_html__( 'Install or activate MCP Adapter', 'wp-native-builder-bridge' )
 			);
@@ -201,7 +150,7 @@ final class Plugin {
 		if ( ! $this->oauth_server->is_https_ready() ) {
 			printf(
 				'<div class="notice notice-warning"><p>%s</p></div>',
-				esc_html__( 'Direct ChatGPT App connections require the public WP Native Builder MCP endpoint to use HTTPS. Check the WordPress Site URL and reverse-proxy HTTPS configuration before creating the App.', 'wp-native-builder-bridge' )
+				esc_html__( 'Direct ChatGPT App connections require the public WP AI Bridge MCP endpoint to use HTTPS. Check the WordPress Site URL and reverse-proxy HTTPS configuration before creating the App.', 'wp-native-builder-bridge' )
 			);
 		}
 	}

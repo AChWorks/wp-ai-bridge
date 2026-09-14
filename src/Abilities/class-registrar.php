@@ -19,88 +19,32 @@ use WP_Native_Builder_Bridge\Workspace\Store;
 final class Registrar {
 	const CATEGORY = 'wp-native-builder';
 
-	/**
-	 * Runtime dependency inspector.
-	 *
-	 * @var Environment
-	 */
+	/** @var Environment */
 	private $environment;
-
-	/**
-	 * Bridge settings service.
-	 *
-	 * @var Settings
-	 */
+	/** @var Settings */
 	private $settings;
-
-	/**
-	 * Bridge permission service.
-	 *
-	 * @var Permissions
-	 */
+	/** @var Permissions */
 	private $permissions;
-
-	/**
-	 * Existing Ability resolver.
-	 *
-	 * @var Ability_Resolver
-	 */
+	/** @var Ability_Resolver */
 	private $resolver;
-
-	/**
-	 * Site inspection provider.
-	 *
-	 * @var Site_Abilities
-	 */
+	/** @var Site_Abilities */
 	private $site_abilities;
 	/** @var Ability_Catalog_Abilities */
 	private $catalog_abilities;
-
-	/**
-	 * Generic content provider.
-	 *
-	 * @var Content_Abilities
-	 */
+	/** @var Content_Abilities */
 	private $content_abilities;
-
-	/**
-	 * Generic advanced post metadata provider.
-	 *
-	 * @var Post_Meta_Abilities
-	 */
+	/** @var Post_Meta_Abilities */
 	private $post_meta_abilities;
-
 	/** @var Term_Meta_Abilities */
 	private $term_meta_abilities;
-
-	/**
-	 * Gutenberg block provider.
-	 *
-	 * @var Block_Abilities
-	 */
+	/** @var Block_Abilities */
 	private $block_abilities;
-
-	/**
-	 * Media Library provider.
-	 *
-	 * @var Media_Abilities
-	 */
+	/** @var Media_Abilities */
 	private $media_abilities;
-
-	/**
-	 * Taxonomy provider.
-	 *
-	 * @var Taxonomy_Abilities
-	 */
+	/** @var Taxonomy_Abilities */
 	private $taxonomy_abilities;
-
-	/**
-	 * Navigation provider.
-	 *
-	 * @var Navigation_Abilities
-	 */
+	/** @var Navigation_Abilities */
 	private $navigation_abilities;
-
 	/** @var Integration_Abilities */
 	private $integration_abilities;
 	/** @var Site_Config_Abilities */
@@ -152,7 +96,8 @@ final class Registrar {
 	}
 
 	/**
-	 * Registers the bridge ability category.
+	 * Registers the bridge ability category. The stable category slug is retained
+	 * so existing clients keep the same Ability identifiers across the public rename.
 	 *
 	 * @return void
 	 */
@@ -164,8 +109,8 @@ final class Registrar {
 		wp_register_ability_category(
 			self::CATEGORY,
 			array(
-				'label'       => __( 'WP Native Builder', 'wp-native-builder-bridge' ),
-				'description' => __( 'Typed WordPress site-building abilities exposed by WP Native Builder Bridge.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'WP AI Bridge', 'wp-native-builder-bridge' ),
+				'description' => __( 'Typed WordPress administration abilities exposed by WP AI Bridge.', 'wp-native-builder-bridge' ),
 			)
 		);
 	}

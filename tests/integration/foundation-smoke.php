@@ -20,7 +20,7 @@ $assert( version_compare( get_bloginfo( 'version' ), '6.9', '>=' ), 'WordPress 6
 $assert( class_exists( 'WP_Ability' ), 'WP_Ability is unavailable.' );
 $assert( function_exists( 'wp_get_ability' ), 'wp_get_ability() is unavailable.' );
 $assert( class_exists( 'WP\\MCP\\Core\\McpAdapter' ), 'Official MCP Adapter is unavailable.' );
-$assert( class_exists( 'WP_Native_Builder_Bridge\\Plugin' ), 'WP Native Builder Bridge is not loaded.' );
+$assert( class_exists( 'WP_Native_Builder_Bridge\\Plugin' ), 'WP AI Bridge is not loaded.' );
 
 $bridge_info = null;
 $meta_read   = null;

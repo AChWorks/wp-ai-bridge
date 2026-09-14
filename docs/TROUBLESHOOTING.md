@@ -2,7 +2,7 @@
 
 ## The custom App cannot scan tools
 
-Check **WP Native Builder → Settings** first.
+Check **WP AI Bridge → Settings** first.
 
 Confirm:
 
@@ -24,7 +24,7 @@ Also check browser/network security layers for blocked redirects to ChatGPT and 
 
 A successful OAuth connection is not write authorization. Check both:
 
-1. the relevant Bridge access group under **WP Native Builder → Settings**;
+1. the relevant Bridge access group under **WP AI Bridge → Settings**;
 2. the connected WordPress user's capability for the target object/action.
 
 For example, publishing normally needs **Builder Write + Live Content** plus the applicable WordPress publish capability.
@@ -79,7 +79,7 @@ A PHP runtime validation failure can restore the previous file bytes, but it can
 
 ## Workspace data is not visible through content tools
 
-That is intentional. Workspace documents/tasks are private internal objects and are accessible only through `workspace-resume`, `workspace-document`, `workspace-task`, and the WP Native Builder admin screens.
+That is intentional. Workspace documents/tasks are private internal objects and are accessible only through `workspace-resume`, `workspace-document`, `workspace-task`, and the WP AI Bridge admin screens.
 
 ## Reconnecting after an update
 

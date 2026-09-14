@@ -211,12 +211,12 @@ try {
 	$submenu = array();
 	$page    = new Settings_Page( new Environment(), $settings, new OAuth_Server(), $store, new Mutation_Log() );
 	$page->register_menu();
-	wpnb_issue8_assert( isset( $submenu[ Settings_Page::PAGE_SLUG ] ), 'WP Native Builder top-level menu did not register.' );
+	wpnb_issue8_assert( isset( $submenu[ Settings_Page::PAGE_SLUG ] ), 'WP AI Bridge top-level menu did not register.' );
 	$submenu_slugs = array_column( $submenu[ Settings_Page::PAGE_SLUG ], 2 );
 	foreach ( array( Settings_Page::PAGE_SLUG, Settings_Page::DOCUMENTS_SLUG, Settings_Page::TASKS_SLUG, Settings_Page::ACTIVITY_SLUG, Settings_Page::SETTINGS_SLUG ) as $slug ) {
-		wpnb_issue8_assert( in_array( $slug, $submenu_slugs, true ), 'Missing WP Native Builder admin submenu: ' . $slug );
+		wpnb_issue8_assert( in_array( $slug, $submenu_slugs, true ), 'Missing WP AI Bridge admin submenu: ' . $slug );
 	}
-	wpnb_issue8_assert( 'Dashboard' === $submenu[ Settings_Page::PAGE_SLUG ][0][0], 'WP Native Builder parent submenu is not labelled Dashboard.' );
+	wpnb_issue8_assert( 'Dashboard' === $submenu[ Settings_Page::PAGE_SLUG ][0][0], 'WP AI Bridge parent submenu is not labelled Dashboard.' );
 
 	$screen_checks = array(
 		'render_dashboard' => 'Workspace overview',

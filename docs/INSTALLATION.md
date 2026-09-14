@@ -9,19 +9,21 @@
 
 ## Install the plugin
 
-1. Download `wp-native-builder-bridge.zip` from the latest GitHub release.
+1. Download `wp-ai-bridge.zip` from the latest GitHub release.
 2. In WordPress open **Plugins → Add Plugin → Upload Plugin**.
-3. Upload the ZIP and activate **WP Native Builder Bridge**.
-4. Open **WP Native Builder → Settings**.
+3. Upload the ZIP and activate **WP AI Bridge**.
+4. Open **WP AI Bridge → Settings**.
 
 The settings screen reports whether the WordPress Abilities API, MCP Adapter, and public HTTPS endpoint are available.
 
+The public artifact name changed, but the archive deliberately retains the existing `wp-native-builder-bridge/` plugin directory and entrypoint. Uploading `wp-ai-bridge.zip` therefore upgrades an existing installation in place instead of creating a second plugin installation.
+
 ## Connect a ChatGPT Workspace App
 
-The settings screen displays an endpoint in this form:
+The settings screen displays the canonical endpoint in this form:
 
 ```text
-https://YOUR-SITE.example/wp-json/wp-native-builder/v1/mcp
+https://YOUR-SITE.example/wp-json/wp-ai-bridge/v1/mcp
 ```
 
 With Developer Mode enabled in the ChatGPT workspace:
@@ -36,20 +38,33 @@ With Developer Mode enabled in the ChatGPT workspace:
 
 The OAuth connection acts as the WordPress user who approved it. Bridge access groups and WordPress capabilities are still checked for every operation.
 
+Existing connections created with the former `/wp-json/wp-native-builder/v1/mcp` resource remain available through a bounded legacy endpoint. Tokens remain bound to the exact resource for which they were issued: a legacy token is not accepted by the canonical WP AI Bridge endpoint, and a canonical token is not accepted by the legacy endpoint.
+
 ## OAuth discovery endpoints
 
-The plugin publishes standards-based OAuth metadata at:
+New connections use canonical protected-resource metadata at:
 
 ```text
 /.well-known/oauth-protected-resource
+```
+
+The retained legacy MCP resource has its own migration metadata document:
+
+```text
+/.well-known/oauth-protected-resource/wp-native-builder/v1/mcp
+```
+
+Both resource documents use the same authorization server metadata:
+
+```text
 /.well-known/oauth-authorization-server
 ```
 
-The MCP endpoint returns an authentication challenge when accessed without a valid Bearer token.
+The exact MCP endpoint returns an authentication challenge pointing to the metadata document for that same resource.
 
 ## Configure access
 
-Open **WP Native Builder → Settings** and enable only the groups required by the intended workflow.
+Open **WP AI Bridge → Settings** and enable only the groups required by the intended workflow.
 
 A conservative starting point is:
 
@@ -61,9 +76,11 @@ A conservative starting point is:
 - Source Editing: leave disabled unless installed plugin/theme source must be read or changed. It is separate from Code & Extensions and grants administrator-level code trust, not sandboxed execution. Source apply/recovery additionally require guarded same-filesystem no-overwrite replacement with hard-link support; unsupported filesystems fail closed rather than falling back to an in-place write.
 - Users & Destructive: leave disabled unless the requested operation genuinely requires it.
 
-## Update
+## Update from the former product name
 
-Upload the new release ZIP from **Plugins → Add Plugin → Upload Plugin** and use WordPress's replace-existing-plugin flow. Replacing the plugin files does not intentionally clear Bridge settings, OAuth state, or Workspace data.
+Install the new `wp-ai-bridge.zip` through WordPress's replace-existing-plugin flow. The migration intentionally preserves the installed plugin directory/entrypoint, text domain, PHP namespace/constants, settings/OAuth/Workspace storage keys, and `wp-native-builder/*` Ability identifiers. Existing data and clients therefore do not need a second storage migration merely because the public product name changed.
+
+The canonical admin slugs now start with `wp-ai-bridge`; old `wp-native-builder...` admin bookmarks are retained as hidden compatibility aliases.
 
 ## Deactivate and uninstall
 
@@ -71,7 +88,7 @@ Deactivation stops Bridge execution but preserves its configuration and Workspac
 
 Uninstall removes disposable Bridge settings, activity-log configuration, locks, and Bridge-owned OAuth metadata, and invalidates outstanding Bridge OAuth artifacts. Persistent Workspace content is intentionally preserved so uninstalling the transport plugin does not silently destroy project state. A genuinely pending Source Editing recovery record is also preserved because it may still own exact preimage/private replacement artifacts; reinstall the Bridge and reconcile/recover that state before deleting it manually.
 
-If Workspace data is no longer wanted, clear it explicitly from **WP Native Builder** before uninstalling.
+If Workspace data is no longer wanted, clear it explicitly from **WP AI Bridge** before uninstalling.
 
 ## Private or local WordPress sites
 

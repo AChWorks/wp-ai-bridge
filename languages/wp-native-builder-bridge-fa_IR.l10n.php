@@ -12,7 +12,7 @@ $messages = array_merge(
 );
 
 return array(
-	'project-id-version' => 'WP Native Builder Bridge 0.2.0',
+	'project-id-version' => 'WP AI Bridge 0.2.0',
 	'language'           => 'fa_IR',
 	'messages'           => $messages,
 );

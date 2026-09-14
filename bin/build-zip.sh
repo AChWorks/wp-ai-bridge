@@ -4,8 +4,11 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 build_dir="$root/build"
 stage_root="$build_dir/stage"
+# Keep the installed plugin directory/entrypoint stable so a WP AI Bridge package
+# upgrades the existing plugin in place instead of creating a duplicate plugin.
 plugin_dir="$stage_root/wp-native-builder-bridge"
-zip_file="$build_dir/wp-native-builder-bridge.zip"
+zip_file="$build_dir/wp-ai-bridge.zip"
+legacy_zip_alias="$build_dir/wp-native-builder-bridge.zip"
 
 rm -rf "$stage_root"
 mkdir -p "$plugin_dir"
@@ -17,7 +20,7 @@ cp "$root/CHANGELOG.md" "$plugin_dir/"
 cp "$root/LICENSE" "$plugin_dir/"
 cp -R "$root/src" "$plugin_dir/src"
 cp -R "$root/languages" "$plugin_dir/languages"
-rm -f "$zip_file"
+rm -f "$zip_file" "$legacy_zip_alias"
 
 php -r '
 $source = $argv[1];
@@ -69,6 +72,12 @@ for path in "${required[@]}"; do
     fi
 done
 
+# A renamed public artifact must not rename the installed plugin directory.
+if printf '%s\n' "${entries[@]}" | grep -q '^wp-ai-bridge/'; then
+    echo "ERROR: release ZIP would install a duplicate wp-ai-bridge plugin directory." >&2
+    exit 1
+fi
+
 for entry in "${entries[@]}"; do
     if [[ "$entry" =~ (^|/)(\.git|\.github|tests|vendor|node_modules|build|composer\.(json|lock))(/|$) ]]; then
         echo "ERROR: release ZIP contains development-only files." >&2
@@ -85,4 +94,8 @@ while IFS= read -r -d '' file; do
 done < <(find "$extract_dir/wp-native-builder-bridge" -type f -name '*.php' -print0)
 rm -rf "$stage_root" "$extract_dir"
 
-echo "PASS: installable ZIP validated at build/wp-native-builder-bridge.zip"
+# Transitional local alias only: existing integration helpers may still consume the
+# old filename, while CI/release surfaces publish only build/wp-ai-bridge.zip.
+cp "$zip_file" "$legacy_zip_alias"
+
+echo "PASS: installable WP AI Bridge ZIP validated at build/wp-ai-bridge.zip"

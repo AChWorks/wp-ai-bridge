@@ -1,6 +1,6 @@
 <?php
 /**
- * WP Native Builder administration area.
+ * WP AI Bridge administration area.
  *
  * @package WP_Native_Builder_Bridge
  */
@@ -17,11 +17,17 @@ use WP_Native_Builder_Bridge\Workspace\Store;
  * Renders the complete Bridge administration area.
  */
 final class Settings_Page {
-	const PAGE_SLUG      = 'wp-native-builder';
-	const DOCUMENTS_SLUG = 'wp-native-builder-documents';
-	const TASKS_SLUG     = 'wp-native-builder-tasks';
-	const ACTIVITY_SLUG  = 'wp-native-builder-activity';
-	const SETTINGS_SLUG  = 'wp-native-builder-settings';
+	const PAGE_SLUG      = 'wp-ai-bridge';
+	const DOCUMENTS_SLUG = 'wp-ai-bridge-documents';
+	const TASKS_SLUG     = 'wp-ai-bridge-tasks';
+	const ACTIVITY_SLUG  = 'wp-ai-bridge-activity';
+	const SETTINGS_SLUG  = 'wp-ai-bridge-settings';
+
+	const LEGACY_PAGE_SLUG      = 'wp-native-builder';
+	const LEGACY_DOCUMENTS_SLUG = 'wp-native-builder-documents';
+	const LEGACY_TASKS_SLUG     = 'wp-native-builder-tasks';
+	const LEGACY_ACTIVITY_SLUG  = 'wp-native-builder-activity';
+	const LEGACY_SETTINGS_SLUG  = 'wp-native-builder-settings';
 
 	/** @var Environment */
 	private $environment;
@@ -62,8 +68,8 @@ final class Settings_Page {
 	 */
 	public function register_menu() {
 		add_menu_page(
-			__( 'WP Native Builder', 'wp-native-builder-bridge' ),
-			__( 'WP Native Builder', 'wp-native-builder-bridge' ),
+			__( 'WP AI Bridge', 'wp-native-builder-bridge' ),
+			__( 'WP AI Bridge', 'wp-native-builder-bridge' ),
 			'manage_options',
 			self::PAGE_SLUG,
 			array( $this, 'render_dashboard' ),
@@ -104,6 +110,25 @@ final class Settings_Page {
 			array( $this, 'render_settings' )
 		);
 
+		// Retain old admin.php?page=... bookmarks as hidden compatibility aliases.
+		$legacy_pages = array(
+			array( self::LEGACY_PAGE_SLUG, array( $this, 'render_dashboard' ) ),
+			array( self::LEGACY_DOCUMENTS_SLUG, array( $this, 'render_documents' ) ),
+			array( self::LEGACY_TASKS_SLUG, array( $this, 'render_tasks' ) ),
+			array( self::LEGACY_ACTIVITY_SLUG, array( $this, 'render_activity' ) ),
+			array( self::LEGACY_SETTINGS_SLUG, array( $this, 'render_settings' ) ),
+		);
+		foreach ( $legacy_pages as $legacy_page ) {
+			add_submenu_page(
+				null,
+				__( 'WP AI Bridge', 'wp-native-builder-bridge' ),
+				__( 'WP AI Bridge', 'wp-native-builder-bridge' ),
+				'manage_options',
+				$legacy_page[0],
+				$legacy_page[1]
+			);
+		}
+
 		// WordPress creates the parent page as the first submenu. Rename it without
 		// registering a duplicate route so the requested navigation reads Dashboard.
 		global $submenu;
@@ -131,7 +156,7 @@ final class Settings_Page {
 		$resume = $this->workspace->resume();
 		?>
 		<div class="wrap">
-			<h1><?php echo esc_html__( 'WP Native Builder', 'wp-native-builder-bridge' ); ?></h1>
+			<h1><?php echo esc_html__( 'WP AI Bridge', 'wp-native-builder-bridge' ); ?></h1>
 			<p><?php echo esc_html__( 'Compact project orientation for the persistent Workspace. Live WordPress remains the source of truth for site content and configuration.', 'wp-native-builder-bridge' ); ?></p>
 
 			<h2><?php echo esc_html__( 'Workspace overview', 'wp-native-builder-bridge' ); ?></h2>
@@ -189,8 +214,7 @@ final class Settings_Page {
 				<thead><tr><th><?php echo esc_html__( 'Title', 'wp-native-builder-bridge' ); ?></th><th><?php echo esc_html__( 'Key', 'wp-native-builder-bridge' ); ?></th><th><?php echo esc_html__( 'State', 'wp-native-builder-bridge' ); ?></th><th><?php echo esc_html__( 'Version', 'wp-native-builder-bridge' ); ?></th><th><?php echo esc_html__( 'Modified (UTC)', 'wp-native-builder-bridge' ); ?></th><th><?php echo esc_html__( 'View', 'wp-native-builder-bridge' ); ?></th></tr></thead>
 				<tbody>
 				<?php if ( ! $documents ) : ?>
-					<tr><td colspan="6"><?php echo esc_html__( 'No Workspace documents found.', 'wp-native-builder-bridge' ); ?></td></tr>
-				<?php endif; ?>
+					<tr><td colspan="6"><?php echo esc_html__( 'No Workspace documents found.', 'wp-native-builder-bridge' ); ?></td></tr><?php endif; ?>
 				<?php foreach ( $documents as $document ) : ?>
 					<tr>
 						<td><?php echo esc_html( $document['title'] ); ?></td>
@@ -310,7 +334,7 @@ final class Settings_Page {
 		$notice          = isset( $_GET['wpnb_notice'] ) ? sanitize_key( wp_unslash( $_GET['wpnb_notice'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Redirect status notice only.
 		?>
 		<div class="wrap">
-			<h1><?php echo esc_html__( 'WP Native Builder Settings', 'wp-native-builder-bridge' ); ?></h1>
+			<h1><?php echo esc_html__( 'WP AI Bridge Settings', 'wp-native-builder-bridge' ); ?></h1>
 			<?php
 			if ( 'workspace-cleared' === $notice ) :
 				?>
@@ -376,7 +400,7 @@ final class Settings_Page {
 		$this->require_admin();
 		check_admin_referer( 'wpnb_workspace_export' );
 		$snapshot = $this->workspace->export_snapshot();
-		$filename = 'wp-native-builder-workspace-' . gmdate( 'Y-m-d-His' ) . '.json';
+		$filename = 'wp-ai-bridge-workspace-' . gmdate( 'Y-m-d-His' ) . '.json';
 		nocache_headers();
 		header( 'Content-Type: application/json; charset=utf-8' );
 		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
@@ -490,7 +514,7 @@ final class Settings_Page {
 	 */
 	private function require_admin() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You are not allowed to manage WP Native Builder Bridge settings.', 'wp-native-builder-bridge' ) );
+			wp_die( esc_html__( 'You are not allowed to manage WP AI Bridge settings.', 'wp-native-builder-bridge' ) );
 		}
 	}
 }

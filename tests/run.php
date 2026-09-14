@@ -382,11 +382,15 @@ wpnb_assert( strlen( $bounded_entry['error_code'] ) <= 100, 'Mutation log bounds
 wpnb_test_reset_state();
 $page = new Settings_Page( $environment, $settings );
 $page->register_menu();
-wpnb_assert( 'manage_options' === $GLOBALS['wpnb_test']['menu_pages'][ Settings_Page::PAGE_SLUG ]['capability'], 'Top-level WP Native Builder admin area requires manage_options.' );
+wpnb_assert( 'manage_options' === $GLOBALS['wpnb_test']['menu_pages'][ Settings_Page::PAGE_SLUG ]['capability'], 'Top-level WP AI Bridge admin area requires manage_options.' );
 wpnb_assert( 'Dashboard' === $GLOBALS['submenu'][ Settings_Page::PAGE_SLUG ][0][0], 'Top-level parent route is presented as Dashboard in the submenu.' );
 foreach ( array( Settings_Page::DOCUMENTS_SLUG, Settings_Page::TASKS_SLUG, Settings_Page::ACTIVITY_SLUG, Settings_Page::SETTINGS_SLUG ) as $submenu_slug ) {
-	wpnb_assert( isset( $GLOBALS['wpnb_test']['submenu_pages'][ Settings_Page::PAGE_SLUG ][ $submenu_slug ] ), 'Required WP Native Builder submenu is registered: ' . $submenu_slug );
-	wpnb_assert( 'manage_options' === $GLOBALS['wpnb_test']['submenu_pages'][ Settings_Page::PAGE_SLUG ][ $submenu_slug ]['capability'], 'WP Native Builder submenu requires manage_options: ' . $submenu_slug );
+	wpnb_assert( isset( $GLOBALS['wpnb_test']['submenu_pages'][ Settings_Page::PAGE_SLUG ][ $submenu_slug ] ), 'Required WP AI Bridge submenu is registered: ' . $submenu_slug );
+	wpnb_assert( 'manage_options' === $GLOBALS['wpnb_test']['submenu_pages'][ Settings_Page::PAGE_SLUG ][ $submenu_slug ]['capability'], 'WP AI Bridge submenu requires manage_options: ' . $submenu_slug );
+}
+foreach ( array( Settings_Page::LEGACY_PAGE_SLUG, Settings_Page::LEGACY_DOCUMENTS_SLUG, Settings_Page::LEGACY_TASKS_SLUG, Settings_Page::LEGACY_ACTIVITY_SLUG, Settings_Page::LEGACY_SETTINGS_SLUG ) as $legacy_slug ) {
+	wpnb_assert( isset( $GLOBALS['wpnb_test']['submenu_pages'][ null ][ $legacy_slug ] ), 'Legacy WP Native Builder admin bookmark alias is registered: ' . $legacy_slug );
+	wpnb_assert( 'manage_options' === $GLOBALS['wpnb_test']['submenu_pages'][ null ][ $legacy_slug ]['capability'], 'Legacy admin alias requires manage_options: ' . $legacy_slug );
 }
 ob_start();
 $page->render_settings();
