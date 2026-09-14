@@ -28,17 +28,8 @@ final class Native_Ability_Delegation {
 	/** @var int */
 	private $bridge_request_depth = 0;
 
-	/** @var int */
-	private $bridge_registration_depth = 0;
-
-	/** @var array<string,bool> */
-	private $pending_bridge_ability_names = array();
-
 	/** @var \SplObjectStorage<object,mixed> */
 	private $bridge_owned_abilities;
-
-	/** @var \SplObjectStorage<object,mixed>|null */
-	private $trusted_bridge_callback_owners = null;
 
 	/**
 	 * @param Settings $settings Bridge access-group settings.
@@ -54,51 +45,26 @@ final class Native_Ability_Delegation {
 		add_filter( 'rest_endpoints', array( $this, 'filter_rest_endpoints' ), PHP_INT_MAX );
 	}
 
+
 	/**
-	 * Runs the Bridge registrar inside a private provenance phase.
+	 * Remembers exact successful Core registration return objects as Bridge-owned.
 	 *
-	 * A registration is eligible for Bridge provenance only when both callbacks are
-	 * owned by exact Registrar-created objects supplied for this phase. This prevents
-	 * re-entrant provider registrations from borrowing provenance merely because they
-	 * execute synchronously while the Bridge Registrar is active.
+	 * WordPress remains the sole Ability registry. This stores only object identity
+	 * returned by the Bridge's own wp_register_ability() calls.
 	 *
-	 * @param callable          $registration_callback Bridge registrar callback.
-	 * @param array<int,object> $callback_owners       Exact Registrar-owned callback providers.
+	 * @param array<int,object> $abilities Exact successful Core registration results.
 	 * @return void
 	 */
-	public function capture_bridge_registrations( $registration_callback, array $callback_owners ) {
-		if ( ! is_callable( $registration_callback ) ) {
-			return;
-		}
-
-		// Only the outer Plugin-owned capture may establish trusted owners. A nested
-		// call executes normally but cannot replace that provenance context.
-		if ( $this->bridge_registration_depth > 0 ) {
-			call_user_func( $registration_callback );
-			return;
-		}
-
-		$trusted = new \SplObjectStorage();
-		foreach ( $callback_owners as $owner ) {
-			if ( is_object( $owner ) ) {
-				$trusted->attach( $owner );
+	public function remember_bridge_abilities( array $abilities ) {
+		foreach ( $abilities as $ability ) {
+			if ( is_object( $ability ) ) {
+				$this->bridge_owned_abilities->attach( $ability );
 			}
-		}
-
-		$this->trusted_bridge_callback_owners = $trusted;
-		$this->bridge_registration_depth      = 1;
-
-		try {
-			call_user_func( $registration_callback );
-		} finally {
-			$this->bridge_registration_depth = 0;
-			$this->finalize_bridge_ownership();
-			$this->trusted_bridge_callback_owners = null;
 		}
 	}
 
 	/**
-	 * Records exact Bridge-owned registrations and wraps only the Adapter's generic
+	 * Wraps only the Adapter generic execution permission callback.
 	 * execution permission callback.
 	 *
 	 * Provider metadata, annotations, namespaces, class names and custom Ability
@@ -111,10 +77,6 @@ final class Native_Ability_Delegation {
 	public function filter_ability_args( $args, $name ) {
 		if ( ! is_array( $args ) || ! is_string( $name ) ) {
 			return $args;
-		}
-
-		if ( $this->bridge_registration_depth > 0 && $this->is_trusted_bridge_registration( $args ) ) {
-			$this->pending_bridge_ability_names[ $name ] = true;
 		}
 
 		if ( self::ADAPTER_EXECUTE_ABILITY !== $name || empty( $args['permission_callback'] ) || ! is_callable( $args['permission_callback'] ) ) {
@@ -192,49 +154,6 @@ final class Native_Ability_Delegation {
 	 */
 	public function is_bridge_owned_ability( $ability ) {
 		return is_object( $ability ) && $this->bridge_owned_abilities->contains( $ability );
-	}
-
-	/**
-	 * Converts pending names into exact live object identities from WordPress.
-	 *
-	 * @return void
-	 */
-	private function finalize_bridge_ownership() {
-		$names                              = array_keys( $this->pending_bridge_ability_names );
-		$this->pending_bridge_ability_names = array();
-		if ( ! function_exists( 'wp_get_ability' ) ) {
-			return;
-		}
-
-		foreach ( $names as $name ) {
-			$ability = wp_get_ability( $name );
-			if ( is_object( $ability ) ) {
-				$this->bridge_owned_abilities->attach( $ability );
-			}
-		}
-	}
-
-	/**
-	 * Checks whether both callbacks are owned by exact Registrar-created objects.
-	 *
-	 * @param array<string,mixed> $args Ability registration arguments.
-	 * @return bool
-	 */
-	private function is_trusted_bridge_registration( array $args ) {
-		return $this->is_trusted_bridge_callback( $args['permission_callback'] ?? null )
-			&& $this->is_trusted_bridge_callback( $args['execute_callback'] ?? null );
-	}
-
-	/**
-	 * @param mixed $callback Ability callback.
-	 * @return bool
-	 */
-	private function is_trusted_bridge_callback( $callback ) {
-		if ( ! is_array( $callback ) || 2 !== count( $callback ) || ! is_object( $callback[0] ) ) {
-			return false;
-		}
-		return $this->trusted_bridge_callback_owners instanceof \SplObjectStorage
-			&& $this->trusted_bridge_callback_owners->contains( $callback[0] );
 	}
 
 	/** @return bool */

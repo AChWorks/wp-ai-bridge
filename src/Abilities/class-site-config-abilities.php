@@ -25,9 +25,10 @@ final class Site_Config_Abilities {
 		$this->log         = $log;
 	}
 
-	/** @return void */
+	/** @return array<int,object> */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/site-settings-read',
 			array(
 				'label'               => __( 'Read Site Settings', 'wp-native-builder-bridge' ),
@@ -44,7 +45,7 @@ final class Site_Config_Abilities {
 				'meta'                => $this->meta( true, false, true ),
 			)
 		);
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/site-settings-update',
 			array(
 				'label'               => __( 'Update Site Settings', 'wp-native-builder-bridge' ),
@@ -70,6 +71,8 @@ final class Site_Config_Abilities {
 				'meta'                => $this->meta( false, false, false ),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/** @return bool */ public function can_read() {

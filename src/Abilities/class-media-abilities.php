@@ -49,7 +49,8 @@ final class Media_Abilities {
 	 * @return void
 	 */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/media-read',
 			array(
 				'label'               => __( 'Read Media', 'wp-native-builder-bridge' ),
@@ -63,7 +64,7 @@ final class Media_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/media-upload',
 			array(
 				'label'               => __( 'Upload Media', 'wp-native-builder-bridge' ),
@@ -77,7 +78,7 @@ final class Media_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/media-import-url',
 			array(
 				'label'               => __( 'Import Media from URL', 'wp-native-builder-bridge' ),
@@ -91,7 +92,7 @@ final class Media_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/media-update',
 			array(
 				'label'               => __( 'Update Media', 'wp-native-builder-bridge' ),
@@ -105,7 +106,7 @@ final class Media_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/media-delete',
 			array(
 				'label'               => __( 'Delete Media', 'wp-native-builder-bridge' ),
@@ -136,6 +137,8 @@ final class Media_Abilities {
 				'meta'                => $this->meta( false, true, false ),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/**

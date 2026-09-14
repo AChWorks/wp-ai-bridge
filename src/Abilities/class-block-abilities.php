@@ -47,7 +47,8 @@ final class Block_Abilities {
 	 * @return void
 	 */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/blocks-read',
 			array(
 				'label'               => __( 'Read Gutenberg Blocks', 'wp-native-builder-bridge' ),
@@ -71,7 +72,7 @@ final class Block_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/blocks-mutate',
 			array(
 				'label'               => __( 'Mutate Gutenberg Blocks', 'wp-native-builder-bridge' ),
@@ -84,6 +85,8 @@ final class Block_Abilities {
 				'meta'                => $this->meta( false, false, false ),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/**

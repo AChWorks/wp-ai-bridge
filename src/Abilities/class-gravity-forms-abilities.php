@@ -25,11 +25,12 @@ final class Gravity_Forms_Abilities {
 		$this->log         = $log;
 	}
 
-	/** @return void */
+	/** @return array<int,object> */
 	public function register() {
+		$registered = array();
 		if ( ! class_exists( 'GFAPI' ) || $this->native_abilities_present() ) {
-			return; }
-		wp_register_ability(
+			return array(); }
+		$registered[] = wp_register_ability(
 			'wp-native-builder/gravity-forms-read',
 			array(
 				'label'               => __( 'Read Gravity Forms', 'wp-native-builder-bridge' ),
@@ -42,7 +43,7 @@ final class Gravity_Forms_Abilities {
 				'meta'                => $this->meta( true, false, true ),
 			)
 		);
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/gravity-form-upsert',
 			array(
 				'label'               => __( 'Create or Update Gravity Form', 'wp-native-builder-bridge' ),
@@ -55,7 +56,7 @@ final class Gravity_Forms_Abilities {
 				'meta'                => $this->meta( false, false, false ),
 			)
 		);
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/gravity-form-status',
 			array(
 				'label'               => __( 'Set Gravity Form Status', 'wp-native-builder-bridge' ),
@@ -79,7 +80,7 @@ final class Gravity_Forms_Abilities {
 				'meta'                => $this->meta( false, false, true ),
 			)
 		);
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/gravity-form-delete',
 			array(
 				'label'               => __( 'Delete Gravity Form', 'wp-native-builder-bridge' ),
@@ -110,6 +111,8 @@ final class Gravity_Forms_Abilities {
 				'meta'                => $this->meta( false, true, false ),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/** @return bool */ public function can_read() {

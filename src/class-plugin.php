@@ -85,20 +85,7 @@ final class Plugin {
 		add_action( 'admin_notices', array( $this, 'render_dependency_notices' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( WP_NATIVE_BUILDER_BRIDGE_FILE ), array( $this, 'plugin_action_links' ) );
 		add_action( 'wp_abilities_api_categories_init', array( $this->registrar, 'register_category' ) );
-		add_action( 'wp_abilities_api_init', array( $this, 'register_abilities' ), 100 );
-	}
-
-	/**
-	 * Registers Bridge Abilities inside the exact provenance phase that binds the
-	 * resulting live WordPress objects to Bridge-owned authorization.
-	 *
-	 * @return void
-	 */
-	public function register_abilities() {
-		$this->native_ability_delegation->capture_bridge_registrations(
-			array( $this->registrar, 'register_abilities' ),
-			$this->registrar->bridge_callback_owners()
-		);
+		add_action( 'wp_abilities_api_init', array( $this->registrar, 'register_abilities' ), 100 );
 	}
 
 	/**

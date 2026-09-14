@@ -28,9 +28,10 @@ final class Integration_Abilities {
 		$this->permissions = $permissions;
 	}
 
-	/** @return void */
+	/** @return array<int,object> */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/integration-status',
 			array(
 				'label'               => __( 'Integration Status', 'wp-native-builder-bridge' ),
@@ -47,6 +48,8 @@ final class Integration_Abilities {
 				'meta'                => $this->meta(),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/** @return bool */

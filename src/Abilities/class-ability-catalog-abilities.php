@@ -40,9 +40,10 @@ final class Ability_Catalog_Abilities {
 		$this->native_ability_delegation = $native_ability_delegation;
 	}
 
-	/** @return void */
+	/** @return array<int,object> */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/abilities-read',
 			array(
 				'label'               => __( 'Read Ability Contracts', 'wp-native-builder-bridge' ),
@@ -65,6 +66,8 @@ final class Ability_Catalog_Abilities {
 				),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/** @return bool Whether public contract inspection is allowed. */
