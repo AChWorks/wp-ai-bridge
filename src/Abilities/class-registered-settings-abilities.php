@@ -362,30 +362,44 @@ final class Registered_Settings_Abilities {
 	 * name can still wrap a credential field. Generic read/update must not become a
 	 * secret-management path merely because that containing option has a neutral name.
 	 *
-	 * @param mixed $schema Registered REST schema fragment.
+	 * @param mixed $schema          Registered REST schema fragment.
+	 * @param bool  $allow_untyped  Whether a composition parent supplies the type.
 	 * @return bool
 	 */
-	private function schema_contains_sensitive_contract( $schema ) {
+	private function schema_contains_sensitive_contract( $schema, $allow_untyped = false ) {
 		if ( ! is_array( $schema ) ) {
 			return false;
 		}
 
+		$types         = isset( $schema['type'] ) ? (array) $schema['type'] : array();
+		$allowed_types = array( 'array', 'object', 'string', 'number', 'integer', 'boolean', 'null' );
+		foreach ( $types as $type ) {
+			if ( ! is_string( $type ) || ! in_array( $type, $allowed_types, true ) ) {
+				return true;
+			}
+		}
+
+		$has_composition = false;
 		foreach ( array( 'anyOf', 'oneOf' ) as $composition_key ) {
 			if ( ! array_key_exists( $composition_key, $schema ) ) {
 				continue;
 			}
-			$branches = $schema[ $composition_key ];
+			$has_composition = true;
+			$branches        = $schema[ $composition_key ];
 			if ( ! is_array( $branches ) || empty( $branches ) ) {
 				return true;
 			}
 			foreach ( $branches as $branch ) {
-				if ( ! is_array( $branch ) || $this->schema_contains_sensitive_contract( $branch ) ) {
+				if ( ! is_array( $branch ) || $this->schema_contains_sensitive_contract( $branch, ! empty( $types ) ) ) {
 					return true;
 				}
 			}
 		}
 
-		$types            = isset( $schema['type'] ) ? (array) $schema['type'] : array();
+		if ( empty( $types ) && ! $has_composition && ! $allow_untyped ) {
+			return true;
+		}
+
 		$is_object_schema = in_array( 'object', $types, true ) || isset( $schema['properties'] ) || isset( $schema['patternProperties'] ) || array_key_exists( 'additionalProperties', $schema );
 		if ( $is_object_schema ) {
 			$properties = isset( $schema['properties'] ) && is_array( $schema['properties'] ) ? $schema['properties'] : array();
