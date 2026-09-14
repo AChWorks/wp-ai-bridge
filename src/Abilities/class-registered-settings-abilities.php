@@ -451,22 +451,52 @@ final class Registered_Settings_Abilities {
 	}
 
 	/**
-	 * Removes schema members that can contain runtime/default values or callbacks.
+	 * Removes schema-level runtime/default values without rewriting property names.
 	 *
-	 * @param mixed $schema Schema value.
+	 * JSON Schema maps such as `properties` use arbitrary provider field names, so a
+	 * legitimate field named `default` or `example` must not be mistaken for the
+	 * schema keyword of the same name.
+	 *
+	 * @param mixed $schema       Schema value.
+	 * @param bool  $property_map Whether the current array is a map of schema names.
 	 * @return mixed
 	 */
-	private function public_schema( $schema ) {
+	private function public_schema( $schema, $property_map = false ) {
 		if ( ! is_array( $schema ) ) {
 			return $schema;
 		}
 
 		$clean = array();
 		foreach ( $schema as $key => $value ) {
-			if ( in_array( (string) $key, array( 'default', 'example', 'examples', 'arg_options' ), true ) ) {
+			if ( ! $property_map && in_array( (string) $key, array( 'default', 'example', 'examples', 'arg_options' ), true ) ) {
 				continue;
 			}
-			$clean[ $key ] = is_array( $value ) ? $this->public_schema( $value ) : $value;
+
+			if ( $property_map ) {
+				$clean[ $key ] = is_array( $value ) ? $this->public_schema( $value ) : $value;
+				continue;
+			}
+
+			if ( in_array( (string) $key, array( 'properties', 'patternProperties', 'definitions', '$defs', 'dependentSchemas' ), true ) ) {
+				$clean[ $key ] = is_array( $value ) ? $this->public_schema( $value, true ) : $value;
+				continue;
+			}
+
+			if ( in_array( (string) $key, array( 'anyOf', 'oneOf', 'allOf' ), true ) && is_array( $value ) ) {
+				$branches = array();
+				foreach ( $value as $branch_key => $branch ) {
+					$branches[ $branch_key ] = is_array( $branch ) ? $this->public_schema( $branch ) : $branch;
+				}
+				$clean[ $key ] = $branches;
+				continue;
+			}
+
+			if ( in_array( (string) $key, array( 'items', 'additionalProperties', 'not', 'if', 'then', 'else', 'contains', 'propertyNames' ), true ) && is_array( $value ) ) {
+				$clean[ $key ] = $this->public_schema( $value );
+				continue;
+			}
+
+			$clean[ $key ] = $value;
 		}
 
 		return $clean;

@@ -22,7 +22,7 @@ A provider can therefore add a normal REST-registered setting without a WP AI Br
 
 ## Discovery does not expose values
 
-Broad discovery returns only the REST-visible name plus bounded type/title/description/schema metadata. The physical option name and current/default value are not part of the public discovery result. Schema metadata removes `default`, `example`, `examples`, and runtime `arg_options` fields before serialization.
+Broad discovery returns only the REST-visible name plus bounded type/title/description/schema metadata. The physical option name and current/default value are not part of the public discovery result. Schema metadata removes schema-level `default`, `example`, `examples`, and runtime `arg_options` members before serialization while preserving legitimate provider property names that use the same words.
 
 Exact reads and updates shape the result back to the one requested setting. WP AI Bridge never relays the complete `/wp/v2/settings` response even though Core may internally produce it for an authorized administrator.
 
