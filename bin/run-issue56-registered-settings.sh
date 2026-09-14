@@ -25,9 +25,11 @@ wp=("${compose[@]}" run --rm cli)
 "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration
 "${compose[@]}" cp "$root/tests/integration/issue56-registered-settings-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue56-registered-settings-smoke.php
 "${compose[@]}" cp "$root/tests/integration/issue56-registered-settings-typed-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue56-registered-settings-typed-smoke.php
+"${compose[@]}" cp "$root/tests/integration/issue56-specialized-settings-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue56-specialized-settings-smoke.php
 actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
 actual_php="$("${wp[@]}" eval 'echo PHP_VERSION;' --allow-root | tail -n 1)"
 echo "Issue #56 baseline: WordPress ${actual_wp}; PHP ${actual_php}; image ${wordpress_tag}"
 "${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue56-registered-settings-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue56-registered-settings-typed-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue56-specialized-settings-smoke.php --user=1 --allow-root
 echo 'Issue #56 registered REST settings integration: PASS'

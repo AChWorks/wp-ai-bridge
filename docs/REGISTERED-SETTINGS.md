@@ -12,6 +12,8 @@ This surface is intentionally narrower than arbitrary option access.
 
 The historical `site-settings-read` and `site-settings-update` abilities remain available for their existing bounded Core behavior, including front-page invariants and permalink/rewrite impact handling.
 
+Generic discovery and exact read may still include those Core settings when WordPress exposes them through the REST settings contract. Generic update does not mutate physical options already owned by `site-settings-update`; callers use the specialized Ability for those options so its front-page/page-target validation, bounded site-setting semantics, and required side effects cannot be bypassed through the generic route. This is a reserved specialized-operation boundary, not a provider option allowlist; other safe REST-registered provider settings remain generically updatable without Bridge source edits.
+
 ## WordPress remains authoritative
 
 The generic surface is derived from settings registered with `register_setting()` and `show_in_rest`. The Bridge reuses the fixed Core `/wp/v2/settings` contract rather than exposing `get_option()`, `update_option()`, an arbitrary REST route, or provider-private storage.

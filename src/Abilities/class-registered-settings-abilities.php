@@ -229,6 +229,13 @@ final class Registered_Settings_Abilities {
 		if ( is_wp_error( $entry ) ) {
 			return $entry;
 		}
+		if ( $this->requires_specialized_update( $entry ) ) {
+			return new WP_Error(
+				'registered_setting_specialized_update_required',
+				__( 'The requested setting is unavailable through the bounded registered settings contract.', 'wp-native-builder-bridge' ),
+				array( 'ability' => 'wp-native-builder/site-settings-update' )
+			);
+		}
 
 		$value = $this->decode_value( is_array( $input ) && isset( $input['value_json'] ) ? (string) $input['value_json'] : '' );
 		if ( is_wp_error( $value ) ) {
@@ -323,6 +330,31 @@ final class Registered_Settings_Abilities {
 		}
 
 		return $entries[ $name ];
+	}
+
+	/**
+	 * Keeps existing bounded Core site-setting semantics owned by the specialized Ability.
+	 *
+	 * The generic surface must not become an alternate mutation path around validation,
+	 * bounds, or side effects already implemented by `site-settings-update`.
+	 *
+	 * @param array<string,mixed> $entry Registered setting entry.
+	 * @return bool
+	 */
+	private function requires_specialized_update( array $entry ) {
+		return in_array(
+			$entry['option_name'],
+			array(
+				'blogname',
+				'blogdescription',
+				'show_on_front',
+				'page_on_front',
+				'page_for_posts',
+				'posts_per_page',
+				'permalink_structure',
+			),
+			true
+		);
 	}
 
 	/**
