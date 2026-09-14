@@ -138,8 +138,11 @@ function wpnb_issue56_register_settings() {
 					'type'                 => 'object',
 					'properties'           => array(
 						'payload' => array(
-							'type'  => array( 'string', 'object' ),
-							'oneOf' => array(
+							'type'                 => array( 'string', 'object' ),
+							'properties'           => array(
+								'display_name' => array( 'type' => 'string' ),
+							),
+							'oneOf'                => array(
 								array( 'type' => 'string' ),
 								array(
 									'type'                 => 'object',
@@ -149,6 +152,7 @@ function wpnb_issue56_register_settings() {
 									'additionalProperties' => false,
 								),
 							),
+							'additionalProperties' => false,
 						),
 					),
 					'additionalProperties' => false,
