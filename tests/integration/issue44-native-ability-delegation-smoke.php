@@ -95,6 +95,12 @@ function wpnb_issue44_live_call( $route, $token, $session, $ability_name, $id ) 
 function wpnb_issue44_live_error_text( array $data ) {
 	return (string) ( $data['result']['content'][0]['text'] ?? '' );
 }
+function wpnb_issue44_live_delegation( $catalog, $ability_name ) {
+	$result = $catalog->execute( array( 'action' => 'get', 'name' => $ability_name ) );
+	wpnb_issue44_live_assert( ! is_wp_error( $result ), 'Ability catalog could not inspect ' . $ability_name );
+	wpnb_issue44_live_assert( 'not_evaluated' === ( $result['execution_permission'] ?? '' ), 'Ability catalog evaluated target permission for ' . $ability_name );
+	return (string) ( $result['items'][0]['bridge_delegation'] ?? '' );
+}
 
 $user_id = get_current_user_id();
 wpnb_issue44_live_assert( $user_id > 0, 'Run Issue #44 smoke as an authenticated administrator.' );
@@ -118,21 +124,12 @@ wpnb_issue44_live_assert( ! is_wp_error( $direct ) && true === ( $direct['execut
 $direct_forged = $forged_class->execute( array() );
 wpnb_issue44_live_assert( ! is_wp_error( $direct_forged ) && true === ( $direct_forged['executed'] ?? false ), 'Forged custom class changed ordinary direct Ability execution.' );
 
-$catalog        = wp_get_ability( 'wp-native-builder/abilities-read' );
-$catalog_result = $catalog->execute( array( 'action' => 'list', 'search' => 'issue44', 'page' => 1, 'per_page' => 100 ) );
-wpnb_issue44_live_assert( ! is_wp_error( $catalog_result ) && 'not_evaluated' === $catalog_result['execution_permission'], 'Ability catalog evaluated target permission.' );
-$delegation = array();
-foreach ( $catalog_result['items'] as $item ) {
-	$delegation[ $item['name'] ] = $item['bridge_delegation'];
-}
-wpnb_issue44_live_assert( 'native_abilities' === ( $delegation['issue44/provider-allowed'] ?? '' ), 'Catalog did not expose native_abilities for custom provider.' );
-wpnb_issue44_live_assert( 'native_abilities' === ( $delegation['wp-native-builder/foreign-fixture'] ?? '' ), 'Registration-meta forgery changed discovery ownership.' );
-wpnb_issue44_live_assert( 'native_abilities' === ( $delegation['wp-native-builder/forged-class-fixture'] ?? '' ), 'Custom get_meta() forgery changed discovery ownership.' );
-$bridge_contract = $catalog->execute( array( 'action' => 'get', 'name' => 'wp-native-builder/bridge-info' ) );
-wpnb_issue44_live_assert(
-	! is_wp_error( $bridge_contract ) && 'ability_specific' === ( $bridge_contract['items'][0]['bridge_delegation'] ?? '' ),
-	'Genuine Bridge Ability did not retain ability-specific discovery policy.'
-);
+$catalog = wp_get_ability( 'wp-native-builder/abilities-read' );
+wpnb_issue44_live_assert( $catalog instanceof WP_Ability, 'Bridge Ability catalog was not registered.' );
+wpnb_issue44_live_assert( 'native_abilities' === wpnb_issue44_live_delegation( $catalog, 'issue44/provider-allowed' ), 'Catalog did not expose native_abilities for custom provider.' );
+wpnb_issue44_live_assert( 'native_abilities' === wpnb_issue44_live_delegation( $catalog, 'wp-native-builder/foreign-fixture' ), 'Registration-meta forgery changed discovery ownership.' );
+wpnb_issue44_live_assert( 'native_abilities' === wpnb_issue44_live_delegation( $catalog, 'wp-native-builder/forged-class-fixture' ), 'Custom get_meta() forgery changed discovery ownership.' );
+wpnb_issue44_live_assert( 'ability_specific' === wpnb_issue44_live_delegation( $catalog, 'wp-native-builder/bridge-info' ), 'Genuine Bridge Ability did not retain ability-specific discovery policy.' );
 
 $store     = new OAuth_Store();
 $oauth     = new OAuth_Server( $store );

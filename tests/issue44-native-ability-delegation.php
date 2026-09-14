@@ -78,9 +78,10 @@ wpnb_issue44_assert( 0 === $defaults[ Settings::GROUP_NATIVE_ABILITIES ], 'Nativ
 $GLOBALS['wpnb_issue44_options'][ Settings::OPTION_NAME ] = array( Settings::GROUP_SITE_READ => 1 );
 wpnb_issue44_assert( 0 === $settings->all()[ Settings::GROUP_NATIVE_ABILITIES ], 'Existing settings silently enabled Native Abilities on upgrade.' );
 
-$bridge_args = null;
+$bridge_args   = null;
+$bridge_object = null;
 $delegation->capture_bridge_registrations(
-	static function () use ( $delegation, &$bridge_args ) {
+	static function () use ( $delegation, &$bridge_args, &$bridge_object ) {
 		$bridge_args = $delegation->filter_ability_args(
 			array(
 				'permission_callback' => static function () { return true; },
@@ -89,16 +90,29 @@ $delegation->capture_bridge_registrations(
 			),
 			'wp-native-builder/fixture'
 		);
-		$GLOBALS['wpnb_issue44_abilities']['wp-native-builder/fixture'] = new WP_Native_Builder_Issue44_Ability(
-			'wp-native-builder/fixture',
-			$bridge_args['meta']
-		);
+		$bridge_object = new WP_Native_Builder_Issue44_Ability( 'wp-native-builder/fixture', $bridge_args['meta'] );
+		$GLOBALS['wpnb_issue44_abilities']['wp-native-builder/fixture'] = $bridge_object;
 	}
 );
 wpnb_issue44_assert( ! isset( $bridge_args['meta']['wp_ai_bridge_owned'] ), 'Bridge registration leaked a metadata ownership authority.' );
 wpnb_issue44_assert(
-	Native_Ability_Delegation::is_bridge_owned_ability( $GLOBALS['wpnb_issue44_abilities']['wp-native-builder/fixture'] ),
+	Native_Ability_Delegation::is_bridge_owned_ability( $bridge_object ),
 	'Genuine Bridge registration was not bound to the actual registered object.'
+);
+
+$replacement = new WP_Native_Builder_Issue44_Ability(
+	'wp-native-builder/fixture',
+	array( 'public' => true, 'wp_ai_bridge_owned' => true )
+);
+$GLOBALS['wpnb_issue44_abilities']['wp-native-builder/fixture'] = $replacement;
+wpnb_issue44_assert(
+	! Native_Ability_Delegation::is_bridge_owned_ability( $replacement ),
+	'A later same-name replacement inherited Bridge ownership from the original object.'
+);
+$GLOBALS['wpnb_issue44_abilities']['wp-native-builder/fixture'] = $bridge_object;
+wpnb_issue44_assert(
+	Native_Ability_Delegation::is_bridge_owned_ability( $bridge_object ),
+	'Restoring the original registered object lost its exact-object provenance.'
 );
 
 try {

@@ -10,37 +10,53 @@ if ( ! $catalog instanceof WP_Ability ) {
 	throw new RuntimeException( 'Bridge Ability catalog was not registered.' );
 }
 
-$result = $catalog->execute(
-	array(
-		'action'    => 'list',
-		'namespace' => 'wp-native-builder',
-		'page'      => 1,
-		'per_page'  => 100,
-	)
-);
-if ( is_wp_error( $result ) || ! is_array( $result ) ) {
-	throw new RuntimeException( 'Bridge Ability catalog could not be inspected for ownership provenance.' );
-}
-
 $foreign = array(
-	'wp-native-builder/foreign-fixture'      => true,
+	'wp-native-builder/foreign-fixture'       => true,
 	'wp-native-builder/forged-class-fixture' => true,
 );
+$seen    = array();
 $checked = 0;
-foreach ( $result['items'] as $item ) {
-	$name       = isset( $item['name'] ) ? (string) $item['name'] : '';
-	$delegation = isset( $item['bridge_delegation'] ) ? (string) $item['bridge_delegation'] : '';
-	if ( isset( $foreign[ $name ] ) ) {
-		if ( 'native_abilities' !== $delegation ) {
-			throw new RuntimeException( 'Foreign Ability was misclassified as Bridge-owned: ' . $name );
-		}
-		continue;
+$page    = 1;
+
+while ( true ) {
+	$result = $catalog->execute(
+		array(
+			'action'    => 'list',
+			'namespace' => 'wp-native-builder',
+			'page'      => $page,
+			'per_page'  => 50,
+		)
+	);
+	if ( is_wp_error( $result ) || ! is_array( $result ) ) {
+		throw new RuntimeException( 'Bridge Ability catalog could not be inspected for ownership provenance.' );
 	}
 
-	++$checked;
-	if ( 'ability_specific' !== $delegation ) {
-		throw new RuntimeException( 'Genuine Bridge Ability is missing object-identity provenance: ' . $name );
+	foreach ( $result['items'] as $item ) {
+		$name       = isset( $item['name'] ) ? (string) $item['name'] : '';
+		$delegation = isset( $item['bridge_delegation'] ) ? (string) $item['bridge_delegation'] : '';
+		if ( '' === $name || isset( $seen[ $name ] ) ) {
+			throw new RuntimeException( 'Ability ownership inventory contained an empty or duplicate name.' );
+		}
+		$seen[ $name ] = true;
+
+		if ( isset( $foreign[ $name ] ) ) {
+			if ( 'native_abilities' !== $delegation ) {
+				throw new RuntimeException( 'Foreign Ability was misclassified as Bridge-owned: ' . $name );
+			}
+			continue;
+		}
+
+		++$checked;
+		if ( 'ability_specific' !== $delegation ) {
+			throw new RuntimeException( 'Genuine Bridge Ability is missing object-identity provenance: ' . $name );
+		}
 	}
+
+	$total_pages = isset( $result['total_pages'] ) ? (int) $result['total_pages'] : 0;
+	if ( $page >= $total_pages ) {
+		break;
+	}
+	++$page;
 }
 
 if ( $checked < 1 ) {
@@ -48,16 +64,13 @@ if ( $checked < 1 ) {
 }
 
 foreach ( array_keys( $foreign ) as $name ) {
-	$found = false;
-	foreach ( $result['items'] as $item ) {
-		if ( $name === ( $item['name'] ?? '' ) ) {
-			$found = true;
-			break;
-		}
-	}
-	if ( ! $found ) {
+	if ( empty( $seen[ $name ] ) ) {
 		throw new RuntimeException( 'Foreign ownership-forgery fixture was missing from catalog inventory: ' . $name );
 	}
 }
 
-echo 'PASS: Issue #44 Bridge ownership provenance inventory (' . $checked . " abilities).\n";
+if ( count( $seen ) !== (int) ( $result['total'] ?? -1 ) ) {
+	throw new RuntimeException( 'Ability ownership inventory did not cover the complete paginated namespace.' );
+}
+
+echo 'PASS: Issue #44 complete Bridge ownership provenance inventory (' . $checked . " genuine abilities).\n";
