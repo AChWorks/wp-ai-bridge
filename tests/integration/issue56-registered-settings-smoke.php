@@ -195,6 +195,14 @@ try {
 
 	$list = wpnb_issue56_execute( 'wp-native-builder/registered-settings-list', array( 'per_page' => 100 ) );
 	wpnb_issue56_assert( ! is_wp_error( $list ), 'Registered settings discovery failed under Site Read.' );
+	$overflow_page = wpnb_issue56_execute(
+		'wp-native-builder/registered-settings-list',
+		array(
+			'page'     => PHP_INT_MAX,
+			'per_page' => 100,
+		)
+	);
+	wpnb_issue56_assert( is_wp_error( $overflow_page ), 'Overflowing registered settings pagination was not rejected.' );
 	$items = array();
 	foreach ( $list['items'] as $item ) {
 		$items[ $item['name'] ] = $item;
