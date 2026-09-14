@@ -7,6 +7,7 @@
 
 namespace WP_Native_Builder_Bridge\Abilities;
 
+use WP_Native_Builder_Bridge\Support\Native_Ability_Delegation;
 use WP_Native_Builder_Bridge\Support\Permissions;
 use WP_Native_Builder_Bridge\Support\Settings;
 use WP_Error;
@@ -161,13 +162,14 @@ final class Ability_Catalog_Abilities {
 			$annotations[ $key ] = is_bool( $value ) ? $value : null;
 		}
 		return array(
-			'name'        => $name,
-			'namespace'   => explode( '/', $name, 2 )[0],
-			'label'       => $ability->get_label(),
-			'description' => $ability->get_description(),
-			'category'    => $ability->get_category(),
-			'mcp_type'    => in_array( $type, array( 'tool', 'resource', 'prompt' ), true ) ? $type : 'unknown',
-			'annotations' => $annotations,
+			'name'              => $name,
+			'namespace'         => explode( '/', $name, 2 )[0],
+			'label'             => $ability->get_label(),
+			'description'       => $ability->get_description(),
+			'category'          => $ability->get_category(),
+			'mcp_type'          => in_array( $type, array( 'tool', 'resource', 'prompt' ), true ) ? $type : 'unknown',
+			'annotations'       => $annotations,
+			'bridge_delegation' => Native_Ability_Delegation::is_bridge_owned_ability( $ability ) ? 'ability_specific' : 'native_abilities',
 		);
 	}
 
@@ -288,16 +290,20 @@ final class Ability_Catalog_Abilities {
 		$item = array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'name'          => array( 'type' => 'string' ),
-				'namespace'     => array( 'type' => 'string' ),
-				'label'         => array( 'type' => 'string' ),
-				'description'   => array( 'type' => 'string' ),
-				'category'      => array( 'type' => 'string' ),
-				'mcp_type'      => array(
+				'name'              => array( 'type' => 'string' ),
+				'namespace'         => array( 'type' => 'string' ),
+				'label'             => array( 'type' => 'string' ),
+				'description'       => array( 'type' => 'string' ),
+				'category'          => array( 'type' => 'string' ),
+				'mcp_type'          => array(
 					'type' => 'string',
 					'enum' => array( 'tool', 'resource', 'prompt', 'unknown' ),
 				),
-				'annotations'   => array(
+				'bridge_delegation' => array(
+					'type' => 'string',
+					'enum' => array( 'ability_specific', 'native_abilities' ),
+				),
+				'annotations'       => array(
 					'type'                 => 'object',
 					'properties'           => array(
 						'readonly'    => array( 'type' => array( 'boolean', 'null' ) ),
@@ -311,7 +317,7 @@ final class Ability_Catalog_Abilities {
 				'input_schema'  => array( 'type' => array( 'object', 'array' ) ),
 				'output_schema' => array( 'type' => array( 'object', 'array' ) ),
 			),
-			'required'             => array( 'name', 'namespace', 'label', 'description', 'category', 'mcp_type', 'annotations' ),
+			'required'             => array( 'name', 'namespace', 'label', 'description', 'category', 'mcp_type', 'bridge_delegation', 'annotations' ),
 			'additionalProperties' => false,
 		);
 		return array(

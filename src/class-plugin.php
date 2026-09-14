@@ -12,6 +12,7 @@ use WP_Native_Builder_Bridge\Admin\Settings_Page;
 use WP_Native_Builder_Bridge\Auth\OAuth_Server;
 use WP_Native_Builder_Bridge\Support\Environment;
 use WP_Native_Builder_Bridge\Support\Mutation_Log;
+use WP_Native_Builder_Bridge\Support\Native_Ability_Delegation;
 use WP_Native_Builder_Bridge\Support\Permissions;
 use WP_Native_Builder_Bridge\Support\Settings;
 use WP_Native_Builder_Bridge\Workspace\Store;
@@ -30,6 +31,8 @@ final class Plugin {
 	private $settings;
 	/** @var Permissions */
 	private $permissions;
+	/** @var Native_Ability_Delegation */
+	private $native_ability_delegation;
 	/** @var Registrar */
 	private $registrar;
 	/** @var OAuth_Server */
@@ -60,15 +63,17 @@ final class Plugin {
 			return;
 		}
 
-		$this->booted        = true;
-		$this->environment   = new Environment();
-		$this->settings      = new Settings();
-		$this->permissions   = new Permissions( $this->settings );
-		$this->workspace     = new Store();
-		$this->registrar     = new Registrar( $this->environment, $this->settings, $this->permissions, $this->workspace );
-		$this->oauth_server  = new OAuth_Server();
-		$this->settings_page = new Settings_Page( $this->environment, $this->settings, $this->oauth_server, $this->workspace, new Mutation_Log() );
+		$this->booted                    = true;
+		$this->environment               = new Environment();
+		$this->settings                  = new Settings();
+		$this->permissions               = new Permissions( $this->settings );
+		$this->native_ability_delegation = new Native_Ability_Delegation( $this->settings );
+		$this->workspace                 = new Store();
+		$this->registrar                 = new Registrar( $this->environment, $this->settings, $this->permissions, $this->workspace );
+		$this->oauth_server              = new OAuth_Server();
+		$this->settings_page             = new Settings_Page( $this->environment, $this->settings, $this->oauth_server, $this->workspace, new Mutation_Log() );
 
+		$this->native_ability_delegation->boot();
 		$this->oauth_server->boot();
 
 		add_action( 'init', array( $this, 'load_textdomain' ), 1 );
