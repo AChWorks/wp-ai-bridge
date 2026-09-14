@@ -29,6 +29,10 @@ A successful OAuth connection is not write authorization. Check both:
 
 For example, publishing normally needs **Builder Write + Live Content** plus the applicable WordPress publish capability.
 
+### Comment administration is denied
+
+Comment inspection/replies/moderation require the separate default-off **Comments** group plus the current WordPress principal's native Core permission for the exact route/target. Permanent comment deletion additionally requires **Users & Destructive**. A non-force delete of an already-trashed comment intentionally remains a no-op/trashed result rather than escalating to permanent deletion.
+
 ## A registered provider Ability is visible but execution is denied
 
 Discovery does not authorize execution. For a non-Bridge Core/provider Ability invoked through WP AI Bridge, check both:

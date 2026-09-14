@@ -94,6 +94,7 @@ Bridge permissions are additive to normal WordPress capabilities. Enabling a Bri
 | **Code & Extensions** | Permit supported managed-snippet and plugin/theme lifecycle operations. |
 | **Source Editing** | Separately permit installed plugin/theme source read/preview/apply/recovery. Code & Extensions and native WordPress source-edit authority are still required. Disabled by default, including upgrades. |
 | **Native Abilities** | Permit registered Core/provider Abilities to execute through the WP AI Bridge MCP routes when their own WordPress/provider permission checks also allow it. This is broad registered-operation trust, not a sandbox, and is disabled by default including upgrades. |
+| **Comments** | Permit bounded standard-comment discovery, replies, and moderation through the fixed WordPress Core comments REST contract. Disabled by default including upgrades; permanent comment deletion additionally requires Users & Destructive. |
 | **Users & Destructive** | Permit user/role administration and destructive operations when WordPress also permits them. Metadata deletion requires this group in addition to Advanced Metadata. |
 
 Only **Site Read** is enabled by default.

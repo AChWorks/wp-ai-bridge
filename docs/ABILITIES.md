@@ -45,10 +45,23 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `users-read` | Site Read | Read bounded user/role information without credential material. |
 | `user-upsert` | Users & Destructive | Create/update a user and assign an editable role. |
 | `user-remove` | Users & Destructive | Remove a user with explicit reassignment. |
+| `comments-read` | Comments | List/get bounded standard WordPress comment data through the fixed Core comments REST routes; private author transport fields and arbitrary meta are omitted. |
+| `comment-reply` | Comments | Create one bounded reply on an exact post/parent through Core comment creation; caller cannot override author/IP/status/meta. |
+| `comment-status` | Comments | Apply one closed moderation status transition through Core comment lifecycle and native moderation authority. |
+| `comment-delete` | Comments; permanent delete also Users & Destructive | Move one standard comment to Trash; an already-trashed non-force request is idempotent, while permanent deletion requires the additional destructive grant. |
 | `workspace-resume` | Site Read | Return compact durable Workspace orientation. |
 | `workspace-document` | Site Read / Builder Write | List/read/create/update/archive private Workspace documents. |
 | `workspace-task` | Site Read / Builder Write | List/read/create/update/transition/archive private Workspace tasks. |
 
+
+
+## Comments administration boundary
+
+`Comments` is a separate default-off administrator delegation group. Existing Site Read, Builder Write, or other historical grants never enable it on upgrade. Bridge-owned comment operations use only the fixed Core `/wp/v2/comments` collection/item routes through internal `WP_REST_Request` + `rest_do_request()`; callers cannot supply an arbitrary REST route or method, and Core validation plus permission callbacks remain authoritative.
+
+The typed surface is intentionally narrow: bounded list/get, one reply, one moderation/status transition, and one Trash/permanent-delete target. Public list pagination requires an exact post that Core permits the current principal to read, so aggregate totals never span comments on unreadable posts; a positive parent filter is accepted only after that parent itself is readable, approved, standard, and belongs to the same post. Moderation scope retains broader queue pagination for principals with native moderation authority. List/detail results omit author email/IP, user-agent, arbitrary comment meta, avatar payloads, and other hidden transport fields. Comment content is byte-bounded (with an explicit `content_truncated` flag) so a large database row cannot create an unbounded MCP response. Reply input does not expose author identity, IP, status, or metadata overrides. Standard-comment mutations reject non-comment objects such as editor/Core notes.
+
+Trash is permitted under Comments plus exact WordPress authority. Non-force deletion never calls Core DELETE: it uses the status-update lifecycle to move the comment to Trash. Repeating it on an already-trashed comment is idempotent and performs no mutation, so it cannot accidentally become permanent deletion even under a concurrent trash transition. Permanent deletion is reachable only through explicit `force=true` and additionally requires **Users & Destructive** plus WordPress target authority.
 
 ## Installed source editing boundary
 

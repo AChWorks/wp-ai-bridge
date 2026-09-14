@@ -8,6 +8,7 @@ $messages = array_merge(
 	require __DIR__ . '/fa_IR-parts/part-6.php',
 	require __DIR__ . '/fa_IR-parts/ability-catalog.php',
 	require __DIR__ . '/fa_IR-parts/native-abilities.php',
+	require __DIR__ . '/fa_IR-parts/comments.php',
 	require __DIR__ . '/fa_IR-parts/media-import.php',
 	require __DIR__ . '/fa_IR-parts/source-editing.php'
 );

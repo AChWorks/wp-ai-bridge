@@ -149,6 +149,7 @@ foreach ($fixture["settings"] as $group => $enabled) {
     if (!array_key_exists($group, $current_settings) || $current_settings[$group] !== $enabled) { exit(1); }
 }
 if (!array_key_exists(WP_Native_Builder_Bridge\Support\Settings::GROUP_NATIVE_ABILITIES, $current_settings) || 0 !== $current_settings[WP_Native_Builder_Bridge\Support\Settings::GROUP_NATIVE_ABILITIES]) { exit(1); }
+if (!array_key_exists(WP_Native_Builder_Bridge\Support\Settings::GROUP_COMMENTS, $current_settings) || 0 !== $current_settings[WP_Native_Builder_Bridge\Support\Settings::GROUP_COMMENTS]) { exit(1); }
 $store = new WP_Native_Builder_Bridge\Workspace\Store();
 $doc = $store->get_document((int) $fixture["document_id"]);
 $task = $store->get_task((int) $fixture["task_id"]);

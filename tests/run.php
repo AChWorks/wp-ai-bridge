@@ -55,10 +55,12 @@ wpnb_assert( 1 === $defaults[ Settings::GROUP_SITE_READ ], 'Site Read defaults t
 wpnb_assert( 0 === $defaults[ Settings::GROUP_BUILDER_WRITE ], 'Builder Write defaults to disabled.' );
 wpnb_assert( 0 === $defaults[ Settings::GROUP_LIVE_CONTENT ], 'Live Content defaults to disabled.' );
 wpnb_assert( 0 === $defaults[ Settings::GROUP_SOURCE_EDITING ], 'Source Editing defaults to disabled.' );
+wpnb_assert( 0 === $defaults[ Settings::GROUP_COMMENTS ], 'Comments defaults to disabled.' );
 $GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = array( Settings::GROUP_CODE_EXTENSIONS => 1 );
 $upgrade_settings = $settings->all();
 wpnb_assert( 1 === $upgrade_settings[ Settings::GROUP_CODE_EXTENSIONS ], 'Existing Code & Extensions consent is preserved on upgrade.' );
 wpnb_assert( 0 === $upgrade_settings[ Settings::GROUP_SOURCE_EDITING ], 'Existing Code & Extensions consent does not silently enable Source Editing on upgrade.' );
+wpnb_assert( 0 === $upgrade_settings[ Settings::GROUP_COMMENTS ], 'Existing access grants do not silently enable Comments on upgrade.' );
 $GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = array();
 
 $sanitized = $settings->sanitize(
@@ -258,6 +260,10 @@ wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-bui
 wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/users-read'] ), 'User and role inspection ability is registered.' );
 wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/user-upsert'] ), 'Bounded user mutation ability is registered.' );
 wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/user-remove'] ), 'Explicit reassignment user removal ability is registered.' );
+wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/comments-read'] ), 'Comment inspection ability is registered.' );
+wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/comment-reply'] ), 'Comment reply ability is registered.' );
+wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/comment-status'] ), 'Comment moderation ability is registered.' );
+wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/comment-delete'] ), 'Comment deletion ability is registered.' );
 wpnb_assert( ! isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/gravity-forms-read'] ), 'Gravity Forms fallback disappears when GFAPI is unavailable.' );
 wpnb_assert( ! isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/snippets-read'] ), 'Code Snippets fallback disappears when its supported API is unavailable.' );
 wpnb_assert( isset( $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/workspace-resume'] ), 'Compact Workspace resume ability is registered.' );
