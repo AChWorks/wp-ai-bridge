@@ -180,6 +180,10 @@ final class Registrar {
 			)
 		);
 
+		if ( $this->native_ability_delegation ) {
+			$this->native_ability_delegation->remember_bridge_abilities( array_values( array_filter( $registered, 'is_object' ) ) );
+		}
+
 		$providers = array(
 			$this->site_abilities,
 			$this->catalog_abilities,
@@ -201,15 +205,10 @@ final class Registrar {
 		);
 
 		foreach ( $providers as $provider ) {
-			foreach ( $provider->register() as $ability ) {
-				if ( is_object( $ability ) ) {
-					$registered[] = $ability;
-				}
+			$provider_abilities = $provider->register();
+			if ( $this->native_ability_delegation ) {
+				$this->native_ability_delegation->remember_bridge_abilities( $provider_abilities );
 			}
-		}
-
-		if ( $this->native_ability_delegation ) {
-			$this->native_ability_delegation->remember_bridge_abilities( array_values( array_filter( $registered, 'is_object' ) ) );
 		}
 	}
 
