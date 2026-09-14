@@ -110,25 +110,30 @@ $current         = is_array( $before_settings ) ? $before_settings : array();
 $current[ Settings::GROUP_NATIVE_ABILITIES ] = 0;
 update_option( Settings::OPTION_NAME, $current, false );
 
-$provider     = wp_get_ability( 'issue44/provider-allowed' );
-$foreign      = wp_get_ability( 'wp-native-builder/foreign-fixture' );
-$forged_class = wp_get_ability( 'wp-native-builder/forged-class-fixture' );
-$bridge_info  = wp_get_ability( 'wp-native-builder/bridge-info' );
+$provider      = wp_get_ability( 'issue44/provider-allowed' );
+$foreign       = wp_get_ability( 'wp-native-builder/foreign-fixture' );
+$forged_class  = wp_get_ability( 'wp-native-builder/forged-class-fixture' );
+$reentrant     = wp_get_ability( 'wp-native-builder/reentrant-provider-fixture' );
+$bridge_info   = wp_get_ability( 'wp-native-builder/bridge-info' );
 wpnb_issue44_live_assert( $provider instanceof WP_AI_Bridge_Issue44_Custom_Ability, 'Late custom provider Ability was not registered.' );
 wpnb_issue44_live_assert( $foreign instanceof WP_Ability, 'Historical-prefix provider fixture was not registered.' );
 wpnb_issue44_live_assert( $forged_class instanceof WP_AI_Bridge_Issue44_Forged_Meta_Ability, 'Forged custom ability_class fixture was not registered.' );
+wpnb_issue44_live_assert( $reentrant instanceof WP_Ability, 'Re-entrant provider fixture was not registered during the Bridge call stack.' );
 wpnb_issue44_live_assert( $bridge_info instanceof WP_Ability, 'Bridge-owned Ability fixture was not registered.' );
 
 $direct = $provider->execute( array() );
 wpnb_issue44_live_assert( ! is_wp_error( $direct ) && true === ( $direct['executed'] ?? false ), 'Native direct Ability execution changed while Bridge delegation was disabled.' );
 $direct_forged = $forged_class->execute( array() );
 wpnb_issue44_live_assert( ! is_wp_error( $direct_forged ) && true === ( $direct_forged['executed'] ?? false ), 'Forged custom class changed ordinary direct Ability execution.' );
+$direct_reentrant = $reentrant->execute( array() );
+wpnb_issue44_live_assert( ! is_wp_error( $direct_reentrant ) && true === ( $direct_reentrant['executed'] ?? false ), 'Re-entrant provider changed ordinary direct Ability execution.' );
 
 $catalog = wp_get_ability( 'wp-native-builder/abilities-read' );
 wpnb_issue44_live_assert( $catalog instanceof WP_Ability, 'Bridge Ability catalog was not registered.' );
 wpnb_issue44_live_assert( 'native_abilities' === wpnb_issue44_live_delegation( $catalog, 'issue44/provider-allowed' ), 'Catalog did not expose native_abilities for custom provider.' );
 wpnb_issue44_live_assert( 'native_abilities' === wpnb_issue44_live_delegation( $catalog, 'wp-native-builder/foreign-fixture' ), 'Registration-meta forgery changed discovery ownership.' );
 wpnb_issue44_live_assert( 'native_abilities' === wpnb_issue44_live_delegation( $catalog, 'wp-native-builder/forged-class-fixture' ), 'Custom get_meta() forgery changed discovery ownership.' );
+wpnb_issue44_live_assert( 'native_abilities' === wpnb_issue44_live_delegation( $catalog, 'wp-native-builder/reentrant-provider-fixture' ), 'Re-entrant provider borrowed Bridge discovery provenance.' );
 wpnb_issue44_live_assert( 'ability_specific' === wpnb_issue44_live_delegation( $catalog, 'wp-native-builder/bridge-info' ), 'Genuine Bridge Ability did not retain ability-specific discovery policy.' );
 
 $store     = new OAuth_Store();
@@ -162,6 +167,9 @@ foreach ( $resources as $route => $resource ) {
 	$forged_virtual = wpnb_issue44_live_call( $route, $token, $session, 'wp-native-builder/forged-class-fixture', ++$id );
 	wpnb_issue44_live_assert( true === ( $forged_virtual['result']['isError'] ?? false ), 'Custom get_meta() ownership forgery bypassed Native Abilities on ' . $route );
 
+	$reentrant_denied = wpnb_issue44_live_call( $route, $token, $session, 'wp-native-builder/reentrant-provider-fixture', ++$id );
+	wpnb_issue44_live_assert( true === ( $reentrant_denied['result']['isError'] ?? false ), 'Re-entrant provider registration bypassed Native Abilities on ' . $route );
+
 	$bridge = wpnb_issue44_live_call( $route, $token, $session, 'wp-native-builder/bridge-info', ++$id );
 	wpnb_issue44_live_assert( false === ( $bridge['result']['isError'] ?? false ), 'Bridge-owned Ability was incorrectly blocked by Native Abilities on ' . $route );
 	$bridge_structured = wpnb_issue44_live_structured( $bridge );
@@ -180,6 +188,9 @@ foreach ( $resources as $route => $resource ) {
 	$forged_structured = wpnb_issue44_live_structured( $forged_allowed );
 	wpnb_issue44_live_assert( true === ( $forged_structured['success'] ?? false ) && true === ( $forged_structured['data']['executed'] ?? false ), 'Provider custom class execution result was not preserved.' );
 
+	$reentrant_allowed = wpnb_issue44_live_call( $route, $token, $session, 'wp-native-builder/reentrant-provider-fixture', ++$id );
+	wpnb_issue44_live_assert( false === ( $reentrant_allowed['result']['isError'] ?? false ), 'Enabled Native Abilities did not allow re-entrant provider after native permission.' );
+
 	$provider_denied = wpnb_issue44_live_call( $route, $token, $session, 'issue44/provider-denied', ++$id );
 	wpnb_issue44_live_assert( true === ( $provider_denied['result']['isError'] ?? false ), 'Bridge widened provider-native permission denial.' );
 
@@ -189,6 +200,8 @@ foreach ( $resources as $route => $resource ) {
 	wpnb_issue44_live_assert( true === ( $revoked['result']['isError'] ?? false ), 'Native Abilities revocation did not take effect immediately.' );
 	$revoked_forged = wpnb_issue44_live_call( $route, $token, $session, 'wp-native-builder/forged-class-fixture', ++$id );
 	wpnb_issue44_live_assert( true === ( $revoked_forged['result']['isError'] ?? false ), 'Revocation did not deny provider custom class immediately.' );
+	$revoked_reentrant = wpnb_issue44_live_call( $route, $token, $session, 'wp-native-builder/reentrant-provider-fixture', ++$id );
+	wpnb_issue44_live_assert( true === ( $revoked_reentrant['result']['isError'] ?? false ), 'Revocation did not deny re-entrant provider immediately.' );
 
 	$delete = wpnb_issue44_live_request( $route, 'DELETE', $token, array(), $session );
 	wpnb_issue44_live_assert( in_array( $delete->get_status(), array( 200, 204 ), true ), 'Issue #44 session termination failed.' );

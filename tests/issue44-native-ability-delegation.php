@@ -69,6 +69,11 @@ class WP_Native_Builder_Issue44_Ability {
 
 class WP_Native_Builder_Issue44_Custom_Ability extends WP_Native_Builder_Issue44_Ability {}
 
+final class WP_Native_Builder_Issue44_Callback_Owner {
+	public function permission() { return true; }
+	public function execute() { return true; }
+}
+
 $settings   = new Settings();
 $delegation = new Native_Ability_Delegation( $settings );
 
@@ -78,26 +83,45 @@ wpnb_issue44_assert( 0 === $defaults[ Settings::GROUP_NATIVE_ABILITIES ], 'Nativ
 $GLOBALS['wpnb_issue44_options'][ Settings::OPTION_NAME ] = array( Settings::GROUP_SITE_READ => 1 );
 wpnb_issue44_assert( 0 === $settings->all()[ Settings::GROUP_NATIVE_ABILITIES ], 'Existing settings silently enabled Native Abilities on upgrade.' );
 
-$bridge_args   = null;
-$bridge_object = null;
+$bridge_args      = null;
+$bridge_object    = null;
+$reentrant_object = null;
+$bridge_owner     = new WP_Native_Builder_Issue44_Callback_Owner();
+$provider_owner   = new WP_Native_Builder_Issue44_Callback_Owner();
 $delegation->capture_bridge_registrations(
-	static function () use ( $delegation, &$bridge_args, &$bridge_object ) {
+	static function () use ( $delegation, $bridge_owner, $provider_owner, &$bridge_args, &$bridge_object, &$reentrant_object ) {
 		$bridge_args = $delegation->filter_ability_args(
 			array(
-				'permission_callback' => static function () { return true; },
-				'execute_callback'    => static function () { return true; },
+				'permission_callback' => array( $bridge_owner, 'permission' ),
+				'execute_callback'    => array( $bridge_owner, 'execute' ),
 				'meta'                => array( 'public' => true, 'annotations' => array( 'readonly' => true ) ),
 			),
 			'wp-native-builder/fixture'
 		);
 		$bridge_object = new WP_Native_Builder_Issue44_Ability( 'wp-native-builder/fixture', $bridge_args['meta'] );
 		$GLOBALS['wpnb_issue44_abilities']['wp-native-builder/fixture'] = $bridge_object;
-	}
+
+		$reentrant_args = $delegation->filter_ability_args(
+			array(
+				'permission_callback' => array( $provider_owner, 'permission' ),
+				'execute_callback'    => array( $provider_owner, 'execute' ),
+				'meta'                => array( 'public' => true, 'wp_ai_bridge_owned' => true ),
+			),
+			'wp-native-builder/reentrant-provider'
+		);
+		$reentrant_object = new WP_Native_Builder_Issue44_Ability( 'wp-native-builder/reentrant-provider', $reentrant_args['meta'] );
+		$GLOBALS['wpnb_issue44_abilities']['wp-native-builder/reentrant-provider'] = $reentrant_object;
+	},
+	array( $bridge_owner )
 );
 wpnb_issue44_assert( ! isset( $bridge_args['meta']['wp_ai_bridge_owned'] ), 'Bridge registration leaked a metadata ownership authority.' );
 wpnb_issue44_assert(
-	Native_Ability_Delegation::is_bridge_owned_ability( $bridge_object ),
+	$delegation->is_bridge_owned_ability( $bridge_object ),
 	'Genuine Bridge registration was not bound to the actual registered object.'
+);
+wpnb_issue44_assert(
+	! $delegation->is_bridge_owned_ability( $reentrant_object ),
+	'Re-entrant provider registration borrowed Bridge provenance from registration depth.'
 );
 
 $replacement = new WP_Native_Builder_Issue44_Ability(
@@ -106,28 +130,29 @@ $replacement = new WP_Native_Builder_Issue44_Ability(
 );
 $GLOBALS['wpnb_issue44_abilities']['wp-native-builder/fixture'] = $replacement;
 wpnb_issue44_assert(
-	! Native_Ability_Delegation::is_bridge_owned_ability( $replacement ),
+	! $delegation->is_bridge_owned_ability( $replacement ),
 	'A later same-name replacement inherited Bridge ownership from the original object.'
 );
 $GLOBALS['wpnb_issue44_abilities']['wp-native-builder/fixture'] = $bridge_object;
 wpnb_issue44_assert(
-	Native_Ability_Delegation::is_bridge_owned_ability( $bridge_object ),
+	$delegation->is_bridge_owned_ability( $bridge_object ),
 	'Restoring the original registered object lost its exact-object provenance.'
 );
 
 try {
 	$delegation->capture_bridge_registrations(
-		static function () use ( $delegation ) {
+		static function () use ( $delegation, $bridge_owner ) {
 			$delegation->filter_ability_args(
 				array(
-					'permission_callback' => static function () { return true; },
-					'execute_callback'    => static function () { return true; },
+					'permission_callback' => array( $bridge_owner, 'permission' ),
+					'execute_callback'    => array( $bridge_owner, 'execute' ),
 					'meta'                => array( 'public' => true ),
 				),
 				'wp-native-builder/failed-registration'
 			);
 			throw new RuntimeException( 'registration-fixture' );
-		}
+		},
+		array( $bridge_owner )
 	);
 } catch ( RuntimeException $exception ) {
 	wpnb_issue44_assert( 'registration-fixture' === $exception->getMessage(), 'Bridge registration capture changed an exception.' );
@@ -137,7 +162,7 @@ $GLOBALS['wpnb_issue44_abilities']['wp-native-builder/failed-registration'] = ne
 	array( 'public' => true )
 );
 wpnb_issue44_assert(
-	! Native_Ability_Delegation::is_bridge_owned_ability( $GLOBALS['wpnb_issue44_abilities']['wp-native-builder/failed-registration'] ),
+	! $delegation->is_bridge_owned_ability( $GLOBALS['wpnb_issue44_abilities']['wp-native-builder/failed-registration'] ),
 	'Failed Bridge registration leaked provenance into a later provider object.'
 );
 
@@ -155,8 +180,31 @@ $GLOBALS['wpnb_issue44_abilities']['wp-native-builder/forged-prefix'] = new WP_N
 );
 wpnb_issue44_assert( true === $provider_args['meta']['wp_ai_bridge_owned'], 'Provider metadata was unexpectedly rewritten instead of remaining untrusted ordinary data.' );
 wpnb_issue44_assert(
-	! Native_Ability_Delegation::is_bridge_owned_ability( $GLOBALS['wpnb_issue44_abilities']['wp-native-builder/forged-prefix'] ),
+	! $delegation->is_bridge_owned_ability( $GLOBALS['wpnb_issue44_abilities']['wp-native-builder/forged-prefix'] ),
 	'Provider registration outside the Bridge phase inherited Bridge provenance.'
+);
+
+$rogue_delegation = new Native_Ability_Delegation( new Settings() );
+$rogue_owner      = new WP_Native_Builder_Issue44_Callback_Owner();
+$rogue_object     = null;
+$rogue_delegation->capture_bridge_registrations(
+	static function () use ( $rogue_delegation, $rogue_owner, &$rogue_object ) {
+		$args = $rogue_delegation->filter_ability_args(
+			array(
+				'permission_callback' => array( $rogue_owner, 'permission' ),
+				'execute_callback'    => array( $rogue_owner, 'execute' ),
+				'meta'                => array( 'public' => true ),
+			),
+			'wp-native-builder/rogue-capture'
+		);
+		$rogue_object = new WP_Native_Builder_Issue44_Ability( 'wp-native-builder/rogue-capture', $args['meta'] );
+		$GLOBALS['wpnb_issue44_abilities']['wp-native-builder/rogue-capture'] = $rogue_object;
+	},
+	array( $rogue_owner )
+);
+wpnb_issue44_assert(
+	! $delegation->is_bridge_owned_ability( $rogue_object ),
+	'A separately constructed delegation instance poisoned authoritative Bridge ownership.'
 );
 
 $provider_allowed = true;
@@ -203,6 +251,8 @@ $invoke = static function ( $route, $permission, $ability_name ) use ( $delegati
 foreach ( array( '/wp-ai-bridge/v1/mcp', '/wp-native-builder/v1/mcp' ) as $route ) {
 	$result = $invoke( $route, $adapter_permission, 'vendor/late-provider' );
 	wpnb_issue44_assert( $result instanceof WP_Error && 'wp_ai_bridge_native_abilities_disabled' === $result->get_error_code(), 'Native provider execution bypassed the disabled group on ' . $route . '.' );
+	$result = $invoke( $route, $adapter_permission, 'wp-native-builder/reentrant-provider' );
+	wpnb_issue44_assert( $result instanceof WP_Error && 'wp_ai_bridge_native_abilities_disabled' === $result->get_error_code(), 'Re-entrant provider registration bypassed the disabled group on ' . $route . '.' );
 }
 
 $result = $invoke( '/wp-ai-bridge/v1/mcp', $adapter_permission, 'wp-native-builder/fixture' );
@@ -249,7 +299,7 @@ $GLOBALS['wpnb_issue44_options'][ Settings::OPTION_NAME ] = array(
 	Settings::GROUP_SITE_READ        => 1,
 	Settings::GROUP_NATIVE_ABILITIES => 0,
 );
-$catalog        = new Ability_Catalog_Abilities( new Ability_Resolver(), new Permissions( $settings ) );
+$catalog        = new Ability_Catalog_Abilities( new Ability_Resolver(), new Permissions( $settings ), $delegation );
 $catalog_result = $catalog->read( array( 'action' => 'list', 'page' => 1, 'per_page' => 100 ) );
 wpnb_issue44_assert( is_array( $catalog_result ) && 'not_evaluated' === $catalog_result['execution_permission'], 'Ability discovery evaluated execution permission.' );
 $delegation_by_name = array();
@@ -258,6 +308,8 @@ foreach ( $catalog_result['items'] as $item ) {
 }
 wpnb_issue44_assert( 'native_abilities' === ( $delegation_by_name['vendor/late-provider'] ?? null ), 'Provider discovery did not report the Native Abilities delegation requirement.' );
 wpnb_issue44_assert( 'native_abilities' === ( $delegation_by_name['wp-native-builder/forged-prefix'] ?? null ), 'Forged namespace/metadata was misclassified as Bridge-owned.' );
+wpnb_issue44_assert( 'native_abilities' === ( $delegation_by_name['wp-native-builder/reentrant-provider'] ?? null ), 'Re-entrant provider registration was misclassified as Bridge-owned.' );
+wpnb_issue44_assert( 'native_abilities' === ( $delegation_by_name['wp-native-builder/rogue-capture'] ?? null ), 'Separate delegation instance altered authoritative discovery ownership.' );
 wpnb_issue44_assert( 'ability_specific' === ( $delegation_by_name['wp-native-builder/fixture'] ?? null ), 'Bridge-owned discovery did not retain ability-specific delegation.' );
 
 if ( $failures ) {

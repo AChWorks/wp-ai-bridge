@@ -11,8 +11,9 @@ if ( ! $catalog instanceof WP_Ability ) {
 }
 
 $foreign = array(
-	'wp-native-builder/foreign-fixture'       => true,
-	'wp-native-builder/forged-class-fixture' => true,
+	'wp-native-builder/foreign-fixture'           => true,
+	'wp-native-builder/forged-class-fixture'     => true,
+	'wp-native-builder/reentrant-provider-fixture' => true,
 );
 $seen    = array();
 $checked = 0;

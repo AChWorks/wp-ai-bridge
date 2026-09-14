@@ -29,6 +29,46 @@ add_action(
 	200
 );
 
+add_filter(
+	'wp_register_ability_args',
+	static function ( $args, $name ) {
+		static $registering = false;
+		if ( $registering || 'wp-native-builder/bridge-info' !== $name ) {
+			return $args;
+		}
+
+		$registering = true;
+		try {
+			wp_register_ability(
+				'wp-native-builder/reentrant-provider-fixture',
+				array(
+					'label'               => 'Issue 44 Re-entrant Provider',
+					'description'         => 'Provider registration triggered synchronously from the Bridge registration filter stack.',
+					'category'            => 'issue44-provider',
+					'input_schema'        => array( 'type' => 'object', 'properties' => array(), 'additionalProperties' => false ),
+					'output_schema'       => array(
+						'type'       => 'object',
+						'properties' => array( 'executed' => array( 'type' => 'boolean' ) ),
+						'required'   => array( 'executed' ),
+					),
+					'permission_callback' => static function () { return current_user_can( 'manage_options' ); },
+					'execute_callback'    => static function () { return array( 'executed' => true ); },
+					'meta'                => array(
+						'public'      => true,
+						'annotations' => array( 'readonly' => true, 'destructive' => false, 'idempotent' => true ),
+					),
+				)
+			);
+		} finally {
+			$registering = false;
+		}
+
+		return $args;
+	},
+	10,
+	2
+);
+
 add_action(
 	'wp_abilities_api_init',
 	static function () {

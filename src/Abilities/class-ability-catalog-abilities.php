@@ -24,15 +24,20 @@ final class Ability_Catalog_Abilities {
 	/** @var Permissions */
 	private $permissions;
 
+	/** @var Native_Ability_Delegation|null */
+	private $native_ability_delegation;
+
 	/**
 	 * Creates the existing-registry inspection provider.
 	 *
-	 * @param Ability_Resolver $resolver    Shared exposure-policy resolver.
-	 * @param Permissions      $permissions Bridge permission service.
+	 * @param Ability_Resolver                $resolver                  Shared exposure-policy resolver.
+	 * @param Permissions                     $permissions               Bridge permission service.
+	 * @param Native_Ability_Delegation|null $native_ability_delegation Authoritative Bridge provenance service.
 	 */
-	public function __construct( Ability_Resolver $resolver, Permissions $permissions ) {
-		$this->resolver    = $resolver;
-		$this->permissions = $permissions;
+	public function __construct( Ability_Resolver $resolver, Permissions $permissions, ?Native_Ability_Delegation $native_ability_delegation = null ) {
+		$this->resolver                  = $resolver;
+		$this->permissions               = $permissions;
+		$this->native_ability_delegation = $native_ability_delegation;
 	}
 
 	/** @return void */
@@ -169,7 +174,7 @@ final class Ability_Catalog_Abilities {
 			'category'          => $ability->get_category(),
 			'mcp_type'          => in_array( $type, array( 'tool', 'resource', 'prompt' ), true ) ? $type : 'unknown',
 			'annotations'       => $annotations,
-			'bridge_delegation' => Native_Ability_Delegation::is_bridge_owned_ability( $ability ) ? 'ability_specific' : 'native_abilities',
+			'bridge_delegation' => $this->native_ability_delegation && $this->native_ability_delegation->is_bridge_owned_ability( $ability ) ? 'ability_specific' : 'native_abilities',
 		);
 	}
 

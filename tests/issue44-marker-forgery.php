@@ -159,7 +159,7 @@ $GLOBALS['wpnb_issue44_marker_abilities']['wp-native-builder/forged-provider'] =
 
 wpnb_issue44_marker_assert( 0 === $forged_ability->meta_reads(), 'Fixture metadata was read before the ownership check.' );
 wpnb_issue44_marker_assert(
-	! Native_Ability_Delegation::is_bridge_owned_ability( $forged_ability ),
+	! $delegation->is_bridge_owned_ability( $forged_ability ),
 	'Provider virtual metadata was accepted as Bridge ownership provenance.'
 );
 wpnb_issue44_marker_assert(
@@ -200,7 +200,7 @@ wpnb_issue44_marker_assert(
 	'Provider-controlled virtual metadata bypassed disabled Native Abilities execution policy.'
 );
 
-$catalog        = new Ability_Catalog_Abilities( new Ability_Resolver(), new Permissions( $settings ) );
+$catalog        = new Ability_Catalog_Abilities( new Ability_Resolver(), new Permissions( $settings ), $delegation );
 $catalog_result = $catalog->read(
 	array(
 		'action'   => 'list',

@@ -69,7 +69,7 @@ final class Plugin {
 		$this->permissions               = new Permissions( $this->settings );
 		$this->native_ability_delegation = new Native_Ability_Delegation( $this->settings );
 		$this->workspace                 = new Store();
-		$this->registrar                 = new Registrar( $this->environment, $this->settings, $this->permissions, $this->workspace );
+		$this->registrar                 = new Registrar( $this->environment, $this->settings, $this->permissions, $this->workspace, $this->native_ability_delegation );
 		$this->oauth_server              = new OAuth_Server();
 		$this->settings_page             = new Settings_Page( $this->environment, $this->settings, $this->oauth_server, $this->workspace, new Mutation_Log() );
 
@@ -95,7 +95,10 @@ final class Plugin {
 	 * @return void
 	 */
 	public function register_abilities() {
-		$this->native_ability_delegation->capture_bridge_registrations( array( $this->registrar, 'register_abilities' ) );
+		$this->native_ability_delegation->capture_bridge_registrations(
+			array( $this->registrar, 'register_abilities' ),
+			$this->registrar->bridge_callback_owners()
+		);
 	}
 
 	/**

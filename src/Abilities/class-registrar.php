@@ -9,6 +9,7 @@ namespace WP_Native_Builder_Bridge\Abilities;
 
 use WP_Native_Builder_Bridge\Support\Environment;
 use WP_Native_Builder_Bridge\Support\Mutation_Log;
+use WP_Native_Builder_Bridge\Support\Native_Ability_Delegation;
 use WP_Native_Builder_Bridge\Support\Permissions;
 use WP_Native_Builder_Bridge\Support\Settings;
 use WP_Native_Builder_Bridge\Workspace\Store;
@@ -67,17 +68,18 @@ final class Registrar {
 	 *
 	 * @param Environment $environment Runtime dependency inspector.
 	 * @param Settings    $settings    Bridge settings service.
-	 * @param Permissions $permissions Ability permission service.
-	 * @param Store|null  $workspace   Optional shared Workspace store.
+	 * @param Permissions                     $permissions               Ability permission service.
+	 * @param Store|null                      $workspace                 Optional shared Workspace store.
+	 * @param Native_Ability_Delegation|null $native_ability_delegation Authoritative Bridge provenance service.
 	 */
-	public function __construct( Environment $environment, Settings $settings, Permissions $permissions, ?Store $workspace = null ) {
+	public function __construct( Environment $environment, Settings $settings, Permissions $permissions, ?Store $workspace = null, ?Native_Ability_Delegation $native_ability_delegation = null ) {
 		$this->environment              = $environment;
 		$this->settings                 = $settings;
 		$this->permissions              = $permissions;
 		$this->resolver                 = new Ability_Resolver();
 		$mutation_log                   = new Mutation_Log();
 		$this->site_abilities           = new Site_Abilities( $this->resolver, $this->permissions );
-		$this->catalog_abilities        = new Ability_Catalog_Abilities( $this->resolver, $this->permissions );
+		$this->catalog_abilities        = new Ability_Catalog_Abilities( $this->resolver, $this->permissions, $native_ability_delegation );
 		$this->content_abilities        = new Content_Abilities( $this->permissions, $mutation_log );
 		$this->post_meta_abilities      = new Post_Meta_Abilities( $this->permissions, $mutation_log );
 		$this->term_meta_abilities      = new Term_Meta_Abilities( $this->permissions, $mutation_log );
@@ -190,6 +192,39 @@ final class Registrar {
 		$this->gravity_forms_abilities->register();
 		$this->code_snippets_abilities->register();
 		$this->workspace_abilities->register();
+	}
+
+
+	/**
+	 * Returns the exact callback-owner objects created by this Registrar.
+	 *
+	 * Native Ability delegation uses object identity from this list only while this
+	 * Registrar synchronously registers Bridge Abilities. Class names, namespaces,
+	 * metadata and provider-created lookalike objects are not equivalent.
+	 *
+	 * @return array<int,object>
+	 */
+	public function bridge_callback_owners() {
+		return array(
+			$this,
+			$this->site_abilities,
+			$this->catalog_abilities,
+			$this->content_abilities,
+			$this->post_meta_abilities,
+			$this->term_meta_abilities,
+			$this->block_abilities,
+			$this->media_abilities,
+			$this->taxonomy_abilities,
+			$this->navigation_abilities,
+			$this->integration_abilities,
+			$this->site_config_abilities,
+			$this->extension_abilities,
+			$this->source_editing_abilities,
+			$this->user_abilities,
+			$this->gravity_forms_abilities,
+			$this->code_snippets_abilities,
+			$this->workspace_abilities,
+		);
 	}
 
 	/**
