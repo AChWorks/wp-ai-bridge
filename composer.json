@@ -1,43 +1,43 @@
 {
-  "name": "ach1992/wp-ai-bridge",
-  "description": "WP AI Bridge for direct ChatGPT OAuth/MCP access to permission-checked WordPress Abilities.",
-  "type": "wordpress-plugin",
-  "license": "GPL-2.0-or-later",
-  "require-dev": {
-    "dealerdirect/phpcodesniffer-composer-installer": "^1.2",
-    "phpcompatibility/phpcompatibility-wp": "^2.1",
-    "wp-coding-standards/wpcs": "^3.4",
-    "ext-zip": "*"
-  },
-  "config": {
-    "allow-plugins": {
-      "dealerdirect/phpcodesniffer-composer-installer": true
+    "name": "ach1992/wp-ai-bridge",
+    "description": "WP AI Bridge for direct ChatGPT OAuth/MCP access to permission-checked WordPress Abilities.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require-dev": {
+        "dealerdirect/phpcodesniffer-composer-installer": "^1.2",
+        "phpcompatibility/phpcompatibility-wp": "^2.1",
+        "wp-coding-standards/wpcs": "^3.4",
+        "ext-zip": "*"
     },
-    "sort-packages": true
-  },
-  "scripts": {
-    "validate-package": "composer validate --strict",
-    "lint": "bash bin/lint-php.sh",
-    "test": "php tests/run.php && php tests/issue29-block-path-zero.php && php tests/issue34-post-meta.php && php tests/issue36-term-meta.php && php tests/issue39-media-import.php && php tests/issue42-ability-catalog.php && php tests/issue44-native-ability-delegation.php && php tests/issue44-marker-forgery.php && php tests/issue44-context-lifecycle.php && php tests/issue47-identity-migration.php",
-    "phpcs": "phpcs",
-    "i18n": "php bin/check-i18n.php",
-    "build": "bash bin/build-zip.sh",
-    "check": [
-      "@validate-package",
-      "@lint",
-      "@test",
-      "@phpcs",
-      "@i18n",
-      "@safety",
-      "@build"
-    ],
-    "safety": "bash bin/static-safety-check.sh"
-  },
-  "homepage": "https://github.com/ach1992/wp-ai-bridge",
-  "authors": [
-    {
-      "name": "ACh",
-      "homepage": "https://ach.li"
-    }
-  ]
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        },
+        "sort-packages": true
+    },
+    "scripts": {
+        "validate-package": "composer validate --strict",
+        "lint": "bash bin/lint-php.sh",
+        "test": "php tests/run.php && php tests/issue29-block-path-zero.php && php tests/issue34-post-meta.php && php tests/issue36-term-meta.php && php tests/issue39-media-import.php && php tests/issue42-ability-catalog.php && php tests/issue44-native-ability-delegation.php && php tests/issue44-direct-return-provenance.php && php tests/issue44-marker-forgery.php && php tests/issue44-context-lifecycle.php && php tests/issue47-identity-migration.php",
+        "phpcs": "phpcs",
+        "i18n": "php bin/check-i18n.php",
+        "build": "bash bin/build-zip.sh",
+        "check": [
+            "@validate-package",
+            "@lint",
+            "@test",
+            "@phpcs",
+            "@i18n",
+            "@safety",
+            "@build"
+        ],
+        "safety": "bash bin/static-safety-check.sh"
+    },
+    "homepage": "https://github.com/ach1992/wp-ai-bridge",
+    "authors": [
+        {
+            "name": "ACh",
+            "homepage": "https://ach.li"
+        }
+    ]
 }
