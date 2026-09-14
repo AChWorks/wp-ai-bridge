@@ -28,17 +28,19 @@ Exact reads and updates shape the result back to the one requested setting. WP A
 
 ## Sensitive setting boundary
 
-The provider-neutral credential/session key policy also applies to registered settings. A setting whose physical or REST-visible identity is recognized as credential-like is omitted from discovery and unavailable through generic exact read/update.
+The provider-neutral credential/session key policy also applies to registered settings. A setting whose physical or REST-visible identity is recognized as credential-like is omitted from discovery and unavailable through generic exact read/update. The registered-settings provider also treats common access, consumer, license, encryption, and signing key identities as credential-like.
 
-This generic surface is not a secret-management API. API keys, passwords, credentials, private keys, OAuth/client secrets, access/refresh/session/authentication tokens, and equivalent setting identities require a purpose-specific lifecycle if they ever need Bridge management.
+This generic surface is not a secret-management API. API keys, passwords, credentials, private keys, OAuth/client secrets, access/refresh/session/authentication tokens, license/access/consumer keys, and equivalent setting identities require a purpose-specific lifecycle if they ever need Bridge management.
 
 ## Value transport
 
-Exact values use `value_json` so the Bridge can carry WordPress REST setting types without pretending every provider setting is a string. Update input must contain one valid, bounded, non-null JSON value. Core's registered schema and sanitization then decide whether that value is acceptable.
+Exact values use `value_json` so the Bridge can carry WordPress REST setting types without pretending every provider setting is a string. `value_available` tells callers whether that bounded JSON representation is present. Update input must contain one valid, bounded, non-null JSON value. Core's registered schema and sanitization then decide whether that value is acceptable.
 
 `null` is deliberately not accepted by the generic update Ability because Core interprets a null settings update as option deletion/reset. A purpose-specific reset/delete operation can be added separately when its semantics and authority are explicit.
 
-Setting values are bounded to 1 MiB. Public schema JSON is bounded separately; an oversized schema remains discoverable with `schema_available=false` but cannot leak an unbounded contract payload.
+Ordinary setting values are bounded to 1 MiB. If an exact Core read produces a value that cannot be safely represented inside that bound, the Bridge returns `value_available=false` and an empty `value_json` rather than leaking an unbounded payload. After an exact update, a successful Core POST remains a successful mutation even if the provider's resulting value cannot be safely represented; in that case the result likewise reports `value_available=false` instead of falsely claiming the already-committed mutation failed.
+
+Public schema JSON is bounded separately; an oversized schema remains discoverable with `schema_available=false` but cannot leak an unbounded contract payload.
 
 ## Authorization
 
