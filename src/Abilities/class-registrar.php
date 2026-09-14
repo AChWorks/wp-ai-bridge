@@ -9,6 +9,7 @@ namespace WP_Native_Builder_Bridge\Abilities;
 
 use WP_Native_Builder_Bridge\Support\Environment;
 use WP_Native_Builder_Bridge\Support\Mutation_Log;
+use WP_Native_Builder_Bridge\Support\Native_Ability_Delegation;
 use WP_Native_Builder_Bridge\Support\Permissions;
 use WP_Native_Builder_Bridge\Support\Settings;
 use WP_Native_Builder_Bridge\Workspace\Store;
@@ -61,38 +62,42 @@ final class Registrar {
 	private $code_snippets_abilities;
 	/** @var Workspace_Abilities */
 	private $workspace_abilities;
+	/** @var Native_Ability_Delegation|null */
+	private $native_ability_delegation;
 
 	/**
 	 * Creates the registrar.
 	 *
 	 * @param Environment $environment Runtime dependency inspector.
 	 * @param Settings    $settings    Bridge settings service.
-	 * @param Permissions $permissions Ability permission service.
-	 * @param Store|null  $workspace   Optional shared Workspace store.
+	 * @param Permissions                     $permissions               Ability permission service.
+	 * @param Store|null                      $workspace                 Optional shared Workspace store.
+	 * @param Native_Ability_Delegation|null $native_ability_delegation Authoritative Bridge provenance service.
 	 */
-	public function __construct( Environment $environment, Settings $settings, Permissions $permissions, ?Store $workspace = null ) {
-		$this->environment              = $environment;
-		$this->settings                 = $settings;
-		$this->permissions              = $permissions;
-		$this->resolver                 = new Ability_Resolver();
-		$mutation_log                   = new Mutation_Log();
-		$this->site_abilities           = new Site_Abilities( $this->resolver, $this->permissions );
-		$this->catalog_abilities        = new Ability_Catalog_Abilities( $this->resolver, $this->permissions );
-		$this->content_abilities        = new Content_Abilities( $this->permissions, $mutation_log );
-		$this->post_meta_abilities      = new Post_Meta_Abilities( $this->permissions, $mutation_log );
-		$this->term_meta_abilities      = new Term_Meta_Abilities( $this->permissions, $mutation_log );
-		$this->block_abilities          = new Block_Abilities( $this->permissions, $mutation_log );
-		$this->media_abilities          = new Media_Abilities( $this->permissions, $mutation_log );
-		$this->taxonomy_abilities       = new Taxonomy_Abilities( $this->permissions, $mutation_log );
-		$this->navigation_abilities     = new Navigation_Abilities( $this->permissions, $mutation_log );
-		$this->integration_abilities    = new Integration_Abilities( $this->resolver, $this->permissions );
-		$this->site_config_abilities    = new Site_Config_Abilities( $this->permissions, $mutation_log );
-		$this->extension_abilities      = new Extension_Abilities( $this->permissions, $mutation_log );
-		$this->source_editing_abilities = new Source_Editing_Abilities( $this->permissions, $mutation_log );
-		$this->user_abilities           = new User_Abilities( $this->permissions, $mutation_log );
-		$this->gravity_forms_abilities  = new Gravity_Forms_Abilities( $this->permissions, $mutation_log );
-		$this->code_snippets_abilities  = new Code_Snippets_Abilities( $this->permissions, $mutation_log );
-		$this->workspace_abilities      = new Workspace_Abilities( $this->permissions, $workspace ? $workspace : new Store(), $mutation_log );
+	public function __construct( Environment $environment, Settings $settings, Permissions $permissions, ?Store $workspace = null, ?Native_Ability_Delegation $native_ability_delegation = null ) {
+		$this->environment               = $environment;
+		$this->settings                  = $settings;
+		$this->permissions               = $permissions;
+		$this->native_ability_delegation = $native_ability_delegation;
+		$this->resolver                  = new Ability_Resolver();
+		$mutation_log                    = new Mutation_Log();
+		$this->site_abilities            = new Site_Abilities( $this->resolver, $this->permissions );
+		$this->catalog_abilities         = new Ability_Catalog_Abilities( $this->resolver, $this->permissions, $native_ability_delegation );
+		$this->content_abilities         = new Content_Abilities( $this->permissions, $mutation_log );
+		$this->post_meta_abilities       = new Post_Meta_Abilities( $this->permissions, $mutation_log );
+		$this->term_meta_abilities       = new Term_Meta_Abilities( $this->permissions, $mutation_log );
+		$this->block_abilities           = new Block_Abilities( $this->permissions, $mutation_log );
+		$this->media_abilities           = new Media_Abilities( $this->permissions, $mutation_log );
+		$this->taxonomy_abilities        = new Taxonomy_Abilities( $this->permissions, $mutation_log );
+		$this->navigation_abilities      = new Navigation_Abilities( $this->permissions, $mutation_log );
+		$this->integration_abilities     = new Integration_Abilities( $this->resolver, $this->permissions );
+		$this->site_config_abilities     = new Site_Config_Abilities( $this->permissions, $mutation_log );
+		$this->extension_abilities       = new Extension_Abilities( $this->permissions, $mutation_log );
+		$this->source_editing_abilities  = new Source_Editing_Abilities( $this->permissions, $mutation_log );
+		$this->user_abilities            = new User_Abilities( $this->permissions, $mutation_log );
+		$this->gravity_forms_abilities   = new Gravity_Forms_Abilities( $this->permissions, $mutation_log );
+		$this->code_snippets_abilities   = new Code_Snippets_Abilities( $this->permissions, $mutation_log );
+		$this->workspace_abilities       = new Workspace_Abilities( $this->permissions, $workspace ? $workspace : new Store(), $mutation_log );
 	}
 
 	/**
@@ -125,7 +130,9 @@ final class Registrar {
 			return;
 		}
 
-		wp_register_ability(
+		$registered = array();
+
+		$registered[] = wp_register_ability(
 			'wp-native-builder/bridge-info',
 			array(
 				'label'               => __( 'Bridge Info', 'wp-native-builder-bridge' ),
@@ -173,24 +180,38 @@ final class Registrar {
 			)
 		);
 
-		$this->site_abilities->register();
-		$this->catalog_abilities->register();
-		$this->content_abilities->register();
-		$this->post_meta_abilities->register();
-		$this->term_meta_abilities->register();
-		$this->block_abilities->register();
-		$this->media_abilities->register();
-		$this->taxonomy_abilities->register();
-		$this->navigation_abilities->register();
-		$this->integration_abilities->register();
-		$this->site_config_abilities->register();
-		$this->extension_abilities->register();
-		$this->source_editing_abilities->register();
-		$this->user_abilities->register();
-		$this->gravity_forms_abilities->register();
-		$this->code_snippets_abilities->register();
-		$this->workspace_abilities->register();
+		if ( $this->native_ability_delegation ) {
+			$this->native_ability_delegation->remember_bridge_abilities( array_values( array_filter( $registered, 'is_object' ) ) );
+		}
+
+		$providers = array(
+			$this->site_abilities,
+			$this->catalog_abilities,
+			$this->content_abilities,
+			$this->post_meta_abilities,
+			$this->term_meta_abilities,
+			$this->block_abilities,
+			$this->media_abilities,
+			$this->taxonomy_abilities,
+			$this->navigation_abilities,
+			$this->integration_abilities,
+			$this->site_config_abilities,
+			$this->extension_abilities,
+			$this->source_editing_abilities,
+			$this->user_abilities,
+			$this->gravity_forms_abilities,
+			$this->code_snippets_abilities,
+			$this->workspace_abilities,
+		);
+
+		foreach ( $providers as $provider ) {
+			$provider_abilities = $provider->register();
+			if ( $this->native_ability_delegation ) {
+				$this->native_ability_delegation->remember_bridge_abilities( $provider_abilities );
+			}
+		}
 	}
+
 
 	/**
 	 * Checks access to the bridge information ability.

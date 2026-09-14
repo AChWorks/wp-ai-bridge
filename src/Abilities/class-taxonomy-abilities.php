@@ -47,7 +47,8 @@ final class Taxonomy_Abilities {
 	 * @return void
 	 */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/terms-read',
 			array(
 				'label'               => __( 'Read Taxonomy Terms', 'wp-native-builder-bridge' ),
@@ -61,7 +62,7 @@ final class Taxonomy_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/term-upsert',
 			array(
 				'label'               => __( 'Create or Update Taxonomy Term', 'wp-native-builder-bridge' ),
@@ -75,7 +76,7 @@ final class Taxonomy_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/terms-assign',
 			array(
 				'label'               => __( 'Assign Taxonomy Terms', 'wp-native-builder-bridge' ),
@@ -126,7 +127,7 @@ final class Taxonomy_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/term-delete',
 			array(
 				'label'               => __( 'Delete Taxonomy Term', 'wp-native-builder-bridge' ),
@@ -162,6 +163,8 @@ final class Taxonomy_Abilities {
 				'meta'                => $this->meta( false, true, false ),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/**

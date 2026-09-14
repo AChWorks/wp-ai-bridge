@@ -23,9 +23,10 @@ final class User_Abilities {
 		$this->permissions = $permissions;
 		$this->log         = $log;}
 
-	/** @return void */
+	/** @return array<int,object> */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/users-read',
 			array(
 				'label'               => __( 'Read Users and Roles', 'wp-native-builder-bridge' ),
@@ -62,7 +63,7 @@ final class User_Abilities {
 				'meta'                => $this->meta( true, false, true ),
 			)
 		);
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/user-upsert',
 			array(
 				'label'               => __( 'Create or Update User', 'wp-native-builder-bridge' ),
@@ -83,7 +84,7 @@ final class User_Abilities {
 				'meta'                => $this->meta( false, false, false ),
 			)
 		);
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/user-remove',
 			array(
 				'label'               => __( 'Remove User', 'wp-native-builder-bridge' ),
@@ -120,6 +121,8 @@ final class User_Abilities {
 				'meta'                => $this->meta( false, true, false ),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 	/** @return bool */ public function can_read() {
 		return $this->permissions->allowed( Settings::GROUP_SITE_READ, 'list_users' );}

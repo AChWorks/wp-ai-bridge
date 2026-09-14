@@ -39,9 +39,10 @@ final class Term_Meta_Abilities {
 		$this->store       = new Term_Meta_Store();
 	}
 
-	/** @return void */
+	/** @return array<int,object> */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/term-meta-read',
 			array(
 				'label'               => __( 'Read Term Metadata', 'wp-native-builder-bridge' ),
@@ -55,7 +56,7 @@ final class Term_Meta_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/term-meta-update',
 			array(
 				'label'               => __( 'Update Term Metadata', 'wp-native-builder-bridge' ),
@@ -69,7 +70,7 @@ final class Term_Meta_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/term-meta-delete',
 			array(
 				'label'               => __( 'Delete Term Metadata', 'wp-native-builder-bridge' ),
@@ -82,6 +83,8 @@ final class Term_Meta_Abilities {
 				'meta'                => $this->meta( false, true, false ),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/**

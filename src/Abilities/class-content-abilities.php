@@ -47,7 +47,8 @@ final class Content_Abilities {
 	 * @return void
 	 */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/content-read',
 			array(
 				'label'               => __( 'Read Content', 'wp-native-builder-bridge' ),
@@ -61,7 +62,7 @@ final class Content_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/content-upsert',
 			array(
 				'label'               => __( 'Create or Update Content', 'wp-native-builder-bridge' ),
@@ -75,7 +76,7 @@ final class Content_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/content-delete',
 			array(
 				'label'               => __( 'Trash or Delete Content', 'wp-native-builder-bridge' ),
@@ -98,7 +99,7 @@ final class Content_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/revisions-read',
 			array(
 				'label'               => __( 'Read Content Revisions', 'wp-native-builder-bridge' ),
@@ -135,7 +136,7 @@ final class Content_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/revision-restore',
 			array(
 				'label'               => __( 'Restore Content Revision', 'wp-native-builder-bridge' ),
@@ -171,6 +172,8 @@ final class Content_Abilities {
 				'meta'                => $this->meta( false, false, false ),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/**

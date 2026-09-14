@@ -7,6 +7,7 @@
 
 namespace WP_Native_Builder_Bridge\Abilities;
 
+use WP_Native_Builder_Bridge\Support\Native_Ability_Delegation;
 use WP_Native_Builder_Bridge\Support\Permissions;
 use WP_Native_Builder_Bridge\Support\Settings;
 use WP_Error;
@@ -23,20 +24,26 @@ final class Ability_Catalog_Abilities {
 	/** @var Permissions */
 	private $permissions;
 
+	/** @var Native_Ability_Delegation|null */
+	private $native_ability_delegation;
+
 	/**
 	 * Creates the existing-registry inspection provider.
 	 *
-	 * @param Ability_Resolver $resolver    Shared exposure-policy resolver.
-	 * @param Permissions      $permissions Bridge permission service.
+	 * @param Ability_Resolver                $resolver                  Shared exposure-policy resolver.
+	 * @param Permissions                     $permissions               Bridge permission service.
+	 * @param Native_Ability_Delegation|null $native_ability_delegation Authoritative Bridge provenance service.
 	 */
-	public function __construct( Ability_Resolver $resolver, Permissions $permissions ) {
-		$this->resolver    = $resolver;
-		$this->permissions = $permissions;
+	public function __construct( Ability_Resolver $resolver, Permissions $permissions, ?Native_Ability_Delegation $native_ability_delegation = null ) {
+		$this->resolver                  = $resolver;
+		$this->permissions               = $permissions;
+		$this->native_ability_delegation = $native_ability_delegation;
 	}
 
-	/** @return void */
+	/** @return array<int,object> */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/abilities-read',
 			array(
 				'label'               => __( 'Read Ability Contracts', 'wp-native-builder-bridge' ),
@@ -59,6 +66,8 @@ final class Ability_Catalog_Abilities {
 				),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/** @return bool Whether public contract inspection is allowed. */
@@ -161,13 +170,14 @@ final class Ability_Catalog_Abilities {
 			$annotations[ $key ] = is_bool( $value ) ? $value : null;
 		}
 		return array(
-			'name'        => $name,
-			'namespace'   => explode( '/', $name, 2 )[0],
-			'label'       => $ability->get_label(),
-			'description' => $ability->get_description(),
-			'category'    => $ability->get_category(),
-			'mcp_type'    => in_array( $type, array( 'tool', 'resource', 'prompt' ), true ) ? $type : 'unknown',
-			'annotations' => $annotations,
+			'name'              => $name,
+			'namespace'         => explode( '/', $name, 2 )[0],
+			'label'             => $ability->get_label(),
+			'description'       => $ability->get_description(),
+			'category'          => $ability->get_category(),
+			'mcp_type'          => in_array( $type, array( 'tool', 'resource', 'prompt' ), true ) ? $type : 'unknown',
+			'annotations'       => $annotations,
+			'bridge_delegation' => $this->native_ability_delegation && $this->native_ability_delegation->is_bridge_owned_ability( $ability ) ? 'ability_specific' : 'native_abilities',
 		);
 	}
 
@@ -288,16 +298,20 @@ final class Ability_Catalog_Abilities {
 		$item = array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'name'          => array( 'type' => 'string' ),
-				'namespace'     => array( 'type' => 'string' ),
-				'label'         => array( 'type' => 'string' ),
-				'description'   => array( 'type' => 'string' ),
-				'category'      => array( 'type' => 'string' ),
-				'mcp_type'      => array(
+				'name'              => array( 'type' => 'string' ),
+				'namespace'         => array( 'type' => 'string' ),
+				'label'             => array( 'type' => 'string' ),
+				'description'       => array( 'type' => 'string' ),
+				'category'          => array( 'type' => 'string' ),
+				'mcp_type'          => array(
 					'type' => 'string',
 					'enum' => array( 'tool', 'resource', 'prompt', 'unknown' ),
 				),
-				'annotations'   => array(
+				'bridge_delegation' => array(
+					'type' => 'string',
+					'enum' => array( 'ability_specific', 'native_abilities' ),
+				),
+				'annotations'       => array(
 					'type'                 => 'object',
 					'properties'           => array(
 						'readonly'    => array( 'type' => array( 'boolean', 'null' ) ),
@@ -308,10 +322,10 @@ final class Ability_Catalog_Abilities {
 					'additionalProperties' => false,
 				),
 				// Core represents an absent schema as an empty PHP array; preserve it exactly.
-				'input_schema'  => array( 'type' => array( 'object', 'array' ) ),
-				'output_schema' => array( 'type' => array( 'object', 'array' ) ),
+				'input_schema'      => array( 'type' => array( 'object', 'array' ) ),
+				'output_schema'     => array( 'type' => array( 'object', 'array' ) ),
 			),
-			'required'             => array( 'name', 'namespace', 'label', 'description', 'category', 'mcp_type', 'annotations' ),
+			'required'             => array( 'name', 'namespace', 'label', 'description', 'category', 'mcp_type', 'bridge_delegation', 'annotations' ),
 			'additionalProperties' => false,
 		);
 		return array(

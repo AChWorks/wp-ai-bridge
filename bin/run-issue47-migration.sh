@@ -138,12 +138,17 @@ if "${compose[@]}" exec -T wordpress test -e /var/www/html/wp-content/plugins/wp
 fi
 
 # Prove all seeded durable identities survived and an old access token still binds
-# only to the retained legacy resource after upgrade.
+# only to the retained legacy resource after upgrade. Later access groups may be
+# added only when their upgrade default remains explicitly safe.
 "${wp[@]}" eval '
 $fixture = get_option("wpnb_issue47_upgrade_fixture", array());
 if (!is_array($fixture) || empty($fixture["legacy_token"])) { exit(1); }
 $settings = new WP_Native_Builder_Bridge\Support\Settings();
-if ($settings->all() !== $fixture["settings"]) { exit(1); }
+$current_settings = $settings->all();
+foreach ($fixture["settings"] as $group => $enabled) {
+    if (!array_key_exists($group, $current_settings) || $current_settings[$group] !== $enabled) { exit(1); }
+}
+if (!array_key_exists(WP_Native_Builder_Bridge\Support\Settings::GROUP_NATIVE_ABILITIES, $current_settings) || 0 !== $current_settings[WP_Native_Builder_Bridge\Support\Settings::GROUP_NATIVE_ABILITIES]) { exit(1); }
 $store = new WP_Native_Builder_Bridge\Workspace\Store();
 $doc = $store->get_document((int) $fixture["document_id"]);
 $task = $store->get_task((int) $fixture["task_id"]);

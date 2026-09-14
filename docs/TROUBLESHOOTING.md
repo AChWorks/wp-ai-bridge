@@ -29,6 +29,17 @@ A successful OAuth connection is not write authorization. Check both:
 
 For example, publishing normally needs **Builder Write + Live Content** plus the applicable WordPress publish capability.
 
+## A registered provider Ability is visible but execution is denied
+
+Discovery does not authorize execution. For a non-Bridge Core/provider Ability invoked through WP AI Bridge, check both:
+
+1. **Native Abilities** is enabled under **WP AI Bridge → Settings**;
+2. the connected WordPress user satisfies the target's own WordPress/provider permission callback.
+
+Native Abilities is broad registered-operation trust, not a sandbox or safety classifier. Enabling it cannot override a provider/Core denial, and the default disabled result is expected even for a WordPress administrator until that group is explicitly enabled. Bridge-owned Abilities continue to use their own more specific access groups.
+
+This group governs execution through the exact WP AI Bridge MCP routes. It does not change ordinary direct `WP_Ability::execute()`, the MCP Adapter default server, or WP-CLI behavior.
+
 ## `stale` or conflict errors
 
 The object changed after it was inspected. Read it again, use the new `modified_gmt`/`state_hash` or Workspace `version`/`state_hash`, then decide whether the intended update is still correct.

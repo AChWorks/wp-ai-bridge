@@ -12,7 +12,7 @@ Bridge-owned operations must satisfy every applicable layer:
 4. any provider-native permission check used by an integration;
 5. operation-specific live-state, destructive, and stale-state rules.
 
-OAuth never enables a Bridge access group and never grants a WordPress capability. Native provider operations retain their own permission callbacks; current Bridge groups do not uniformly govern provider-native execution. See [current delegation coverage](ARCHITECTURE.md#delegation-current-behavior-and-required-evolution); disabling a Bridge write group is not universal provider-write revocation.
+OAuth never enables a Bridge access group and never grants a WordPress capability. Registered non-Bridge Core/provider Abilities executed through the WP AI Bridge MCP routes additionally require the default-off **Native Abilities** group; the target's own WordPress/provider permission callback remains independently authoritative. Bridge-owned operations keep their documented ability-specific groups.
 
 ## Access groups
 
@@ -24,9 +24,18 @@ OAuth never enables a Bridge access group and never grants a WordPress capabilit
 - **Advanced Metadata** — protected/private post and term metadata for exact WordPress objects the connected user may edit; disabled by default and intentionally separate from ordinary Site Read/Builder Write access.
 - **Code & Extensions** — managed snippets and extension lifecycle.
 - **Source Editing** — separately enabled installed plugin/theme source read/preview/apply/recovery; executable PHP is administrator-level code trust, not a sandbox.
+- **Native Abilities** — default-off broad trust for registered non-Bridge Core/provider Abilities reached through the WP AI Bridge MCP routes. It is not a sandbox; provider/Core permission checks remain mandatory.
 - **Users & Destructive** — user administration and destructive operations. Generic post-meta and term-meta deletion require this group in addition to Advanced Metadata.
 
 Only Site Read is enabled by default.
+
+## Native Ability delegation boundary
+
+Native Abilities is provider-neutral broad consent, not effect inference or a provider allowlist. It gates registered non-Bridge Ability execution only while the request is executing through the exact canonical or retained legacy Bridge MCP route. It does not affect direct `WP_Ability::execute()`, the Adapter default server, or WP-CLI.
+
+A registered target must pass both enabled Native Abilities and its own native permission callback. The Bridge may add a denial but never converts a provider/Core denial into allow. Names, descriptions, categories, optimistic annotations, provider-supplied metadata, and custom Ability getters do not authorize execution. Bridge ownership is bound only to the exact successful Ability objects returned to Bridge provider code by its own Core `wp_register_ability()` calls and forwarded by `Registrar` to the injected delegation instance. Re-entrant provider registrations, filter ordering, later same-name replacements, the historical `wp-native-builder/*` namespace, `wp_ai_bridge_owned`, and overridden `get_meta()` cannot establish or inherit Bridge ownership. The private provenance set contains only object identity and is not a parallel Ability registry.
+
+Disabling Native Abilities takes effect on subsequent Bridge calls because settings are read at execution time. The exact Bridge request context is balanced with unconditional cleanup; unrelated REST routes are not governed by that context.
 
 ## Advanced post metadata boundary
 

@@ -93,6 +93,7 @@ Bridge permissions are additive to normal WordPress capabilities. Enabling a Bri
 | **Advanced Metadata** | Permit generic read/update of protected/private post and term metadata for exact objects the connected user may edit, including private/non-REST CPTs and taxonomies; credential-like keys, options, user meta, and Workspace internals remain excluded. |
 | **Code & Extensions** | Permit supported managed-snippet and plugin/theme lifecycle operations. |
 | **Source Editing** | Separately permit installed plugin/theme source read/preview/apply/recovery. Code & Extensions and native WordPress source-edit authority are still required. Disabled by default, including upgrades. |
+| **Native Abilities** | Permit registered Core/provider Abilities to execute through the WP AI Bridge MCP routes when their own WordPress/provider permission checks also allow it. This is broad registered-operation trust, not a sandbox, and is disabled by default including upgrades. |
 | **Users & Destructive** | Permit user/role administration and destructive operations when WordPress also permits them. Metadata deletion requires this group in addition to Advanced Metadata. |
 
 Only **Site Read** is enabled by default.
@@ -111,7 +112,7 @@ The public product is WP AI Bridge, but several established machine identifiers 
 
 ## Optional integrations
 
-Integration is discovery-first: provider-owned public WordPress Abilities are reused at runtime, so a compatible new plugin or theme should normally require no Bridge-specific code. Provider fallbacks are reserved for bounded gaps with documented public APIs. Generic post and term metadata is provider-neutral and does not require a new Bridge adapter merely because a plugin/theme stores state in `post_meta` or `term_meta`. See [Architecture](./docs/ARCHITECTURE.md#discovery-and-reuse).
+Integration is discovery-first: provider-owned public WordPress Abilities are reused at runtime, so a compatible new plugin or theme should normally require no Bridge-specific code. Remote execution of those registered provider/Core Abilities through the Bridge requires explicit **Native Abilities** access in addition to the provider's own permission callback. Provider fallbacks are reserved for bounded gaps with documented public APIs. Generic post and term metadata is provider-neutral and does not require a new Bridge adapter merely because a plugin/theme stores state in `post_meta` or `term_meta`. See [Architecture](./docs/ARCHITECTURE.md#discovery-and-reuse).
 
 - **Astra / Astra Pro:** enable Astra's **Abilities** setting. A separate Astra MCP server is not required for this Bridge setup.
 - **Code Snippets:** compatible provider APIs are used for managed snippet lifecycle; the Bridge does not directly evaluate submitted code.
@@ -132,7 +133,7 @@ WP AI Bridge is intentionally not a general remote-administration shell. It comb
 - bounded mutation logging;
 - provider-native permission checks where integrations are used.
 
-Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Source Editing, or destructive access on an important site.
+Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Source Editing, Native Abilities, or destructive access on an important site.
 
 ## Documentation
 

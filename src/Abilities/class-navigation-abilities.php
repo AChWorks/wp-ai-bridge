@@ -47,7 +47,8 @@ final class Navigation_Abilities {
 	 * @return void
 	 */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/navigation-read',
 			array(
 				'label'               => __( 'Read Navigation', 'wp-native-builder-bridge' ),
@@ -65,7 +66,7 @@ final class Navigation_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/classic-navigation-mutate',
 			array(
 				'label'               => __( 'Mutate Classic Navigation', 'wp-native-builder-bridge' ),
@@ -89,6 +90,8 @@ final class Navigation_Abilities {
 				'meta'                => $this->meta( false, true, false ),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/**

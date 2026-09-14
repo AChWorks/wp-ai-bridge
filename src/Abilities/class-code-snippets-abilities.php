@@ -30,13 +30,14 @@ final class Code_Snippets_Abilities {
 		$this->log         = $log;
 	}
 
-	/** @return void */
+	/** @return array<int,object> */
 	public function register() {
+		$registered = array();
 		if ( ! $this->available() ) {
-			return;
+			return array();
 		}
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/snippets-read',
 			array(
 				'label'               => __( 'Read Managed Snippets', 'wp-native-builder-bridge' ),
@@ -50,7 +51,7 @@ final class Code_Snippets_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/snippet-upsert',
 			array(
 				'label'               => __( 'Create or Update Managed Snippet', 'wp-native-builder-bridge' ),
@@ -64,7 +65,7 @@ final class Code_Snippets_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/snippet-lifecycle',
 			array(
 				'label'               => __( 'Change Managed Snippet Lifecycle', 'wp-native-builder-bridge' ),
@@ -92,7 +93,7 @@ final class Code_Snippets_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/snippet-delete',
 			array(
 				'label'               => __( 'Permanently Delete Managed Snippet', 'wp-native-builder-bridge' ),
@@ -123,6 +124,8 @@ final class Code_Snippets_Abilities {
 				'meta'                => $this->meta( false, true, false ),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/** @return bool */

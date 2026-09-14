@@ -23,9 +23,10 @@ final class Extension_Abilities {
 		$this->permissions = $permissions;
 		$this->log         = $log;}
 
-	/** @return void */
+	/** @return array<int,object> */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/extensions-read',
 			array(
 				'label'               => __( 'Read Plugins and Themes', 'wp-native-builder-bridge' ),
@@ -47,7 +48,7 @@ final class Extension_Abilities {
 				'meta'                => $this->meta( true, false, true ),
 			)
 		);
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/extension-lifecycle',
 			array(
 				'label'               => __( 'Manage Plugin or Theme Lifecycle', 'wp-native-builder-bridge' ),
@@ -71,6 +72,8 @@ final class Extension_Abilities {
 				'meta'                => $this->meta( false, true, false ),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 	/** @return bool */ public function can_read() {
 		return $this->permissions->allowed( Settings::GROUP_SITE_READ, 'read' );}

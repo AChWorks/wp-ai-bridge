@@ -60,7 +60,8 @@ final class Source_Editing_Abilities {
 	 * @return void
 	 */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/source-files-read',
 			array(
 				'label'               => __( 'Read Installed Extension Source', 'wp-native-builder-bridge' ),
@@ -74,7 +75,7 @@ final class Source_Editing_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/source-file-preview',
 			array(
 				'label'               => __( 'Preview Installed Extension Source Edit', 'wp-native-builder-bridge' ),
@@ -88,7 +89,7 @@ final class Source_Editing_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/source-file-apply',
 			array(
 				'label'               => __( 'Apply Installed Extension Source Edit', 'wp-native-builder-bridge' ),
@@ -102,7 +103,7 @@ final class Source_Editing_Abilities {
 			)
 		);
 
-		wp_register_ability(
+		$registered[] = wp_register_ability(
 			'wp-native-builder/source-file-recover',
 			array(
 				'label'               => __( 'Recover Installed Extension Source Edit', 'wp-native-builder-bridge' ),
@@ -115,6 +116,8 @@ final class Source_Editing_Abilities {
 				'meta'                => $this->meta( false, true, true ),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/**

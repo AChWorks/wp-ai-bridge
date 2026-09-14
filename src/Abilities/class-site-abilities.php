@@ -45,7 +45,8 @@ final class Site_Abilities {
 	 * @return void
 	 */
 	public function register() {
-		wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-native-builder/site-context',
 			array(
 				'label'               => __( 'Site Context', 'wp-native-builder-bridge' ),
@@ -72,6 +73,8 @@ final class Site_Abilities {
 				),
 			)
 		);
+
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/**
