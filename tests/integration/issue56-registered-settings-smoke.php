@@ -95,6 +95,16 @@ function wpnb_issue56_register_settings() {
 	);
 	register_setting(
 		'wpnb_issue56',
+		'wpnb_issue56_provider_token',
+		array(
+			'type'         => 'string',
+			'label'        => 'Issue 56 provider token',
+			'default'      => '',
+			'show_in_rest' => true,
+		)
+	);
+	register_setting(
+		'wpnb_issue56',
 		'wpnb_issue56_bundle',
 		array(
 			'type'         => 'object',
@@ -150,6 +160,7 @@ $original_values = array(
 	'wpnb_issue56_hidden'         => get_option( 'wpnb_issue56_hidden', null ),
 	'wpnb_issue56_api_key'        => get_option( 'wpnb_issue56_api_key', null ),
 	'wpnb_issue56_license_key'    => get_option( 'wpnb_issue56_license_key', null ),
+	'wpnb_issue56_provider_token' => get_option( 'wpnb_issue56_provider_token', null ),
 	'wpnb_issue56_bundle'         => get_option( 'wpnb_issue56_bundle', null ),
 );
 $original_exists = array();
@@ -167,6 +178,7 @@ try {
 	update_option( 'wpnb_issue56_hidden', 'hidden-sentinel', false );
 	update_option( 'wpnb_issue56_api_key', 'private-sentinel', false );
 	update_option( 'wpnb_issue56_license_key', 'license-sentinel', false );
+	update_option( 'wpnb_issue56_provider_token', 'provider-token-sentinel', false );
 	update_option(
 		'wpnb_issue56_bundle',
 		array(
@@ -192,12 +204,14 @@ try {
 	wpnb_issue56_assert( ! isset( $items['wpnb_issue56_hidden'] ), 'show_in_rest=false setting was discovered.' );
 	wpnb_issue56_assert( ! isset( $items['wpnb_issue56_api_key'] ), 'API-key setting was exposed by discovery.' );
 	wpnb_issue56_assert( ! isset( $items['wpnb_issue56_license_key'] ), 'License credential setting was exposed by discovery.' );
+	wpnb_issue56_assert( ! isset( $items['wpnb_issue56_provider_token'] ), 'Provider token setting was exposed by discovery.' );
 	wpnb_issue56_assert( ! isset( $items['wpnb_issue56_bundle'] ), 'Structured setting with a nested credential field was exposed by discovery.' );
 	wpnb_issue56_assert( 'string' === $items['wpnb_issue56_public']['type'], 'Registered REST schema type was not preserved.' );
 	wpnb_issue56_assert( true === $items['wpnb_issue56_public']['schema_available'], 'Registered REST schema was unexpectedly unavailable.' );
 	wpnb_issue56_assert( false === strpos( $items['wpnb_issue56_public']['schema_json'], 'provider-default-must-not-leak' ), 'Registered setting default leaked through discovery schema.' );
 	wpnb_issue56_assert( false === strpos( wp_json_encode( $list ), 'private-sentinel' ), 'Sensitive setting value leaked through discovery.' );
 	wpnb_issue56_assert( false === strpos( wp_json_encode( $list ), 'license-sentinel' ), 'License credential value leaked through discovery.' );
+	wpnb_issue56_assert( false === strpos( wp_json_encode( $list ), 'provider-token-sentinel' ), 'Provider token value leaked through discovery.' );
 	wpnb_issue56_assert( false === strpos( wp_json_encode( $list ), 'nested-private-sentinel' ), 'Nested credential value leaked through discovery.' );
 
 	$blocked_read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_public' ) );
@@ -220,6 +234,10 @@ try {
 	wpnb_issue56_assert( is_wp_error( $sensitive_read ), 'Sensitive registered setting was readable through the generic contract.' );
 	$license_read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_license_key' ) );
 	wpnb_issue56_assert( is_wp_error( $license_read ), 'License credential setting was readable through the generic contract.' );
+	$token_read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_provider_token' ) );
+	wpnb_issue56_assert( is_wp_error( $token_read ), 'Provider token setting was readable through the generic contract.' );
+	$token_update = wpnb_issue56_execute( 'wp-native-builder/registered-setting-update', array( 'name' => 'wpnb_issue56_provider_token', 'value_json' => '"changed"' ) );
+	wpnb_issue56_assert( is_wp_error( $token_update ) && 'provider-token-sentinel' === get_option( 'wpnb_issue56_provider_token' ), 'Provider token setting was writable through the generic contract.' );
 	$bundle_read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_bundle' ) );
 	wpnb_issue56_assert( is_wp_error( $bundle_read ), 'Structured setting with a nested credential field was readable through the generic contract.' );
 	$hidden_read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_hidden' ) );
@@ -238,6 +256,7 @@ try {
 	wpnb_issue56_assert( 'unrelated-sentinel' === get_option( 'wpnb_issue56_other' ), 'Exact update mutated an unrelated REST setting.' );
 	wpnb_issue56_assert( 'private-sentinel' === get_option( 'wpnb_issue56_api_key' ), 'Exact update mutated a sensitive REST setting.' );
 	wpnb_issue56_assert( 'license-sentinel' === get_option( 'wpnb_issue56_license_key' ), 'Exact update mutated a license credential setting.' );
+	wpnb_issue56_assert( 'provider-token-sentinel' === get_option( 'wpnb_issue56_provider_token' ), 'Exact update mutated a provider token setting.' );
 	wpnb_issue56_assert( 'nested-private-sentinel' === get_option( 'wpnb_issue56_bundle' )['api_key'], 'Exact update mutated a nested credential setting.' );
 	wpnb_issue56_assert( false === strpos( wp_json_encode( $updated ), 'unrelated-sentinel' ), 'Exact update response leaked unrelated REST setting data.' );
 	wpnb_issue56_assert( false === strpos( wp_json_encode( $updated ), 'private-sentinel' ), 'Exact update response leaked sensitive REST setting data.' );
