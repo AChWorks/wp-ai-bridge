@@ -53,6 +53,7 @@ final class OAuth_Store {
 		$selector = $this->random_urlsafe( 18 );
 		$secret   = $this->random_urlsafe( 32 );
 		$token    = $prefix . '.' . $selector . '.' . $secret;
+
 		$claims['secret_hash'] = $this->hash_secret( $secret );
 		$claims['expires_at']  = time() + $ttl;
 		$claims['instance_id'] = $this->instance_id();
@@ -63,12 +64,21 @@ final class OAuth_Store {
 	/**
 	 * Reads and validates an opaque artifact.
 	 *
-	 * @param string $type    Artifact type.
-	 * @param string $token   Opaque artifact.
-	 * @param bool   $consume Whether to remove a successfully validated artifact.
+	 * When an expected client is supplied, its binding is checked before an
+	 * otherwise valid one-time artifact is consumed. This prevents one approved
+	 * OAuth client from invalidating another client's authorization code or
+	 * refresh token merely by presenting the opaque value to its own endpoint.
+	 *
+	 * @param string $type               Artifact type.
+	 * @param string $token              Opaque artifact.
+	 * @param bool   $consume            Whether to remove a successfully validated artifact.
+	 * @param string $expected_client_id Optional authenticated client binding.
 	 * @return array<string,mixed>|false Valid claims or false.
 	 */
-	public function read( $type, $token, $consume = false ) {
+	public function read( $type, $token, $consume = false, $expected_client_id = '' ) {
+		if ( ! is_string( $expected_client_id ) || strlen( $expected_client_id ) > 256 ) {
+			return false;
+		}
 		$parsed = $this->parse( $type, $token );
 		if ( false === $parsed ) {
 			return false;
@@ -88,6 +98,11 @@ final class OAuth_Store {
 		}
 		if ( ! hash_equals( (string) $claims['secret_hash'], $this->hash_secret( $secret ) ) ) {
 			return false;
+		}
+		if ( '' !== $expected_client_id ) {
+			if ( empty( $claims['client_id'] ) || ! hash_equals( $expected_client_id, (string) $claims['client_id'] ) ) {
+				return false;
+			}
 		}
 		if ( $consume && ! delete_transient( $key ) ) {
 			return false;
