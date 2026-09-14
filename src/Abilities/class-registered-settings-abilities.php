@@ -146,6 +146,9 @@ final class Registered_Settings_Abilities {
 		if ( $page < 1 || $per_page < 1 || $per_page > 100 ) {
 			return new WP_Error( 'registered_settings_invalid_pagination', __( 'Registered settings pagination is invalid.', 'wp-native-builder-bridge' ) );
 		}
+		if ( $page > (int) floor( PHP_INT_MAX / $per_page ) ) {
+			return new WP_Error( 'registered_settings_invalid_pagination', __( 'Registered settings pagination is invalid.', 'wp-native-builder-bridge' ) );
+		}
 
 		$entries = $this->registered_rest_settings();
 		if ( is_wp_error( $entries ) ) {
