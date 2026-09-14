@@ -85,12 +85,12 @@ $session_claims = array(
 $token = $oauth_store->issue(
     WP_Native_Builder_Bridge\Auth\OAuth_Store::TYPE_ACCESS,
     $session_claims,
-    WP_Native_Builder_Bridge\Auth\OAuth_Store::ACCESS_TTL
+    WP_Native_Builder_Bridge\Auth\OAuth_Server::ACCESS_TTL
 );
 $refresh_token = $oauth_store->issue(
     WP_Native_Builder_Bridge\Auth\OAuth_Store::TYPE_REFRESH,
     $session_claims,
-    WP_Native_Builder_Bridge\Auth\OAuth_Store::REFRESH_TTL
+    WP_Native_Builder_Bridge\Auth\OAuth_Server::REFRESH_TTL
 );
 $plugin_root = wp_normalize_path(realpath(WP_PLUGIN_DIR . "/wp-native-builder-bridge"));
 $plugin_path = wp_normalize_path(realpath(WP_PLUGIN_DIR . "/wp-native-builder-bridge/wp-native-builder-bridge.php"));
