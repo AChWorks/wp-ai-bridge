@@ -111,6 +111,24 @@ $delegation->capture_bridge_registrations(
 		);
 		$reentrant_object = new WP_Native_Builder_Issue44_Ability( 'wp-native-builder/reentrant-provider', $reentrant_args['meta'] );
 		$GLOBALS['wpnb_issue44_abilities']['wp-native-builder/reentrant-provider'] = $reentrant_object;
+
+		$delegation->capture_bridge_registrations(
+			static function () use ( $delegation, $provider_owner ) {
+				$args = $delegation->filter_ability_args(
+					array(
+						'permission_callback' => array( $provider_owner, 'permission' ),
+						'execute_callback'    => array( $provider_owner, 'execute' ),
+						'meta'                => array( 'public' => true ),
+					),
+					'wp-native-builder/nested-capture-provider'
+				);
+				$GLOBALS['wpnb_issue44_abilities']['wp-native-builder/nested-capture-provider'] = new WP_Native_Builder_Issue44_Ability(
+					'wp-native-builder/nested-capture-provider',
+					$args['meta']
+				);
+			},
+			array( $provider_owner )
+		);
 	},
 	array( $bridge_owner )
 );
@@ -122,6 +140,10 @@ wpnb_issue44_assert(
 wpnb_issue44_assert(
 	! $delegation->is_bridge_owned_ability( $reentrant_object ),
 	'Re-entrant provider registration borrowed Bridge provenance from registration depth.'
+);
+wpnb_issue44_assert(
+	! $delegation->is_bridge_owned_ability( $GLOBALS['wpnb_issue44_abilities']['wp-native-builder/nested-capture-provider'] ),
+	'Nested capture replaced the authoritative trusted-owner context.'
 );
 
 $replacement = new WP_Native_Builder_Issue44_Ability(
@@ -253,6 +275,8 @@ foreach ( array( '/wp-ai-bridge/v1/mcp', '/wp-native-builder/v1/mcp' ) as $route
 	wpnb_issue44_assert( $result instanceof WP_Error && 'wp_ai_bridge_native_abilities_disabled' === $result->get_error_code(), 'Native provider execution bypassed the disabled group on ' . $route . '.' );
 	$result = $invoke( $route, $adapter_permission, 'wp-native-builder/reentrant-provider' );
 	wpnb_issue44_assert( $result instanceof WP_Error && 'wp_ai_bridge_native_abilities_disabled' === $result->get_error_code(), 'Re-entrant provider registration bypassed the disabled group on ' . $route . '.' );
+	$result = $invoke( $route, $adapter_permission, 'wp-native-builder/nested-capture-provider' );
+	wpnb_issue44_assert( $result instanceof WP_Error && 'wp_ai_bridge_native_abilities_disabled' === $result->get_error_code(), 'Nested capture provider bypassed the disabled group on ' . $route . '.' );
 }
 
 $result = $invoke( '/wp-ai-bridge/v1/mcp', $adapter_permission, 'wp-native-builder/fixture' );
@@ -309,6 +333,7 @@ foreach ( $catalog_result['items'] as $item ) {
 wpnb_issue44_assert( 'native_abilities' === ( $delegation_by_name['vendor/late-provider'] ?? null ), 'Provider discovery did not report the Native Abilities delegation requirement.' );
 wpnb_issue44_assert( 'native_abilities' === ( $delegation_by_name['wp-native-builder/forged-prefix'] ?? null ), 'Forged namespace/metadata was misclassified as Bridge-owned.' );
 wpnb_issue44_assert( 'native_abilities' === ( $delegation_by_name['wp-native-builder/reentrant-provider'] ?? null ), 'Re-entrant provider registration was misclassified as Bridge-owned.' );
+wpnb_issue44_assert( 'native_abilities' === ( $delegation_by_name['wp-native-builder/nested-capture-provider'] ?? null ), 'Nested capture provider was misclassified as Bridge-owned.' );
 wpnb_issue44_assert( 'native_abilities' === ( $delegation_by_name['wp-native-builder/rogue-capture'] ?? null ), 'Separate delegation instance altered authoritative discovery ownership.' );
 wpnb_issue44_assert( 'ability_specific' === ( $delegation_by_name['wp-native-builder/fixture'] ?? null ), 'Bridge-owned discovery did not retain ability-specific delegation.' );
 

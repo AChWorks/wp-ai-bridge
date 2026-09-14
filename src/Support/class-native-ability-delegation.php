@@ -71,6 +71,13 @@ final class Native_Ability_Delegation {
 			return;
 		}
 
+		// Only the outer Plugin-owned capture may establish trusted owners. A nested
+		// call executes normally but cannot replace that provenance context.
+		if ( $this->bridge_registration_depth > 0 ) {
+			call_user_func( $registration_callback );
+			return;
+		}
+
 		$trusted = new \SplObjectStorage();
 		foreach ( $callback_owners as $owner ) {
 			if ( is_object( $owner ) ) {
@@ -78,18 +85,15 @@ final class Native_Ability_Delegation {
 			}
 		}
 
-		$previous_owners                      = $this->trusted_bridge_callback_owners;
 		$this->trusted_bridge_callback_owners = $trusted;
-		++$this->bridge_registration_depth;
+		$this->bridge_registration_depth      = 1;
 
 		try {
 			call_user_func( $registration_callback );
 		} finally {
-			$this->bridge_registration_depth = max( 0, $this->bridge_registration_depth - 1 );
-			if ( 0 === $this->bridge_registration_depth ) {
-				$this->finalize_bridge_ownership();
-			}
-			$this->trusted_bridge_callback_owners = $previous_owners;
+			$this->bridge_registration_depth = 0;
+			$this->finalize_bridge_ownership();
+			$this->trusted_bridge_callback_owners = null;
 		}
 	}
 
