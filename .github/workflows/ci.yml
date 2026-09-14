@@ -68,6 +68,9 @@ jobs:
       - name: Run Issue 44 native Ability delegation suite
         run: bash bin/run-issue44-native-delegation.sh '${{ matrix.wordpress_tag }}'
 
+      - name: Run Issue 52 comment administration suite
+        run: bash bin/run-issue52-comments.sh '${{ matrix.wordpress_tag }}'
+
       - name: Run Issue 46 multisite source-editing suite
         run: bash bin/run-issue46-multisite.sh '${{ matrix.wordpress_tag }}'
 

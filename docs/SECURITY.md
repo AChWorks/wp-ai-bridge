@@ -25,6 +25,7 @@ OAuth never enables a Bridge access group and never grants a WordPress capabilit
 - **Code & Extensions** — managed snippets and extension lifecycle.
 - **Source Editing** — separately enabled installed plugin/theme source read/preview/apply/recovery; executable PHP is administrator-level code trust, not a sandbox.
 - **Native Abilities** — default-off broad trust for registered non-Bridge Core/provider Abilities reached through the WP AI Bridge MCP routes. It is not a sandbox; provider/Core permission checks remain mandatory.
+- **Comments** — default-off bounded standard-comment discovery, replies, and moderation through fixed Core comment REST routes. Permanent deletion additionally requires Users & Destructive.
 - **Users & Destructive** — user administration and destructive operations. Generic post-meta and term-meta deletion require this group in addition to Advanced Metadata.
 
 Only Site Read is enabled by default.
@@ -36,6 +37,15 @@ Native Abilities is provider-neutral broad consent, not effect inference or a pr
 A registered target must pass both enabled Native Abilities and its own native permission callback. The Bridge may add a denial but never converts a provider/Core denial into allow. Names, descriptions, categories, optimistic annotations, provider-supplied metadata, and custom Ability getters do not authorize execution. Bridge ownership is bound only to the exact successful Ability objects returned to Bridge provider code by its own Core `wp_register_ability()` calls and forwarded by `Registrar` to the injected delegation instance. Re-entrant provider registrations, filter ordering, later same-name replacements, the historical `wp-native-builder/*` namespace, `wp_ai_bridge_owned`, and overridden `get_meta()` cannot establish or inherit Bridge ownership. The private provenance set contains only object identity and is not a parallel Ability registry.
 
 Disabling Native Abilities takes effect on subsequent Bridge calls because settings are read at execution time. The exact Bridge request context is balanced with unconditional cleanup; unrelated REST routes are not governed by that context.
+
+
+## Comments administration boundary
+
+Comments access is independent from Site Read and Builder Write and defaults off on fresh installs and upgrades. The Bridge does not expose a generic REST dispatcher: comment operations construct only fixed `/wp/v2/comments` collection or numeric item routes, then let WordPress Core validate/sanitize inputs and enforce its own comment/post permissions.
+
+Bridge output deliberately excludes comment author email/IP, user-agent, arbitrary comment metadata, and other hidden REST fields. Returned comment content is UTF-8-safe byte-bounded and reports `content_truncated` explicitly. Reply input cannot supply those fields either. Mutation methods also reject non-standard comment types before status/delete operations.
+
+Permanent comment deletion is compositionally gated. `force=true` requires **Comments + Users & Destructive + exact WordPress target permission**. Non-force deletion never calls the Core DELETE route: it uses the Core status-update lifecycle to move a comment to Trash, and if it is already trashed Bridge returns the existing state without mutation. Only explicit force-delete reaches Core DELETE, eliminating both second-delete and check-then-delete race paths to unintended permanent deletion. Permission is re-read again at execution time so revocation between permission inspection and execution fails closed.
 
 ## Advanced post metadata boundary
 

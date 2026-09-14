@@ -75,6 +75,7 @@ A conservative starting point is:
 - Code & Extensions: enable only for managed snippets or extension lifecycle work.
 - Source Editing: leave disabled unless installed plugin/theme source must be read or changed. It is separate from Code & Extensions and grants administrator-level code trust, not sandboxed execution. Source apply/recovery additionally require guarded same-filesystem no-overwrite replacement with hard-link support; unsupported filesystems fail closed rather than falling back to an in-place write.
 - Native Abilities: leave disabled unless ChatGPT must execute registered Core/provider Abilities directly through WP AI Bridge. Enabling it is broad registered-operation trust, not a sandbox; each target's own WordPress/provider permission callback must still allow the operation. Fresh installs and upgrades keep it disabled until an administrator opts in.
+- Comments: leave disabled unless bounded comment discovery, replies, or moderation is needed. It is independent from Site Read/Builder Write and still relies on WordPress Core comment permissions; permanent deletion additionally requires Users & Destructive.
 - Users & Destructive: leave disabled unless the requested operation genuinely requires it.
 
 ## Update from the former product name
