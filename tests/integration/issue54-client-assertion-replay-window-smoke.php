@@ -111,7 +111,16 @@ wpnb_issue54_replay_assert(
 $replay = $validator->validate( $request, $profile, array( $audience ) );
 wpnb_issue54_replay_assert( is_wp_error( $replay ) && 'invalid_client' === $replay->get_error_code(), 'The same signed client assertion was accepted twice while its acceptance window remained open.' );
 
-delete_option( $replay_key );
+// Deterministically model a pre-fix marker whose stored 600-second expiry has
+// elapsed while this maximum-lifetime assertion is still inside its skew window.
+$legacy_expiry = time() - 1;
+update_option( $replay_key, $legacy_expiry, false );
+$late_replay = $validator->validate( $request, $profile, array( $audience ) );
+wpnb_issue54_replay_assert( is_wp_error( $late_replay ) && 'invalid_client' === $late_replay->get_error_code(), 'An expired pre-fix replay marker was reclaimed while the same signed assertion was still acceptable.' );
+wpnb_issue54_replay_assert( $legacy_expiry === (int) get_option( $replay_key, 0 ), 'Authentication deleted the pre-fix replay marker before scheduled cleanup.' );
+$store->cleanup_client_assertion( $replay_key, $legacy_expiry );
+wpnb_issue54_replay_assert( false === get_option( $replay_key, false ), 'Authoritative replay cleanup did not remove the simulated pre-fix marker.' );
+
 Client_Assertion_Validator::clear_client_cache( $client_id );
 remove_filter( 'pre_http_request', $http_mock, 10 );
 
