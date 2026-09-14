@@ -200,7 +200,7 @@ final class Approved_OAuth_Clients {
 		if ( $is_chatgpt && 1 === (int) $cached ) {
 			return $this->chatgpt_profile();
 		}
-		if ( ! $is_chatgpt && is_array( $cached ) && $client_id === ( $cached['client_id'] ?? '' ) ) {
+		if ( ! $is_chatgpt && is_array( $cached ) && ( $cached['client_id'] ?? '' ) === $client_id ) {
 			$cached['approval_revision'] = $this->revision();
 			return $cached;
 		}
@@ -287,7 +287,7 @@ final class Approved_OAuth_Clients {
 	 * @return array<string,mixed>|\WP_Error Profile or error.
 	 */
 	private function validate_metadata( $client_id, array $metadata, $is_chatgpt ) {
-		if ( $client_id !== ( $metadata['client_id'] ?? '' ) ) {
+		if ( ( $metadata['client_id'] ?? '' ) !== $client_id ) {
 			return new \WP_Error( 'invalid_client', 'OAuth client metadata does not self-identify as the approved client.' );
 		}
 
