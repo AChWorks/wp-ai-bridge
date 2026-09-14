@@ -349,7 +349,7 @@ final class Registered_Settings_Abilities {
 		$normalized = strtolower( (string) preg_replace( '/[^A-Za-z0-9]+/', '_', (string) $bounded ) );
 		$normalized = trim( $normalized, '_' );
 
-		return 1 === preg_match( '/(^|_)(access|consumer|license|encryption|signing)_(keys?)($|_)/', $normalized );
+		return 1 === preg_match( '/(^|_)(tokens?|(?:access|auth|authentication|consumer|license|encryption|signing)_(?:keys?))($|_)/', $normalized );
 	}
 
 	/**
