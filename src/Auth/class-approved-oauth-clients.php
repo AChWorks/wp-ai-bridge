@@ -185,6 +185,9 @@ final class Approved_OAuth_Clients {
 	/**
 	 * Resolves and validates one currently approved client metadata profile.
 	 *
+	 * Authorization uses this method so the built-in ChatGPT Client ID Metadata
+	 * Document retains the same verification boundary as before additional clients.
+	 *
 	 * @param string $client_id Exact client metadata URL.
 	 * @return array<string,mixed>|\WP_Error Validated client profile.
 	 */
@@ -221,6 +224,25 @@ final class Approved_OAuth_Clients {
 			set_transient( $cache_key, $profile, 15 * MINUTE_IN_SECONDS );
 		}
 		return $profile;
+	}
+
+	/**
+	 * Resolves the profile needed for signed token/revocation client authentication.
+	 *
+	 * The built-in ChatGPT client historically did not depend on a fresh Client ID
+	 * Metadata fetch during token refresh or revocation. Keep that resilience and use
+	 * its fixed compatibility profile; additional clients still require current
+	 * administrator approval plus their validated metadata profile.
+	 *
+	 * @param string $client_id Exact client ID from the untrusted assertion identity.
+	 * @return array<string,mixed>|\WP_Error Client-authentication profile.
+	 */
+	public function resolve_for_client_auth( $client_id ) {
+		$client_id = (string) $client_id;
+		if ( OAuth_Server::CHATGPT_CLIENT_ID === $client_id ) {
+			return $this->chatgpt_profile();
+		}
+		return $this->resolve( $client_id );
 	}
 
 	/**
@@ -263,7 +285,8 @@ final class Approved_OAuth_Clients {
 	}
 
 	/**
-	 * Returns the fixed ChatGPT compatibility profile after cached metadata validation.
+	 * Returns the fixed ChatGPT compatibility profile after metadata validation or
+	 * for the historical token/revocation client-authentication path.
 	 *
 	 * @return array<string,mixed> Profile.
 	 */
@@ -281,6 +304,12 @@ final class Approved_OAuth_Clients {
 	/**
 	 * Validates an OAuth Client ID Metadata Document into a bounded profile.
 	 *
+	 * The built-in ChatGPT branch intentionally preserves the pre-Issue-54
+	 * compatibility contract: its fixed redirect URI must be present, but unrelated
+	 * additional redirect entries in the official metadata do not become trusted
+	 * Bridge callbacks and do not invalidate the client. Additional clients use the
+	 * stricter bounded exact-public-HTTPS redirect set below.
+	 *
 	 * @param string              $client_id  Exact requested identity.
 	 * @param array<string,mixed> $metadata   Parsed JSON document.
 	 * @param bool                $is_chatgpt Whether this is the built-in compatibility client.
@@ -291,7 +320,27 @@ final class Approved_OAuth_Clients {
 			return new \WP_Error( 'invalid_client', 'OAuth client metadata does not self-identify as the approved client.' );
 		}
 
-		$redirects = isset( $metadata['redirect_uris'] ) && is_array( $metadata['redirect_uris'] ) ? array_slice( $metadata['redirect_uris'], 0, 9 ) : array();
+		$redirects   = isset( $metadata['redirect_uris'] ) && is_array( $metadata['redirect_uris'] ) ? $metadata['redirect_uris'] : array();
+		$grants      = isset( $metadata['grant_types'] ) && is_array( $metadata['grant_types'] ) ? array_slice( $metadata['grant_types'], 0, 8 ) : array();
+		$responses   = isset( $metadata['response_types'] ) && is_array( $metadata['response_types'] ) ? array_slice( $metadata['response_types'], 0, 8 ) : array();
+		$auth_method = isset( $metadata['token_endpoint_auth_method'] ) && is_string( $metadata['token_endpoint_auth_method'] ) ? $metadata['token_endpoint_auth_method'] : '';
+		$raw_jwks    = isset( $metadata['jwks_uri'] ) && is_string( $metadata['jwks_uri'] ) ? $metadata['jwks_uri'] : '';
+
+		if ( $is_chatgpt ) {
+			if (
+				! in_array( OAuth_Server::CHATGPT_REDIRECT_URI, $redirects, true ) ||
+				! in_array( 'authorization_code', $grants, true ) ||
+				! in_array( 'refresh_token', $grants, true ) ||
+				! in_array( 'code', $responses, true ) ||
+				'private_key_jwt' !== $auth_method ||
+				Client_Assertion_Validator::CHATGPT_JWKS_URI !== $raw_jwks
+			) {
+				return new \WP_Error( 'invalid_client', 'ChatGPT client metadata does not satisfy the built-in compatibility profile.' );
+			}
+			return $this->chatgpt_profile();
+		}
+
+		$redirects = array_slice( $redirects, 0, 9 );
 		if ( empty( $redirects ) || count( $redirects ) > 8 ) {
 			return new \WP_Error( 'invalid_client', 'OAuth client metadata contains an invalid redirect URI set.' );
 		}
@@ -304,10 +353,7 @@ final class Approved_OAuth_Clients {
 			$validated_redirects[] = $redirect_uri;
 		}
 
-		$grants      = isset( $metadata['grant_types'] ) && is_array( $metadata['grant_types'] ) ? array_slice( $metadata['grant_types'], 0, 8 ) : array();
-		$responses   = isset( $metadata['response_types'] ) && is_array( $metadata['response_types'] ) ? array_slice( $metadata['response_types'], 0, 8 ) : array();
-		$auth_method = isset( $metadata['token_endpoint_auth_method'] ) && is_string( $metadata['token_endpoint_auth_method'] ) ? $metadata['token_endpoint_auth_method'] : '';
-		$jwks_uri    = $this->normalize_public_https_url( $metadata['jwks_uri'] ?? '', self::MAX_REDIRECT_URI );
+		$jwks_uri = $this->normalize_public_https_url( $raw_jwks, self::MAX_REDIRECT_URI );
 		if (
 			! in_array( 'authorization_code', $grants, true ) ||
 			! in_array( 'refresh_token', $grants, true ) ||
@@ -316,10 +362,6 @@ final class Approved_OAuth_Clients {
 			'' === $jwks_uri
 		) {
 			return new \WP_Error( 'invalid_client', 'OAuth client metadata does not satisfy the supported private_key_jwt profile.' );
-		}
-
-		if ( $is_chatgpt && ( array( OAuth_Server::CHATGPT_REDIRECT_URI ) !== $validated_redirects || Client_Assertion_Validator::CHATGPT_JWKS_URI !== $jwks_uri ) ) {
-			return new \WP_Error( 'invalid_client', 'ChatGPT client metadata does not satisfy the built-in compatibility profile.' );
 		}
 
 		$client_name = isset( $metadata['client_name'] ) && is_string( $metadata['client_name'] ) ? sanitize_text_field( $metadata['client_name'] ) : '';
@@ -335,8 +377,8 @@ final class Approved_OAuth_Clients {
 			'client_name'       => $client_name,
 			'redirect_uris'     => $validated_redirects,
 			'jwks_uri'          => $jwks_uri,
-			'approval_revision' => $is_chatgpt ? 0 : $this->revision(),
-			'built_in'          => (bool) $is_chatgpt,
+			'approval_revision' => $this->revision(),
+			'built_in'          => false,
 		);
 	}
 
@@ -365,6 +407,9 @@ final class Approved_OAuth_Clients {
 			return new \WP_Error( 'temporarily_unavailable', $label . ' could not be verified.' );
 		}
 		if ( 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+			if ( OAuth_Server::CHATGPT_CLIENT_ID === $url ) {
+				return new \WP_Error( 'temporarily_unavailable', 'ChatGPT client metadata could not be verified.' );
+			}
 			return new \WP_Error( 'invalid_client', $label . ' returned an unexpected HTTP status.' );
 		}
 
