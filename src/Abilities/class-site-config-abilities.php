@@ -72,6 +72,9 @@ final class Site_Config_Abilities {
 			)
 		);
 
+		$generic    = new Registered_Settings_Abilities( $this->permissions, $this->log );
+		$registered = array_merge( $registered, $generic->register() );
+
 		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
