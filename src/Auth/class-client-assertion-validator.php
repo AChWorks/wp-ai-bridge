@@ -374,10 +374,10 @@ final class Client_Assertion_Validator {
 		if ( $length < 128 ) {
 			return chr( $length );
 		}
-		$encoded = '';
+		$encoded  = '';
 		while ( $length > 0 ) {
 			$encoded = chr( $length & 0xff ) . $encoded;
-			$length  >>= 8;
+			$length >>= 8;
 		}
 		return chr( 0x80 | strlen( $encoded ) ) . $encoded;
 	}
@@ -402,7 +402,7 @@ final class Client_Assertion_Validator {
 	/**
 	 * Reads one bounded scalar REST parameter.
 	 *
-	 * @param \WP_REST_Request $request REST request.
+	 * @param \WP_REST_Request $request OAuth request.
 	 * @param string           $name    Parameter name.
 	 * @param int              $max     Maximum length.
 	 * @return string Bounded scalar or empty string.
