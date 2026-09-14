@@ -25,9 +25,11 @@ wp=("${compose[@]}" run --rm cli)
 "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration
 "${compose[@]}" cp "$root/tests/integration/issue54-approved-oauth-clients-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue54-approved-oauth-clients-smoke.php
 "${compose[@]}" cp "$root/tests/integration/issue54-chatgpt-compatibility-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue54-chatgpt-compatibility-smoke.php
+"${compose[@]}" cp "$root/tests/integration/issue54-client-assertion-replay-window-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue54-client-assertion-replay-window-smoke.php
 actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
 actual_php="$("${wp[@]}" eval 'echo PHP_VERSION;' --allow-root | tail -n 1)"
 echo "Issue #54 baseline: WordPress ${actual_wp}; PHP ${actual_php}; image ${wordpress_tag}"
 "${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue54-approved-oauth-clients-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue54-chatgpt-compatibility-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue54-client-assertion-replay-window-smoke.php --user=1 --allow-root
 echo 'Issue #54 approved OAuth clients integration: PASS'

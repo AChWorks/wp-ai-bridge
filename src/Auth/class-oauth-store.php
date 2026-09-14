@@ -18,6 +18,9 @@ final class OAuth_Store {
 	const TYPE_ACCESS  = 'access';
 	const TYPE_REFRESH = 'refresh';
 
+	const CLIENT_ASSERTION_REPLAY_TTL_CAP = 600;
+	const CLIENT_ASSERTION_REPLAY_SKEW    = 60;
+
 	/** @var string Exact client authenticated for one token-endpoint flow. */
 	private $authenticated_client_id = '';
 
@@ -149,6 +152,12 @@ final class OAuth_Store {
 	 * clients use their exact client ID as a namespace so equal jti values cannot
 	 * collide across independently operated clients.
 	 *
+	 * The validator historically saturates its requested replay lifetime at 600
+	 * seconds even though clock skew can keep a maximum-lifetime assertion valid
+	 * for another 60 seconds. A saturated request therefore retains the marker for
+	 * the complete 660-second acceptance window instead of becoming reclaimable
+	 * while the same signed assertion can still pass validation.
+	 *
 	 * @param string $jti       JWT ID.
 	 * @param int    $ttl       Claim lifetime in seconds.
 	 * @param string $client_id Optional replay namespace.
@@ -158,7 +167,10 @@ final class OAuth_Store {
 		if ( ! is_string( $jti ) || '' === $jti || strlen( $jti ) > 256 || ! is_string( $client_id ) || strlen( $client_id ) > 256 ) {
 			return false;
 		}
-		$ttl        = max( 1, min( 600, (int) $ttl ) );
+		$ttl = max( 1, (int) $ttl );
+		if ( $ttl >= self::CLIENT_ASSERTION_REPLAY_TTL_CAP ) {
+			$ttl = self::CLIENT_ASSERTION_REPLAY_TTL_CAP + self::CLIENT_ASSERTION_REPLAY_SKEW;
+		}
 		$expires_at = time() + $ttl;
 		$material   = '' === $client_id ? $jti : $client_id . "\0" . $jti;
 		$key        = 'wpnb_oauth_assertion_' . substr( hash( 'sha256', $material ), 0, 40 );

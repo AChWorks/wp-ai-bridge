@@ -114,6 +114,28 @@ wpnb_issue54_store_assert(
 	'An explicit matching client binding must consume the artifact.'
 );
 
+$replay_jti = 'issue54-max-window-replay';
+$replay_key = 'wpnb_oauth_assertion_' . substr( hash( 'sha256', $client_a . "\0" . $replay_jti ), 0, 40 );
+$before     = time();
+wpnb_issue54_store_assert(
+	$store->claim_client_assertion( $replay_jti, OAuth_Store::CLIENT_ASSERTION_REPLAY_TTL_CAP, $client_a ),
+	'A saturated client-assertion replay claim was not created.'
+);
+$replay_expiry = (int) get_option( $replay_key, 0 );
+$after         = time();
+wpnb_issue54_store_assert(
+	$replay_expiry >= $before + OAuth_Store::CLIENT_ASSERTION_REPLAY_TTL_CAP + OAuth_Store::CLIENT_ASSERTION_REPLAY_SKEW,
+	'A saturated replay claim expires before the maximum assertion acceptance window closes.'
+);
+wpnb_issue54_store_assert(
+	$replay_expiry <= $after + OAuth_Store::CLIENT_ASSERTION_REPLAY_TTL_CAP + OAuth_Store::CLIENT_ASSERTION_REPLAY_SKEW,
+	'A saturated replay claim exceeded its bounded maximum retention window.'
+);
+wpnb_issue54_store_assert(
+	false === $store->claim_client_assertion( $replay_jti, OAuth_Store::CLIENT_ASSERTION_REPLAY_TTL_CAP, $client_a ),
+	'A retained client-assertion replay claim was reclaimable.'
+);
+
 if ( $failures ) {
 	fwrite( STDERR, "{$failures} of {$tests} Issue #54 OAuth store isolation assertions failed.\n" );
 	exit( 1 );
