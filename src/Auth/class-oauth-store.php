@@ -28,12 +28,10 @@ final class OAuth_Store {
 		if ( is_string( $stored ) && preg_match( '/^[a-f0-9]{32}$/', $stored ) ) {
 			return $stored;
 		}
-
 		$generated = bin2hex( random_bytes( 16 ) );
 		if ( add_option( self::INSTANCE_OPTION, $generated, '', false ) ) {
 			return $generated;
 		}
-
 		$stored = get_option( self::INSTANCE_OPTION, '' );
 		return is_string( $stored ) && preg_match( '/^[a-f0-9]{32}$/', $stored ) ? $stored : $generated;
 	}
@@ -49,30 +47,21 @@ final class OAuth_Store {
 	public function issue( $type, array $claims, $ttl ) {
 		$prefix = $this->token_prefix( $type );
 		$ttl    = max( 1, (int) $ttl );
-
 		if ( '' === $prefix ) {
 			throw new \InvalidArgumentException( 'Unsupported OAuth artifact type.' );
 		}
-
 		$selector = $this->random_urlsafe( 18 );
 		$secret   = $this->random_urlsafe( 32 );
 		$token    = $prefix . '.' . $selector . '.' . $secret;
-
 		$claims['secret_hash'] = $this->hash_secret( $secret );
 		$claims['expires_at']  = time() + $ttl;
 		$claims['instance_id'] = $this->instance_id();
-
 		set_transient( $this->transient_key( $type, $selector ), $claims, $ttl );
-
 		return $token;
 	}
 
 	/**
 	 * Reads and validates an opaque artifact.
-	 *
-	 * For one-time artifacts, successful deletion is part of validation. This
-	 * makes concurrent code/refresh consumption fail closed after the first
-	 * request wins the backing WordPress cache/option deletion.
 	 *
 	 * @param string $type    Artifact type.
 	 * @param string $token   Opaque artifact.
@@ -84,32 +73,25 @@ final class OAuth_Store {
 		if ( false === $parsed ) {
 			return false;
 		}
-
 		list( $selector, $secret ) = $parsed;
 		$key                       = $this->transient_key( $type, $selector );
 		$claims                    = get_transient( $key );
-
 		if ( ! is_array( $claims ) || empty( $claims['secret_hash'] ) || empty( $claims['expires_at'] ) || empty( $claims['instance_id'] ) ) {
 			return false;
 		}
-
 		if ( (int) $claims['expires_at'] <= time() ) {
 			delete_transient( $key );
 			return false;
 		}
-
 		if ( ! hash_equals( (string) $claims['instance_id'], $this->instance_id() ) ) {
 			return false;
 		}
-
 		if ( ! hash_equals( (string) $claims['secret_hash'], $this->hash_secret( $secret ) ) ) {
 			return false;
 		}
-
 		if ( $consume && ! delete_transient( $key ) ) {
 			return false;
 		}
-
 		unset( $claims['secret_hash'], $claims['instance_id'] );
 		return $claims;
 	}
@@ -117,28 +99,31 @@ final class OAuth_Store {
 	/**
 	 * Atomically claims one signed client-assertion JWT ID for its short lifetime.
 	 *
-	 * @param string $jti JWT ID.
-	 * @param int    $ttl Claim lifetime in seconds.
+	 * Historical ChatGPT assertions keep the legacy empty namespace so replay
+	 * claims created immediately before an upgrade remain effective. Additional
+	 * clients use their exact client ID as a namespace so equal jti values cannot
+	 * collide across independently operated clients.
+	 *
+	 * @param string $jti       JWT ID.
+	 * @param int    $ttl       Claim lifetime in seconds.
+	 * @param string $client_id Optional replay namespace.
 	 * @return bool True only for the first successful claim.
 	 */
-	public function claim_client_assertion( $jti, $ttl ) {
-		if ( ! is_string( $jti ) || '' === $jti || strlen( $jti ) > 256 ) {
+	public function claim_client_assertion( $jti, $ttl, $client_id = '' ) {
+		if ( ! is_string( $jti ) || '' === $jti || strlen( $jti ) > 256 || ! is_string( $client_id ) || strlen( $client_id ) > 256 ) {
 			return false;
 		}
-
 		$ttl        = max( 1, min( 600, (int) $ttl ) );
 		$expires_at = time() + $ttl;
-		$key        = 'wpnb_oauth_assertion_' . substr( hash( 'sha256', $jti ), 0, 40 );
+		$material   = '' === $client_id ? $jti : $client_id . "\0" . $jti;
+		$key        = 'wpnb_oauth_assertion_' . substr( hash( 'sha256', $material ), 0, 40 );
 		$existing   = get_option( $key, false );
-
 		if ( false !== $existing && (int) $existing <= time() ) {
 			delete_option( $key );
 		}
-
 		if ( ! add_option( $key, $expires_at, '', false ) ) {
 			return false;
 		}
-
 		wp_schedule_single_event( $expires_at + MINUTE_IN_SECONDS, 'wpnb_oauth_cleanup_client_assertion', array( $key, $expires_at ) );
 		return true;
 	}
@@ -154,7 +139,6 @@ final class OAuth_Store {
 		if ( ! is_string( $key ) || 1 !== preg_match( '/^wpnb_oauth_assertion_[a-f0-9]{40}$/', $key ) ) {
 			return;
 		}
-
 		$stored = get_option( $key, false );
 		if ( false !== $stored && (int) $stored === (int) $expected_expiry && (int) $stored <= time() ) {
 			delete_option( $key );
@@ -162,33 +146,34 @@ final class OAuth_Store {
 	}
 
 	/**
-	 * Revokes one opaque artifact when its secret is valid.
+	 * Revokes one opaque artifact when its secret and optional client binding are valid.
 	 *
-	 * @param string $token Opaque artifact.
+	 * @param string $token              Opaque artifact.
+	 * @param string $expected_client_id Optional authenticated client binding.
 	 * @return bool Whether a valid artifact was revoked.
 	 */
-	public function revoke( $token ) {
+	public function revoke( $token, $expected_client_id = '' ) {
 		foreach ( array( self::TYPE_CONSENT, self::TYPE_CODE, self::TYPE_ACCESS, self::TYPE_REFRESH ) as $type ) {
 			$parsed = $this->parse( $type, $token );
 			if ( false === $parsed ) {
 				continue;
 			}
-
 			list( $selector, $secret ) = $parsed;
 			$key                       = $this->transient_key( $type, $selector );
 			$claims                    = get_transient( $key );
-
 			if ( ! is_array( $claims ) || empty( $claims['secret_hash'] ) ) {
 				return false;
 			}
-
 			if ( ! hash_equals( (string) $claims['secret_hash'], $this->hash_secret( $secret ) ) ) {
 				return false;
 			}
-
+			if ( '' !== $expected_client_id ) {
+				if ( empty( $claims['client_id'] ) || ! hash_equals( $expected_client_id, (string) $claims['client_id'] ) ) {
+					return false;
+				}
+			}
 			return delete_transient( $key );
 		}
-
 		return false;
 	}
 
@@ -204,21 +189,14 @@ final class OAuth_Store {
 		if ( '' === $prefix || ! is_string( $token ) || strlen( $token ) > 256 ) {
 			return false;
 		}
-
 		$pattern = '/^' . preg_quote( $prefix, '/' ) . '\.([A-Za-z0-9_-]{20,40})\.([A-Za-z0-9_-]{40,80})$/';
 		if ( 1 !== preg_match( $pattern, $token, $matches ) ) {
 			return false;
 		}
-
 		return array( $matches[1], $matches[2] );
 	}
 
-	/**
-	 * Returns the public prefix for an artifact type.
-	 *
-	 * @param string $type Artifact type.
-	 * @return string Prefix or empty string.
-	 */
+	/** @param string $type Artifact type. @return string Prefix. */
 	private function token_prefix( $type ) {
 		$prefixes = array(
 			self::TYPE_CONSENT => 'wpnb_q',
@@ -226,37 +204,20 @@ final class OAuth_Store {
 			self::TYPE_ACCESS  => 'wpnb_a',
 			self::TYPE_REFRESH => 'wpnb_r',
 		);
-
 		return isset( $prefixes[ $type ] ) ? $prefixes[ $type ] : '';
 	}
 
-	/**
-	 * Builds a bounded transient key.
-	 *
-	 * @param string $type     Artifact type.
-	 * @param string $selector Public selector.
-	 * @return string Transient key.
-	 */
+	/** @param string $type Artifact type. @param string $selector Selector. @return string Transient key. */
 	private function transient_key( $type, $selector ) {
 		return 'wpnb_oauth_' . sanitize_key( $type ) . '_' . $selector;
 	}
 
-	/**
-	 * Hashes a bearer secret with a site-specific WordPress salt.
-	 *
-	 * @param string $secret Bearer secret.
-	 * @return string Secret hash.
-	 */
+	/** @param string $secret Bearer secret. @return string Secret hash. */
 	private function hash_secret( $secret ) {
 		return hash_hmac( 'sha256', $secret, wp_salt( 'auth' ) );
 	}
 
-	/**
-	 * Generates a URL-safe cryptographically random value.
-	 *
-	 * @param int $bytes Random byte count.
-	 * @return string URL-safe value.
-	 */
+	/** @param int $bytes Random byte count. @return string URL-safe value. */
 	private function random_urlsafe( $bytes ) {
 		return rtrim( strtr( base64_encode( random_bytes( (int) $bytes ) ), '+/', '-_' ), '=' );
 	}
