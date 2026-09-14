@@ -370,10 +370,11 @@ final class Registered_Settings_Abilities {
 			return false;
 		}
 
-		$type = isset( $schema['type'] ) ? (string) $schema['type'] : '';
-		if ( 'object' === $type ) {
+		$types            = isset( $schema['type'] ) ? (array) $schema['type'] : array();
+		$is_object_schema = in_array( 'object', $types, true ) || isset( $schema['properties'] ) || isset( $schema['patternProperties'] ) || array_key_exists( 'additionalProperties', $schema );
+		if ( $is_object_schema ) {
 			$properties = isset( $schema['properties'] ) && is_array( $schema['properties'] ) ? $schema['properties'] : array();
-			if ( empty( $properties ) ) {
+			if ( empty( $properties ) || ! empty( $schema['patternProperties'] ) ) {
 				return true;
 			}
 			if ( ! array_key_exists( 'additionalProperties', $schema ) || false !== $schema['additionalProperties'] ) {
@@ -386,7 +387,8 @@ final class Registered_Settings_Abilities {
 			}
 		}
 
-		if ( 'array' === $type ) {
+		$is_array_schema = in_array( 'array', $types, true ) || isset( $schema['items'] );
+		if ( $is_array_schema ) {
 			if ( ! isset( $schema['items'] ) || ! is_array( $schema['items'] ) ) {
 				return true;
 			}
