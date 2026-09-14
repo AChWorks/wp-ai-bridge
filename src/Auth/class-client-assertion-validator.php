@@ -374,9 +374,9 @@ final class Client_Assertion_Validator {
 		if ( $length < 128 ) {
 			return chr( $length );
 		}
-		$encoded  = '';
+		$encoded = '';
 		while ( $length > 0 ) {
-			$encoded = chr( $length & 0xff ) . $encoded;
+			$encoded  = chr( $length & 0xff ) . $encoded;
 			$length >>= 8;
 		}
 		return chr( 0x80 | strlen( $encoded ) ) . $encoded;
