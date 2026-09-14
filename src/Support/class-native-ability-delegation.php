@@ -69,7 +69,7 @@ final class Native_Ability_Delegation {
 			return $args;
 		}
 
-		$original_permission = $args['permission_callback'];
+		$original_permission         = $args['permission_callback'];
 		$args['permission_callback'] = function ( $input = array() ) use ( $original_permission ) {
 			if ( ! $this->in_bridge_request() || ! is_array( $input ) || empty( $input['ability_name'] ) || ! is_string( $input['ability_name'] ) ) {
 				return call_user_func( $original_permission, $input );
@@ -116,7 +116,7 @@ final class Native_Ability_Delegation {
 					continue;
 				}
 
-				$callback = $handler['callback'];
+				$callback                                  = $handler['callback'];
 				$endpoints[ $route ][ $index ]['callback'] = function ( $request ) use ( $callback ) {
 					++$this->bridge_request_depth;
 					try {

@@ -314,8 +314,8 @@ final class Ability_Catalog_Abilities {
 					'additionalProperties' => false,
 				),
 				// Core represents an absent schema as an empty PHP array; preserve it exactly.
-				'input_schema'  => array( 'type' => array( 'object', 'array' ) ),
-				'output_schema' => array( 'type' => array( 'object', 'array' ) ),
+				'input_schema'      => array( 'type' => array( 'object', 'array' ) ),
+				'output_schema'     => array( 'type' => array( 'object', 'array' ) ),
 			),
 			'required'             => array( 'name', 'namespace', 'label', 'description', 'category', 'mcp_type', 'bridge_delegation', 'annotations' ),
 			'additionalProperties' => false,
