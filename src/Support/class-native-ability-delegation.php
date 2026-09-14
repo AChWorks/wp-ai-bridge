@@ -46,8 +46,9 @@ final class Native_Ability_Delegation {
 	 * Marks successfully registering Bridge-owned Abilities and wraps only the
 	 * Adapter's generic execution permission callback.
 	 *
-	 * WordPress applies this filter after duplicate-name rejection, so a third-party
-	 * Ability that already owns a historical Bridge name cannot inherit the marker.
+	 * WordPress applies this filter after duplicate-name rejection. The private
+	 * ownership marker is reserved here: provider-supplied values are removed before
+	 * only a genuine Bridge callback registration may set it.
 	 *
 	 * @param array<string,mixed> $args Ability registration arguments.
 	 * @param string              $name Ability name.
@@ -56,6 +57,10 @@ final class Native_Ability_Delegation {
 	public function filter_ability_args( $args, $name ) {
 		if ( ! is_array( $args ) || ! is_string( $name ) ) {
 			return $args;
+		}
+
+		if ( isset( $args['meta'] ) && is_array( $args['meta'] ) ) {
+			unset( $args['meta'][ self::BRIDGE_OWNED_META ] );
 		}
 
 		if ( $this->is_bridge_registration( $name, $args ) ) {

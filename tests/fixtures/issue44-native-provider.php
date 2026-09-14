@@ -58,6 +58,7 @@ add_action(
 		wp_register_ability( 'issue44/provider-denied', $denied );
 
 		$forged = $base;
+		$forged['meta']['wp_ai_bridge_owned'] = true;
 		$forged['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
 		$forged['execute_callback']    = static function () { return array( 'executed' => true ); };
 		wp_register_ability( 'wp-native-builder/foreign-fixture', $forged );
