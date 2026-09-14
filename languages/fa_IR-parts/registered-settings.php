@@ -1,0 +1,20 @@
+<?php
+return array(
+	'List Registered Settings' => 'فهرست تنظیمات ثبت‌شده',
+	'Discovers non-sensitive WordPress settings currently registered for the REST API without returning their values.' => 'تنظیمات غیرحساس وردپرس را که در حال حاضر برای REST API ثبت شده‌اند بدون بازگرداندن مقدار آن‌ها شناسایی می‌کند.',
+	'Read Registered Setting' => 'خواندن تنظیم ثبت‌شده',
+	'Reads one exact non-sensitive REST-registered WordPress setting under Site Configuration authority.' => 'یک تنظیم دقیق و غیرحساس وردپرس را که برای REST ثبت شده است تحت اختیار پیکربندی سایت می‌خواند.',
+	'Update Registered Setting' => 'به‌روزرسانی تنظیم ثبت‌شده',
+	'Updates one exact non-sensitive REST-registered WordPress setting through the fixed Core settings route.' => 'یک تنظیم دقیق و غیرحساس وردپرس را که برای REST ثبت شده است از مسیر ثابت تنظیمات هسته به‌روزرسانی می‌کند.',
+	'Site Read access and WordPress settings permission are required to discover registered settings.' => 'برای شناسایی تنظیمات ثبت‌شده، دسترسی خواندن سایت و مجوز تنظیمات وردپرس لازم است.',
+	'Registered settings pagination is invalid.' => 'صفحه‌بندی تنظیمات ثبت‌شده نامعتبر است.',
+	'Site Configuration access and WordPress settings permission are required to read a registered setting value.' => 'برای خواندن مقدار یک تنظیم ثبت‌شده، دسترسی پیکربندی سایت و مجوز تنظیمات وردپرس لازم است.',
+	'Site Configuration access and WordPress settings permission are required to update a registered setting.' => 'برای به‌روزرسانی یک تنظیم ثبت‌شده، دسترسی پیکربندی سایت و مجوز تنظیمات وردپرس لازم است.',
+	'The WordPress registered settings REST contract is unavailable.' => 'قرارداد REST تنظیمات ثبت‌شده وردپرس در دسترس نیست.',
+	'The registered setting value is too large for the bounded generic settings contract.' => 'مقدار تنظیم ثبت‌شده برای قرارداد محدود تنظیمات عمومی بیش از حد بزرگ است.',
+	'Registered setting value_json must contain one bounded JSON value.' => 'فیلد value_json تنظیم ثبت‌شده باید شامل یک مقدار JSON محدود باشد.',
+	'Registered setting value_json must contain one bounded non-null JSON value.' => 'فیلد value_json تنظیم ثبت‌شده باید شامل یک مقدار JSON محدود و غیر null باشد.',
+	'WordPress returned an invalid registered settings REST response.' => 'وردپرس پاسخ REST نامعتبری برای تنظیمات ثبت‌شده بازگرداند.',
+	'WordPress rejected the registered settings REST request.' => 'وردپرس درخواست REST تنظیمات ثبت‌شده را رد کرد.',
+	'The requested setting is unavailable through the bounded registered settings contract.' => 'تنظیم درخواستی از طریق قرارداد محدود تنظیمات ثبت‌شده در دسترس نیست.',
+);
