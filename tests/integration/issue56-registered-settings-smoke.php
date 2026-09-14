@@ -202,14 +202,16 @@ try {
 
 	$blocked_read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_public' ) );
 	wpnb_issue56_assert( is_wp_error( $blocked_read ), 'Exact registered setting read bypassed Site Configuration.' );
+	$blocked_before = get_option( 'wpnb_issue56_option' );
 	$blocked_update = wpnb_issue56_execute( 'wp-native-builder/registered-setting-update', array( 'name' => 'wpnb_issue56_public', 'value_json' => '"blocked"' ) );
-	wpnb_issue56_assert( is_wp_error( $blocked_update ) && 'initial' === get_option( 'wpnb_issue56_option' ), 'Registered setting update bypassed Site Configuration.' );
+	wpnb_issue56_assert( is_wp_error( $blocked_update ), 'Registered setting update bypassed Site Configuration.' );
+	wpnb_issue56_assert( $blocked_before === get_option( 'wpnb_issue56_option' ), 'Denied registered setting update mutated the option.' );
 
 	$access[ Settings::GROUP_SITE_CONFIG ] = 1;
 	update_option( Settings::OPTION_NAME, $access, false );
 
 	$read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_public' ) );
-	wpnb_issue56_assert( ! is_wp_error( $read ) && true === $read['value_available'] && '"initial"' === $read['value_json'], 'Exact registered setting read did not return the requested Core value.' );
+	wpnb_issue56_assert( ! is_wp_error( $read ) && true === $read['value_available'] && wp_json_encode( $blocked_before ) === $read['value_json'], 'Exact registered setting read did not return the requested Core value.' );
 	wpnb_issue56_assert( 'wpnb_issue56_public' === $read['setting']['name'], 'Exact registered setting read returned the wrong contract.' );
 	wpnb_issue56_assert( false === strpos( wp_json_encode( $read ), 'unrelated-sentinel' ), 'Exact read leaked an unrelated registered setting value.' );
 	wpnb_issue56_assert( false === strpos( wp_json_encode( $read ), 'private-sentinel' ), 'Exact read leaked a sensitive registered setting value.' );
