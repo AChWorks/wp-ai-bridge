@@ -40,6 +40,7 @@ final class Client_Assertion_Validator {
 	 * @return string|\WP_Error Candidate client ID or error.
 	 */
 	public function identify_client( $request ) {
+		$this->store->set_authenticated_client( '' );
 		$parsed = $this->parse_assertion( $request );
 		if ( is_wp_error( $parsed ) ) {
 			return $parsed;
@@ -62,6 +63,7 @@ final class Client_Assertion_Validator {
 	 * @return true|\WP_Error True when valid, otherwise an OAuth error.
 	 */
 	public function validate( $request, array $profile, array $audiences ) {
+		$this->store->set_authenticated_client( '' );
 		if ( ! $request instanceof \WP_REST_Request || ! function_exists( 'openssl_verify' ) ) {
 			return new \WP_Error( 'invalid_client', 'Signed OAuth client authentication is unavailable.' );
 		}
@@ -128,6 +130,7 @@ final class Client_Assertion_Validator {
 			return new \WP_Error( 'invalid_client', 'The OAuth client assertion has already been used.' );
 		}
 
+		$this->store->set_authenticated_client( $client_id );
 		return true;
 	}
 
@@ -371,7 +374,7 @@ final class Client_Assertion_Validator {
 		if ( $length < 128 ) {
 			return chr( $length );
 		}
-		$encoded = '';
+		$encoded  = '';
 		while ( $length > 0 ) {
 			$encoded = chr( $length & 0xff ) . $encoded;
 			$length >>= 8;
