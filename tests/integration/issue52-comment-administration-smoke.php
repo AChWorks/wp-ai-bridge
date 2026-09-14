@@ -220,12 +220,63 @@ try {
 	wpnb_issue52_live_assert( null === get_comment( $trash_id ), 'Authorized force-delete did not permanently remove the comment.' );
 	$created_comments = array_values( array_diff( $created_comments, array( (int) $trash_id ) ) );
 
+	$private_post_id = wp_insert_post(
+		array(
+			'post_title'     => 'Issue 52 private comments fixture',
+			'post_content'   => 'Private fixture',
+			'post_status'    => 'private',
+			'post_type'      => 'post',
+			'comment_status' => 'open',
+		),
+		true
+	);
+	wpnb_issue52_live_assert( ! is_wp_error( $private_post_id ) && $private_post_id > 0, 'Issue #52 private fixture post could not be created.' );
+	$created_posts[] = (int) $private_post_id;
+	$private_parent_id = wp_insert_comment(
+		array(
+			'comment_post_ID'  => $private_post_id,
+			'comment_author'   => 'Private Parent',
+			'comment_content'  => 'Must not contribute to public aggregates',
+			'comment_approved' => 1,
+			'comment_type'     => '',
+		)
+	);
+	wpnb_issue52_live_assert( $private_parent_id > 0, 'Private comment fixture could not be created.' );
+	$created_comments[] = (int) $private_parent_id;
+	$expected_public_total = count(
+		get_comments(
+			array(
+				'post_id' => $post_id,
+				'status'  => 'approve',
+				'type'    => 'comment',
+				'fields'  => 'ids',
+			)
+		)
+	);
+	wpnb_issue52_live_assert( $expected_public_total > 1, 'Readable public pagination fixture requires more than one approved standard comment.' );
+
 	$subscriber_id = wp_create_user( 'issue52_subscriber_' . wp_generate_password( 8, false ), wp_generate_password( 24, true ), 'issue52@example.invalid' );
 	wpnb_issue52_live_assert( ! is_wp_error( $subscriber_id ), 'Subscriber fixture could not be created.' );
 	$created_users[] = (int) $subscriber_id;
 	$subscriber = new WP_User( $subscriber_id );
 	$subscriber->set_role( 'subscriber' );
 	wp_set_current_user( $subscriber_id );
+
+	$unscoped_public = $read->execute( array( 'action' => 'list', 'scope' => 'public', 'status' => 'approved', 'per_page' => 1 ) );
+	wpnb_issue52_live_assert( is_wp_error( $unscoped_public ) && 'invalid_comment_input' === $unscoped_public->get_error_code(), 'Low-privilege public list without an exact post exposed site-wide aggregate semantics.' );
+	$private_post_public = $read->execute( array( 'action' => 'list', 'scope' => 'public', 'status' => 'approved', 'post' => $private_post_id, 'per_page' => 1 ) );
+	wpnb_issue52_live_assert( is_wp_error( $private_post_public ), 'Low-privilege principal received a public list response for an unreadable private post.' );
+	$private_parent_probe = $read->execute( array( 'action' => 'list', 'scope' => 'public', 'status' => 'approved', 'post' => $post_id, 'parent' => $private_parent_id, 'per_page' => 1 ) );
+	wpnb_issue52_live_assert( is_wp_error( $private_parent_probe ) && 'invalid_comment_input' === $private_parent_probe->get_error_code(), 'Unreadable parent ID produced aggregate public-list semantics.' );
+
+	$public_page_one = $read->execute( array( 'action' => 'list', 'scope' => 'public', 'status' => 'approved', 'post' => $post_id, 'page' => 1, 'per_page' => 1 ) );
+	wpnb_issue52_live_assert( ! is_wp_error( $public_page_one ) && 1 === count( $public_page_one['items'] ), 'Readable public pagination page one failed for low-privilege principal.' );
+	wpnb_issue52_live_assert( $expected_public_total === (int) $public_page_one['total'], 'Public total did not match the exact readable post scope.' );
+	wpnb_issue52_live_assert( $expected_public_total === (int) $public_page_one['total_pages'], 'Public total_pages did not preserve per-page=1 pagination for the readable post.' );
+	$public_page_two = $read->execute( array( 'action' => 'list', 'scope' => 'public', 'status' => 'approved', 'post' => $post_id, 'page' => 2, 'per_page' => 1 ) );
+	wpnb_issue52_live_assert( ! is_wp_error( $public_page_two ) && 1 === count( $public_page_two['items'] ), 'Readable public pagination page two failed for low-privilege principal.' );
+	wpnb_issue52_live_assert( $expected_public_total === (int) $public_page_two['total'] && $expected_public_total === (int) $public_page_two['total_pages'], 'Readable public pagination totals changed across pages.' );
+
 	$moderation_input = array( 'action' => 'list', 'scope' => 'moderation', 'post' => $post_id, 'status' => 'hold' );
 	wpnb_issue52_live_assert( false === $read->check_permissions( $moderation_input ), 'Low-privilege principal received moderation read authority.' );
 	wpnb_issue52_live_assert( false === $status->check_permissions( array( 'id' => $approved_id, 'status' => 'hold' ) ), 'Low-privilege principal received moderation mutation authority.' );

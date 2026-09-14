@@ -252,6 +252,22 @@ final class Comment_Abilities {
 		if ( 'public' === $scope && 'approved' !== $status ) {
 			return new WP_Error( 'comment_scope_requires_moderation', __( 'Non-public comment statuses require moderation scope.', 'wp-native-builder-bridge' ) );
 		}
+		if ( 'public' === $scope && empty( $input['post'] ) ) {
+			return $this->invalid_input();
+		}
+
+		$post_id = ! empty( $input['post'] ) ? (int) $input['post'] : 0;
+		if ( 'public' === $scope && ! empty( $input['parent'] ) ) {
+			$parent_id = (int) $input['parent'];
+			$parent    = $this->dispatch( 'GET', '/wp/v2/comments/' . $parent_id, array( 'context' => 'view' ) );
+			if ( is_wp_error( $parent ) ) {
+				return $this->invalid_input();
+			}
+			$parent_item = $this->normalize_item( $parent['data'] );
+			if ( is_wp_error( $parent_item ) || 'approved' !== $parent_item['status'] || $post_id !== (int) $parent_item['post'] ) {
+				return $this->invalid_input();
+			}
+		}
 
 		$params = array(
 			'context'  => $context,
@@ -260,8 +276,8 @@ final class Comment_Abilities {
 			'status'   => 'approved' === $status ? 'approve' : $status,
 			'type'     => 'comment',
 		);
-		if ( ! empty( $input['post'] ) ) {
-			$params['post'] = array( (int) $input['post'] );
+		if ( $post_id > 0 ) {
+			$params['post'] = array( $post_id );
 		}
 		if ( isset( $input['parent'] ) ) {
 			$params['parent'] = array( (int) $input['parent'] );

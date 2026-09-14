@@ -41,7 +41,7 @@ Disabling Native Abilities takes effect on subsequent Bridge calls because setti
 
 ## Comments administration boundary
 
-Comments access is independent from Site Read and Builder Write and defaults off on fresh installs and upgrades. The Bridge does not expose a generic REST dispatcher: comment operations construct only fixed `/wp/v2/comments` collection or numeric item routes, then let WordPress Core validate/sanitize inputs and enforce its own comment/post permissions.
+Comments access is independent from Site Read and Builder Write and defaults off on fresh installs and upgrades. The Bridge does not expose a generic REST dispatcher: comment operations construct only fixed `/wp/v2/comments` collection or numeric item routes, then let WordPress Core validate/sanitize inputs and enforce its own comment/post permissions. Public list pagination is additionally confined to one exact Core-readable post; positive parent filters are accepted only when the parent itself is a readable approved standard comment on that same post, preventing Core's pre-filter collection totals from becoming an aggregate side channel across unreadable content.
 
 Bridge output deliberately excludes comment author email/IP, user-agent, arbitrary comment metadata, and other hidden REST fields. Returned comment content is UTF-8-safe byte-bounded and reports `content_truncated` explicitly. Reply input cannot supply those fields either. Mutation methods also reject non-standard comment types before status/delete operations.
 

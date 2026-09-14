@@ -100,7 +100,7 @@ function rest_do_request( $request ) {
 		return new WP_AI_Bridge_Issue52_Test_Response(
 			array(
 				'id'           => (int) $matches[1],
-				'post'         => 8,
+				'post'         => 77 === (int) $matches[1] ? 9 : 8,
 				'parent'       => 0,
 				'author'       => 2,
 				'author_name'  => 'Public Author',
@@ -217,6 +217,15 @@ $last_request = end( $GLOBALS['wpnb52_rest_requests'] );
 wpnb52_assert( 'GET' === $last_request['method'] && '/wp/v2/comments' === $last_request['route'], 'List uses only the fixed Core comments collection route.' );
 wpnb52_assert( 'comment' === $last_request['params']['type'], 'List confines results to standard comments.' );
 wpnb52_assert( 'approve' === $last_request['params']['status'], 'Approved list maps to Core query status.' );
+
+$requests_before_unscoped_public = count( $GLOBALS['wpnb52_rest_requests'] );
+$unscoped_public = $comments->read( array( 'action' => 'list', 'scope' => 'public', 'status' => 'approved' ) );
+wpnb52_assert( is_wp_error( $unscoped_public ) && 'invalid_comment_input' === $unscoped_public->get_error_code(), 'Public list requires an exact post so Core pagination totals cannot span unreadable posts.' );
+wpnb52_assert( $requests_before_unscoped_public === count( $GLOBALS['wpnb52_rest_requests'] ), 'Rejected unscoped public list performs no Core collection request.' );
+$cross_post_parent = $comments->read( array( 'action' => 'list', 'scope' => 'public', 'status' => 'approved', 'post' => 8, 'parent' => 77 ) );
+wpnb52_assert( is_wp_error( $cross_post_parent ) && 'invalid_comment_input' === $cross_post_parent->get_error_code(), 'Public parent filter rejects a readable parent from a different post.' );
+$hidden_parent = $comments->read( array( 'action' => 'list', 'scope' => 'public', 'status' => 'approved', 'post' => 8, 'parent' => 99 ) );
+wpnb52_assert( is_wp_error( $hidden_parent ) && 'invalid_comment_input' === $hidden_parent->get_error_code(), 'Public parent filter rejects a non-public parent instead of exposing aggregate information.' );
 
 $bad_scope = $comments->read( array( 'action' => 'list', 'scope' => 'public', 'status' => 'spam' ) );
 wpnb52_assert( is_wp_error( $bad_scope ) && 'comment_scope_requires_moderation' === $bad_scope->get_error_code(), 'Public scope cannot inspect non-public queues.' );
