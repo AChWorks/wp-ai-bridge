@@ -18,6 +18,9 @@ final class OAuth_Store {
 	const TYPE_ACCESS  = 'access';
 	const TYPE_REFRESH = 'refresh';
 
+	/** @var string Exact client authenticated for one token-endpoint flow. */
+	private $authenticated_client_id = '';
+
 	/**
 	 * Returns the current installation identity, creating it lazily when needed.
 	 *
@@ -34,6 +37,24 @@ final class OAuth_Store {
 		}
 		$stored = get_option( self::INSTANCE_OPTION, '' );
 		return is_string( $stored ) && preg_match( '/^[a-f0-9]{32}$/', $stored ) ? $stored : $generated;
+	}
+
+	/**
+	 * Binds or clears the exact client authenticated for the current OAuth flow.
+	 *
+	 * This is request-local process state only. It is never persisted and is used
+	 * solely to ensure that one-time code/refresh consumption cannot cross client
+	 * boundaries after private_key_jwt authentication has succeeded.
+	 *
+	 * @param string $client_id Exact authenticated client ID, or empty to clear.
+	 * @return void
+	 */
+	public function set_authenticated_client( $client_id ) {
+		if ( ! is_string( $client_id ) || strlen( $client_id ) > 256 ) {
+			$this->authenticated_client_id = '';
+			return;
+		}
+		$this->authenticated_client_id = $client_id;
 	}
 
 	/**
@@ -65,9 +86,10 @@ final class OAuth_Store {
 	 * Reads and validates an opaque artifact.
 	 *
 	 * When an expected client is supplied, its binding is checked before an
-	 * otherwise valid one-time artifact is consumed. This prevents one approved
-	 * OAuth client from invalidating another client's authorization code or
-	 * refresh token merely by presenting the opaque value to its own endpoint.
+	 * otherwise valid one-time artifact is consumed. Token-endpoint code/refresh
+	 * consumption automatically uses the request-local client established by the
+	 * signed assertion validator, preventing one approved OAuth client from
+	 * invalidating another client's artifact merely by presenting its opaque value.
 	 *
 	 * @param string $type               Artifact type.
 	 * @param string $token              Opaque artifact.
@@ -79,6 +101,14 @@ final class OAuth_Store {
 		if ( ! is_string( $expected_client_id ) || strlen( $expected_client_id ) > 256 ) {
 			return false;
 		}
+		if (
+			'' === $expected_client_id &&
+			$consume &&
+			in_array( $type, array( self::TYPE_CODE, self::TYPE_REFRESH ), true )
+		) {
+			$expected_client_id = $this->authenticated_client_id;
+		}
+
 		$parsed = $this->parse( $type, $token );
 		if ( false === $parsed ) {
 			return false;
