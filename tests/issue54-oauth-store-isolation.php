@@ -136,6 +136,29 @@ wpnb_issue54_store_assert(
 	'A retained client-assertion replay claim was reclaimable.'
 );
 
+$legacy_jti    = 'issue54-pre-fix-replay-marker';
+$legacy_key    = 'wpnb_oauth_assertion_' . substr( hash( 'sha256', $client_a . "\0" . $legacy_jti ), 0, 40 );
+$legacy_expiry = time() - 1;
+$GLOBALS['wpnb_test']['options'][ $legacy_key ] = $legacy_expiry;
+wpnb_issue54_store_assert(
+	false === $store->claim_client_assertion( $legacy_jti, OAuth_Store::CLIENT_ASSERTION_REPLAY_TTL_CAP, $client_a ),
+	'An expired pre-fix replay marker was reclaimed synchronously inside authentication.'
+);
+wpnb_issue54_store_assert(
+	$legacy_expiry === get_option( $legacy_key, false ),
+	'Authentication deleted an existing pre-fix replay marker before scheduled cleanup owned its removal.'
+);
+$store->cleanup_client_assertion( $legacy_key, $legacy_expiry );
+wpnb_issue54_store_assert(
+	false === get_option( $legacy_key, false ),
+	'Scheduled replay cleanup did not remove the expired pre-fix marker.'
+);
+wpnb_issue54_store_assert(
+	$store->claim_client_assertion( $legacy_jti, OAuth_Store::CLIENT_ASSERTION_REPLAY_TTL_CAP, $client_a ),
+	'A replay identifier remained blocked after its authoritative scheduled cleanup.'
+);
+delete_option( $legacy_key );
+
 if ( $failures ) {
 	fwrite( STDERR, "{$failures} of {$tests} Issue #54 OAuth store isolation assertions failed.\n" );
 	exit( 1 );

@@ -158,6 +158,11 @@ final class OAuth_Store {
 	 * the complete 660-second acceptance window instead of becoming reclaimable
 	 * while the same signed assertion can still pass validation.
 	 *
+	 * Existing replay options are never reclaimed synchronously, even when their
+	 * stored expiry has elapsed. Their scheduled cleanup event owns removal. This
+	 * preserves the final skew window for markers created by an older Bridge build
+	 * that stored a 600-second expiry before this retention fix was installed.
+	 *
 	 * @param string $jti       JWT ID.
 	 * @param int    $ttl       Claim lifetime in seconds.
 	 * @param string $client_id Optional replay namespace.
@@ -174,10 +179,6 @@ final class OAuth_Store {
 		$expires_at = time() + $ttl;
 		$material   = '' === $client_id ? $jti : $client_id . "\0" . $jti;
 		$key        = 'wpnb_oauth_assertion_' . substr( hash( 'sha256', $material ), 0, 40 );
-		$existing   = get_option( $key, false );
-		if ( false !== $existing && (int) $existing <= time() ) {
-			delete_option( $key );
-		}
 		if ( ! add_option( $key, $expires_at, '', false ) ) {
 			return false;
 		}
