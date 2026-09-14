@@ -3,6 +3,7 @@
 All notable public changes are documented here.
 
 ## Unreleased
+- Add provider-neutral discovery plus exact read/update for non-sensitive WordPress settings registered through the Core REST settings contract, while preserving Core schema/sanitization, native `manage_options`, Bridge Site Configuration authority, and the existing specialized site-settings compatibility surface.
 - Allow administrators to approve additional exact public-HTTPS OAuth client metadata identities for independently operated MCP Gateways while preserving built-in ChatGPT behavior, private-key JWT authentication, PKCE, exact redirect/resource binding, and Bridge/WordPress authorization boundaries.
 - Add a default-off Comments administration boundary with fixed Core REST routing, privacy-bounded output, exact moderation authority, and dual-gated permanent deletion.
 
