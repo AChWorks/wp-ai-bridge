@@ -138,6 +138,7 @@ function wpnb_issue56_register_settings() {
 					'type'                 => 'object',
 					'properties'           => array(
 						'payload' => array(
+							'type'  => array( 'string', 'object' ),
 							'oneOf' => array(
 								array( 'type' => 'string' ),
 								array(
