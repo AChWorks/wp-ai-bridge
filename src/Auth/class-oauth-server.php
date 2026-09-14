@@ -428,7 +428,7 @@ final class OAuth_Server {
 		if ( is_wp_error( $client_id ) ) {
 			return $client_id;
 		}
-		$profile = $this->clients->resolve( $client_id );
+		$profile = $this->clients->resolve_for_client_auth( $client_id );
 		if ( is_wp_error( $profile ) ) {
 			return $profile;
 		}
