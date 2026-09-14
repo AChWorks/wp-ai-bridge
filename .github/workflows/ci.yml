@@ -74,6 +74,9 @@ jobs:
       - name: Run Issue 54 approved OAuth clients suite
         run: bash bin/run-issue54-oauth-clients.sh '${{ matrix.wordpress_tag }}'
 
+      - name: Run Issue 56 registered settings suite
+        run: bash bin/run-issue56-registered-settings.sh '${{ matrix.wordpress_tag }}'
+
       - name: Run Issue 46 multisite source-editing suite
         run: bash bin/run-issue46-multisite.sh '${{ matrix.wordpress_tag }}'
 
