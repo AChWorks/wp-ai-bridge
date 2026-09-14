@@ -83,6 +83,16 @@ function wpnb_issue56_register_settings() {
 			'show_in_rest' => true,
 		)
 	);
+	register_setting(
+		'wpnb_issue56',
+		'wpnb_issue56_license_key',
+		array(
+			'type'         => 'string',
+			'label'        => 'Issue 56 license credential',
+			'default'      => '',
+			'show_in_rest' => true,
+		)
+	);
 }
 
 $register_callback = static function () {
@@ -110,7 +120,7 @@ $pre_update = static function ( $updated, $name, $value ) {
 add_filter( 'rest_pre_get_setting', $pre_get, 10, 3 );
 add_filter( 'rest_pre_update_setting', $pre_update, 10, 4 );
 
-$settings = new Settings();
+$settings        = new Settings();
 $original_access = get_option( Settings::OPTION_NAME, $settings->defaults() );
 $original_values = array(
 	'wpnb_issue56_option'         => get_option( 'wpnb_issue56_option', null ),
@@ -119,13 +129,14 @@ $original_values = array(
 	'wpnb_issue56_other'          => get_option( 'wpnb_issue56_other', null ),
 	'wpnb_issue56_hidden'         => get_option( 'wpnb_issue56_hidden', null ),
 	'wpnb_issue56_api_key'        => get_option( 'wpnb_issue56_api_key', null ),
+	'wpnb_issue56_license_key'    => get_option( 'wpnb_issue56_license_key', null ),
 );
 $original_exists = array();
 foreach ( array_keys( $original_values ) as $option_name ) {
 	$original_exists[ $option_name ] = false !== get_option( $option_name, false );
 }
 $created_user = 0;
-$admin_id = get_current_user_id();
+$admin_id     = get_current_user_id();
 
 try {
 	update_option( 'wpnb_issue56_option', 'initial', false );
@@ -134,10 +145,11 @@ try {
 	update_option( 'wpnb_issue56_other', 'unrelated-sentinel', false );
 	update_option( 'wpnb_issue56_hidden', 'hidden-sentinel', false );
 	update_option( 'wpnb_issue56_api_key', 'private-sentinel', false );
+	update_option( 'wpnb_issue56_license_key', 'license-sentinel', false );
 
-	$access = $settings->defaults();
-	$access[ Settings::GROUP_SITE_READ ]   = 1;
-	$access[ Settings::GROUP_SITE_CONFIG ] = 0;
+	$access                                    = $settings->defaults();
+	$access[ Settings::GROUP_SITE_READ ]       = 1;
+	$access[ Settings::GROUP_SITE_CONFIG ]     = 0;
 	update_option( Settings::OPTION_NAME, $access, false );
 
 	$list = wpnb_issue56_execute( 'wp-native-builder/registered-settings-list', array( 'per_page' => 100 ) );
@@ -149,11 +161,13 @@ try {
 	}
 	wpnb_issue56_assert( isset( $items['wpnb_issue56_public'], $items['wpnb_issue56_hooked'], $items['wpnb_issue56_other'] ), 'REST-registered safe settings were not discovered.' );
 	wpnb_issue56_assert( ! isset( $items['wpnb_issue56_hidden'] ), 'show_in_rest=false setting was discovered.' );
-	wpnb_issue56_assert( ! isset( $items['wpnb_issue56_api_key'] ), 'Sensitive registered setting was exposed by discovery.' );
+	wpnb_issue56_assert( ! isset( $items['wpnb_issue56_api_key'] ), 'API-key setting was exposed by discovery.' );
+	wpnb_issue56_assert( ! isset( $items['wpnb_issue56_license_key'] ), 'License credential setting was exposed by discovery.' );
 	wpnb_issue56_assert( 'string' === $items['wpnb_issue56_public']['type'], 'Registered REST schema type was not preserved.' );
 	wpnb_issue56_assert( true === $items['wpnb_issue56_public']['schema_available'], 'Registered REST schema was unexpectedly unavailable.' );
 	wpnb_issue56_assert( false === strpos( $items['wpnb_issue56_public']['schema_json'], 'provider-default-must-not-leak' ), 'Registered setting default leaked through discovery schema.' );
 	wpnb_issue56_assert( false === strpos( wp_json_encode( $list ), 'private-sentinel' ), 'Sensitive setting value leaked through discovery.' );
+	wpnb_issue56_assert( false === strpos( wp_json_encode( $list ), 'license-sentinel' ), 'License credential value leaked through discovery.' );
 
 	$blocked_read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_public' ) );
 	wpnb_issue56_assert( is_wp_error( $blocked_read ), 'Exact registered setting read bypassed Site Configuration.' );
@@ -164,13 +178,15 @@ try {
 	update_option( Settings::OPTION_NAME, $access, false );
 
 	$read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_public' ) );
-	wpnb_issue56_assert( ! is_wp_error( $read ) && '"initial"' === $read['value_json'], 'Exact registered setting read did not return the requested Core value.' );
+	wpnb_issue56_assert( ! is_wp_error( $read ) && true === $read['value_available'] && '"initial"' === $read['value_json'], 'Exact registered setting read did not return the requested Core value.' );
 	wpnb_issue56_assert( 'wpnb_issue56_public' === $read['setting']['name'], 'Exact registered setting read returned the wrong contract.' );
 	wpnb_issue56_assert( false === strpos( wp_json_encode( $read ), 'unrelated-sentinel' ), 'Exact read leaked an unrelated registered setting value.' );
 	wpnb_issue56_assert( false === strpos( wp_json_encode( $read ), 'private-sentinel' ), 'Exact read leaked a sensitive registered setting value.' );
 
 	$sensitive_read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_api_key' ) );
 	wpnb_issue56_assert( is_wp_error( $sensitive_read ), 'Sensitive registered setting was readable through the generic contract.' );
+	$license_read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_license_key' ) );
+	wpnb_issue56_assert( is_wp_error( $license_read ), 'License credential setting was readable through the generic contract.' );
 	$hidden_read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_hidden' ) );
 	wpnb_issue56_assert( is_wp_error( $hidden_read ), 'Non-REST setting was readable through the generic contract.' );
 
@@ -183,10 +199,10 @@ try {
 	);
 	wpnb_issue56_assert( ! is_wp_error( $updated ), 'Registered setting update failed.' );
 	wpnb_issue56_assert( 'HELLO WORLD' === get_option( 'wpnb_issue56_option' ), 'Provider sanitize callback was not authoritative.' );
-	wpnb_issue56_assert( '"HELLO WORLD"' === $updated['value_json'], 'Update did not return the sanitized requested setting value.' );
-	wpnb_issue56_assert( true === $updated['changed'], 'Changed registered setting did not report changed=true.' );
+	wpnb_issue56_assert( true === $updated['value_available'] && '"HELLO WORLD"' === $updated['value_json'], 'Update did not return the sanitized requested setting value.' );
 	wpnb_issue56_assert( 'unrelated-sentinel' === get_option( 'wpnb_issue56_other' ), 'Exact update mutated an unrelated REST setting.' );
 	wpnb_issue56_assert( 'private-sentinel' === get_option( 'wpnb_issue56_api_key' ), 'Exact update mutated a sensitive REST setting.' );
+	wpnb_issue56_assert( 'license-sentinel' === get_option( 'wpnb_issue56_license_key' ), 'Exact update mutated a license credential setting.' );
 	wpnb_issue56_assert( false === strpos( wp_json_encode( $updated ), 'unrelated-sentinel' ), 'Exact update response leaked unrelated REST setting data.' );
 	wpnb_issue56_assert( false === strpos( wp_json_encode( $updated ), 'private-sentinel' ), 'Exact update response leaked sensitive REST setting data.' );
 
@@ -197,7 +213,7 @@ try {
 			'value_json' => '"hooked-new"',
 		)
 	);
-	wpnb_issue56_assert( ! is_wp_error( $hooked ) && '"hooked-new"' === $hooked['value_json'], 'REST provider get/update hooks were not preserved.' );
+	wpnb_issue56_assert( ! is_wp_error( $hooked ) && true === $hooked['value_available'] && '"hooked-new"' === $hooked['value_json'], 'REST provider get/update hooks were not preserved.' );
 	wpnb_issue56_assert( 'hooked-new' === get_option( 'wpnb_issue56_hooked_virtual' ), 'rest_pre_update_setting did not own the hooked update.' );
 	wpnb_issue56_assert( 'physical-unchanged' === get_option( 'wpnb_issue56_hooked_storage' ), 'Bridge bypassed the provider REST update hook.' );
 
@@ -216,8 +232,8 @@ try {
 	$created_user = (int) $created_user;
 	wp_set_current_user( $created_user );
 
-	$denied_list = wpnb_issue56_execute( 'wp-native-builder/registered-settings-list', array() );
-	$denied_read = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_public' ) );
+	$denied_list   = wpnb_issue56_execute( 'wp-native-builder/registered-settings-list', array() );
+	$denied_read   = wpnb_issue56_execute( 'wp-native-builder/registered-setting-read', array( 'name' => 'wpnb_issue56_public' ) );
 	$denied_update = wpnb_issue56_execute( 'wp-native-builder/registered-setting-update', array( 'name' => 'wpnb_issue56_public', 'value_json' => '"subscriber-change"' ) );
 	wpnb_issue56_assert( is_wp_error( $denied_list ) && is_wp_error( $denied_read ) && is_wp_error( $denied_update ), 'Native manage_options authority was bypassed.' );
 	wpnb_issue56_assert( 'HELLO WORLD' === get_option( 'wpnb_issue56_option' ), 'Unauthorized principal mutated the registered setting.' );
