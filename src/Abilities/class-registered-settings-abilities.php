@@ -323,13 +323,15 @@ final class Registered_Settings_Abilities {
 	}
 
 	/**
-	 * Checks both provider-neutral shared policy and settings-specific key forms.
+	 * Checks identities and structured schemas for credential/security material.
 	 *
 	 * @param array<string,mixed> $entry Registered setting entry.
 	 * @return bool
 	 */
 	private function is_sensitive_setting( array $entry ) {
-		return $this->is_sensitive_name( $entry['rest_name'] ) || $this->is_sensitive_name( $entry['option_name'] );
+		return $this->is_sensitive_name( $entry['rest_name'] )
+			|| $this->is_sensitive_name( $entry['option_name'] )
+			|| $this->schema_contains_sensitive_contract( $entry['schema'] );
 	}
 
 	/**
@@ -348,6 +350,49 @@ final class Registered_Settings_Abilities {
 		$normalized = trim( $normalized, '_' );
 
 		return 1 === preg_match( '/(^|_)(access|consumer|license|encryption|signing)_(keys?)($|_)/', $normalized );
+	}
+
+	/**
+	 * Fails closed when a structured setting contains sensitive nested identities.
+	 *
+	 * WordPress Core constrains REST object schemas, but a safe top-level setting
+	 * name can still wrap a credential field. Generic read/update must not become a
+	 * secret-management path merely because that containing option has a neutral name.
+	 *
+	 * @param mixed $schema Registered REST schema fragment.
+	 * @return bool
+	 */
+	private function schema_contains_sensitive_contract( $schema ) {
+		if ( ! is_array( $schema ) ) {
+			return false;
+		}
+
+		$type = isset( $schema['type'] ) ? (string) $schema['type'] : '';
+		if ( 'object' === $type ) {
+			$properties = isset( $schema['properties'] ) && is_array( $schema['properties'] ) ? $schema['properties'] : array();
+			if ( empty( $properties ) ) {
+				return true;
+			}
+			if ( ! array_key_exists( 'additionalProperties', $schema ) || false !== $schema['additionalProperties'] ) {
+				return true;
+			}
+			foreach ( $properties as $property_name => $property_schema ) {
+				if ( $this->is_sensitive_name( (string) $property_name ) || $this->schema_contains_sensitive_contract( $property_schema ) ) {
+					return true;
+				}
+			}
+		}
+
+		if ( 'array' === $type ) {
+			if ( ! isset( $schema['items'] ) || ! is_array( $schema['items'] ) ) {
+				return true;
+			}
+			if ( $this->schema_contains_sensitive_contract( $schema['items'] ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
