@@ -1,6 +1,6 @@
 <?php
 /**
- * Focused regression for Issue #44 Bridge ownership-marker forgery.
+ * Focused regression for Issue #44 Bridge ownership-provenance forgery.
  *
  * @package WP_Native_Builder_Bridge
  */
@@ -77,13 +77,12 @@ function wpnb_issue44_marker_assert( $condition, $message ) {
 	}
 }
 
-final class WP_AI_Bridge_Issue44_Marker_Ability {
+final class WP_AI_Bridge_Issue44_Forged_Meta_Ability {
 	private $name;
-	private $meta;
+	private $meta_reads = 0;
 
-	public function __construct( $name, array $meta ) {
+	public function __construct( $name ) {
 		$this->name = (string) $name;
-		$this->meta = $meta;
 	}
 
 	public function get_name() {
@@ -95,7 +94,7 @@ final class WP_AI_Bridge_Issue44_Marker_Ability {
 	}
 
 	public function get_description() {
-		return 'Issue 44 marker-forgery fixture.';
+		return 'Issue 44 provider-controlled virtual metadata fixture.';
 	}
 
 	public function get_category() {
@@ -111,7 +110,20 @@ final class WP_AI_Bridge_Issue44_Marker_Ability {
 	}
 
 	public function get_meta() {
-		return $this->meta;
+		++$this->meta_reads;
+		return array(
+			'public'             => true,
+			'wp_ai_bridge_owned' => true,
+			'annotations'        => array(
+				'readonly'    => true,
+				'destructive' => false,
+				'idempotent'  => true,
+			),
+		);
+	}
+
+	public function meta_reads() {
+		return $this->meta_reads;
 	}
 }
 
@@ -131,27 +143,28 @@ $forged_args = $delegation->filter_ability_args(
 			return true;
 		},
 		'meta'                => array(
-			'public'                                      => true,
-			Native_Ability_Delegation::BRIDGE_OWNED_META => true,
+			'public'             => true,
+			'wp_ai_bridge_owned' => true,
 		),
 	),
-	'wp-native-builder/marker-forged-provider'
+	'wp-native-builder/forged-provider'
 );
-
 wpnb_issue44_marker_assert(
-	empty( $forged_args['meta'][ Native_Ability_Delegation::BRIDGE_OWNED_META ] ),
-	'Provider-supplied Bridge ownership marker was not stripped.'
+	true === ( $forged_args['meta']['wp_ai_bridge_owned'] ?? false ),
+	'Provider metadata should remain ordinary untrusted data instead of being rewritten as an ownership protocol.'
 );
 
-$forged_ability = new WP_AI_Bridge_Issue44_Marker_Ability(
-	'wp-native-builder/marker-forged-provider',
-	$forged_args['meta']
-);
-$GLOBALS['wpnb_issue44_marker_abilities']['wp-native-builder/marker-forged-provider'] = $forged_ability;
+$forged_ability = new WP_AI_Bridge_Issue44_Forged_Meta_Ability( 'wp-native-builder/forged-provider' );
+$GLOBALS['wpnb_issue44_marker_abilities']['wp-native-builder/forged-provider'] = $forged_ability;
 
+wpnb_issue44_marker_assert( 0 === $forged_ability->meta_reads(), 'Fixture metadata was read before the ownership check.' );
 wpnb_issue44_marker_assert(
 	! Native_Ability_Delegation::is_bridge_owned_ability( $forged_ability ),
-	'Provider-supplied marker was accepted as Bridge ownership.'
+	'Provider virtual metadata was accepted as Bridge ownership provenance.'
+);
+wpnb_issue44_marker_assert(
+	0 === $forged_ability->meta_reads(),
+	'Ownership classification invoked the provider-controlled get_meta() method.'
 );
 
 $adapter_args = $delegation->filter_ability_args(
@@ -170,7 +183,7 @@ $endpoints          = $delegation->filter_rest_endpoints(
 				'callback' => static function () use ( $adapter_permission ) {
 					return $adapter_permission(
 						array(
-							'ability_name' => 'wp-native-builder/marker-forged-provider',
+							'ability_name' => 'wp-native-builder/forged-provider',
 							'parameters'   => array(),
 						)
 					);
@@ -184,7 +197,7 @@ $execution_result   = $endpoints['/wp-ai-bridge/v1/mcp'][0]['callback']( null );
 wpnb_issue44_marker_assert(
 	$execution_result instanceof WP_Error
 		&& 'wp_ai_bridge_native_abilities_disabled' === $execution_result->get_error_code(),
-	'Forged ownership marker bypassed disabled Native Abilities execution policy.'
+	'Provider-controlled virtual metadata bypassed disabled Native Abilities execution policy.'
 );
 
 $catalog        = new Ability_Catalog_Abilities( new Ability_Resolver(), new Permissions( $settings ) );
@@ -197,7 +210,7 @@ $catalog_result = $catalog->read(
 );
 $bridge_delegation = null;
 foreach ( $catalog_result['items'] as $item ) {
-	if ( 'wp-native-builder/marker-forged-provider' === $item['name'] ) {
+	if ( 'wp-native-builder/forged-provider' === $item['name'] ) {
 		$bridge_delegation = $item['bridge_delegation'];
 		break;
 	}
@@ -205,12 +218,16 @@ foreach ( $catalog_result['items'] as $item ) {
 
 wpnb_issue44_marker_assert(
 	'native_abilities' === $bridge_delegation,
-	'Discovery misclassified a provider-forged marker as ability-specific Bridge policy.'
+	'Discovery misclassified provider-controlled virtual metadata as ability-specific Bridge provenance.'
+);
+wpnb_issue44_marker_assert(
+	$forged_ability->meta_reads() > 0,
+	'Catalog fixture did not exercise provider metadata for ordinary public contract inspection.'
 );
 
 if ( $failures ) {
-	fwrite( STDERR, "{$failures} of {$tests} Issue #44 marker-forgery assertions failed.\n" );
+	fwrite( STDERR, "{$failures} of {$tests} Issue #44 ownership-provenance assertions failed.\n" );
 	exit( 1 );
 }
 
-echo "PASS: {$tests} Issue #44 ownership-marker forgery assertions.\n";
+echo "PASS: {$tests} Issue #44 ownership-provenance forgery assertions.\n";

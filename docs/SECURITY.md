@@ -31,11 +31,11 @@ Only Site Read is enabled by default.
 
 ## Native Ability delegation boundary
 
-Native Abilities is provider-neutral broad consent, not effect inference or a provider allowlist. It gates unmarked registered Ability execution only while the request is executing through the exact canonical or retained legacy Bridge MCP route. It does not affect direct `WP_Ability::execute()`, the Adapter default server, or WP-CLI.
+Native Abilities is provider-neutral broad consent, not effect inference or a provider allowlist. It gates registered non-Bridge Ability execution only while the request is executing through the exact canonical or retained legacy Bridge MCP route. It does not affect direct `WP_Ability::execute()`, the Adapter default server, or WP-CLI.
 
-A registered target must pass both enabled Native Abilities and its own native permission callback. The Bridge may add a denial but never converts a provider/Core denial into allow. Names, descriptions, categories, or optimistic annotations do not authorize execution. Bridge-owned registrations are marked on the actual successfully registered Ability object and retain their existing access-group policies; using the historical `wp-native-builder/*` namespace alone does not establish Bridge ownership.
+A registered target must pass both enabled Native Abilities and its own native permission callback. The Bridge may add a denial but never converts a provider/Core denial into allow. Names, descriptions, categories, optimistic annotations, provider-supplied metadata, and custom Ability getters do not authorize execution. Bridge ownership is bound only to the exact live Ability objects that WordPress successfully registered from genuine Bridge-owned callbacks; the private provenance set contains only object identity and is not a parallel Ability registry. Using the historical `wp-native-builder/*` namespace, setting `wp_ai_bridge_owned`, or overriding `get_meta()` cannot establish Bridge ownership.
 
-Disabling Native Abilities takes effect on subsequent Bridge calls because settings are read at execution time. The exact Bridge request context is balanced with unconditional cleanup; unrelated REST routes are not governed by this marker.
+Disabling Native Abilities takes effect on subsequent Bridge calls because settings are read at execution time. The exact Bridge request context is balanced with unconditional cleanup; unrelated REST routes are not governed by that context.
 
 ## Advanced post metadata boundary
 

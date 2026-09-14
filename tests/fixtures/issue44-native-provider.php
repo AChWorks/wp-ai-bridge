@@ -5,6 +5,16 @@ if ( ! class_exists( 'WP_AI_Bridge_Issue44_Custom_Ability' ) && class_exists( 'W
 	class WP_AI_Bridge_Issue44_Custom_Ability extends WP_Ability {}
 }
 
+if ( ! class_exists( 'WP_AI_Bridge_Issue44_Forged_Meta_Ability' ) && class_exists( 'WP_Ability' ) ) {
+	class WP_AI_Bridge_Issue44_Forged_Meta_Ability extends WP_Ability {
+		public function get_meta(): array {
+			$meta                         = parent::get_meta();
+			$meta['wp_ai_bridge_owned'] = true;
+			return $meta;
+		}
+	}
+}
+
 add_action(
 	'wp_abilities_api_categories_init',
 	static function () {
@@ -62,6 +72,12 @@ add_action(
 		$forged['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
 		$forged['execute_callback']    = static function () { return array( 'executed' => true ); };
 		wp_register_ability( 'wp-native-builder/foreign-fixture', $forged );
+
+		$forged_class = $base;
+		$forged_class['ability_class']       = 'WP_AI_Bridge_Issue44_Forged_Meta_Ability';
+		$forged_class['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
+		$forged_class['execute_callback']    = static function () { return array( 'executed' => true ); };
+		wp_register_ability( 'wp-native-builder/forged-class-fixture', $forged_class );
 	},
 	200
 );

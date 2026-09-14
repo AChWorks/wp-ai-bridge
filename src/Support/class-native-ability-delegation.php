@@ -15,7 +15,6 @@ use WP_Error;
  */
 final class Native_Ability_Delegation {
 	const ADAPTER_EXECUTE_ABILITY = 'mcp-adapter/execute-ability';
-	const BRIDGE_OWNED_META       = 'wp_ai_bridge_owned';
 
 	/** @var array<int,string> */
 	private $bridge_routes = array(
@@ -29,11 +28,21 @@ final class Native_Ability_Delegation {
 	/** @var int */
 	private $bridge_request_depth = 0;
 
+	/** @var int */
+	private $bridge_registration_depth = 0;
+
+	/** @var array<string,bool> */
+	private $pending_bridge_ability_names = array();
+
+	/** @var \SplObjectStorage<object,mixed>|null */
+	private static $bridge_owned_abilities = null;
+
 	/**
 	 * @param Settings $settings Bridge access-group settings.
 	 */
 	public function __construct( Settings $settings ) {
 		$this->settings = $settings;
+		self::ownership_store();
 	}
 
 	/** @return void */
@@ -43,12 +52,37 @@ final class Native_Ability_Delegation {
 	}
 
 	/**
-	 * Marks successfully registering Bridge-owned Abilities and wraps only the
-	 * Adapter's generic execution permission callback.
+	 * Runs the Bridge registrar inside a private provenance phase, then binds every
+	 * successfully registered Bridge Ability name observed during that exact call
+	 * stack to the live object currently held by WordPress.
 	 *
-	 * WordPress applies this filter after duplicate-name rejection. The private
-	 * ownership marker is reserved here: provider-supplied values are removed before
-	 * only a genuine Bridge callback registration may set it.
+	 * Provider registrations on their own hooks never enter this phase. Finalization
+	 * happens before control returns to later `wp_abilities_api_init` callbacks, so a
+	 * later unregister/re-register cannot inherit the original object's ownership.
+	 *
+	 * @param callable $registration_callback Bridge registrar callback.
+	 * @return void
+	 */
+	public function capture_bridge_registrations( $registration_callback ) {
+		if ( ! is_callable( $registration_callback ) ) {
+			return;
+		}
+
+		++$this->bridge_registration_depth;
+		try {
+			call_user_func( $registration_callback );
+		} finally {
+			$this->bridge_registration_depth = max( 0, $this->bridge_registration_depth - 1 );
+			$this->finalize_bridge_ownership();
+		}
+	}
+
+	/**
+	 * Records names only while the Bridge registrar owns the synchronous registration
+	 * phase and wraps only the Adapter's generic execution permission callback.
+	 *
+	 * Provider metadata, annotations, namespaces and custom Ability virtual methods
+	 * are deliberately irrelevant to Bridge ownership provenance.
 	 *
 	 * @param array<string,mixed> $args Ability registration arguments.
 	 * @param string              $name Ability name.
@@ -59,15 +93,8 @@ final class Native_Ability_Delegation {
 			return $args;
 		}
 
-		if ( isset( $args['meta'] ) && is_array( $args['meta'] ) ) {
-			unset( $args['meta'][ self::BRIDGE_OWNED_META ] );
-		}
-
-		if ( $this->is_bridge_registration( $name, $args ) ) {
-			$meta                            = isset( $args['meta'] ) && is_array( $args['meta'] ) ? $args['meta'] : array();
-			$meta[ self::BRIDGE_OWNED_META ] = true;
-			$args['meta']                    = $meta;
-			return $args;
+		if ( $this->bridge_registration_depth > 0 ) {
+			$this->pending_bridge_ability_names[ $name ] = true;
 		}
 
 		if ( self::ADAPTER_EXECUTE_ABILITY !== $name || empty( $args['permission_callback'] ) || ! is_callable( $args['permission_callback'] ) ) {
@@ -99,9 +126,9 @@ final class Native_Ability_Delegation {
 	}
 
 	/**
-	 * Wraps only the exact canonical and legacy Bridge MCP callbacks. The marker
-	 * therefore encloses Adapter tool permission and execution without changing
-	 * transport authentication or unrelated REST requests.
+	 * Wraps only the exact canonical and legacy Bridge MCP callbacks. The request
+	 * context therefore encloses Adapter tool permission and execution without
+	 * changing transport authentication or unrelated REST requests.
 	 *
 	 * @param array<string,mixed> $endpoints Registered REST endpoints.
 	 * @return array<string,mixed>
@@ -137,45 +164,55 @@ final class Native_Ability_Delegation {
 	}
 
 	/**
-	 * Reports whether an actual registered Ability carries the Bridge ownership marker.
+	 * Reports whether an exact live Ability object was registered during the private
+	 * Bridge registrar phase.
+	 *
+	 * Provider-controlled metadata and virtual getters are intentionally irrelevant
+	 * to this authorization decision.
 	 *
 	 * @param mixed $ability Ability object.
 	 * @return bool
 	 */
 	public static function is_bridge_owned_ability( $ability ) {
-		if ( ! is_object( $ability ) || ! method_exists( $ability, 'get_meta' ) ) {
-			return false;
+		return is_object( $ability ) && self::ownership_store()->contains( $ability );
+	}
+
+	/**
+	 * Converts pending names observed inside the Bridge registrar call stack into
+	 * exact live object identities from the authoritative WordPress registry.
+	 *
+	 * @return void
+	 */
+	private function finalize_bridge_ownership() {
+		$names                              = array_keys( $this->pending_bridge_ability_names );
+		$this->pending_bridge_ability_names = array();
+		if ( ! function_exists( 'wp_get_ability' ) ) {
+			return;
 		}
-		$meta = $ability->get_meta();
-		return is_array( $meta ) && true === ( $meta[ self::BRIDGE_OWNED_META ] ?? false );
+
+		$store = self::ownership_store();
+		foreach ( $names as $name ) {
+			$ability = wp_get_ability( $name );
+			if ( is_object( $ability ) ) {
+				$store->attach( $ability );
+			}
+		}
+	}
+
+	/**
+	 * Returns the private Bridge ownership identity set.
+	 *
+	 * @return \SplObjectStorage<object,mixed>
+	 */
+	private static function ownership_store() {
+		if ( null === self::$bridge_owned_abilities ) {
+			self::$bridge_owned_abilities = new \SplObjectStorage();
+		}
+		return self::$bridge_owned_abilities;
 	}
 
 	/** @return bool */
 	private function in_bridge_request() {
 		return $this->bridge_request_depth > 0;
-	}
-
-	/**
-	 * @param string              $name Ability name.
-	 * @param array<string,mixed> $args Registration arguments.
-	 * @return bool
-	 */
-	private function is_bridge_registration( $name, array $args ) {
-		return 0 === strpos( $name, 'wp-native-builder/' )
-			&& $this->is_bridge_callback( $args['permission_callback'] ?? null )
-			&& $this->is_bridge_callback( $args['execute_callback'] ?? null );
-	}
-
-	/**
-	 * @param mixed $callback Registered callback.
-	 * @return bool
-	 */
-	private function is_bridge_callback( $callback ) {
-		if ( ! is_array( $callback ) || 2 !== count( $callback ) ) {
-			return false;
-		}
-		$owner = $callback[0];
-		$class = is_object( $owner ) ? get_class( $owner ) : ( is_string( $owner ) ? $owner : '' );
-		return 0 === strpos( $class, 'WP_Native_Builder_Bridge\\' );
 	}
 }

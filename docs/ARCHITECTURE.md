@@ -52,12 +52,13 @@ Bridge-owned operations enforce their documented precise access groups and nativ
 
 - the public WordPress `rest_endpoints` filter wraps only the canonical and retained legacy Bridge MCP callbacks with balanced request context and unconditional cleanup;
 - only the Adapter's `mcp-adapter/execute-ability` permission callback is layered with Bridge policy during Ability registration;
-- successfully registered Bridge-owned Abilities receive an internal marker on the actual Ability object rather than being trusted by namespace string alone;
+- genuine Bridge registrations are remembered only until WordPress finishes registration, then the exact successfully registered live Ability objects are bound into a private object-identity provenance set; provider namespaces, metadata, annotations, custom getters and custom `ability_class` implementations cannot grant Bridge-owned treatment;
+- the provenance set stores only Bridge-owned live object identity. It is not a second Ability registry, contains no provider contracts/schemas/callbacks, performs no execution dispatch, and leaves WordPress as the sole operation registry;
 - the current `native_abilities` setting is read at execution time, so subsequent calls observe revocation immediately.
 
 The Bridge layer can add a denial but cannot turn a provider/Core denial into allow. Provider schemas, callbacks, custom Ability classes and native lifecycle remain owned by WordPress/provider code. Direct `WP_Ability::execute()`, the Adapter default server, WP-CLI, and unrelated REST routes are outside this Bridge request context and remain unchanged.
 
-`abilities-read` exposes the delegation requirement but still does not execute or pre-authorize target permission callbacks. Existing Bridge-owned typed operations that call provider APIs keep their documented Bridge groups plus provider/WordPress authority; Native Abilities does not replace those contracts.
+`abilities-read` exposes the delegation requirement from the same exact-object provenance decision used by execution, but still does not execute or pre-authorize target permission callbacks. Existing Bridge-owned typed operations that call provider APIs keep their documented Bridge groups plus provider/WordPress authority; Native Abilities does not replace those contracts.
 
 Use existing WordPress roles/capabilities for identity and object authority; use Bridge settings for delegation. Adding an authenticated connection must not implicitly grant administrator or network authority. Capability changes, disconnection and policy revocation must be checked against current state.
 
