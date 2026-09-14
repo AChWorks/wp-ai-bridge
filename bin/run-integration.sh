@@ -213,6 +213,12 @@ update_option("wpnb_integration_source_recovery_fixture", array(
 ' --allow-root >/dev/null
 "${wp[@]}" option update wp_native_builder_bridge_source_lock 'fixture-lock' --allow-root >/dev/null
 "${wp[@]}" option update wp_native_builder_bridge_oauth_instance '0123456789abcdef0123456789abcdef' --allow-root >/dev/null
+# Earlier direct-OAuth smoke coverage may have already populated these fixed caches.
+# Reset them so this uninstall fixture always creates fresh disposable state instead
+# of treating WordPress's "unchanged value" false return as a setup failure.
+"${wp[@]}" transient delete wpnb_oauth_chatgpt_cimd_ok --allow-root >/dev/null 2>&1 || true
+"${wp[@]}" transient delete wpnb_oauth_chatgpt_jwks --allow-root >/dev/null 2>&1 || true
+"${wp[@]}" transient delete wpnb_oauth_chatgpt_jwks_refresh --allow-root >/dev/null 2>&1 || true
 "${wp[@]}" transient set wpnb_oauth_chatgpt_cimd_ok 1 900 --allow-root >/dev/null
 "${wp[@]}" transient set wpnb_oauth_chatgpt_jwks '[{"kid":"fixture"}]' 900 --allow-root >/dev/null
 "${wp[@]}" transient set wpnb_oauth_chatgpt_jwks_refresh 1 60 --allow-root >/dev/null
