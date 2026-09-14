@@ -370,6 +370,21 @@ final class Registered_Settings_Abilities {
 			return false;
 		}
 
+		foreach ( array( 'anyOf', 'oneOf' ) as $composition_key ) {
+			if ( ! array_key_exists( $composition_key, $schema ) ) {
+				continue;
+			}
+			$branches = $schema[ $composition_key ];
+			if ( ! is_array( $branches ) || empty( $branches ) ) {
+				return true;
+			}
+			foreach ( $branches as $branch ) {
+				if ( ! is_array( $branch ) || $this->schema_contains_sensitive_contract( $branch ) ) {
+					return true;
+				}
+			}
+		}
+
 		$types            = isset( $schema['type'] ) ? (array) $schema['type'] : array();
 		$is_object_schema = in_array( 'object', $types, true ) || isset( $schema['properties'] ) || isset( $schema['patternProperties'] ) || array_key_exists( 'additionalProperties', $schema );
 		if ( $is_object_schema ) {
