@@ -2,9 +2,7 @@
 
 Status: Canonical project specification
 
-Current repository during the identity-migration integration: `ach1992/wp-native-builder-bridge`
-
-Accepted canonical repository identity after the separately sequenced repository rename: `ach1992/wp-ai-bridge`
+Canonical repository: `ach1992/wp-ai-bridge`
 
 Companion project: `ach1992/wp-native-builder`
 
