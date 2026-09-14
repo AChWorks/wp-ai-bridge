@@ -30,6 +30,8 @@ Exact reads and updates shape the result back to the one requested setting. WP A
 
 The provider-neutral credential/session key policy also applies to registered settings. A setting whose physical or REST-visible identity is recognized as credential-like is omitted from discovery and unavailable through generic exact read/update. The registered-settings provider also treats common access, consumer, license, encryption, and signing key identities as credential-like.
 
+Structured object/array settings are inspected recursively through their registered REST schema. If a nested property is credential-like, or a structured schema is too open to establish a bounded property contract, the entire setting fails closed instead of allowing the generic settings surface to become a nested secret-management path.
+
 This generic surface is not a secret-management API. API keys, passwords, credentials, private keys, OAuth/client secrets, access/refresh/session/authentication tokens, license/access/consumer keys, and equivalent setting identities require a purpose-specific lifecycle if they ever need Bridge management.
 
 ## Value transport
