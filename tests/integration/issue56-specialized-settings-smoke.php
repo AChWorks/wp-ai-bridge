@@ -46,6 +46,7 @@ try {
 	$access[ Settings::GROUP_SITE_CONFIG ] = 1;
 	update_option( Settings::OPTION_NAME, $access, false );
 
+	rest_get_server();
 	$registered = get_registered_settings();
 	$rest_names = array();
 	foreach ( $specialized_options as $option_name ) {
