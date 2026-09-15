@@ -25,8 +25,12 @@ wp=("${compose[@]}" run --rm cli)
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge.zip
 "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration
 "${compose[@]}" cp "$root/tests/integration/issue61-application-passwords-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-application-passwords-smoke.php
+"${compose[@]}" cp "$root/tests/integration/issue61-f003-create-provenance-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-f003-create-provenance-smoke.php
+"${compose[@]}" cp "$root/tests/integration/issue61-f004-f005-persistence-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-f004-f005-persistence-smoke.php
 actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
 actual_php="$("${wp[@]}" eval 'echo PHP_VERSION;' --allow-root | tail -n 1)"
 echo "Issue #61 baseline: WordPress ${actual_wp}; PHP ${actual_php}; image ${wordpress_tag}"
 "${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-application-passwords-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-f003-create-provenance-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-f004-f005-persistence-smoke.php --user=1 --allow-root
 echo "PASS: Issue #61 Application Password integration for ${wordpress_tag}."

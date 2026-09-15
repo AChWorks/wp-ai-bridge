@@ -246,28 +246,28 @@ final class Secure_Application_Password_Abilities {
 			}
 
 			++$capture['write_count'];
-			if ( 1 !== (int) $capture['write_count'] || ! is_array( $meta_value ) ) {
+			if ( 1 !== (int) $capture['write_count'] || null !== $check || ! is_array( $meta_value ) ) {
 				$this->invalidate_capture( $capture );
-				return $check;
+				return false;
 			}
 
 			$current  = $this->credential_snapshot( $user_id );
 			$proposed = $this->snapshot_from_items( $meta_value );
 			if ( is_wp_error( $current ) || is_wp_error( $proposed ) ) {
 				$this->invalidate_capture( $capture );
-				return $check;
+				return false;
 			}
 
 			$candidate = $this->find_exact_append_candidate( $current, $proposed );
 			if ( is_wp_error( $candidate ) ) {
 				$this->invalidate_capture( $capture );
-				return $check;
+				return false;
 			}
 
 			$capture['uuid']          = $candidate['uuid'];
 			$capture['password_hash'] = $candidate['password_hash'];
 			$capture['fingerprint']   = $candidate['fingerprint'];
-			return $check;
+			return null;
 		};
 
 		$late_observer = function ( $item, $observed_request, $creating ) use ( &$capture, $request ) {
@@ -304,41 +304,60 @@ final class Secure_Application_Password_Abilities {
 	}
 
 	/**
-	 * Verifies that the observed metadata write belongs to the exact outer Core REST create.
+	 * Verifies that the observed metadata write is the exact outer Core REST create write.
 	 *
 	 * @param \WP_REST_Request $request Exact Bridge request object.
 	 * @return bool
 	 */
 	private function is_exact_outer_create_write( $request ) {
-		$trace                = debug_backtrace( 0, 40 );
-		$nearest_create_index = null;
-		$exact_request_frames = 0;
+		return $this->is_exact_application_password_storage_write(
+			$request,
+			'create_new_application_password',
+			'create_item'
+		);
+	}
+
+	/**
+	 * Binds a metadata write to the exact Core Application Password persistence chain.
+	 *
+	 * Re-entrant update_user_meta() calls can run while the outer create/delete stack
+	 * remains present. Requiring the direct update_metadata -> update_user_meta ->
+	 * set_user_application_passwords -> operation -> exact REST-controller chain
+	 * prevents a nested/provider write from inheriting Bridge provenance.
+	 *
+	 * @param \WP_REST_Request $request           Exact Bridge request object.
+	 * @param string           $storage_operation Core storage operation method.
+	 * @param string           $rest_operation    Core REST controller method.
+	 * @return bool
+	 */
+	private function is_exact_application_password_storage_write( $request, $storage_operation, $rest_operation ) {
+		$trace = debug_backtrace( 0, 48 );
 
 		foreach ( $trace as $index => $frame ) {
-			if ( null === $nearest_create_index
-				&& isset( $frame['class'], $frame['function'] )
-				&& 'WP_Application_Passwords' === ltrim( (string) $frame['class'], '\\' )
-				&& 'create_new_application_password' === $frame['function'] ) {
-				$nearest_create_index = $index;
+			if ( ! isset( $frame['function'] ) || 'update_metadata' !== $frame['function'] ) {
+				continue;
 			}
 
-			if ( isset( $frame['class'], $frame['function'], $frame['args'][0] )
-				&& 'WP_REST_Application_Passwords_Controller' === ltrim( (string) $frame['class'], '\\' )
-				&& 'create_item' === $frame['function']
-				&& $frame['args'][0] === $request ) {
-				++$exact_request_frames;
-			}
+			$update_user = isset( $trace[ $index + 1 ] ) ? $trace[ $index + 1 ] : array();
+			$set_store   = isset( $trace[ $index + 2 ] ) ? $trace[ $index + 2 ] : array();
+			$operation   = isset( $trace[ $index + 3 ] ) ? $trace[ $index + 3 ] : array();
+			$controller  = isset( $trace[ $index + 4 ] ) ? $trace[ $index + 4 ] : array();
+
+			return isset( $update_user['function'] )
+				&& 'update_user_meta' === $update_user['function']
+				&& isset( $set_store['class'], $set_store['function'] )
+				&& 'WP_Application_Passwords' === ltrim( (string) $set_store['class'], '\\' )
+				&& 'set_user_application_passwords' === $set_store['function']
+				&& isset( $operation['class'], $operation['function'] )
+				&& 'WP_Application_Passwords' === ltrim( (string) $operation['class'], '\\' )
+				&& $storage_operation === $operation['function']
+				&& isset( $controller['class'], $controller['function'], $controller['args'][0] )
+				&& 'WP_REST_Application_Passwords_Controller' === ltrim( (string) $controller['class'], '\\' )
+				&& $rest_operation === $controller['function']
+				&& $controller['args'][0] === $request;
 		}
 
-		if ( null === $nearest_create_index || 1 !== $exact_request_frames ) {
-			return false;
-		}
-
-		$caller = isset( $trace[ $nearest_create_index + 1 ] ) ? $trace[ $nearest_create_index + 1 ] : array();
-		return isset( $caller['class'], $caller['function'], $caller['args'][0] )
-			&& 'WP_REST_Application_Passwords_Controller' === ltrim( (string) $caller['class'], '\\' )
-			&& 'create_item' === $caller['function']
-			&& $caller['args'][0] === $request;
+		return false;
 	}
 
 	/** @param array<string,mixed> $capture Capture state. @return void */
@@ -463,6 +482,26 @@ final class Secure_Application_Password_Abilities {
 	}
 
 	/**
+	 * Requires a proposed cleanup write to remove only the exact captured credential.
+	 *
+	 * @param array<string,array<string,string>> $current  Current persisted snapshot.
+	 * @param array<string,array<string,string>> $proposed Proposed persisted snapshot.
+	 * @param array<string,mixed>                $capture  Capture state.
+	 * @return bool
+	 */
+	private function is_exact_cleanup_state( array $current, array $proposed, array $capture ) {
+		if ( ! $this->captured_credential_is_current( $current, $capture ) ) {
+			return false;
+		}
+
+		$expected = $current;
+		unset( $expected[ $capture['uuid'] ] );
+		ksort( $expected );
+
+		return $expected === $proposed;
+	}
+
+	/**
 	 * Resolves a failed REST create without guessing a cleanup target.
 	 *
 	 * @param WP_Error            $error    Original bounded REST error.
@@ -523,7 +562,7 @@ final class Secure_Application_Password_Abilities {
 	}
 
 	/**
-	 * Revokes only the captured credential if its stored fingerprint is unchanged.
+	 * Revokes only the captured credential when persistence-boundary identity remains exact.
 	 *
 	 * @param int                 $user_id Exact user.
 	 * @param array<string,mixed> $capture Capture state.
@@ -541,13 +580,25 @@ final class Secure_Application_Password_Abilities {
 			return $this->create_recovery_required_error();
 		}
 
+		$guard = array(
+			'write_count' => 0,
+			'allowed'     => false,
+			'denied'      => false,
+		);
+
 		try {
-			$result = $this->dispatch( 'DELETE', $this->collection_route( $user_id ) . '/' . $capture['uuid'], array() );
+			$result = $this->dispatch_cleanup_delete( $user_id, $capture, $guard );
 		} catch ( \Throwable $throwable ) {
 			return $this->cleanup_failed_error();
 		}
+		if ( ! empty( $guard['denied'] ) ) {
+			return $this->create_recovery_required_error();
+		}
 		if ( is_wp_error( $result ) || ! is_array( $result['data'] ) || empty( $result['data']['deleted'] ) ) {
 			return $this->cleanup_failed_error();
+		}
+		if ( 1 !== (int) $guard['write_count'] || empty( $guard['allowed'] ) ) {
+			return $this->create_recovery_required_error();
 		}
 
 		$after = $this->credential_snapshot( $user_id );
@@ -555,6 +606,102 @@ final class Secure_Application_Password_Abilities {
 			return $this->cleanup_failed_error();
 		}
 		return true;
+	}
+
+	/**
+	 * Detects callbacks that could still run after a persistence guard at one priority.
+	 *
+	 * Normal plugin callbacks are registered before the request-scoped Bridge guard.
+	 * A callback registered later at the same maximum priority would otherwise get an
+	 * interposition window after the decisive check. Production WordPress exposes the
+	 * WP_Hook callback order; if the guard cannot be found there, fail closed.
+	 *
+	 * @param string   $hook_name Hook name.
+	 * @param int      $priority  Guard priority.
+	 * @param callable $callback  Guard callback.
+	 * @return bool
+	 */
+	private function has_later_filter_callback_at_priority( $hook_name, $priority, $callback ) {
+		global $wp_filter;
+
+		if ( ! isset( $wp_filter[ $hook_name ] ) ) {
+			return false;
+		}
+		$hook = $wp_filter[ $hook_name ];
+		if ( ! is_object( $hook ) || ! isset( $hook->callbacks ) || ! is_array( $hook->callbacks ) ) {
+			return true;
+		}
+		if ( empty( $hook->callbacks[ $priority ] ) || ! is_array( $hook->callbacks[ $priority ] ) ) {
+			return true;
+		}
+
+		$seen = false;
+		foreach ( $hook->callbacks[ $priority ] as $registered ) {
+			$registered_callback = is_array( $registered ) && array_key_exists( 'function', $registered ) ? $registered['function'] : null;
+			if ( ! $seen ) {
+				if ( $registered_callback === $callback ) {
+					$seen = true;
+				}
+				continue;
+			}
+			return true;
+		}
+
+		return ! $seen;
+	}
+	/**
+	 * Dispatches the fixed Core cleanup DELETE with a persistence-boundary guard.
+	 *
+	 * @param int                 $user_id Exact target user.
+	 * @param array<string,mixed> $capture Exact create provenance.
+	 * @param array<string,mixed> $guard   Delete guard state.
+	 * @return array{data:mixed,headers:array<string,mixed>}|WP_Error
+	 */
+	private function dispatch_cleanup_delete( $user_id, array $capture, array &$guard ) {
+		$request = $this->build_request( 'DELETE', $this->collection_route( $user_id ) . '/' . $capture['uuid'], array() );
+		if ( is_wp_error( $request ) ) {
+			return $request;
+		}
+		if ( ! function_exists( 'add_filter' )
+			|| ! function_exists( 'remove_filter' )
+			|| ! class_exists( 'WP_Application_Passwords' ) ) {
+			return $this->create_recovery_required_error();
+		}
+
+		$write_guard = null;
+		$write_guard = function ( $check, $observed_user_id, $meta_key, $meta_value ) use ( &$write_guard, &$guard, $request, $user_id, $capture ) {
+			if ( (int) $observed_user_id !== (int) $user_id
+				|| \WP_Application_Passwords::USERMETA_KEY_APPLICATION_PASSWORDS !== $meta_key
+				|| ! $this->is_exact_application_password_storage_write( $request, 'delete_application_password', 'delete_item' ) ) {
+				return $check;
+			}
+
+			++$guard['write_count'];
+			if ( 1 !== (int) $guard['write_count'] || null !== $check || ! is_array( $meta_value ) ) {
+				$guard['denied'] = true;
+				return false;
+			}
+
+			$current  = $this->credential_snapshot( $user_id );
+			$proposed = $this->snapshot_from_items( $meta_value );
+			if ( is_wp_error( $current )
+				|| is_wp_error( $proposed )
+				|| ! $this->is_exact_cleanup_state( $current, $proposed, $capture )
+				|| $this->has_later_filter_callback_at_priority( 'update_user_metadata', PHP_INT_MAX, $write_guard ) ) {
+				$guard['denied'] = true;
+				return false;
+			}
+
+			$guard['allowed'] = true;
+			return null;
+		};
+
+		add_filter( 'update_user_metadata', $write_guard, PHP_INT_MAX, 4 );
+		try {
+			return $this->send_request( $request );
+		} finally {
+			remove_filter( 'update_user_metadata', $write_guard, PHP_INT_MAX );
+		}
 	}
 
 	/** @return string */
