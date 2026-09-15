@@ -51,6 +51,11 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `users-read` | Site Read | Read bounded user/role information without credential material. |
 | `user-upsert` | Users & Destructive | Create/update a user and assign an editable role. |
 | `user-remove` | Users & Destructive | Remove a user with explicit reassignment. |
+| `application-passwords-read` | Authentication & Credentials | List bounded Application Password metadata or read one exact UUID through the fixed Core REST controller; stored hashes and reusable credentials are never returned. |
+| `application-password-create` | Authentication & Credentials | Create one Core Application Password for an exact authorized user; the generated plaintext credential is returned only in this successful create response. |
+| `application-password-update` | Authentication & Credentials | Rename one exact Application Password through Core authority and lifecycle checks. |
+| `application-password-delete` | Authentication & Credentials | Revoke one exact Application Password through Core. |
+| `application-passwords-delete-all` | Authentication & Credentials | Revoke all Application Passwords for one exact user only with the explicit `revoke_all` confirmation token. |
 | `comments-read` | Comments | List/get bounded standard WordPress comment data through the fixed Core comments REST routes; private author transport fields and arbitrary meta are omitted. |
 | `comment-reply` | Comments | Create one bounded reply on an exact post/parent through Core comment creation; caller cannot override author/IP/status/meta. |
 | `comment-status` | Comments | Apply one closed moderation status transition through Core comment lifecycle and native moderation authority. |
@@ -60,6 +65,21 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `workspace-task` | Site Read / Builder Write | List/read/create/update/transition/archive private Workspace tasks. |
 
 
+
+
+## Application Password boundary
+
+`Authentication & Credentials` is a separate default-off delegation group. Enabling Users & Destructive, Advanced Metadata, Native Abilities, or another historical group does not enable it implicitly.
+
+The Bridge uses only the fixed WordPress Core Application Password REST route family for an exact user. Core remains authoritative for Application Password availability, multisite membership and the `list_app_passwords`, `read_app_password`, `create_app_password`, `edit_app_password`, `delete_app_password`, and `delete_app_passwords` capability checks.
+
+The generated Application Password is intentionally returned only by `application-password-create`, because Core exposes the plaintext credential only when it is created. The Bridge never persists that plaintext value, never exposes the stored Core hash, and does not include credentials, UUIDs, app IDs, or request payloads in the mutation log. Later list/get/update/revoke responses contain only bounded administrative metadata or deletion confirmation.
+
+Create recovery does not use a Bridge correlation token on `wp_create_application_password` and never treats a public action callback as cleanup provenance. Before any credential-storage snapshot, Bridge runs Core's exact target-specific `create_item_permissions_check()`; this matters because Core's Application Password reader can backfill UUIDs into legacy rows, so an unauthorized request must not trigger that storage normalization. After authorization, Bridge snapshots the exact target and observes the `_application_passwords` pre-write boundary only for the direct Core persistence chain `update_metadata()` → `update_user_meta()` → `WP_Application_Passwords::set_user_application_passwords()` → `create_new_application_password()` → the exact internal `WP_REST_Application_Passwords_Controller::create_item()` request. The nearest metadata write must be that direct Core chain, and the full call stack must contain exactly one matching `WP_REST_Application_Passwords_Controller::create_item()` invocation plus exactly one `rest_do_request()` for the exact request object. A re-entrant/provider `update_user_meta()` call or nested re-dispatch of that same `WP_REST_Request` therefore cannot inherit outer-create provenance. The genuine outer write is accepted only when no earlier metadata filter has already short-circuited it and its proposed state is exactly current state plus one new credential; otherwise that outer persistence attempt is blocked and recovery is required. Bridge retains only that proposed credential's UUID, stored-hash fingerprint and full-item fingerprint in memory. The later exact-request `rest_after_insert_application_password` event remains a success cross-check for the same UUID and Core-formatted one-time password, not cleanup authority.
+
+Cleanup still uses the fixed Core REST DELETE route, but the decisive ownership check is repeated at the actual `_application_passwords` delete persistence boundary. A request-scoped pre-write guard accepts only the direct Core chain ending in `delete_application_password()` → the exact internal `delete_item()` request, requires the currently stored UUID to retain the captured hash/full-item fingerprint, and requires the proposed state to equal current state minus exactly that credential with every unrelated credential unchanged. If REST-lifecycle/provider code changes or replaces the record while retaining the UUID, the Core write is blocked and Bridge returns `application_password_create_recovery_required`; the replacement does not inherit cleanup authority. Successful create still requires final stored state to equal the pre-request baseline plus exactly the captured credential. These checks provide bounded optimistic integrity around the exact Core writes, not serializable isolation: unprovable, nested, re-entrant or externally changed state fails closed rather than widening destructive authority.
+
+This surface does not manage WordPress account passwords, password-reset keys, sessions, cookies, nonces, WP AI Bridge OAuth tokens, or generic authentication metadata. `_application_passwords` remains outside generic user metadata.
 
 ## Comments administration boundary
 

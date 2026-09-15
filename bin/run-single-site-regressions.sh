@@ -82,4 +82,10 @@ run_eval issue58-user-comment-meta-race-smoke.php
 run_eval issue58-user-comment-meta-create-race-smoke.php
 run_eval issue58-user-comment-meta-storage-smoke.php
 
+run_eval issue61-application-passwords-smoke.php
+run_eval issue61-f008-throwable-smoke.php
+run_eval issue61-f003-create-provenance-smoke.php
+run_eval issue61-f004-f005-persistence-smoke.php
+run_eval issue61-f006-same-request-dispatch-smoke.php
+
 echo "Consolidated single-site regressions: PASS"

@@ -86,10 +86,10 @@ jobs:
           - name: Single-site regressions
             runner: bin/run-single-site-regressions.sh
             wordpress_tag: php8.4-apache
-          - name: Issue 58 multisite
+          - name: User/auth multisite regressions
             runner: bin/run-issue58-user-meta-multisite.sh
             wordpress_tag: 6.9-php8.4-apache
-          - name: Issue 58 multisite
+          - name: User/auth multisite regressions
             runner: bin/run-issue58-user-meta-multisite.sh
             wordpress_tag: php8.4-apache
           - name: Issue 46 multisite
