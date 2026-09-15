@@ -34,14 +34,17 @@ foreach ( array_unique( $matches[1] ) as $member ) {
 }
 
 $required_counts = array(
-	'$wpdb->prepare('                                  => 18,
-	'$wpdb->query('                                    => 14,
-	'$wpdb->get_results('                              => 2,
-	'$wpdb->usermeta'                                  => 9,
-	'$wpdb->commentmeta'                               => 9,
-	'CAST(meta_key AS BINARY) = CAST(%s AS BINARY)'   => 12,
-	'CAST(meta_value AS BINARY) = CAST(%s AS BINARY)' => 6,
-	'meta_value IS NULL'                               => 4,
+	'$wpdb->prepare('                                                                    => 18,
+	'$wpdb->query('                                                                      => 14,
+	'$wpdb->get_results('                                                                => 2,
+	'$wpdb->usermeta'                                                                    => 9,
+	'$wpdb->commentmeta'                                                                 => 9,
+	'CAST(meta_key AS BINARY) = CAST(%s AS BINARY)'                                     => 12,
+	'CAST(meta_value AS BINARY) = CAST(%s AS BINARY)'                                   => 6,
+	'meta_value IS NULL'                                                                 => 4,
+	'CASE WHEN OCTET_LENGTH(meta_value) <= 1048576 THEN meta_value ELSE NULL END'        => 2,
+	'OCTET_LENGTH(meta_value) AS value_bytes'                                             => 2,
+	'add_metadata( $type, $object_id, wp_slash( $key ), wp_slash( $value ), true )'       => 1,
 );
 foreach ( $required_counts as $needle => $expected ) {
 	$actual = substr_count( $code, $needle );

@@ -129,7 +129,8 @@ try {
 	$secondary_settings = get_option( Settings::OPTION_NAME, array() );
 	update_option( Settings::OPTION_NAME, $access, false );
 
-	$role_key = get_blog_prefix( $secondary_blog ) . 'capabilities';
+	global $wpdb;
+	$role_key = $wpdb->get_blog_prefix( $secondary_blog ) . 'capabilities';
 	wpnb_issue58_ms_assert( metadata_exists( 'user', $ordinary_user, $role_key ), 'Secondary-site role metadata fixture is missing.' );
 	$role_before = get_user_meta( $ordinary_user, $role_key, true );
 
@@ -148,10 +149,15 @@ try {
 		array( 'user_id' => (int) $ordinary_user )
 	);
 	wpnb_issue58_ms_assert( ! is_wp_error( $broad ), 'Bounded multisite user metadata discovery failed.' );
+	$normal_seen = false;
 	foreach ( $broad['items'] as $item ) {
 		wpnb_issue58_ms_assert( $role_key !== $item['key'], 'Site-specific capability metadata leaked through broad discovery.' );
 		wpnb_issue58_ms_assert( empty( $item['values'] ), 'Broad user metadata discovery returned a metadata value.' );
+		if ( 'issue58_ms_normal' === $item['key'] ) {
+			$normal_seen = true;
+		}
 	}
+	wpnb_issue58_ms_assert( $normal_seen, 'Multisite broad metadata discovery did not include the ordinary authorized fixture key.' );
 
 	$role_update = wpnb_issue58_ms_execute(
 		'wp-native-builder/user-meta-update',

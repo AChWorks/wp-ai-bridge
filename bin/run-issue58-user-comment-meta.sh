@@ -23,11 +23,20 @@ wp=("${compose[@]}" run --rm cli)
 "${wp[@]}" plugin install /var/www/html/wp-native-builder-bridge.zip --activate --allow-root
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-native-builder-bridge.zip
 "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration
-"${compose[@]}" cp "$root/tests/integration/issue58-user-comment-meta-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue58-user-comment-meta-smoke.php
-"${compose[@]}" cp "$root/tests/integration/issue58-user-comment-meta-race-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue58-user-comment-meta-race-smoke.php
+for test_file in \
+    issue58-user-comment-meta-smoke.php \
+    issue58-user-comment-meta-policy-smoke.php \
+    issue58-user-comment-meta-race-smoke.php \
+    issue58-user-comment-meta-create-race-smoke.php \
+    issue58-user-comment-meta-storage-smoke.php; do
+    "${compose[@]}" cp "$root/tests/integration/${test_file}" "wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/${test_file}"
+done
 actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
 actual_php="$("${wp[@]}" eval 'echo PHP_VERSION;' --allow-root | tail -n 1)"
 echo "Issue #58 baseline: WordPress ${actual_wp}; PHP ${actual_php}; image ${wordpress_tag}"
 "${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue58-user-comment-meta-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue58-user-comment-meta-policy-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue58-user-comment-meta-race-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue58-user-comment-meta-create-race-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue58-user-comment-meta-storage-smoke.php --user=1 --allow-root
 echo 'Issue #58 user/comment metadata integration: PASS'

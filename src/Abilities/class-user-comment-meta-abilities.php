@@ -701,7 +701,7 @@ final class User_Comment_Meta_Abilities {
 				'key'            => array(
 					'type'      => 'string',
 					'minLength' => 1,
-					'maxLength' => 191,
+					'maxLength' => 255,
 				),
 				'include_values' => array(
 					'type'    => 'boolean',

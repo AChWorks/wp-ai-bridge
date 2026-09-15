@@ -40,14 +40,14 @@ final class User_Comment_Meta_Store {
 			$key = (string) $key;
 			if ( 'user' === $type ) {
 				$prepared = $wpdb->prepare(
-					'SELECT umeta_id AS meta_id, user_id AS object_id, meta_key, meta_value FROM %i WHERE user_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) ORDER BY umeta_id LIMIT 2',
+					'SELECT umeta_id AS meta_id, user_id AS object_id, meta_key, CASE WHEN OCTET_LENGTH(meta_value) <= 1048576 THEN meta_value ELSE NULL END AS meta_value, OCTET_LENGTH(meta_value) AS value_bytes FROM %i WHERE user_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) ORDER BY umeta_id LIMIT 2',
 					$wpdb->usermeta,
 					$object_id,
 					$key
 				);
 			} else {
 				$prepared = $wpdb->prepare(
-					'SELECT meta_id, comment_id AS object_id, meta_key, meta_value FROM %i WHERE comment_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) ORDER BY meta_id LIMIT 2',
+					'SELECT meta_id, comment_id AS object_id, meta_key, CASE WHEN OCTET_LENGTH(meta_value) <= 1048576 THEN meta_value ELSE NULL END AS meta_value, OCTET_LENGTH(meta_value) AS value_bytes FROM %i WHERE comment_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) ORDER BY meta_id LIMIT 2',
 					$wpdb->commentmeta,
 					$object_id,
 					$key
@@ -59,14 +59,14 @@ final class User_Comment_Meta_Store {
 			$limit = max( 1, min( 200, (int) $limit ) );
 			if ( 'user' === $type ) {
 				$prepared = $wpdb->prepare(
-					'SELECT umeta_id AS meta_id, user_id AS object_id, meta_key, NULL AS meta_value FROM %i WHERE user_id = %d AND meta_key IS NOT NULL ORDER BY CAST(meta_key AS BINARY), umeta_id LIMIT %d',
+					'SELECT umeta_id AS meta_id, user_id AS object_id, meta_key, NULL AS meta_value, NULL AS value_bytes FROM %i WHERE user_id = %d AND meta_key IS NOT NULL ORDER BY CAST(meta_key AS BINARY), umeta_id LIMIT %d',
 					$wpdb->usermeta,
 					$object_id,
 					$limit
 				);
 			} else {
 				$prepared = $wpdb->prepare(
-					'SELECT meta_id, comment_id AS object_id, meta_key, NULL AS meta_value FROM %i WHERE comment_id = %d AND meta_key IS NOT NULL ORDER BY CAST(meta_key AS BINARY), meta_id LIMIT %d',
+					'SELECT meta_id, comment_id AS object_id, meta_key, NULL AS meta_value, NULL AS value_bytes FROM %i WHERE comment_id = %d AND meta_key IS NOT NULL ORDER BY CAST(meta_key AS BINARY), meta_id LIMIT %d',
 					$wpdb->commentmeta,
 					$object_id,
 					$limit
@@ -82,8 +82,11 @@ final class User_Comment_Meta_Store {
 
 		$rows = array();
 		foreach ( $raw_rows as $row ) {
-			if ( ! isset( $row['meta_id'], $row['object_id'], $row['meta_key'] ) || ! array_key_exists( 'meta_value', $row ) ) {
+			if ( ! isset( $row['meta_id'], $row['object_id'], $row['meta_key'] ) || ! array_key_exists( 'meta_value', $row ) || ! array_key_exists( 'value_bytes', $row ) ) {
 				return $this->state_error();
+			}
+			if ( null !== $row['value_bytes'] && (int) $row['value_bytes'] > self::MAX_VALUE_BYTES ) {
+				return new WP_Error( 'object_meta_value_too_large', __( 'This metadata value is too large for the bounded generic metadata contract.', 'wp-native-builder-bridge' ) );
 			}
 			$raw_value = $row['meta_value'];
 			if ( null !== $raw_value && ! is_scalar( $raw_value ) ) {
@@ -91,9 +94,6 @@ final class User_Comment_Meta_Store {
 			}
 			if ( null !== $raw_value ) {
 				$raw_value = (string) $raw_value;
-				if ( strlen( $raw_value ) > self::MAX_VALUE_BYTES ) {
-					return new WP_Error( 'object_meta_value_too_large', __( 'This metadata value is too large for the bounded generic metadata contract.', 'wp-native-builder-bridge' ) );
-				}
 			}
 			$rows[] = array(
 				'meta_id'   => (int) $row['meta_id'],
@@ -147,7 +147,7 @@ final class User_Comment_Meta_Store {
 
 		$object_id = (int) $object_id;
 		$key       = (string) $key;
-		$result    = add_metadata( $type, $object_id, $key, $value, true );
+		$result    = add_metadata( $type, $object_id, wp_slash( $key ), wp_slash( $value ), true );
 		$after     = $this->rows( $type, $object_id, $key );
 		if ( is_wp_error( $after ) ) {
 			return $after;
