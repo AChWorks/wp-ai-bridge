@@ -694,16 +694,16 @@ final class User_Comment_Meta_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				$field            => array(
+				$field           => array(
 					'type'    => 'integer',
 					'minimum' => 1,
 				),
-				'key'             => array(
+				'key'            => array(
 					'type'      => 'string',
 					'minLength' => 1,
 					'maxLength' => 191,
 				),
-				'include_values'  => array(
+				'include_values' => array(
 					'type'    => 'boolean',
 					'default' => false,
 				),
@@ -721,10 +721,11 @@ final class User_Comment_Meta_Abilities {
 			'type'    => 'string',
 			'pattern' => '^[a-f0-9]{64}$',
 		);
-		$schema['properties']['value_json'] = array(
+		$schema['properties']['value_json']          = array(
 			'type'      => 'string',
 			'maxLength' => 1048576,
 		);
+
 		$schema['required'][] = 'key';
 		$schema['required'][] = 'expected_state_hash';
 		$schema['required'][] = 'value_json';
@@ -739,6 +740,7 @@ final class User_Comment_Meta_Abilities {
 			'type'    => 'string',
 			'pattern' => '^[a-f0-9]{64}$',
 		);
+
 		$schema['required'][] = 'key';
 		$schema['required'][] = 'expected_state_hash';
 		return $schema;
