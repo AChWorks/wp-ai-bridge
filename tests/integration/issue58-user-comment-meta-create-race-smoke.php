@@ -19,12 +19,22 @@ function wpnb_issue58_create_race_execute( $name, array $input = array() ) {
 	return $ability->execute( $input );
 }
 
+function wpnb_issue58_create_race_empty_hash( $user_id, $key ) {
+	$empty = wpnb_issue58_create_race_execute(
+		'wp-native-builder/user-meta-read',
+		array(
+			'user_id' => (int) $user_id,
+			'key'     => (string) $key,
+		)
+	);
+	wpnb_issue58_create_race_assert( ! is_wp_error( $empty ) && 1 === count( $empty['items'] ) && 0 === $empty['items'][0]['count'], 'Could not establish empty create-race metadata state.' );
+	return $empty['items'][0]['state_hash'];
+}
+
 $settings        = new Settings();
 $original_access = get_option( Settings::OPTION_NAME, $settings->defaults() );
 $admin_id        = get_current_user_id();
 $user_id         = 0;
-$key             = 'issue58_create_race';
-$raced           = false;
 $hook            = null;
 
 try {
@@ -42,17 +52,10 @@ try {
 	);
 	wpnb_issue58_create_race_assert( ! is_wp_error( $user_id ) && $user_id > 0, 'Could not create Issue #58 create-race user.' );
 
-	$empty = wpnb_issue58_create_race_execute(
-		'wp-native-builder/user-meta-read',
-		array(
-			'user_id' => (int) $user_id,
-			'key'     => $key,
-		)
-	);
-	wpnb_issue58_create_race_assert( ! is_wp_error( $empty ) && 1 === count( $empty['items'] ) && 0 === $empty['items'][0]['count'], 'Could not establish empty create-race metadata state.' );
-	$empty_hash = $empty['items'][0]['state_hash'];
-
-	$hook = static function ( $object_id, $meta_key, $meta_value ) use ( $user_id, $key, &$raced ) {
+	$key        = 'issue58_create_race';
+	$empty_hash = wpnb_issue58_create_race_empty_hash( $user_id, $key );
+	$raced      = false;
+	$hook       = static function ( $object_id, $meta_key, $meta_value ) use ( $user_id, $key, &$raced ) {
 		if ( $raced || (int) $object_id !== (int) $user_id || (string) $meta_key !== $key || 'bridge' !== $meta_value ) {
 			return;
 		}
@@ -79,10 +82,39 @@ try {
 	sort( $values );
 	wpnb_issue58_create_race_assert( array( 'concurrent' ) === $values, 'Create-race cleanup removed concurrent state or retained the Bridge-owned raced row.' );
 
+	$observer_key   = 'issue58_create_observer';
+	$observer_hash  = wpnb_issue58_create_race_empty_hash( $user_id, $observer_key );
+	$observer_raced = false;
+	$hook           = static function ( $meta_id, $object_id, $meta_key, $meta_value ) use ( $user_id, $observer_key, &$observer_raced ) {
+		if ( $observer_raced || (int) $object_id !== (int) $user_id || (string) $meta_key !== $observer_key || 'bridge' !== $meta_value ) {
+			return;
+		}
+		$observer_raced = true;
+		update_metadata_by_mid( 'user', (int) $meta_id, 'observer' );
+	};
+	add_action( 'added_user_meta', $hook, 10, 4 );
+
+	$observer_result = wpnb_issue58_create_race_execute(
+		'wp-native-builder/user-meta-update',
+		array(
+			'user_id'             => (int) $user_id,
+			'key'                 => $observer_key,
+			'expected_state_hash' => $observer_hash,
+			'value_json'          => '"bridge"',
+		)
+	);
+	remove_action( 'added_user_meta', $hook, 10 );
+	$hook = null;
+
+	wpnb_issue58_create_race_assert( $observer_raced, 'Post-create observer fixture did not run.' );
+	wpnb_issue58_create_race_assert( is_wp_error( $observer_result ) && 'stale_object_meta_conflict' === $observer_result->get_error_code(), 'Observer-mutated create did not fail stale.' );
+	wpnb_issue58_create_race_assert( 'observer' === get_user_meta( $user_id, $observer_key, true ), 'Create cleanup overwrote or removed observer-owned newer state.' );
+
 	echo "PASS: Issue #58 concurrent create ownership and cleanup.\n";
 } finally {
 	if ( is_callable( $hook ) ) {
 		remove_action( 'add_user_meta', $hook, 10 );
+		remove_action( 'added_user_meta', $hook, 10 );
 	}
 	wp_set_current_user( $admin_id );
 	update_option( Settings::OPTION_NAME, $original_access, false );

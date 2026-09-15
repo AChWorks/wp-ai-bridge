@@ -20,10 +20,24 @@ function wpnb_issue58_storage_execute( $name, array $input = array() ) {
 	return $ability->execute( $input );
 }
 
+function wpnb_issue58_storage_empty_hash( $user_id, $key ) {
+	$empty = wpnb_issue58_storage_execute(
+		'wp-native-builder/user-meta-read',
+		array(
+			'user_id' => (int) $user_id,
+			'key'     => (string) $key,
+		)
+	);
+	wpnb_issue58_storage_assert( ! is_wp_error( $empty ) && 1 === count( $empty['items'] ) && 0 === $empty['items'][0]['count'], 'Could not establish empty metadata state.' );
+	return $empty['items'][0]['state_hash'];
+}
+
 $settings        = new Settings();
 $original_access = get_option( Settings::OPTION_NAME, $settings->defaults() );
 $admin_id        = get_current_user_id();
 $user_id         = 0;
+$expanded_key    = 'issue58_sanitizer_expansion';
+$registered      = false;
 
 try {
 	$access                                      = $settings->defaults();
@@ -42,22 +56,14 @@ try {
 
 	$key_255 = 'issue58_' . str_repeat( 'k', 247 );
 	wpnb_issue58_storage_assert( 255 === strlen( $key_255 ), 'Issue #58 255-character metadata key fixture is invalid.' );
-	$empty = wpnb_issue58_storage_execute(
-		'wp-native-builder/user-meta-read',
-		array(
-			'user_id' => (int) $user_id,
-			'key'     => $key_255,
-		)
-	);
-	wpnb_issue58_storage_assert( ! is_wp_error( $empty ) && 1 === count( $empty['items'] ) && 0 === $empty['items'][0]['count'], 'Could not establish empty state for the native 255-character metadata key.' );
-
+	$empty_hash  = wpnb_issue58_storage_empty_hash( $user_id, $key_255 );
 	$slash_value = 'C:\\bridge\\path\\tail';
 	$created = wpnb_issue58_storage_execute(
 		'wp-native-builder/user-meta-update',
 		array(
 			'user_id'             => (int) $user_id,
 			'key'                 => $key_255,
-			'expected_state_hash' => $empty['items'][0]['state_hash'],
+			'expected_state_hash' => $empty_hash,
 			'value_json'          => wp_json_encode( $slash_value ),
 		)
 	);
@@ -89,8 +95,37 @@ try {
 	);
 	wpnb_issue58_storage_assert( is_wp_error( $oversized ) && 'object_meta_value_too_large' === $oversized->get_error_code(), 'Oversized physical metadata value did not fail the bounded exact-read contract.' );
 
+	$registered = register_meta(
+		'user',
+		$expanded_key,
+		array(
+			'single'            => true,
+			'type'              => 'string',
+			'sanitize_callback' => static function () {
+				return str_repeat( 'z', User_Comment_Meta_Store::MAX_VALUE_BYTES + 1 );
+			},
+			'auth_callback'     => '__return_true',
+		)
+	);
+	wpnb_issue58_storage_assert( true === $registered, 'Could not register sanitizer-expansion metadata fixture.' );
+	$expanded_hash = wpnb_issue58_storage_empty_hash( $user_id, $expanded_key );
+	$expanded = wpnb_issue58_storage_execute(
+		'wp-native-builder/user-meta-update',
+		array(
+			'user_id'             => (int) $user_id,
+			'key'                 => $expanded_key,
+			'expected_state_hash' => $expanded_hash,
+			'value_json'          => '"small"',
+		)
+	);
+	wpnb_issue58_storage_assert( is_wp_error( $expanded ) && 'object_meta_value_too_large' === $expanded->get_error_code(), 'Sanitizer-expanded oversized create did not fail before persistence.' );
+	wpnb_issue58_storage_assert( ! metadata_exists( 'user', $user_id, $expanded_key ), 'Sanitizer-expanded oversized create left committed metadata behind.' );
+
 	echo "PASS: Issue #58 native key length, create slashing, and bounded physical value storage.\n";
 } finally {
+	if ( $registered && function_exists( 'unregister_meta_key' ) ) {
+		unregister_meta_key( 'user', $expanded_key );
+	}
 	wp_set_current_user( $admin_id );
 	update_option( Settings::OPTION_NAME, $original_access, false );
 	if ( $user_id > 0 ) {

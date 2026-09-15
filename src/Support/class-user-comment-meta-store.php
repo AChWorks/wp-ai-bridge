@@ -18,6 +18,9 @@ use WP_Error;
 final class User_Comment_Meta_Store {
 	const MAX_VALUE_BYTES = 1048576;
 
+	/** @var array<int,array<string,mixed>> Exact rows created by this store during the current request. */
+	private $created_expectations = array();
+
 	/**
 	 * Returns bounded physical rows for one exact key or a bounded value-free key list.
 	 *
@@ -29,13 +32,11 @@ final class User_Comment_Meta_Store {
 	 */
 	public function rows( $type, $object_id, $key = null, $limit = 200 ) {
 		global $wpdb;
-
 		$type      = $this->type( $type );
 		$object_id = (int) $object_id;
 		if ( is_wp_error( $type ) || $object_id < 1 ) {
 			return $this->state_error();
 		}
-
 		if ( null !== $key ) {
 			$key = (string) $key;
 			if ( 'user' === $type ) {
@@ -75,18 +76,16 @@ final class User_Comment_Meta_Store {
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query shape and every value are fixed/prepared above.
 			$raw_rows = $wpdb->get_results( $prepared, ARRAY_A );
 		}
-
 		if ( ! is_array( $raw_rows ) || '' !== (string) $wpdb->last_error ) {
 			return $this->state_error();
 		}
-
 		$rows = array();
 		foreach ( $raw_rows as $row ) {
 			if ( ! isset( $row['meta_id'], $row['object_id'], $row['meta_key'] ) || ! array_key_exists( 'meta_value', $row ) || ! array_key_exists( 'value_bytes', $row ) ) {
 				return $this->state_error();
 			}
 			if ( null !== $row['value_bytes'] && (int) $row['value_bytes'] > self::MAX_VALUE_BYTES ) {
-				return new WP_Error( 'object_meta_value_too_large', __( 'This metadata value is too large for the bounded generic metadata contract.', 'wp-native-builder-bridge' ) );
+				return $this->value_too_large_error();
 			}
 			$raw_value = $row['meta_value'];
 			if ( null !== $raw_value && ! is_scalar( $raw_value ) ) {
@@ -103,7 +102,6 @@ final class User_Comment_Meta_Store {
 				'value'     => null === $raw_value ? null : maybe_unserialize( $raw_value ),
 			);
 		}
-
 		return $rows;
 	}
 
@@ -121,17 +119,15 @@ final class User_Comment_Meta_Store {
 		if ( is_wp_error( $type ) ) {
 			return $type;
 		}
-
 		$subtype = function_exists( 'get_object_subtype' ) ? get_object_subtype( $type, (int) $object_id ) : '';
 		if ( function_exists( 'sanitize_meta' ) ) {
 			$value = sanitize_meta( (string) $key, $value, $type, $subtype );
 		}
-
 		return $this->stored_value( $value );
 	}
 
 	/**
-	 * Creates one unique row through Core so provider sanitization/lifecycle hooks remain authoritative.
+	 * Creates one unique row through Core while capturing Core's one-pass sanitized value.
 	 *
 	 * @param string $type      User or comment.
 	 * @param int    $object_id Object ID.
@@ -144,39 +140,46 @@ final class User_Comment_Meta_Store {
 		if ( is_wp_error( $type ) ) {
 			return $type;
 		}
-
 		$object_id = (int) $object_id;
 		$key       = (string) $key;
-		$result    = add_metadata( $type, $object_id, wp_slash( $key ), wp_slash( $value ), true );
-		$after     = $this->rows( $type, $object_id, $key );
-		if ( is_wp_error( $after ) ) {
-			return $after;
-		}
-
-		$expected = null;
-		if ( is_int( $result ) && $result > 0 ) {
-			foreach ( $after as $row ) {
-				if ( (int) $row['meta_id'] === $result ) {
-					$expected = $row;
-					break;
+		$captured  = false;
+		$prepared  = null;
+		$capture   = function ( $check, $candidate_id, $meta_key, $meta_value, $unique ) use ( $object_id, $key, &$captured, &$prepared ) {
+			if ( null !== $check ) {
+				return $check;
+			}
+			if ( (int) $candidate_id === $object_id && (string) $meta_key === $key && true === (bool) $unique ) {
+				$captured = true;
+				$prepared = $this->stored_value( $meta_value );
+				if ( is_wp_error( $prepared ) ) {
+					return false;
 				}
 			}
+			return $check;
+		};
+		$hook = 'add_' . $type . '_metadata';
+		add_filter( $hook, $capture, PHP_INT_MAX, 5 );
+		try {
+			$result = add_metadata( $type, $object_id, wp_slash( $key ), wp_slash( $value ), true );
+		} finally {
+			remove_filter( $hook, $capture, PHP_INT_MAX );
 		}
-
-		if ( null === $expected ) {
-			$prepared = $this->prepare_value( $type, $object_id, $key, $value );
-			if ( is_wp_error( $prepared ) ) {
-				return $prepared;
-			}
-			$expected = array(
-				'meta_id'   => is_int( $result ) ? $result : 0,
-				'object_id' => $object_id,
-				'key'       => $key,
-				'raw_value' => $prepared['raw_value'],
-				'value'     => $prepared['value'],
-			);
+		if ( ! $captured ) {
+			return $this->state_error();
 		}
-
+		if ( is_wp_error( $prepared ) ) {
+			return $prepared;
+		}
+		$expected = array(
+			'meta_id'   => is_int( $result ) ? $result : 0,
+			'object_id' => $object_id,
+			'key'       => $key,
+			'raw_value' => $prepared['raw_value'],
+			'value'     => $prepared['value'],
+		);
+		if ( is_int( $result ) && $result > 0 ) {
+			$this->created_expectations[ $result ] = $expected;
+		}
 		return array(
 			'result'       => $result,
 			'expected_row' => $expected,
@@ -198,17 +201,14 @@ final class User_Comment_Meta_Store {
 		if ( is_wp_error( $type ) ) {
 			return $type;
 		}
-
 		$current = $this->rows( $type, $object_id, $key );
 		if ( is_wp_error( $current ) || 1 !== count( $current ) || ! $this->row_matches( $current[0], $row ) ) {
 			return $this->stale_error();
 		}
-
 		$short_circuit = apply_filters( "update_{$type}_metadata", null, (int) $object_id, (string) $key, $prepared['value'], $row['value'] );
 		if ( null !== $short_circuit ) {
 			return new WP_Error( 'object_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata row atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-native-builder-bridge' ) );
 		}
-
 		$this->before_update( $type, $row, $prepared['value'] );
 		$result = 'user' === $type
 			? $this->update_user_row( $row, $prepared['raw_value'] )
@@ -218,7 +218,6 @@ final class User_Comment_Meta_Store {
 			return $this->stale_error();
 		}
 		$this->after_update( $type, $row, $prepared['value'] );
-
 		$after                 = $this->rows( $type, $object_id, $key );
 		$expected              = $row;
 		$expected['raw_value'] = $prepared['raw_value'];
@@ -229,7 +228,6 @@ final class User_Comment_Meta_Store {
 			}
 			return $this->stale_error();
 		}
-
 		return $after[0];
 	}
 
@@ -247,17 +245,14 @@ final class User_Comment_Meta_Store {
 		if ( is_wp_error( $type ) ) {
 			return $type;
 		}
-
 		$current = $this->rows( $type, $object_id, $key );
 		if ( is_wp_error( $current ) || 1 !== count( $current ) || ! $this->row_matches( $current[0], $row ) ) {
 			return $this->stale_error();
 		}
-
 		$short_circuit = apply_filters( "delete_{$type}_metadata", null, (int) $object_id, (string) $key, $row['value'], false );
 		if ( null !== $short_circuit ) {
 			return new WP_Error( 'object_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata row atomically. The generic Bridge refuses the mutation to avoid a stale delete.', 'wp-native-builder-bridge' ) );
 		}
-
 		$this->before_delete( $type, $row );
 		$result = 'user' === $type ? $this->delete_user_row( $row ) : $this->delete_comment_row( $row );
 		wp_cache_delete( (int) $object_id, $type . '_meta' );
@@ -265,7 +260,6 @@ final class User_Comment_Meta_Store {
 			return $this->stale_error();
 		}
 		$this->after_delete( $type, $row );
-
 		$after = $this->rows( $type, $object_id, $key );
 		if ( is_wp_error( $after ) || ! empty( $after ) ) {
 			if ( ! $this->restore_deleted_row( $type, $row ) ) {
@@ -273,15 +267,14 @@ final class User_Comment_Meta_Store {
 			}
 			return $this->stale_error();
 		}
-
 		return true;
 	}
 
 	/**
-	 * Removes only the exact unchanged row created by this invocation during a uniqueness race.
+	 * Removes only the exact unchanged row originally created by this store.
 	 *
 	 * @param string              $type User or comment.
-	 * @param array<string,mixed> $row  Exact created row.
+	 * @param array<string,mixed> $row  Current row snapshot supplied by the caller.
 	 * @return true|WP_Error
 	 */
 	public function cleanup_created_row( $type, array $row ) {
@@ -289,25 +282,23 @@ final class User_Comment_Meta_Store {
 		if ( is_wp_error( $type ) ) {
 			return $type;
 		}
-
-		$this->before_delete( $type, $row );
-		$result = 'user' === $type ? $this->delete_user_row( $row ) : $this->delete_comment_row( $row );
-		wp_cache_delete( (int) $row['object_id'], $type . '_meta' );
-		if ( 1 !== $result ) {
+		$meta_id  = (int) $row['meta_id'];
+		$expected = isset( $this->created_expectations[ $meta_id ] ) ? $this->created_expectations[ $meta_id ] : $row;
+		unset( $this->created_expectations[ $meta_id ] );
+		$this->before_delete( $type, $expected );
+		$result = 'user' === $type ? $this->delete_user_row( $expected ) : $this->delete_comment_row( $expected );
+		wp_cache_delete( (int) $expected['object_id'], $type . '_meta' );
+		if ( false === $result ) {
 			return new WP_Error( 'object_meta_cleanup_failed', __( 'The Bridge could not remove its exact raced metadata row safely.', 'wp-native-builder-bridge' ) );
 		}
-		$this->after_delete( $type, $row );
-
+		if ( 1 !== $result ) {
+			return $this->stale_error();
+		}
+		$this->after_delete( $type, $expected );
 		return true;
 	}
 
-	/**
-	 * Checks whether two physical row snapshots are identical.
-	 *
-	 * @param array<string,mixed> $left  Left row.
-	 * @param array<string,mixed> $right Right row.
-	 * @return bool
-	 */
+	/** Checks whether two physical row snapshots are identical. */
 	public function row_matches( array $left, array $right ) {
 		return (int) $left['meta_id'] === (int) $right['meta_id']
 			&& (int) $left['object_id'] === (int) $right['object_id']
@@ -315,14 +306,7 @@ final class User_Comment_Meta_Store {
 			&& $left['raw_value'] === $right['raw_value'];
 	}
 
-	/**
-	 * Restores only the row changed by this invocation after verification detects drift.
-	 *
-	 * @param string              $type             User or comment.
-	 * @param array<string,mixed> $row              Original row.
-	 * @param string|null         $expected_new_raw Raw value written by this invocation.
-	 * @return bool
-	 */
+	/** Restores only the row changed by this invocation after verification detects drift. */
 	private function restore_updated_row( $type, array $row, $expected_new_raw ) {
 		$this->before_update( $type, $row, $row['value'] );
 		$restore_row              = $row;
@@ -335,17 +319,10 @@ final class User_Comment_Meta_Store {
 			return false;
 		}
 		$this->after_update( $type, $row, $row['value'] );
-
 		return true;
 	}
 
-	/**
-	 * Restores only the row deleted by this invocation after verification detects drift.
-	 *
-	 * @param string              $type User or comment.
-	 * @param array<string,mixed> $row  Original row.
-	 * @return bool
-	 */
+	/** Restores only the row deleted by this invocation after verification detects drift. */
 	private function restore_deleted_row( $type, array $row ) {
 		do_action( "add_{$type}_meta", (int) $row['object_id'], (string) $row['key'], $row['value'] );
 		$result = 'user' === $type ? $this->insert_user_row( $row ) : $this->insert_comment_row( $row );
@@ -354,62 +331,30 @@ final class User_Comment_Meta_Store {
 			return false;
 		}
 		do_action( "added_{$type}_meta", (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'], $row['value'] );
-
 		return true;
 	}
 
-	/**
-	 * Emits the standard dynamic metadata update lifecycle hook.
-	 *
-	 * @param string              $type  User or comment.
-	 * @param array<string,mixed> $row   Physical row.
-	 * @param mixed               $value New canonical value.
-	 * @return void
-	 */
+	/** Emits the standard dynamic metadata update lifecycle hook. */
 	private function before_update( $type, array $row, $value ) {
 		do_action( "update_{$type}_meta", (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'], $value );
 	}
 
-	/**
-	 * Emits the standard dynamic metadata updated lifecycle hook.
-	 *
-	 * @param string              $type  User or comment.
-	 * @param array<string,mixed> $row   Physical row.
-	 * @param mixed               $value New canonical value.
-	 * @return void
-	 */
+	/** Emits the standard dynamic metadata updated lifecycle hook. */
 	private function after_update( $type, array $row, $value ) {
 		do_action( "updated_{$type}_meta", (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'], $value );
 	}
 
-	/**
-	 * Emits the standard dynamic metadata delete lifecycle hook.
-	 *
-	 * @param string              $type User or comment.
-	 * @param array<string,mixed> $row  Physical row.
-	 * @return void
-	 */
+	/** Emits the standard dynamic metadata delete lifecycle hook. */
 	private function before_delete( $type, array $row ) {
 		do_action( "delete_{$type}_meta", array( (int) $row['meta_id'] ), (int) $row['object_id'], (string) $row['key'], $row['value'] );
 	}
 
-	/**
-	 * Emits the standard dynamic metadata deleted lifecycle hook.
-	 *
-	 * @param string              $type User or comment.
-	 * @param array<string,mixed> $row  Physical row.
-	 * @return void
-	 */
+	/** Emits the standard dynamic metadata deleted lifecycle hook. */
 	private function after_delete( $type, array $row ) {
 		do_action( "deleted_{$type}_meta", array( (int) $row['meta_id'] ), (int) $row['object_id'], (string) $row['key'], $row['value'] );
 	}
 
-	/**
-	 * Converts an already-sanitized WordPress metadata value to its exact DB representation.
-	 *
-	 * @param mixed $value Sanitized value.
-	 * @return array{value:mixed,raw_value:string|null}
-	 */
+	/** Converts an already-sanitized WordPress metadata value to its exact DB representation. */
 	private function stored_value( $value ) {
 		$raw_value = maybe_serialize( $value );
 		if ( null === $raw_value ) {
@@ -425,7 +370,9 @@ final class User_Comment_Meta_Store {
 		} elseif ( ! is_string( $raw_value ) ) {
 			$raw_value = (string) $raw_value;
 		}
-
+		if ( strlen( $raw_value ) > self::MAX_VALUE_BYTES ) {
+			return $this->value_too_large_error();
+		}
 		return array(
 			'value'     => $value,
 			'raw_value' => $raw_value,
@@ -446,6 +393,11 @@ final class User_Comment_Meta_Store {
 	}
 
 	/** @return WP_Error */
+	private function value_too_large_error() {
+		return new WP_Error( 'object_meta_value_too_large', __( 'This metadata value is too large for the bounded generic metadata contract.', 'wp-native-builder-bridge' ) );
+	}
+
+	/** @return WP_Error */
 	private function stale_error() {
 		return new WP_Error( 'stale_object_meta_conflict', __( 'Metadata changed after it was read. Refresh the metadata state before mutating it.', 'wp-native-builder-bridge' ) );
 	}
@@ -455,110 +407,40 @@ final class User_Comment_Meta_Store {
 		return new WP_Error( 'object_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
 	}
 
-	/**
-	 * Performs one fixed-schema usermeta row update.
-	 *
-	 * @param array<string,mixed> $row     Exact physical row.
-	 * @param string|null         $new_raw New raw storage value.
-	 * @return int|false
-	 */
+	/** Performs one fixed-schema usermeta row update. */
 	private function update_user_row( array $row, $new_raw ) {
 		global $wpdb;
-
 		if ( null === $row['raw_value'] ) {
 			if ( null === $new_raw ) {
 				return 0;
 			}
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fixed byte-exact usermeta CAS.
-			return $wpdb->query(
-				$wpdb->prepare(
-					'UPDATE %i SET meta_value = %s WHERE umeta_id = %d AND user_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND meta_value IS NULL',
-					$wpdb->usermeta,
-					$new_raw,
-					(int) $row['meta_id'],
-					(int) $row['object_id'],
-					(string) $row['key']
-				)
-			);
+			return $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE umeta_id = %d AND user_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND meta_value IS NULL', $wpdb->usermeta, $new_raw, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'] ) );
 		}
 		if ( null === $new_raw ) {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fixed byte-exact usermeta CAS.
-			return $wpdb->query(
-				$wpdb->prepare(
-					'UPDATE %i SET meta_value = NULL WHERE umeta_id = %d AND user_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND CAST(meta_value AS BINARY) = CAST(%s AS BINARY)',
-					$wpdb->usermeta,
-					(int) $row['meta_id'],
-					(int) $row['object_id'],
-					(string) $row['key'],
-					$row['raw_value']
-				)
-			);
+			return $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = NULL WHERE umeta_id = %d AND user_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND CAST(meta_value AS BINARY) = CAST(%s AS BINARY)', $wpdb->usermeta, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'], $row['raw_value'] ) );
 		}
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fixed byte-exact usermeta CAS.
-		return $wpdb->query(
-			$wpdb->prepare(
-				'UPDATE %i SET meta_value = %s WHERE umeta_id = %d AND user_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND CAST(meta_value AS BINARY) = CAST(%s AS BINARY)',
-				$wpdb->usermeta,
-				$new_raw,
-				(int) $row['meta_id'],
-				(int) $row['object_id'],
-				(string) $row['key'],
-				$row['raw_value']
-			)
-		);
+		return $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE umeta_id = %d AND user_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND CAST(meta_value AS BINARY) = CAST(%s AS BINARY)', $wpdb->usermeta, $new_raw, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'], $row['raw_value'] ) );
 	}
 
-	/**
-	 * Performs one fixed-schema commentmeta row update.
-	 *
-	 * @param array<string,mixed> $row     Exact physical row.
-	 * @param string|null         $new_raw New raw storage value.
-	 * @return int|false
-	 */
+	/** Performs one fixed-schema commentmeta row update. */
 	private function update_comment_row( array $row, $new_raw ) {
 		global $wpdb;
-
 		if ( null === $row['raw_value'] ) {
 			if ( null === $new_raw ) {
 				return 0;
 			}
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fixed byte-exact commentmeta CAS.
-			return $wpdb->query(
-				$wpdb->prepare(
-					'UPDATE %i SET meta_value = %s WHERE meta_id = %d AND comment_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND meta_value IS NULL',
-					$wpdb->commentmeta,
-					$new_raw,
-					(int) $row['meta_id'],
-					(int) $row['object_id'],
-					(string) $row['key']
-				)
-			);
+			return $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE meta_id = %d AND comment_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND meta_value IS NULL', $wpdb->commentmeta, $new_raw, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'] ) );
 		}
 		if ( null === $new_raw ) {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fixed byte-exact commentmeta CAS.
-			return $wpdb->query(
-				$wpdb->prepare(
-					'UPDATE %i SET meta_value = NULL WHERE meta_id = %d AND comment_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND CAST(meta_value AS BINARY) = CAST(%s AS BINARY)',
-					$wpdb->commentmeta,
-					(int) $row['meta_id'],
-					(int) $row['object_id'],
-					(string) $row['key'],
-					$row['raw_value']
-				)
-			);
+			return $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = NULL WHERE meta_id = %d AND comment_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND CAST(meta_value AS BINARY) = CAST(%s AS BINARY)', $wpdb->commentmeta, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'], $row['raw_value'] ) );
 		}
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fixed byte-exact commentmeta CAS.
-		return $wpdb->query(
-			$wpdb->prepare(
-				'UPDATE %i SET meta_value = %s WHERE meta_id = %d AND comment_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND CAST(meta_value AS BINARY) = CAST(%s AS BINARY)',
-				$wpdb->commentmeta,
-				$new_raw,
-				(int) $row['meta_id'],
-				(int) $row['object_id'],
-				(string) $row['key'],
-				$row['raw_value']
-			)
-		);
+		return $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE meta_id = %d AND comment_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND CAST(meta_value AS BINARY) = CAST(%s AS BINARY)', $wpdb->commentmeta, $new_raw, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'], $row['raw_value'] ) );
 	}
 
 	/** @return int|false */
@@ -566,27 +448,10 @@ final class User_Comment_Meta_Store {
 		global $wpdb;
 		if ( null === $row['raw_value'] ) {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fixed byte-exact usermeta CAS.
-			return $wpdb->query(
-				$wpdb->prepare(
-					'DELETE FROM %i WHERE umeta_id = %d AND user_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND meta_value IS NULL',
-					$wpdb->usermeta,
-					(int) $row['meta_id'],
-					(int) $row['object_id'],
-					(string) $row['key']
-				)
-			);
+			return $wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE umeta_id = %d AND user_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND meta_value IS NULL', $wpdb->usermeta, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'] ) );
 		}
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fixed byte-exact usermeta CAS.
-		return $wpdb->query(
-			$wpdb->prepare(
-				'DELETE FROM %i WHERE umeta_id = %d AND user_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND CAST(meta_value AS BINARY) = CAST(%s AS BINARY)',
-				$wpdb->usermeta,
-				(int) $row['meta_id'],
-				(int) $row['object_id'],
-				(string) $row['key'],
-				$row['raw_value']
-			)
-		);
+		return $wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE umeta_id = %d AND user_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND CAST(meta_value AS BINARY) = CAST(%s AS BINARY)', $wpdb->usermeta, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'], $row['raw_value'] ) );
 	}
 
 	/** @return int|false */
@@ -594,27 +459,10 @@ final class User_Comment_Meta_Store {
 		global $wpdb;
 		if ( null === $row['raw_value'] ) {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fixed byte-exact commentmeta CAS.
-			return $wpdb->query(
-				$wpdb->prepare(
-					'DELETE FROM %i WHERE meta_id = %d AND comment_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND meta_value IS NULL',
-					$wpdb->commentmeta,
-					(int) $row['meta_id'],
-					(int) $row['object_id'],
-					(string) $row['key']
-				)
-			);
+			return $wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE meta_id = %d AND comment_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND meta_value IS NULL', $wpdb->commentmeta, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'] ) );
 		}
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fixed byte-exact commentmeta CAS.
-		return $wpdb->query(
-			$wpdb->prepare(
-				'DELETE FROM %i WHERE meta_id = %d AND comment_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND CAST(meta_value AS BINARY) = CAST(%s AS BINARY)',
-				$wpdb->commentmeta,
-				(int) $row['meta_id'],
-				(int) $row['object_id'],
-				(string) $row['key'],
-				$row['raw_value']
-			)
-		);
+		return $wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE meta_id = %d AND comment_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) AND CAST(meta_value AS BINARY) = CAST(%s AS BINARY)', $wpdb->commentmeta, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'], $row['raw_value'] ) );
 	}
 
 	/** @return int|false */
@@ -622,27 +470,10 @@ final class User_Comment_Meta_Store {
 		global $wpdb;
 		if ( null === $row['raw_value'] ) {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Exact compensation of this invocation's usermeta row.
-			return $wpdb->query(
-				$wpdb->prepare(
-					'INSERT INTO %i (umeta_id, user_id, meta_key, meta_value) VALUES (%d, %d, %s, NULL)',
-					$wpdb->usermeta,
-					(int) $row['meta_id'],
-					(int) $row['object_id'],
-					(string) $row['key']
-				)
-			);
+			return $wpdb->query( $wpdb->prepare( 'INSERT INTO %i (umeta_id, user_id, meta_key, meta_value) VALUES (%d, %d, %s, NULL)', $wpdb->usermeta, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'] ) );
 		}
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Exact compensation of this invocation's usermeta row.
-		return $wpdb->query(
-			$wpdb->prepare(
-				'INSERT INTO %i (umeta_id, user_id, meta_key, meta_value) VALUES (%d, %d, %s, %s)',
-				$wpdb->usermeta,
-				(int) $row['meta_id'],
-				(int) $row['object_id'],
-				(string) $row['key'],
-				$row['raw_value']
-			)
-		);
+		return $wpdb->query( $wpdb->prepare( 'INSERT INTO %i (umeta_id, user_id, meta_key, meta_value) VALUES (%d, %d, %s, %s)', $wpdb->usermeta, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'], $row['raw_value'] ) );
 	}
 
 	/** @return int|false */
@@ -650,26 +481,9 @@ final class User_Comment_Meta_Store {
 		global $wpdb;
 		if ( null === $row['raw_value'] ) {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Exact compensation of this invocation's commentmeta row.
-			return $wpdb->query(
-				$wpdb->prepare(
-					'INSERT INTO %i (meta_id, comment_id, meta_key, meta_value) VALUES (%d, %d, %s, NULL)',
-					$wpdb->commentmeta,
-					(int) $row['meta_id'],
-					(int) $row['object_id'],
-					(string) $row['key']
-				)
-			);
+			return $wpdb->query( $wpdb->prepare( 'INSERT INTO %i (meta_id, comment_id, meta_key, meta_value) VALUES (%d, %d, %s, NULL)', $wpdb->commentmeta, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'] ) );
 		}
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Exact compensation of this invocation's commentmeta row.
-		return $wpdb->query(
-			$wpdb->prepare(
-				'INSERT INTO %i (meta_id, comment_id, meta_key, meta_value) VALUES (%d, %d, %s, %s)',
-				$wpdb->commentmeta,
-				(int) $row['meta_id'],
-				(int) $row['object_id'],
-				(string) $row['key'],
-				$row['raw_value']
-			)
-		);
+		return $wpdb->query( $wpdb->prepare( 'INSERT INTO %i (meta_id, comment_id, meta_key, meta_value) VALUES (%d, %d, %s, %s)', $wpdb->commentmeta, (int) $row['meta_id'], (int) $row['object_id'], (string) $row['key'], $row['raw_value'] ) );
 	}
 }
