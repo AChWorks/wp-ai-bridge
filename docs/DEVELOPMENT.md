@@ -37,7 +37,7 @@ Keep an implementation PR in Draft while the candidate is still changing.
 - Do not repeat the full historical WordPress regression matrix after every formatting, test-fixture, documentation, or narrowly scoped remediation change.
 - A new push supersedes older CI for the same PR or branch; stale in-progress runs are cancelled automatically.
 
-For runtime-relevant pull requests, the initial Draft/open checkpoint may run the Quality job. Intermediate `synchronize` pushes do not run validation jobs; they exist only to cancel stale work while development continues with targeted local checks. Full WordPress assurance is intentionally deferred until the candidate is deliberately marked ready for review. Documentation-only pull requests do not start plugin CI.
+Draft and intermediate `synchronize` updates do not run automatic validation jobs. Development uses targeted local checks until the candidate is deliberately marked ready for review. Documentation-only pull requests do not start plugin CI at all.
 
 ### Review-ready / final candidate
 
