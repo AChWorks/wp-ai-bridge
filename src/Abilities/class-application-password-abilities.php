@@ -173,18 +173,43 @@ final class Application_Password_Abilities {
 		if ( ! empty( $input['app_id'] ) ) {
 			$params['app_id'] = (string) $input['app_id'];
 		}
-		$result = $this->dispatch( 'POST', $this->collection_route( $user_id ), $params );
+		$created_uuid     = '';
+		$created_password = '';
+		$result           = $this->dispatch_create( $user_id, $params, $created_uuid, $created_password );
 		if ( is_wp_error( $result ) ) {
+			if ( $this->valid_uuid_token( $created_uuid ) ) {
+				$cleanup = $this->cleanup_invalid_created_response( $user_id, $created_uuid );
+				if ( is_wp_error( $cleanup ) ) {
+					return $this->logged_error( $cleanup, 'wp-native-builder/application-password-create', $user_id );
+				}
+			}
 			return $this->logged_error( $result, 'wp-native-builder/application-password-create', $user_id );
 		}
+		if ( ! $this->valid_uuid_token( $created_uuid ) ) {
+			return $this->logged_error( $this->create_recovery_required_error(), 'wp-native-builder/application-password-create', $user_id );
+		}
 		$data = $result['data'];
-		if ( ! is_array( $data ) || empty( $data['password'] ) || ! is_string( $data['password'] ) ) {
-			$error = $this->invalid_response_error();
-			return $this->logged_error( $error, 'wp-native-builder/application-password-create', $user_id );
+		if ( '' === $created_password
+			|| ! is_array( $data )
+			|| empty( $data['password'] )
+			|| ! is_string( $data['password'] )
+			|| $created_password !== $data['password'] ) {
+			$cleanup = $this->cleanup_invalid_created_response( $user_id, $created_uuid );
+			if ( is_wp_error( $cleanup ) ) {
+				return $this->logged_error( $cleanup, 'wp-native-builder/application-password-create', $user_id );
+			}
+			return $this->logged_error( $this->invalid_response_error(), 'wp-native-builder/application-password-create', $user_id );
+		}
+		if ( empty( $data['uuid'] ) || ! is_string( $data['uuid'] ) || $created_uuid !== $data['uuid'] ) {
+			$cleanup = $this->cleanup_invalid_created_response( $user_id, $created_uuid );
+			if ( is_wp_error( $cleanup ) ) {
+				return $this->logged_error( $cleanup, 'wp-native-builder/application-password-create', $user_id );
+			}
+			return $this->logged_error( $this->invalid_response_error(), 'wp-native-builder/application-password-create', $user_id );
 		}
 		$item = $this->normalize_item( $data );
 		if ( is_wp_error( $item ) ) {
-			$cleanup = $this->cleanup_invalid_created_response( $user_id, $data );
+			$cleanup = $this->cleanup_invalid_created_response( $user_id, $created_uuid );
 			if ( is_wp_error( $cleanup ) ) {
 				return $this->logged_error( $cleanup, 'wp-native-builder/application-password-create', $user_id );
 			}
@@ -197,7 +222,6 @@ final class Application_Password_Abilities {
 			'item'     => $item,
 		);
 	}
-
 	/** @param array<string,mixed> $input Ability input. @return array<string,mixed>|WP_Error */
 	public function update( $input ) {
 		$user_id = (int) $input['user_id'];
@@ -282,6 +306,59 @@ final class Application_Password_Abilities {
 	 * @return array{data:mixed,headers:array<string,mixed>}|WP_Error
 	 */
 	private function dispatch( $method, $route, array $params ) {
+		$request = $this->build_request( $method, $route, $params );
+		if ( is_wp_error( $request ) ) {
+			return $request;
+		}
+
+		return $this->send_request( $request );
+	}
+
+	/**
+	 * Dispatches create while capturing Core's exact pre-response credential identity.
+	 *
+	 * The REST response is filterable after creation, so cleanup must never trust the
+	 * response UUID. Core's rest_after_insert_application_password action fires after
+	 * persistence and before prepare_item_for_response() filters the response. Matching
+	 * the exact WP_REST_Request object binds the captured UUID to this invocation.
+	 *
+	 * @param int                 $user_id      Exact user ID.
+	 * @param array<string,mixed> $params       Request parameters.
+	 * @param string              $created_uuid     Exact created UUID captured from Core.
+	 * @param string              $created_password Exact generated password captured from Core.
+	 * @return array{data:mixed,headers:array<string,mixed>}|WP_Error
+	 */
+	private function dispatch_create( $user_id, array $params, &$created_uuid, &$created_password ) {
+		$created_uuid     = '';
+		$created_password = '';
+		$request          = $this->build_request( 'POST', $this->collection_route( $user_id ), $params );
+		if ( is_wp_error( $request ) ) {
+			return $request;
+		}
+		if ( ! function_exists( 'add_action' ) || ! function_exists( 'remove_action' ) ) {
+			return $this->create_recovery_required_error();
+		}
+
+		$observer = function ( $item, $observed_request, $creating ) use ( &$created_uuid, &$created_password, $request ) {
+			if ( true !== $creating || $observed_request !== $request || '' !== $created_uuid || ! is_array( $item ) ) {
+				return;
+			}
+			if ( isset( $item['uuid'] ) && is_string( $item['uuid'] ) && $this->valid_uuid_token( $item['uuid'] ) ) {
+				$created_uuid     = $item['uuid'];
+				$created_password = isset( $item['new_password'] ) && is_string( $item['new_password'] ) ? $item['new_password'] : '';
+			}
+		};
+
+		add_action( 'rest_after_insert_application_password', $observer, PHP_INT_MIN, 3 );
+		try {
+			return $this->send_request( $request );
+		} finally {
+			remove_action( 'rest_after_insert_application_password', $observer, PHP_INT_MIN );
+		}
+	}
+
+	/** @return \WP_REST_Request|WP_Error */
+	private function build_request( $method, $route, array $params ) {
 		if ( ! class_exists( 'WP_REST_Request' ) || ! function_exists( 'rest_do_request' ) ) {
 			return new WP_Error( 'application_passwords_rest_unavailable', __( 'The WordPress Application Password REST contract is unavailable.', 'wp-native-builder-bridge' ) );
 		}
@@ -293,6 +370,16 @@ final class Application_Password_Abilities {
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
+		return $request;
+	}
+
+	/**
+	 * Executes one already-bounded internal Core REST request.
+	 *
+	 * @param \WP_REST_Request $request Core request.
+	 * @return array{data:mixed,headers:array<string,mixed>}|WP_Error
+	 */
+	private function send_request( $request ) {
 		$response = rest_do_request( $request );
 		if ( is_wp_error( $response ) ) {
 			return $response;
@@ -308,7 +395,6 @@ final class Application_Password_Abilities {
 			'headers' => method_exists( $response, 'get_headers' ) && is_array( $response->get_headers() ) ? $response->get_headers() : array(),
 		);
 	}
-
 	/** @param mixed $raw Core response item. @return array<string,mixed>|WP_Error */
 	private function normalize_item( $raw ) {
 		if ( ! is_array( $raw ) || empty( $raw['uuid'] ) || ! is_string( $raw['uuid'] ) || ! isset( $raw['name'] ) ) {
@@ -326,28 +412,31 @@ final class Application_Password_Abilities {
 	/**
 	 * Revokes a just-created credential when Core returned an unusable response shape.
 	 *
-	 * @param int                 $user_id Exact user ID.
-	 * @param array<string,mixed> $data    Core create response.
+	 * @param int    $user_id      Exact user ID.
+	 * @param string $created_uuid Exact UUID captured from Core before response filters.
 	 * @return true|WP_Error
 	 */
-	private function cleanup_invalid_created_response( $user_id, array $data ) {
-		if ( empty( $data['uuid'] ) || ! is_string( $data['uuid'] ) || ! $this->valid_uuid_token( $data['uuid'] ) ) {
-			return new WP_Error( 'application_password_create_cleanup_unavailable', __( 'WordPress created an Application Password without a safe identity for cleanup.', 'wp-native-builder-bridge' ) );
+	private function cleanup_invalid_created_response( $user_id, $created_uuid ) {
+		if ( ! $this->valid_uuid_token( $created_uuid ) ) {
+			return $this->create_recovery_required_error();
 		}
 
-		$result = $this->dispatch( 'DELETE', $this->collection_route( $user_id ) . '/' . $data['uuid'], array() );
+		$result = $this->dispatch( 'DELETE', $this->collection_route( $user_id ) . '/' . $created_uuid, array() );
 		if ( is_wp_error( $result ) || ! is_array( $result['data'] ) || empty( $result['data']['deleted'] ) ) {
 			return new WP_Error( 'application_password_create_cleanup_failed', __( 'WordPress created an Application Password, but the Bridge could not safely revoke it after an invalid create response.', 'wp-native-builder-bridge' ) );
 		}
 
 		return true;
 	}
-
 	/** @return WP_Error */
 	private function invalid_response_error() {
 		return new WP_Error( 'application_passwords_rest_invalid_response', __( 'WordPress returned an invalid Application Password response.', 'wp-native-builder-bridge' ) );
 	}
 
+	/** @return WP_Error */
+	private function create_recovery_required_error() {
+		return new WP_Error( 'application_password_create_recovery_required', __( 'WordPress may have created an Application Password, but the Bridge could not verify its exact identity safely. Inspect the target user\'s Application Passwords before retrying.', 'wp-native-builder-bridge' ) );
+	}
 	/** @return WP_Error */
 	private function logged_error( WP_Error $error, $ability, $user_id ) {
 		$this->log->record( (string) $ability, 'user', (int) $user_id, false, $error->get_error_code() );

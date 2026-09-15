@@ -14,7 +14,7 @@ return array(
 	'Revokes every WordPress Application Password for one exact user only after an explicit revoke-all confirmation token.' => 'همه گذرواژه‌های برنامه وردپرس یک کاربر دقیق را فقط پس از دریافت نشانه تأیید صریح برای لغو همه، لغو می‌کند.',
 	'A valid Application Password UUID is required for an exact read.' => 'برای خواندن دقیق، UUID معتبر گذرواژه برنامه لازم است.',
 	'The Application Password read action is invalid.' => 'عملیات خواندن گذرواژه برنامه نامعتبر است.',
-	'WordPress created an Application Password without a safe identity for cleanup.' => 'وردپرس یک گذرواژه برنامه ایجاد کرد، اما شناسه امنی برای پاک‌سازی آن در دسترس نیست.',
+	'WordPress may have created an Application Password, but the Bridge could not verify its exact identity safely. Inspect the target user\'s Application Passwords before retrying.' => 'ممکن است وردپرس یک گذرواژه برنامه ایجاد کرده باشد، اما بریج نتوانست هویت دقیق آن را به‌صورت ایمن تأیید کند. پیش از تلاش دوباره، گذرواژه‌های برنامه کاربر مقصد را بررسی کنید.',
 	'WordPress created an Application Password, but the Bridge could not safely revoke it after an invalid create response.' => 'وردپرس یک گذرواژه برنامه ایجاد کرد، اما بریج پس از دریافت پاسخ ایجاد نامعتبر نتوانست آن را به‌صورت ایمن لغو کند.',
 	'The Application Password UUID is invalid.'        => 'UUID گذرواژه برنامه نامعتبر است.',
 	'WordPress did not confirm Application Password revocation.' => 'وردپرس لغو گذرواژه برنامه را تأیید نکرد.',

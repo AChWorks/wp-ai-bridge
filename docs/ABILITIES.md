@@ -75,6 +75,8 @@ The Bridge uses only the fixed WordPress Core Application Password REST route fa
 
 The generated Application Password is intentionally returned only by `application-password-create`, because Core exposes the plaintext credential only when it is created. The Bridge never persists that plaintext value, never exposes the stored Core hash, and does not include credentials, UUIDs, app IDs, or request payloads in the mutation log. Later list/get/update/revoke responses contain only bounded administrative metadata or deletion confirmation.
 
+Malformed create responses are cleaned up only against the exact UUID observed from Core's pre-response `rest_after_insert_application_password` action for the same internal request. The one-time password is also verified against that pre-response Core value, so a filter cannot substitute either the credential identity or secret and still produce success. If the exact created identity cannot be proven, the Bridge returns `application_password_create_recovery_required` without guessing a DELETE target; inspect that user's Application Passwords before retrying.
+
 This surface does not manage WordPress account passwords, password-reset keys, sessions, cookies, nonces, WP AI Bridge OAuth tokens, or generic authentication metadata. `_application_passwords` remains outside generic user metadata.
 
 ## Comments administration boundary

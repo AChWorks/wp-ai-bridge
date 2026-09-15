@@ -48,6 +48,8 @@ The Bridge exposes no generic authentication REST proxy. It constructs only the 
 
 Core returns the plaintext Application Password only when it is created. The Bridge returns that value only in the successful create response and does not store it in Bridge settings, Workspace, mutation logs, errors, later list/get/update/revoke responses, or artifacts. Read/list normalization deliberately excludes Core's stored password/hash field and also omits last-IP data; only UUID, app ID, name, creation time and last-used time are retained as bounded management metadata. Exact/bulk revocation responses discard Core `previous` records rather than relaying secret-bearing internal state.
 
+Create cleanup never trusts the filterable REST response UUID. The Bridge captures the exact credential UUID and Core-generated one-time password from Core's pre-response `rest_after_insert_application_password` action only when they belong to the same internal `WP_REST_Request`; a successful response must preserve both values exactly. Missing or substituted credential output fails closed and malformed create responses revoke only the captured credential. If that exact identity cannot be observed, Bridge returns `application_password_create_recovery_required` and does not guess a destructive cleanup target; the target user's Application Passwords must be inspected before retrying.
+
 This group does not manage account passwords, password-reset keys, sessions, cookies, nonces, WP AI Bridge OAuth credentials, or generic user authentication metadata. `_application_passwords` remains blocked from generic user metadata. Revoke-all is a separate operation and requires the explicit `revoke_all` confirmation token.
 
 ## Comments administration boundary

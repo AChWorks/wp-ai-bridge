@@ -41,10 +41,15 @@ $admin_id        = get_current_user_id();
 $target_user     = 0;
 $secret_one      = '';
 $secret_two      = '';
-$secret_three    = '';
-$admin_fixture   = null;
-$availability_filter        = null;
-$global_availability_enabled = false;
+$secret_three                 = '';
+$admin_fixture                = null;
+$availability_filter          = null;
+$global_availability_enabled  = false;
+$malformed_capture_action     = null;
+$malformed_prepare_filter     = null;
+$substitution_capture_action  = null;
+$substitution_prepare_filter  = null;
+$preexisting_substitution_uuid = '';
 
 try {
 	wpnb_issue61_assert( 0 === $settings->defaults()[ Settings::GROUP_AUTHENTICATION ], 'Authentication & Credentials must default off.' );
@@ -96,6 +101,121 @@ try {
 	update_option( Settings::OPTION_NAME, $enabled, false );
 	add_filter( 'wp_is_application_passwords_available', '__return_true' );
 	$global_availability_enabled = true;
+
+	$malformed_created_uuid = '';
+	$malformed_secret       = '';
+	$malformed_name         = 'Issue 61 missing response secret';
+	$malformed_capture_action = static function ( $item, $request, $creating ) use ( $target_user, $malformed_name, &$malformed_created_uuid, &$malformed_secret ) {
+		if ( true !== $creating
+			|| ! $request instanceof WP_REST_Request
+			|| 'POST' !== $request->get_method()
+			|| '/wp/v2/users/' . (int) $target_user . '/application-passwords' !== $request->get_route()
+			|| $malformed_name !== $request->get_param( 'name' )
+			|| ! is_array( $item ) ) {
+			return;
+		}
+		$malformed_created_uuid = isset( $item['uuid'] ) && is_string( $item['uuid'] ) ? $item['uuid'] : '';
+		$malformed_secret       = isset( $item['new_password'] ) && is_string( $item['new_password'] ) ? $item['new_password'] : '';
+	};
+	$malformed_prepare_filter = static function ( $response, $item, $request ) use ( $target_user, $malformed_name ) {
+		if ( $request instanceof WP_REST_Request
+			&& 'POST' === $request->get_method()
+			&& '/wp/v2/users/' . (int) $target_user . '/application-passwords' === $request->get_route()
+			&& $malformed_name === $request->get_param( 'name' )
+			&& $response instanceof WP_REST_Response ) {
+			$data = $response->get_data();
+			if ( is_array( $data ) ) {
+				unset( $data['password'] );
+				$response->set_data( $data );
+			}
+		}
+		return $response;
+	};
+	add_action( 'rest_after_insert_application_password', $malformed_capture_action, 10, 3 );
+	add_filter( 'rest_prepare_application_password', $malformed_prepare_filter, 10, 3 );
+	$missing_password = wpnb_issue61_execute(
+		'wp-native-builder/application-password-create',
+		array( 'user_id' => (int) $target_user, 'name' => $malformed_name )
+	);
+	remove_filter( 'rest_prepare_application_password', $malformed_prepare_filter, 10 );
+	remove_action( 'rest_after_insert_application_password', $malformed_capture_action, 10 );
+	$malformed_prepare_filter = null;
+	$malformed_capture_action = null;
+	wpnb_issue61_assert( is_wp_error( $missing_password ) && 'application_passwords_rest_invalid_response' === $missing_password->get_error_code(), 'Filtered create response without plaintext credential did not fail closed.' );
+	wpnb_issue61_assert( '' !== $malformed_created_uuid, 'Core create identity was not observed before response filtering.' );
+	wpnb_issue61_assert( null === WP_Application_Passwords::get_user_application_password( $target_user, $malformed_created_uuid ), 'Missing-password response left the exact newly created credential behind.' );
+	wpnb_issue61_assert( empty( WP_Application_Passwords::get_user_application_passwords( $target_user ) ), 'Missing-password cleanup changed the expected Application Password state.' );
+	$missing_error_blob = wp_json_encode( array( $missing_password->get_error_message(), $missing_password->get_error_data() ) );
+	wpnb_issue61_assert( '' === $malformed_secret || false === strpos( $missing_error_blob, $malformed_secret ), 'Missing-password error leaked the generated credential.' );
+	$missing_log_blob = wp_json_encode( ( new Mutation_Log() )->recent( 50 ) );
+	wpnb_issue61_assert( '' === $malformed_secret || false === strpos( $missing_log_blob, $malformed_secret ), 'Missing-password cleanup logged the generated credential.' );
+	wpnb_issue61_assert( false === strpos( $missing_log_blob, $malformed_created_uuid ), 'Missing-password cleanup logged the created credential UUID.' );
+
+	$preexisting = wpnb_issue61_execute(
+		'wp-native-builder/application-password-create',
+		array( 'user_id' => (int) $target_user, 'name' => 'Issue 61 pre-existing cleanup target' )
+	);
+	wpnb_issue61_assert( ! is_wp_error( $preexisting ), 'Could not create the pre-existing Application Password cleanup-safety fixture.' );
+	$preexisting_substitution_uuid = $preexisting['item']['uuid'];
+	$preexisting_secret            = $preexisting['password'];
+	$preexisting_stored            = WP_Application_Passwords::get_user_application_password( $target_user, $preexisting_substitution_uuid );
+	wpnb_issue61_assert( is_array( $preexisting_stored ) && isset( $preexisting_stored['password'] ), 'Pre-existing Application Password cleanup-safety fixture is unavailable.' );
+
+	$substitution_created_uuid = '';
+	$substitution_secret       = '';
+	$substitution_name         = 'Issue 61 substituted response identity';
+	$substitution_capture_action = static function ( $item, $request, $creating ) use ( $target_user, $substitution_name, &$substitution_created_uuid, &$substitution_secret ) {
+		if ( true !== $creating
+			|| ! $request instanceof WP_REST_Request
+			|| 'POST' !== $request->get_method()
+			|| '/wp/v2/users/' . (int) $target_user . '/application-passwords' !== $request->get_route()
+			|| $substitution_name !== $request->get_param( 'name' )
+			|| ! is_array( $item ) ) {
+			return;
+		}
+		$substitution_created_uuid = isset( $item['uuid'] ) && is_string( $item['uuid'] ) ? $item['uuid'] : '';
+		$substitution_secret       = isset( $item['new_password'] ) && is_string( $item['new_password'] ) ? $item['new_password'] : '';
+	};
+	$substitution_prepare_filter = static function ( $response, $item, $request ) use ( $target_user, $substitution_name, $preexisting_substitution_uuid ) {
+		if ( $request instanceof WP_REST_Request
+			&& 'POST' === $request->get_method()
+			&& '/wp/v2/users/' . (int) $target_user . '/application-passwords' === $request->get_route()
+			&& $substitution_name === $request->get_param( 'name' )
+			&& $response instanceof WP_REST_Response ) {
+			$data = $response->get_data();
+			if ( is_array( $data ) ) {
+				$data['uuid'] = $preexisting_substitution_uuid;
+				unset( $data['name'] );
+				$response->set_data( $data );
+			}
+		}
+		return $response;
+	};
+	add_action( 'rest_after_insert_application_password', $substitution_capture_action, 10, 3 );
+	add_filter( 'rest_prepare_application_password', $substitution_prepare_filter, 10, 3 );
+	$substituted_response = wpnb_issue61_execute(
+		'wp-native-builder/application-password-create',
+		array( 'user_id' => (int) $target_user, 'name' => $substitution_name )
+	);
+	remove_filter( 'rest_prepare_application_password', $substitution_prepare_filter, 10 );
+	remove_action( 'rest_after_insert_application_password', $substitution_capture_action, 10 );
+	$substitution_prepare_filter = null;
+	$substitution_capture_action = null;
+	wpnb_issue61_assert( is_wp_error( $substituted_response ) && 'application_passwords_rest_invalid_response' === $substituted_response->get_error_code(), 'Substituted create-response UUID did not fail closed.' );
+	wpnb_issue61_assert( '' !== $substitution_created_uuid && $preexisting_substitution_uuid !== $substitution_created_uuid, 'Substitution test did not observe a distinct newly created credential.' );
+	wpnb_issue61_assert( is_array( WP_Application_Passwords::get_user_application_password( $target_user, $preexisting_substitution_uuid ) ), 'Malformed response cleanup revoked the substituted pre-existing credential.' );
+	wpnb_issue61_assert( null === WP_Application_Passwords::get_user_application_password( $target_user, $substitution_created_uuid ), 'Malformed response cleanup left the actual newly created credential behind.' );
+	wpnb_issue61_assert( 1 === count( WP_Application_Passwords::get_user_application_passwords( $target_user ) ), 'Substitution cleanup changed Application Password state beyond the exact created credential.' );
+	$substitution_error_blob = wp_json_encode( array( $substituted_response->get_error_message(), $substituted_response->get_error_data() ) );
+	wpnb_issue61_assert( '' === $substitution_secret || false === strpos( $substitution_error_blob, $substitution_secret ), 'Substituted-response error leaked the generated credential.' );
+	$substitution_log_blob = wp_json_encode( ( new Mutation_Log() )->recent( 50 ) );
+	wpnb_issue61_assert( '' === $substitution_secret || false === strpos( $substitution_log_blob, $substitution_secret ), 'Substituted-response cleanup logged the generated credential.' );
+	wpnb_issue61_assert( false === strpos( $substitution_log_blob, $substitution_created_uuid ), 'Substituted-response cleanup logged the created credential UUID.' );
+	wpnb_issue61_assert( false === strpos( $substitution_log_blob, $preexisting_stored['password'] ), 'Substituted-response cleanup logged a stored Application Password hash.' );
+	wpnb_issue61_assert( false === strpos( $substitution_log_blob, $preexisting_secret ), 'Substituted-response cleanup logged the pre-existing plaintext credential.' );
+	WP_Application_Passwords::delete_application_password( $target_user, $preexisting_substitution_uuid );
+	$preexisting_substitution_uuid = '';
+	wpnb_issue61_assert( empty( WP_Application_Passwords::get_user_application_passwords( $target_user ) ), 'Cleanup-safety fixture removal did not restore an empty Application Password state.' );
 
 	$created = wpnb_issue61_execute(
 		'wp-native-builder/application-password-create',
@@ -172,8 +292,7 @@ try {
 	);
 	wpnb_issue61_assert( is_wp_error( $unavailable ) && 'application_passwords_disabled_for_user' === $unavailable->get_error_code(), 'Bridge bypassed Core per-user Application Password availability.' );
 	remove_filter( 'wp_is_application_passwords_available_for_user', $availability_filter, 10 );
-	$availability_filter        = null;
-$global_availability_enabled = false;
+	$availability_filter = null;
 
 	$generic_meta = wpnb_issue61_execute(
 		'wp-native-builder/user-meta-read',
@@ -251,6 +370,18 @@ $global_availability_enabled = false;
 
 	echo "PASS: Issue #61 Core Application Password lifecycle, authority and secret redaction.\n";
 } finally {
+	if ( is_callable( $malformed_prepare_filter ) ) {
+		remove_filter( 'rest_prepare_application_password', $malformed_prepare_filter, 10 );
+	}
+	if ( is_callable( $malformed_capture_action ) ) {
+		remove_action( 'rest_after_insert_application_password', $malformed_capture_action, 10 );
+	}
+	if ( is_callable( $substitution_prepare_filter ) ) {
+		remove_filter( 'rest_prepare_application_password', $substitution_prepare_filter, 10 );
+	}
+	if ( is_callable( $substitution_capture_action ) ) {
+		remove_action( 'rest_after_insert_application_password', $substitution_capture_action, 10 );
+	}
 	remove_filter( 'wp_is_application_passwords_available', '__return_false' );
 	if ( $global_availability_enabled ) {
 		remove_filter( 'wp_is_application_passwords_available', '__return_true' );
@@ -263,6 +394,9 @@ $global_availability_enabled = false;
 		WP_Application_Passwords::delete_application_password( $admin_id, $admin_fixture['uuid'] );
 	}
 	if ( $target_user > 0 ) {
+		if ( '' !== $preexisting_substitution_uuid ) {
+			WP_Application_Passwords::delete_application_password( $target_user, $preexisting_substitution_uuid );
+		}
 		WP_Application_Passwords::delete_all_application_passwords( $target_user );
 		require_once ABSPATH . 'wp-admin/includes/user.php';
 		wp_delete_user( $target_user );

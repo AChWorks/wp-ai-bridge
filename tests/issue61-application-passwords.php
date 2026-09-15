@@ -12,6 +12,28 @@ use WP_Native_Builder_Bridge\Support\Mutation_Log;
 use WP_Native_Builder_Bridge\Support\Permissions;
 use WP_Native_Builder_Bridge\Support\Settings;
 
+if ( ! function_exists( 'remove_action' ) ) {
+	function remove_action( $hook, $callback, $priority = 10 ) {
+		if ( empty( $GLOBALS['wpnb_test']['actions'][ $hook ] ) ) {
+			return false;
+		}
+		foreach ( $GLOBALS['wpnb_test']['actions'][ $hook ] as $index => $registered ) {
+			if ( $registered === $callback ) {
+				unset( $GLOBALS['wpnb_test']['actions'][ $hook ][ $index ] );
+				$GLOBALS['wpnb_test']['actions'][ $hook ] = array_values( $GLOBALS['wpnb_test']['actions'][ $hook ] );
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
+function wpnb61_fire_action( $hook, ...$args ) {
+	foreach ( array_values( $GLOBALS['wpnb_test']['actions'][ $hook ] ?? array() ) as $callback ) {
+		call_user_func_array( $callback, $args );
+	}
+}
+
 $failures = 0;
 $tests    = 0;
 
@@ -57,7 +79,8 @@ final class WP_AI_Bridge_Issue61_Test_Response {
 }
 
 $GLOBALS['wpnb61_rest_requests'] = array();
-$GLOBALS['wpnb61_secret']        = 'abcd EFGH ijkl MNOP 1234 5678';
+$GLOBALS['wpnb61_secret']           = 'abcd EFGH ijkl MNOP 1234 5678';
+$GLOBALS['wpnb61_substituted_uuid'] = 'aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb';
 $GLOBALS['wpnb61_item']          = array(
 	'uuid'      => '11111111-2222-3333-4444-555555555555',
 	'app_id'    => 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
@@ -83,11 +106,24 @@ function rest_do_request( $request ) {
 		return new WP_AI_Bridge_Issue61_Test_Response( $GLOBALS['wpnb61_item'] );
 	}
 	if ( 'POST' === $request->method && $base === $request->route ) {
-		$item             = $GLOBALS['wpnb61_item'];
-		$item['name']     = $request->params['name'];
+		$item                 = $GLOBALS['wpnb61_item'];
+		$item['name']         = $request->params['name'];
+		$item['new_password'] = $GLOBALS['wpnb61_secret'];
+		if ( 'Unobservable create' !== $request->params['name'] ) {
+			wpnb61_fire_action( 'rest_after_insert_application_password', $item, $request, true );
+		}
 		$item['password'] = $GLOBALS['wpnb61_secret'];
 		if ( 'Invalid shape' === $request->params['name'] ) {
 			unset( $item['name'] );
+		} elseif ( 'Missing password' === $request->params['name'] ) {
+			unset( $item['password'] );
+		} elseif ( 'Substituted password' === $request->params['name'] ) {
+			$item['password'] = 'filtered replacement secret';
+		} elseif ( 'Substituted UUID invalid shape' === $request->params['name'] ) {
+			$item['uuid'] = $GLOBALS['wpnb61_substituted_uuid'];
+			unset( $item['name'] );
+		} elseif ( 'Substituted UUID valid shape' === $request->params['name'] ) {
+			$item['uuid'] = $GLOBALS['wpnb61_substituted_uuid'];
 		}
 		return new WP_AI_Bridge_Issue61_Test_Response( $item );
 	}
@@ -153,6 +189,38 @@ wpnb61_assert( is_wp_error( $invalid_create ) && 'application_passwords_rest_inv
 $cleanup_requests = array_slice( $GLOBALS['wpnb61_rest_requests'], $requests_before_invalid_create );
 wpnb61_assert( 2 === count( $cleanup_requests ) && 'POST' === $cleanup_requests[0]['method'] && 'DELETE' === $cleanup_requests[1]['method'], 'Invalid create response did not trigger exact Core revocation cleanup.' );
 wpnb61_assert( '/wp/v2/users/7/application-passwords/' . $GLOBALS['wpnb61_item']['uuid'] === $cleanup_requests[1]['route'], 'Invalid create cleanup targeted the wrong Application Password identity.' );
+
+$requests_before_missing_password = count( $GLOBALS['wpnb61_rest_requests'] );
+$missing_password = $provider->create( array( 'user_id' => 7, 'name' => 'Missing password' ) );
+wpnb61_assert( is_wp_error( $missing_password ) && 'application_passwords_rest_invalid_response' === $missing_password->get_error_code(), 'Missing create-response password did not fail after exact cleanup.' );
+$missing_password_requests = array_slice( $GLOBALS['wpnb61_rest_requests'], $requests_before_missing_password );
+wpnb61_assert( 2 === count( $missing_password_requests ) && 'DELETE' === $missing_password_requests[1]['method'], 'Missing create-response password did not trigger exact cleanup.' );
+wpnb61_assert( '/wp/v2/users/7/application-passwords/' . $GLOBALS['wpnb61_item']['uuid'] === $missing_password_requests[1]['route'], 'Missing-password cleanup did not use the pre-response Core identity.' );
+
+$requests_before_substituted_password = count( $GLOBALS['wpnb61_rest_requests'] );
+$substituted_password = $provider->create( array( 'user_id' => 7, 'name' => 'Substituted password' ) );
+wpnb61_assert( is_wp_error( $substituted_password ) && 'application_passwords_rest_invalid_response' === $substituted_password->get_error_code(), 'Substituted create-response password was accepted.' );
+$substituted_password_requests = array_slice( $GLOBALS['wpnb61_rest_requests'], $requests_before_substituted_password );
+wpnb61_assert( 2 === count( $substituted_password_requests ) && 'DELETE' === $substituted_password_requests[1]['method'] && '/wp/v2/users/7/application-passwords/' . $GLOBALS['wpnb61_item']['uuid'] === $substituted_password_requests[1]['route'], 'Substituted create-response password did not clean up the exact created credential.' );
+
+$requests_before_substituted = count( $GLOBALS['wpnb61_rest_requests'] );
+$substituted = $provider->create( array( 'user_id' => 7, 'name' => 'Substituted UUID invalid shape' ) );
+wpnb61_assert( is_wp_error( $substituted ) && 'application_passwords_rest_invalid_response' === $substituted->get_error_code(), 'Substituted response UUID did not fail closed.' );
+$substituted_requests = array_slice( $GLOBALS['wpnb61_rest_requests'], $requests_before_substituted );
+wpnb61_assert( 2 === count( $substituted_requests ) && '/wp/v2/users/7/application-passwords/' . $GLOBALS['wpnb61_item']['uuid'] === $substituted_requests[1]['route'], 'Substituted response UUID redirected cleanup away from the actual created credential.' );
+wpnb61_assert( false === strpos( $substituted_requests[1]['route'], $GLOBALS['wpnb61_substituted_uuid'] ), 'Cleanup trusted the mutable response UUID.' );
+
+$requests_before_valid_substitution = count( $GLOBALS['wpnb61_rest_requests'] );
+$valid_substitution = $provider->create( array( 'user_id' => 7, 'name' => 'Substituted UUID valid shape' ) );
+wpnb61_assert( is_wp_error( $valid_substitution ) && 'application_passwords_rest_invalid_response' === $valid_substitution->get_error_code(), 'Valid-shaped substituted response UUID was accepted as the created identity.' );
+$valid_substitution_requests = array_slice( $GLOBALS['wpnb61_rest_requests'], $requests_before_valid_substitution );
+wpnb61_assert( 2 === count( $valid_substitution_requests ) && '/wp/v2/users/7/application-passwords/' . $GLOBALS['wpnb61_item']['uuid'] === $valid_substitution_requests[1]['route'], 'Valid-shaped UUID substitution redirected cleanup away from the actual created credential.' );
+
+$requests_before_unobservable = count( $GLOBALS['wpnb61_rest_requests'] );
+$unobservable = $provider->create( array( 'user_id' => 7, 'name' => 'Unobservable create' ) );
+wpnb61_assert( is_wp_error( $unobservable ) && 'application_password_create_recovery_required' === $unobservable->get_error_code(), 'Unobservable create did not return an explicit recovery-required error.' );
+$unobservable_requests = array_slice( $GLOBALS['wpnb61_rest_requests'], $requests_before_unobservable );
+wpnb61_assert( 1 === count( $unobservable_requests ) && 'POST' === $unobservable_requests[0]['method'], 'Unobservable create guessed a destructive cleanup target.' );
 
 $updated = $provider->update( array( 'user_id' => 7, 'uuid' => $uuid, 'name' => 'Renamed test' ) );
 wpnb61_assert( ! is_wp_error( $updated ) && 'Renamed test' === $updated['name'], 'Update normalizes the renamed Core item.' );
