@@ -39,6 +39,7 @@ $settings                 = new Settings();
 $original_access          = get_option( Settings::OPTION_NAME, $settings->defaults() );
 $admin_id                 = get_current_user_id();
 $target_user              = 0;
+$unauthorized_user        = 0;
 $preexisting_uuid         = '';
 $preexisting_secret       = '';
 $preexisting_hash         = '';
@@ -64,6 +65,46 @@ try {
 		)
 	);
 	wpnb_issue61_f003_assert( ! is_wp_error( $target_user ) && $target_user > 0, 'Could not create F-003 user fixture.' );
+
+	$unauthorized_user = wp_insert_user(
+		array(
+			'user_login' => 'issue61-f003-denied-' . wp_generate_password( 8, false, false ),
+			'user_pass'  => wp_generate_password( 32, true, true ),
+			'user_email' => 'issue61-f003-denied-' . wp_generate_password( 8, false, false ) . '@example.invalid',
+			'role'       => 'subscriber',
+		)
+	);
+	wpnb_issue61_f003_assert( ! is_wp_error( $unauthorized_user ) && $unauthorized_user > 0, 'Could not create F-003 unauthorized actor fixture.' );
+
+	$legacy_raw = array(
+		array(
+			'app_id'    => '77777777-8888-4999-8aaa-bbbbbbbbbbbb',
+			'name'      => 'Issue 61 legacy no UUID',
+			'password'  => WP_Application_Passwords::hash_password( 'issue61-legacy-secret' ),
+			'created'   => time(),
+			'last_used' => null,
+			'last_ip'   => null,
+		),
+	);
+	update_user_meta( $target_user, WP_Application_Passwords::USERMETA_KEY_APPLICATION_PASSWORDS, $legacy_raw );
+	$legacy_before = get_user_meta( $target_user, WP_Application_Passwords::USERMETA_KEY_APPLICATION_PASSWORDS, true );
+	wpnb_issue61_f003_assert( $legacy_raw === $legacy_before && ! isset( $legacy_before[0]['uuid'] ), 'Could not establish legacy no-UUID Application Password fixture.' );
+
+	wp_set_current_user( $unauthorized_user );
+	$denied = wpnb_issue61_f003_execute(
+		'wp-native-builder/application-password-create',
+		array(
+			'user_id' => (int) $target_user,
+			'name'    => 'Denied before storage inspection',
+		)
+	);
+	$legacy_after = get_user_meta( $target_user, WP_Application_Passwords::USERMETA_KEY_APPLICATION_PASSWORDS, true );
+	wpnb_issue61_f003_assert( is_wp_error( $denied ) && 'rest_cannot_create_application_passwords' === $denied->get_error_code(), 'Unauthorized create did not preserve Core create_app_password denial.' );
+	wpnb_issue61_f003_assert( $legacy_before === $legacy_after && ! isset( $legacy_after[0]['uuid'] ), 'Unauthorized create inspected/mutated legacy Application Password storage before Core authorization.' );
+
+	wp_set_current_user( $admin_id );
+	delete_user_meta( $target_user, WP_Application_Passwords::USERMETA_KEY_APPLICATION_PASSWORDS );
+	wpnb_issue61_f003_assert( '' === get_user_meta( $target_user, WP_Application_Passwords::USERMETA_KEY_APPLICATION_PASSWORDS, true ), 'Legacy authorization fixture cleanup failed.' );
 
 	$preexisting = wpnb_issue61_f003_execute(
 		'wp-native-builder/application-password-create',
@@ -223,6 +264,7 @@ try {
 		remove_filter( 'wp_is_application_passwords_available', '__return_true' );
 	}
 	wp_set_current_user( $admin_id );
+	require_once ABSPATH . 'wp-admin/includes/user.php';
 	if ( $target_user > 0 ) {
 		if ( '' !== $all_nested_uuid ) {
 			WP_Application_Passwords::delete_application_password( $target_user, $all_nested_uuid );
@@ -231,8 +273,10 @@ try {
 			WP_Application_Passwords::delete_application_password( $target_user, $same_nested_uuid );
 		}
 		WP_Application_Passwords::delete_all_application_passwords( $target_user );
-		require_once ABSPATH . 'wp-admin/includes/user.php';
 		wp_delete_user( $target_user );
+	}
+	if ( $unauthorized_user > 0 ) {
+		wp_delete_user( $unauthorized_user );
 	}
 	update_option( Settings::OPTION_NAME, $original_access, false );
 }

@@ -16,7 +16,9 @@ $GLOBALS['wpnb61_f003_filters']       = array();
 $GLOBALS['wpnb61_f003_requests']      = array();
 $GLOBALS['wpnb61_f003_sequence']      = 0;
 $GLOBALS['wpnb61_f003_nested_uuids']  = array();
-$GLOBALS['wpnb61_f003_delete_routes'] = array();
+$GLOBALS['wpnb61_f003_delete_routes']      = array();
+$GLOBALS['wpnb61_f003_snapshot_reads']      = 0;
+$GLOBALS['wpnb61_f003_permission_allowed']  = true;
 
 if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( $hook, $callback, $priority = 10, $accepted_args = 1 ) {
@@ -128,6 +130,7 @@ if ( ! class_exists( 'WP_Application_Passwords' ) ) {
 		public static $storage = array();
 
 		public static function get_user_application_passwords( $user_id ) {
+			++$GLOBALS['wpnb61_f003_snapshot_reads'];
 			return array_values( self::$storage[ (int) $user_id ] ?? array() );
 		}
 
@@ -180,6 +183,16 @@ if ( ! class_exists( 'WP_Application_Passwords' ) ) {
 
 if ( ! class_exists( 'WP_REST_Application_Passwords_Controller' ) ) {
 	class WP_REST_Application_Passwords_Controller {
+		public function create_item_permissions_check( $request ) {
+			if ( 7 !== (int) $request->get_param( 'user_id' ) ) {
+				return new WP_Error( 'rest_user_invalid_id', 'Invalid user ID.' );
+			}
+			if ( empty( $GLOBALS['wpnb61_f003_permission_allowed'] ) ) {
+				return new WP_Error( 'rest_cannot_create_application_passwords', 'Not allowed.' );
+			}
+			return true;
+		}
+
 		public function create_item( $request ) {
 			$args = array( 'name' => $request->params['name'] );
 			if ( ! empty( $request->params['app_id'] ) ) {
@@ -227,6 +240,15 @@ $settings = new Settings();
 $GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = $settings->defaults();
 $GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_AUTHENTICATION ] = 1;
 $provider = new Secure_Application_Password_Abilities( new Permissions( $settings ), new Mutation_Log() );
+
+$GLOBALS['wpnb61_f003_permission_allowed'] = false;
+$reads_before_denied = $GLOBALS['wpnb61_f003_snapshot_reads'];
+$requests_before_denied = count( $GLOBALS['wpnb61_f003_requests'] );
+$denied = $provider->create( array( 'user_id' => 7, 'name' => 'denied before snapshot' ) );
+wpnb61_f003_assert( is_wp_error( $denied ) && 'rest_cannot_create_application_passwords' === $denied->get_error_code(), 'Create permission preflight did not preserve Core denial.' );
+wpnb61_f003_assert( $reads_before_denied === $GLOBALS['wpnb61_f003_snapshot_reads'], 'Denied create inspected Application Password storage before Core authorization.' );
+wpnb61_f003_assert( $requests_before_denied === count( $GLOBALS['wpnb61_f003_requests'] ), 'Denied create dispatched REST after preflight denial.' );
+$GLOBALS['wpnb61_f003_permission_allowed'] = true;
 
 $baseline = WP_Application_Passwords::create_new_application_password( 7, array( 'name' => 'baseline' ) );
 wpnb61_f003_assert( ! is_wp_error( $baseline ), 'Could not create dependency-free baseline credential.' );

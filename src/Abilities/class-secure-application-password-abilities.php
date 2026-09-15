@@ -122,6 +122,11 @@ final class Secure_Application_Password_Abilities {
 			$params['app_id'] = (string) $input['app_id'];
 		}
 
+		$permission = $this->preflight_create_permission( $user_id, $params );
+		if ( is_wp_error( $permission ) ) {
+			return $this->logged_error( $permission, $user_id );
+		}
+
 		$baseline = $this->credential_snapshot( $user_id );
 		if ( is_wp_error( $baseline ) ) {
 			return $this->logged_error( $this->create_recovery_required_error(), $user_id );
@@ -177,6 +182,39 @@ final class Secure_Application_Password_Abilities {
 			'password' => $data['password'],
 			'item'     => $item,
 		);
+	}
+
+	/**
+	 * Runs Core's exact create authorization before inspecting credential storage.
+	 *
+	 * Core's storage reader can backfill UUIDs into legacy Application Password rows,
+	 * so even the baseline snapshot must not run until the target-specific native
+	 * create permission has succeeded. The real REST dispatch repeats this check.
+	 *
+	 * @param int                 $user_id Exact target user.
+	 * @param array<string,mixed> $params  Fixed create parameters.
+	 * @return true|WP_Error
+	 */
+	private function preflight_create_permission( $user_id, array $params ) {
+		$request = $this->build_request( 'POST', $this->collection_route( $user_id ), $params );
+		if ( is_wp_error( $request ) ) {
+			return $request;
+		}
+		if ( ! class_exists( 'WP_REST_Application_Passwords_Controller' ) ) {
+			return new WP_Error( 'application_passwords_rest_unavailable', __( 'The WordPress Application Password REST contract is unavailable.', 'wp-native-builder-bridge' ) );
+		}
+
+		$request->set_param( 'user_id', (int) $user_id );
+		$controller = new \WP_REST_Application_Passwords_Controller();
+		$permission = $controller->create_item_permissions_check( $request );
+		if ( is_wp_error( $permission ) ) {
+			return $permission;
+		}
+		if ( true !== $permission ) {
+			return new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-native-builder-bridge' ) );
+		}
+
+		return true;
 	}
 
 	/**
