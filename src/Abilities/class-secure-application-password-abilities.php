@@ -415,7 +415,7 @@ final class Secure_Application_Password_Abilities {
 	 * @return bool
 	 */
 	private function is_expected_success_state( array $baseline, array $current, array $capture ) {
-		$expected = $baseline;
+		$expected                     = $baseline;
 		$expected[ $capture['uuid'] ] = array(
 			'password_hash' => $capture['password_hash'],
 			'fingerprint'   => $capture['fingerprint'],
@@ -605,12 +605,12 @@ final class Secure_Application_Password_Abilities {
 
 	/** @return WP_Error */
 	private function create_recovery_required_error() {
-		return new WP_Error( 'application_password_create_recovery_required', __( 'WordPress may have changed Application Password state, but the Bridge could not verify the exact requested credential safely. Inspect the target user\'s Application Passwords before retrying.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'application_password_create_recovery_required', __( 'WordPress may have created an Application Password, but the Bridge could not verify its exact identity safely. Inspect the target user\'s Application Passwords before retrying.', 'wp-native-builder-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function cleanup_failed_error() {
-		return new WP_Error( 'application_password_create_cleanup_failed', __( 'WordPress created an Application Password, but the Bridge could not safely revoke the exact captured credential after a failed create.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'application_password_create_cleanup_failed', __( 'WordPress created an Application Password, but the Bridge could not safely revoke it after an invalid create response.', 'wp-native-builder-bridge' ) );
 	}
 
 	/** @param WP_Error $error Error. @param int $user_id User. @return WP_Error */
@@ -629,7 +629,10 @@ final class Secure_Application_Password_Abilities {
 					'enum'    => array( 'list', 'get' ),
 					'default' => 'list',
 				),
-				'user_id' => array( 'type' => 'integer', 'minimum' => 1 ),
+				'user_id' => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+				),
 				'uuid'    => $this->uuid_schema(),
 			),
 			'required'             => array( 'user_id' ),
@@ -642,9 +645,19 @@ final class Secure_Application_Password_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'user_id' => array( 'type' => 'integer', 'minimum' => 1 ),
-				'name'    => array( 'type' => 'string', 'minLength' => 1, 'maxLength' => 200 ),
-				'app_id'  => array( 'type' => 'string', 'maxLength' => 64 ),
+				'user_id' => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+				),
+				'name'    => array(
+					'type'      => 'string',
+					'minLength' => 1,
+					'maxLength' => 200,
+				),
+				'app_id'  => array(
+					'type'      => 'string',
+					'maxLength' => 64,
+				),
 			),
 			'required'             => array( 'user_id', 'name' ),
 			'additionalProperties' => false,
@@ -654,7 +667,11 @@ final class Secure_Application_Password_Abilities {
 	/** @return array<string,mixed> */
 	private function update_input_schema() {
 		$schema                       = $this->item_target_schema();
-		$schema['properties']['name'] = array( 'type' => 'string', 'minLength' => 1, 'maxLength' => 200 );
+		$schema['properties']['name'] = array(
+			'type'      => 'string',
+			'minLength' => 1,
+			'maxLength' => 200,
+		);
 		$schema['required'][]         = 'name';
 		return $schema;
 	}
@@ -664,7 +681,10 @@ final class Secure_Application_Password_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'user_id' => array( 'type' => 'integer', 'minimum' => 1 ),
+				'user_id' => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+				),
 				'uuid'    => $this->uuid_schema(),
 			),
 			'required'             => array( 'user_id', 'uuid' ),
@@ -677,8 +697,14 @@ final class Secure_Application_Password_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'user_id' => array( 'type' => 'integer', 'minimum' => 1 ),
-				'confirm' => array( 'type' => 'string', 'enum' => array( 'revoke_all' ) ),
+				'user_id' => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+				),
+				'confirm' => array(
+					'type' => 'string',
+					'enum' => array( 'revoke_all' ),
+				),
 			),
 			'required'             => array( 'user_id', 'confirm' ),
 			'additionalProperties' => false,
@@ -700,10 +726,22 @@ final class Secure_Application_Password_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'user_id'   => array( 'type' => 'integer' ),
-				'items'     => array( 'type' => 'array', 'items' => $this->item_schema(), 'maxItems' => self::MAX_ITEMS ),
-				'count'     => array( 'type' => 'integer', 'minimum' => 0, 'maximum' => self::MAX_ITEMS ),
-				'truncated' => array( 'type' => 'boolean' ),
+				'user_id'   => array(
+					'type' => 'integer',
+				),
+				'items'     => array(
+					'type'     => 'array',
+					'items'    => $this->item_schema(),
+					'maxItems' => self::MAX_ITEMS,
+				),
+				'count'     => array(
+					'type'    => 'integer',
+					'minimum' => 0,
+					'maximum' => self::MAX_ITEMS,
+				),
+				'truncated' => array(
+					'type' => 'boolean',
+				),
 			),
 			'required'             => array( 'user_id', 'items', 'count', 'truncated' ),
 			'additionalProperties' => false,
@@ -715,8 +753,14 @@ final class Secure_Application_Password_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'user_id'  => array( 'type' => 'integer' ),
-				'password' => array( 'type' => 'string', 'minLength' => 1, 'maxLength' => 64 ),
+				'user_id'  => array(
+					'type' => 'integer',
+				),
+				'password' => array(
+					'type'      => 'string',
+					'minLength' => 1,
+					'maxLength' => 64,
+				),
 				'item'     => $this->item_schema(),
 			),
 			'required'             => array( 'user_id', 'password', 'item' ),
@@ -727,12 +771,19 @@ final class Secure_Application_Password_Abilities {
 	/** @return array<string,mixed> */
 	private function delete_output_schema( $include_count ) {
 		$properties = array(
-			'user_id' => array( 'type' => 'integer' ),
-			'deleted' => array( 'type' => 'boolean' ),
+			'user_id' => array(
+				'type' => 'integer',
+			),
+			'deleted' => array(
+				'type' => 'boolean',
+			),
 		);
 		$required   = array( 'user_id', 'deleted' );
 		if ( $include_count ) {
-			$properties['count'] = array( 'type' => 'integer', 'minimum' => 0 );
+			$properties['count'] = array(
+				'type'    => 'integer',
+				'minimum' => 0,
+			);
 			$required[]          = 'count';
 		}
 		return array(
@@ -748,11 +799,21 @@ final class Secure_Application_Password_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'uuid'      => array( 'type' => 'string' ),
-				'app_id'    => array( 'type' => 'string' ),
-				'name'      => array( 'type' => 'string' ),
-				'created'   => array( 'type' => 'string' ),
-				'last_used' => array( 'type' => array( 'string', 'null' ) ),
+				'uuid'      => array(
+					'type' => 'string',
+				),
+				'app_id'    => array(
+					'type' => 'string',
+				),
+				'name'      => array(
+					'type' => 'string',
+				),
+				'created'   => array(
+					'type' => 'string',
+				),
+				'last_used' => array(
+					'type' => array( 'string', 'null' ),
+				),
 			),
 			'required'             => array( 'uuid', 'app_id', 'name', 'created', 'last_used' ),
 			'additionalProperties' => false,
@@ -762,7 +823,10 @@ final class Secure_Application_Password_Abilities {
 	/** @return array<string,mixed> */
 	private function meta( $is_readonly, $destructive, $idempotent ) {
 		return array(
-			'mcp'         => array( 'public' => true, 'type' => 'tool' ),
+			'mcp'         => array(
+				'public' => true,
+				'type'   => 'tool',
+			),
 			'annotations' => array(
 				'readonly'    => (bool) $is_readonly,
 				'destructive' => (bool) $destructive,
