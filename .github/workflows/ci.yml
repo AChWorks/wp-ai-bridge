@@ -4,9 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   quality:
@@ -31,6 +36,7 @@ jobs:
         run: composer check
 
       - name: Upload validated plugin ZIP
+        if: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wp-ai-bridge
@@ -40,6 +46,7 @@ jobs:
 
   integration:
     name: Integration / ${{ matrix.wordpress_tag }}
+    if: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -65,26 +72,48 @@ jobs:
           RUN_OPTIONAL_PROVIDERS: '${{ matrix.optional_providers }}'
         run: bash bin/run-integration.sh '${{ matrix.wordpress_tag }}'
 
-      - name: Run Issue 44 native Ability delegation suite
-        run: bash bin/run-issue44-native-delegation.sh '${{ matrix.wordpress_tag }}'
+  specialized:
+    name: ${{ matrix.name }} / ${{ matrix.wordpress_tag }}
+    if: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Single-site regressions
+            runner: bin/run-single-site-regressions.sh
+            wordpress_tag: 6.9-php8.4-apache
+          - name: Single-site regressions
+            runner: bin/run-single-site-regressions.sh
+            wordpress_tag: php8.4-apache
+          - name: Issue 58 multisite
+            runner: bin/run-issue58-user-meta-multisite.sh
+            wordpress_tag: 6.9-php8.4-apache
+          - name: Issue 58 multisite
+            runner: bin/run-issue58-user-meta-multisite.sh
+            wordpress_tag: php8.4-apache
+          - name: Issue 46 multisite
+            runner: bin/run-issue46-multisite.sh
+            wordpress_tag: 6.9-php8.4-apache
+          - name: Issue 46 multisite
+            runner: bin/run-issue46-multisite.sh
+            wordpress_tag: php8.4-apache
+          - name: Issue 47 migration
+            runner: bin/run-issue47-migration.sh
+            wordpress_tag: 6.9-php8.4-apache
+          - name: Issue 47 migration
+            runner: bin/run-issue47-migration.sh
+            wordpress_tag: php8.4-apache
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Run Issue 52 comment administration suite
-        run: bash bin/run-issue52-comments.sh '${{ matrix.wordpress_tag }}'
+      - name: Setup PHP for release ZIP build
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          extensions: zip
+          coverage: none
 
-      - name: Run Issue 54 approved OAuth clients suite
-        run: bash bin/run-issue54-oauth-clients.sh '${{ matrix.wordpress_tag }}'
-
-      - name: Run Issue 56 registered settings suite
-        run: bash bin/run-issue56-registered-settings.sh '${{ matrix.wordpress_tag }}'
-
-      - name: Run Issue 58 user/comment metadata suite
-        run: bash bin/run-issue58-user-comment-meta.sh '${{ matrix.wordpress_tag }}'
-
-      - name: Run Issue 58 multisite user metadata authority suite
-        run: bash bin/run-issue58-user-meta-multisite.sh '${{ matrix.wordpress_tag }}'
-
-      - name: Run Issue 46 multisite source-editing suite
-        run: bash bin/run-issue46-multisite.sh '${{ matrix.wordpress_tag }}'
-
-      - name: Run Issue 47 exact-base identity migration suite
-        run: bash bin/run-issue47-migration.sh '${{ matrix.wordpress_tag }}'
+      - name: Run specialized regression suite
+        run: bash '${{ matrix.runner }}' '${{ matrix.wordpress_tag }}'
