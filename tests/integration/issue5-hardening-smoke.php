@@ -81,10 +81,12 @@ try {
 	wpnb_issue5_assert( 4 === count( array_intersect( $names, $source_editing_names ) ), 'Issue #46 source-editing Ability family is incomplete.' );
 	$comment_names = array( 'wp-native-builder/comments-read', 'wp-native-builder/comment-reply', 'wp-native-builder/comment-status', 'wp-native-builder/comment-delete' );
 	wpnb_issue5_assert( 4 === count( array_intersect( $names, $comment_names ) ), 'Issue #52 comment administration Ability family is incomplete.' );
+	$application_password_names = array( 'wp-native-builder/application-passwords-read', 'wp-native-builder/application-password-create', 'wp-native-builder/application-password-update', 'wp-native-builder/application-password-delete', 'wp-native-builder/application-passwords-delete-all' );
+	wpnb_issue5_assert( 5 === count( array_intersect( $names, $application_password_names ) ), 'Issue #61 Application Password Ability family is incomplete.' );
 
 	$defaults = $settings->defaults();
 	wpnb_issue5_assert( 1 === $defaults[ Settings::GROUP_SITE_READ ], 'Site Read is not the sole enabled default group.' );
-	foreach ( array( Settings::GROUP_BUILDER_WRITE, Settings::GROUP_REMOTE_MEDIA, Settings::GROUP_LIVE_CONTENT, Settings::GROUP_SITE_CONFIG, Settings::GROUP_ADVANCED_METADATA, Settings::GROUP_CODE_EXTENSIONS, Settings::GROUP_SOURCE_EDITING, Settings::GROUP_NATIVE_ABILITIES, Settings::GROUP_COMMENTS, Settings::GROUP_USERS_DESTRUCTIVE ) as $group ) {
+	foreach ( array( Settings::GROUP_BUILDER_WRITE, Settings::GROUP_REMOTE_MEDIA, Settings::GROUP_LIVE_CONTENT, Settings::GROUP_SITE_CONFIG, Settings::GROUP_ADVANCED_METADATA, Settings::GROUP_AUTHENTICATION, Settings::GROUP_CODE_EXTENSIONS, Settings::GROUP_SOURCE_EDITING, Settings::GROUP_NATIVE_ABILITIES, Settings::GROUP_COMMENTS, Settings::GROUP_USERS_DESTRUCTIVE ) as $group ) {
 		wpnb_issue5_assert( 0 === $defaults[ $group ], 'Sensitive group is enabled by default: ' . $group );
 	}
 	update_option( Settings::OPTION_NAME, $defaults, false );

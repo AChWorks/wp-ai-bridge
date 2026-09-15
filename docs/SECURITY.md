@@ -21,12 +21,13 @@ OAuth never enables a Bridge access group and never grants a WordPress capabilit
 - **Remote Media** - default-off outbound media import; Builder Write and native upload/parent authority remain required.
 - **Live Content** — publishing and other live-state transitions.
 - **Site Configuration** — bounded global configuration.
-- **Advanced Metadata** — protected/private post and term metadata for exact WordPress objects the connected user may edit; disabled by default and intentionally separate from ordinary Site Read/Builder Write access.
+- **Advanced Metadata** — protected/private post, term, user, and comment metadata for exact WordPress objects the connected user may edit; disabled by default and intentionally separate from ordinary Site Read/Builder Write access. Authentication/authorization/session/credential state remains excluded from the generic user-meta surface.
+- **Authentication & Credentials** — default-off purpose-specific WordPress Application Password lifecycle through fixed Core REST routes. The generated plaintext credential is returned only once on successful create; stored hashes and reusable credentials are never exposed later.
 - **Code & Extensions** — managed snippets and extension lifecycle.
 - **Source Editing** — separately enabled installed plugin/theme source read/preview/apply/recovery; executable PHP is administrator-level code trust, not a sandbox.
 - **Native Abilities** — default-off broad trust for registered non-Bridge Core/provider Abilities reached through the WP AI Bridge MCP routes. It is not a sandbox; provider/Core permission checks remain mandatory.
 - **Comments** — default-off bounded standard-comment discovery, replies, and moderation through fixed Core comment REST routes. Permanent deletion additionally requires Users & Destructive.
-- **Users & Destructive** — user administration and destructive operations. Generic post-meta and term-meta deletion require this group in addition to Advanced Metadata.
+- **Users & Destructive** — user administration and destructive operations. Generic post/term/user/comment metadata deletion requires this group in addition to Advanced Metadata.
 
 Only Site Read is enabled by default.
 
@@ -38,6 +39,16 @@ A registered target must pass both enabled Native Abilities and its own native p
 
 Disabling Native Abilities takes effect on subsequent Bridge calls because settings are read at execution time. The exact Bridge request context is balanced with unconditional cleanup; unrelated REST routes are not governed by that context.
 
+
+## Application Password boundary
+
+Authentication & Credentials is separate default-off consent for WordPress Application Password administration. Existing Site Read, Users & Destructive, Advanced Metadata, Native Abilities, or historical grants do not enable it on fresh installs or upgrades.
+
+The Bridge exposes no generic authentication REST proxy. It constructs only the fixed Core `/wp/v2/users/<user>/application-passwords` collection/item routes and delegates availability, multisite target membership, and the exact `list_app_passwords`, `read_app_password`, `create_app_password`, `edit_app_password`, `delete_app_password`, and `delete_app_passwords` decisions to WordPress Core.
+
+Core returns the plaintext Application Password only when it is created. The Bridge returns that value only in the successful create response and does not store it in Bridge settings, Workspace, mutation logs, errors, later list/get/update/revoke responses, or artifacts. Read/list normalization deliberately excludes Core's stored password/hash field and also omits last-IP data; only UUID, app ID, name, creation time and last-used time are retained as bounded management metadata. Exact/bulk revocation responses discard Core `previous` records rather than relaying secret-bearing internal state.
+
+This group does not manage account passwords, password-reset keys, sessions, cookies, nonces, WP AI Bridge OAuth credentials, or generic user authentication metadata. `_application_passwords` remains blocked from generic user metadata. Revoke-all is a separate operation and requires the explicit `revoke_all` confirmation token.
 
 ## Comments administration boundary
 
@@ -96,9 +107,11 @@ Create contention cleans only the unchanged Bridge-owned row. Update compensatio
 
 The protocol provides bounded optimistic integrity, not serializable isolation. Trusted installed WordPress code can independently change state; newer writes after verification can stale a response immediately. A compensation failure is a diagnostic boundary requiring fresh inspection, not permission to overwrite newer state. The mutation log contains only ability/target type/target ID/status/error code, never term-meta keys, values, full payloads or credentials.
 
+User/comment metadata has its own object-authority, multisite, credential-exclusion and fixed-purpose persistence rules; see [User and comment metadata](./USER-COMMENT-METADATA.md).
+
 ## Stale-write protection
 
-Overwrite-sensitive content, post-metadata, term-metadata, and Workspace operations return change identities. A later update must present the expected current identity. If the object changed after inspection, the Bridge rejects the write and requires the caller to refresh.
+Overwrite-sensitive content, post/term/user/comment metadata, and Workspace operations return change identities. A later update must present the expected current identity. If the object changed after inspection, the Bridge rejects the write and requires the caller to refresh.
 
 Post metadata uses deterministic physical-row identity plus byte-exact row compare-and-swap. Verification is performed within the bounded persistence operation. Concurrent duplicate/add/update/delete interference detected before that verification completes is reported as stale; where the Bridge already changed one row, it performs row-scoped compensation and corresponding lifecycle actions rather than overwriting/deleting concurrent state. If the exact compensation predicate no longer matches, the operation returns a dedicated compensation failure instead of overwriting newer bytes or claiming success.
 

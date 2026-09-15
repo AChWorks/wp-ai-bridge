@@ -81,7 +81,7 @@ Workspace state is private to WordPress and is not exposed through ordinary post
 
 ## Access groups
 
-Bridge permissions are additive to normal WordPress capabilities. Enabling a Bridge group never grants a WordPress capability the connected user does not already have. Advanced Metadata is a deliberate exception to WordPress's generic protected-unregistered-meta default denial: when an administrator enables the group, protected unregistered post/term metadata may be accessed through the exact target's `edit_post`/`edit_term` authority. Explicit registered/provider metadata authorization contracts remain authoritative.
+Bridge permissions are additive to normal WordPress capabilities. Enabling a Bridge group never grants a WordPress capability the connected user does not already have. Advanced Metadata is a deliberate exception to WordPress's generic protected-unregistered-meta default denial: when an administrator enables the group, protected unregistered post/term/user/comment metadata may be accessed through the exact target's native edit authority. Explicit registered/provider metadata authorization contracts remain authoritative.
 
 | Group | Purpose |
 | --- | --- |
@@ -90,7 +90,8 @@ Bridge permissions are additive to normal WordPress capabilities. Enabling a Bri
 | **Remote Media** | Import safe HTTP(S) media into the Media Library; Builder Write and native upload authority are also required. |
 | **Live Content** | Permit publishing and other live-content status changes when WordPress also permits them. |
 | **Site Configuration** | Permit bounded global WordPress/theme configuration changes. |
-| **Advanced Metadata** | Permit generic read/update of protected/private post and term metadata for exact objects the connected user may edit, including private/non-REST CPTs and taxonomies; credential-like keys, options, user meta, and Workspace internals remain excluded. |
+| **Advanced Metadata** | Permit generic bounded metadata read/update for exact authorized post, term, user, and comment targets; role/capability/session/application-password/credential-like state, options, and Workspace internals remain excluded. |
+| **Authentication & Credentials** | Permit Core-native WordPress Application Password list/get/create/rename/revoke operations. Disabled by default including upgrades; generated plaintext credentials are returned only once on successful create and are never persisted by the Bridge. |
 | **Code & Extensions** | Permit supported managed-snippet and plugin/theme lifecycle operations. |
 | **Source Editing** | Separately permit installed plugin/theme source read/preview/apply/recovery. Code & Extensions and native WordPress source-edit authority are still required. Disabled by default, including upgrades. |
 | **Native Abilities** | Permit registered Core/provider Abilities to execute through the WP AI Bridge MCP routes when their own WordPress/provider permission checks also allow it. This is broad registered-operation trust, not a sandbox, and is disabled by default including upgrades. |
@@ -105,7 +106,7 @@ Only **Site Read** is enabled by default.
 
 `wp-native-builder/media-import-url` accepts a public HTTP(S) URL and a filename, streams it within the current WordPress upload limit, and creates a normal attachment. It requires explicit **Remote Media** plus **Builder Write** access; upgrades do not enable it automatically. See [URL media import](./docs/ABILITIES.md#url-media-import).
 
-Plugin/theme installation is deliberately narrower: it accepts WordPress.org slugs through WordPress administration APIs. Source Editing is a separate administrator-level trust boundary and is not enabled by Code & Extensions alone. The Bridge does **not** expose arbitrary package URLs, shell commands, generic SQL, unrestricted filesystem access, arbitrary WordPress options/user-meta administration, or credential retrieval.
+Plugin/theme installation is deliberately narrower: it accepts WordPress.org slugs through WordPress administration APIs. Source Editing is a separate administrator-level trust boundary and is not enabled by Code & Extensions alone. The Bridge does **not** expose arbitrary package URLs, shell commands, generic SQL, unrestricted filesystem access, arbitrary WordPress options, or generic credential retrieval. WordPress Application Passwords are available only through the separate default-off purpose-specific lifecycle described above.
 
 ## Compatibility identifiers
 
@@ -113,7 +114,7 @@ The public product is WP AI Bridge, but several established machine identifiers 
 
 ## Optional integrations
 
-Integration is discovery-first: provider-owned public WordPress Abilities are reused at runtime, so a compatible new plugin or theme should normally require no Bridge-specific code. Remote execution of those registered provider/Core Abilities through the Bridge requires explicit **Native Abilities** access in addition to the provider's own permission callback. Provider fallbacks are reserved for bounded gaps with documented public APIs. Generic post and term metadata is provider-neutral and does not require a new Bridge adapter merely because a plugin/theme stores state in `post_meta` or `term_meta`. See [Architecture](./docs/ARCHITECTURE.md#discovery-and-reuse).
+Integration is discovery-first: provider-owned public WordPress Abilities are reused at runtime, so a compatible new plugin or theme should normally require no Bridge-specific code. Remote execution of those registered provider/Core Abilities through the Bridge requires explicit **Native Abilities** access in addition to the provider's own permission callback. Provider fallbacks are reserved for bounded gaps with documented public APIs. Generic post, term, user, and comment metadata is provider-neutral and does not require a new Bridge adapter merely because a plugin/theme stores state in `post_meta` or `term_meta`. See [Architecture](./docs/ARCHITECTURE.md#discovery-and-reuse).
 
 - **Astra / Astra Pro:** enable Astra's **Abilities** setting. A separate Astra MCP server is not required for this Bridge setup.
 - **Code Snippets:** compatible provider APIs are used for managed snippet lifecycle; the Bridge does not directly evaluate submitted code.
@@ -134,13 +135,14 @@ WP AI Bridge is intentionally not a general remote-administration shell. It comb
 - bounded mutation logging;
 - provider-native permission checks where integrations are used.
 
-Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Source Editing, Native Abilities, or destructive access on an important site.
+Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Authentication & Credentials, Source Editing, Native Abilities, or destructive access on an important site.
 
 ## Documentation
 
 - [Installation and connection](./docs/INSTALLATION.md)
 - [User guide](./docs/USER-GUIDE.md)
 - [Ability reference](./docs/ABILITIES.md)
+- [Application Password boundary](./docs/ABILITIES.md#application-password-boundary)
 - [Integrations](./docs/INTEGRATIONS.md)
 - [Security](./docs/SECURITY.md)
 - [Architecture](./docs/ARCHITECTURE.md)

@@ -51,6 +51,11 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `users-read` | Site Read | Read bounded user/role information without credential material. |
 | `user-upsert` | Users & Destructive | Create/update a user and assign an editable role. |
 | `user-remove` | Users & Destructive | Remove a user with explicit reassignment. |
+| `application-passwords-read` | Authentication & Credentials | List bounded Application Password metadata or read one exact UUID through the fixed Core REST controller; stored hashes and reusable credentials are never returned. |
+| `application-password-create` | Authentication & Credentials | Create one Core Application Password for an exact authorized user; the generated plaintext credential is returned only in this successful create response. |
+| `application-password-update` | Authentication & Credentials | Rename one exact Application Password through Core authority and lifecycle checks. |
+| `application-password-delete` | Authentication & Credentials | Revoke one exact Application Password through Core. |
+| `application-passwords-delete-all` | Authentication & Credentials | Revoke all Application Passwords for one exact user only with the explicit `revoke_all` confirmation token. |
 | `comments-read` | Comments | List/get bounded standard WordPress comment data through the fixed Core comments REST routes; private author transport fields and arbitrary meta are omitted. |
 | `comment-reply` | Comments | Create one bounded reply on an exact post/parent through Core comment creation; caller cannot override author/IP/status/meta. |
 | `comment-status` | Comments | Apply one closed moderation status transition through Core comment lifecycle and native moderation authority. |
@@ -60,6 +65,17 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `workspace-task` | Site Read / Builder Write | List/read/create/update/transition/archive private Workspace tasks. |
 
 
+
+
+## Application Password boundary
+
+`Authentication & Credentials` is a separate default-off delegation group. Enabling Users & Destructive, Advanced Metadata, Native Abilities, or another historical group does not enable it implicitly.
+
+The Bridge uses only the fixed WordPress Core Application Password REST route family for an exact user. Core remains authoritative for Application Password availability, multisite membership and the `list_app_passwords`, `read_app_password`, `create_app_password`, `edit_app_password`, `delete_app_password`, and `delete_app_passwords` capability checks.
+
+The generated Application Password is intentionally returned only by `application-password-create`, because Core exposes the plaintext credential only when it is created. The Bridge never persists that plaintext value, never exposes the stored Core hash, and does not include credentials, UUIDs, app IDs, or request payloads in the mutation log. Later list/get/update/revoke responses contain only bounded administrative metadata or deletion confirmation.
+
+This surface does not manage WordPress account passwords, password-reset keys, sessions, cookies, nonces, WP AI Bridge OAuth tokens, or generic authentication metadata. `_application_passwords` remains outside generic user metadata.
 
 ## Comments administration boundary
 
