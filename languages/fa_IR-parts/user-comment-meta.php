@@ -12,6 +12,7 @@ return array(
 	'A metadata key is required.' => 'یک کلید فراداده الزامی است.',
 	'Advanced Metadata access is disabled in WP AI Bridge settings.' => 'دسترسی فراداده پیشرفته در تنظیمات WP AI Bridge غیرفعال است.',
 	'Authentication, authorization, session, or credential-like metadata keys are outside the generic Bridge metadata surface.' => 'کلیدهای فراداده مربوط به احراز هویت، مجوز، نشست یا اطلاعات اعتباری خارج از سطح عمومی فراداده بریج هستند.',
+	'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.' => 'فراداده هم‌زمان هنگام تغییر عوض شد و بریج نتوانست ردیف فیزیکی دقیق خود را به‌صورت ایمن بازگرداند.',
 	'Metadata changed after it was read. Refresh the metadata state before mutating it.' => 'فراداده پس از خواندن تغییر کرده است. پیش از تغییر، وضعیت فراداده را تازه‌سازی کنید.',
 	'Physical metadata state could not be established safely.' => 'وضعیت فیزیکی فراداده به‌صورت ایمن قابل تعیین نبود.',
 	'Specify one exact metadata key before requesting metadata values.' => 'پیش از درخواست مقادیر فراداده، یک کلید دقیق مشخص کنید.',
