@@ -14,6 +14,20 @@ Bridge-owned operations must satisfy every applicable layer:
 
 OAuth never enables a Bridge access group and never grants a WordPress capability. Registered non-Bridge Core/provider Abilities executed through the WP AI Bridge MCP routes additionally require the default-off **Native Abilities** group; the target's own WordPress/provider permission callback remains independently authoritative. Bridge-owned operations keep their documented ability-specific groups.
 
+## Repository review and live-system boundary
+
+Security-sensitive development and review of this repository are source-first and non-production by default. Follow the [repository-scoped evidence ladder and defensive task/review envelope](./DEVELOPMENT.md#repository-scoped-ai-development-and-security-review) before considering live-system activity.
+
+Routine implementation and HIGH_ASSURANCE source review do not require a production WordPress site, real user credentials, real Application Passwords, OAuth/private-key material, bearer/session tokens, unrelated third-party targets, or production mutation. Use synthetic fixtures and isolated WordPress containers for adversarial ordering, concurrency, reentrancy, authorization, and provenance cases whenever feasible.
+
+Prompts, Issues, pull requests, review packets, logs, fixtures, and CI artifacts must not request or contain raw secrets or unnecessary personal data. If an explicitly authorized environment legitimately requires credentialed access, use the approved runtime/connector mechanism without surfacing the secret value to the model or repository artifacts.
+
+Source-code review is not operational penetration testing. Any future live penetration test, production attack simulation, privileged credential operation, or third-party interaction must be a separate explicitly authorized work item identifying the exact target, environment, purpose, allowed effects, and applicable approval boundary. Repository access, CI access, or HIGH_ASSURANCE status does not imply that authorization.
+
+If a provider or tool restricts one review route, continue safe repository-scoped analysis and use equivalent authoritative evidence where available. Report any remaining evidence limitation instead of bypassing a platform safety/identity check, fabricating proof, or weakening a security invariant. A restriction that genuinely prevents required evidence makes the review incomplete; it does not turn missing evidence into approval.
+
+Independent review and green CI remain evidence, not authorization. HIGH-risk integration, production deployment, live permission enablement, production credential lifecycle operations, and destructive or irreversible actions retain their separate current gates.
+
 ## Access groups
 
 - **Site Read** — read-only inspection surfaces.
