@@ -56,7 +56,7 @@ If a ready PR needs remediation, return it to Draft, batch related fixes, use ta
 
 Independent HIGH_ASSURANCE review, when required by the active contract, starts only after the required candidate evidence is complete. If the candidate later changes, re-review only the changed surface and any assumptions it can affect; do not discard sound analysis of unchanged code.
 
-A runtime-relevant push to `main` still runs the full assurance set as a conservative fallback while direct pushes are possible. Documentation-only pushes to `main` do not start plugin CI. Rapidly superseded runs for the same branch are cancelled. Removing the remaining post-merge runtime duplicate requires reliable proof that `main` can only receive an already-assured PR result; do not trade away that safety merely for speed.
+`main` is protected and PR-only, including for administrators; direct pushes, force pushes, and branch deletion are disabled. CI is therefore PR-only and does not rerun the same assurance suite after merge. Immediately before integration, refresh the candidate/target identity and reuse existing evidence unless target drift can affect the property or assumption it proved; tree-equivalent or documentation-only drift does not justify repeating broad technical validation.
 
 ## Repository-scoped AI development and security review
 
