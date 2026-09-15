@@ -18,12 +18,19 @@ use WP_Error;
 final class User_Comment_Meta_Abilities {
 	/** @var Permissions */
 	private $permissions;
+
 	/** @var Mutation_Log */
 	private $log;
+
 	/** @var User_Comment_Meta_Store */
 	private $store;
 
-	/** @param Permissions $permissions Permission service. @param Mutation_Log $log Mutation log. */
+	/**
+	 * Creates the provider.
+	 *
+	 * @param Permissions  $permissions Permission service.
+	 * @param Mutation_Log $log         Mutation log.
+	 */
 	public function __construct( Permissions $permissions, Mutation_Log $log ) {
 		$this->permissions = $permissions;
 		$this->log         = $log;
@@ -74,35 +81,71 @@ final class User_Comment_Meta_Abilities {
 				)
 			);
 		}
+
 		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/** @param array<string,mixed> $input Input. @return bool */
-	public function can_read_user( $input ) { return $this->can_read( 'user', $input ); }
+	public function can_read_user( $input ) {
+		return $this->can_read( 'user', $input );
+	}
+
 	/** @param array<string,mixed> $input Input. @return bool */
-	public function can_read_comment( $input ) { return $this->can_read( 'comment', $input ); }
+	public function can_read_comment( $input ) {
+		return $this->can_read( 'comment', $input );
+	}
+
 	/** @param array<string,mixed> $input Input. @return bool */
-	public function can_update_user( $input ) { return $this->can_update( 'user', $input ); }
+	public function can_update_user( $input ) {
+		return $this->can_update( 'user', $input );
+	}
+
 	/** @param array<string,mixed> $input Input. @return bool */
-	public function can_update_comment( $input ) { return $this->can_update( 'comment', $input ); }
+	public function can_update_comment( $input ) {
+		return $this->can_update( 'comment', $input );
+	}
+
 	/** @param array<string,mixed> $input Input. @return bool */
-	public function can_delete_user( $input ) { return $this->can_delete( 'user', $input ); }
+	public function can_delete_user( $input ) {
+		return $this->can_delete( 'user', $input );
+	}
+
 	/** @param array<string,mixed> $input Input. @return bool */
-	public function can_delete_comment( $input ) { return $this->can_delete( 'comment', $input ); }
+	public function can_delete_comment( $input ) {
+		return $this->can_delete( 'comment', $input );
+	}
 
 	/** @param array<string,mixed> $input Input. @return array<string,mixed>|WP_Error */
-	public function read_user( $input ) { return $this->read( 'user', $input ); }
-	/** @param array<string,mixed> $input Input. @return array<string,mixed>|WP_Error */
-	public function read_comment( $input ) { return $this->read( 'comment', $input ); }
-	/** @param array<string,mixed> $input Input. @return array<string,mixed>|WP_Error */
-	public function update_user( $input ) { return $this->update( 'user', $input ); }
-	/** @param array<string,mixed> $input Input. @return array<string,mixed>|WP_Error */
-	public function update_comment( $input ) { return $this->update( 'comment', $input ); }
-	/** @param array<string,mixed> $input Input. @return array<string,mixed>|WP_Error */
-	public function delete_user( $input ) { return $this->delete( 'user', $input ); }
-	/** @param array<string,mixed> $input Input. @return array<string,mixed>|WP_Error */
-	public function delete_comment( $input ) { return $this->delete( 'comment', $input ); }
+	public function read_user( $input ) {
+		return $this->read( 'user', $input );
+	}
 
+	/** @param array<string,mixed> $input Input. @return array<string,mixed>|WP_Error */
+	public function read_comment( $input ) {
+		return $this->read( 'comment', $input );
+	}
+
+	/** @param array<string,mixed> $input Input. @return array<string,mixed>|WP_Error */
+	public function update_user( $input ) {
+		return $this->update( 'user', $input );
+	}
+
+	/** @param array<string,mixed> $input Input. @return array<string,mixed>|WP_Error */
+	public function update_comment( $input ) {
+		return $this->update( 'comment', $input );
+	}
+
+	/** @param array<string,mixed> $input Input. @return array<string,mixed>|WP_Error */
+	public function delete_user( $input ) {
+		return $this->delete( 'user', $input );
+	}
+
+	/** @param array<string,mixed> $input Input. @return array<string,mixed>|WP_Error */
+	public function delete_comment( $input ) {
+		return $this->delete( 'comment', $input );
+	}
+
+	/** @return bool */
 	private function can_read( $type, $input ) {
 		if ( ! $this->permissions->allowed( Settings::GROUP_ADVANCED_METADATA, 'read' ) || ! is_array( $input ) ) {
 			return false;
@@ -123,6 +166,7 @@ final class User_Comment_Meta_Abilities {
 		return ! is_wp_error( $rows ) && $this->can_access_meta_key( $type, $id, $key, empty( $rows ) ? 'add' : 'edit' );
 	}
 
+	/** @return bool */
 	private function can_update( $type, $input ) {
 		if ( ! $this->permissions->allowed( Settings::GROUP_ADVANCED_METADATA, 'read' ) || ! is_array( $input ) || empty( $input['key'] ) ) {
 			return false;
@@ -136,15 +180,19 @@ final class User_Comment_Meta_Abilities {
 		return ! is_wp_error( $rows ) && $this->can_access_meta_key( $type, $id, $key, empty( $rows ) ? 'add' : 'edit' );
 	}
 
+	/** @return bool */
 	private function can_delete( $type, $input ) {
 		if ( ! $this->permissions->allowed( Settings::GROUP_ADVANCED_METADATA, 'read' ) || ! $this->permissions->allowed( Settings::GROUP_USERS_DESTRUCTIVE, 'read' ) || ! is_array( $input ) || empty( $input['key'] ) ) {
 			return false;
 		}
 		$id  = $this->input_id( $type, $input );
 		$key = (string) $input['key'];
-		return (bool) $this->authorized_target( $type, $id ) && ! $this->is_sensitive_key( $type, $key ) && $this->can_access_meta_key( $type, $id, $key, 'delete' );
+		return (bool) $this->authorized_target( $type, $id )
+			&& ! $this->is_sensitive_key( $type, $key )
+			&& $this->can_access_meta_key( $type, $id, $key, 'delete' );
 	}
 
+	/** @return array<string,mixed>|WP_Error */
 	private function read( $type, $input ) {
 		$target = $this->validated_target( $type, $input );
 		if ( is_wp_error( $target ) ) {
@@ -156,6 +204,7 @@ final class User_Comment_Meta_Abilities {
 		if ( $include_values && '' === $key ) {
 			return new WP_Error( 'object_meta_key_required_for_values', __( 'Specify one exact metadata key before requesting metadata values.', 'wp-native-builder-bridge' ) );
 		}
+
 		if ( '' !== $key ) {
 			if ( $this->is_sensitive_key( $type, $key ) ) {
 				return $this->sensitive_key_error();
@@ -169,7 +218,14 @@ final class User_Comment_Meta_Abilities {
 				return $allowed;
 			}
 			$item = $this->item_from_rows( $key, $rows, $include_values );
-			return is_wp_error( $item ) ? $item : array( 'object_type' => $type, 'object_id' => $id, 'items' => array( $item ) );
+			if ( is_wp_error( $item ) ) {
+				return $item;
+			}
+			return array(
+				'object_type' => $type,
+				'object_id'   => $id,
+				'items'       => array( $item ),
+			);
 		}
 
 		$keys = $this->store->rows( $type, $id, null, 200 );
@@ -184,7 +240,7 @@ final class User_Comment_Meta_Abilities {
 				continue;
 			}
 			$seen[ $candidate ] = true;
-			$rows = $this->store->rows( $type, $id, $candidate );
+			$rows               = $this->store->rows( $type, $id, $candidate );
 			if ( is_wp_error( $rows ) ) {
 				continue;
 			}
@@ -193,9 +249,15 @@ final class User_Comment_Meta_Abilities {
 				$items[] = $item;
 			}
 		}
-		return array( 'object_type' => $type, 'object_id' => $id, 'items' => $items );
+
+		return array(
+			'object_type' => $type,
+			'object_id'   => $id,
+			'items'       => $items,
+		);
 	}
 
+	/** @return array<string,mixed>|WP_Error */
 	private function update( $type, $input ) {
 		$id      = $this->input_id( $type, $input );
 		$ability = 'wp-native-builder/' . $type . '-meta-update';
@@ -210,6 +272,7 @@ final class User_Comment_Meta_Abilities {
 		if ( $this->is_sensitive_key( $type, $key ) ) {
 			return $this->logged_error( $this->sensitive_key_error(), $type, $id, $ability );
 		}
+
 		$rows = $this->store->rows( $type, $id, $key );
 		if ( is_wp_error( $rows ) ) {
 			return $this->logged_error( $rows, $type, $id, $ability );
@@ -227,6 +290,7 @@ final class User_Comment_Meta_Abilities {
 				return $this->logged_error( $value_error, $type, $id, $ability );
 			}
 		}
+
 		$current  = $this->state_hash( $rows );
 		$expected = isset( $input['expected_state_hash'] ) ? (string) $input['expected_state_hash'] : '';
 		if ( '' === $expected || ! hash_equals( $current, $expected ) ) {
@@ -237,11 +301,13 @@ final class User_Comment_Meta_Abilities {
 			return $this->logged_error( $value, $type, $id, $ability );
 		}
 		if ( ! $this->is_losslessly_json_compatible( $value ) ) {
-			return $this->logged_error( new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) ), $type, $id, $ability );
+			$error = new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $error, $type, $id, $ability );
 		}
 		if ( empty( $rows ) ) {
 			return $this->create_value( $type, $id, $key, $value, $current, $ability );
 		}
+
 		$prepared = $this->store->prepare_value( $type, $id, $key, $value );
 		if ( is_wp_error( $prepared ) ) {
 			return $this->logged_error( $prepared, $type, $id, $ability );
@@ -253,6 +319,7 @@ final class User_Comment_Meta_Abilities {
 		if ( $rows[0]['raw_value'] === $prepared['raw_value'] ) {
 			return $this->item_from_rows( $key, $rows, true );
 		}
+
 		$verified = $this->store->replace_row( $type, $id, $key, $rows[0], $prepared );
 		if ( is_wp_error( $verified ) ) {
 			return $this->logged_error( $verified, $type, $id, $ability );
@@ -261,11 +328,13 @@ final class User_Comment_Meta_Abilities {
 		return $this->item_from_rows( $key, array( $verified ), true );
 	}
 
+	/** @return array<string,mixed>|WP_Error */
 	private function delete( $type, $input ) {
 		$id      = $this->input_id( $type, $input );
 		$ability = 'wp-native-builder/' . $type . '-meta-delete';
 		if ( ! $this->permissions->allowed( Settings::GROUP_USERS_DESTRUCTIVE, 'read' ) ) {
-			return $this->logged_error( new WP_Error( 'destructive_access_disabled', __( 'Users & Destructive access is required before deleting metadata.', 'wp-native-builder-bridge' ) ), $type, $id, $ability );
+			$error = new WP_Error( 'destructive_access_disabled', __( 'Users & Destructive access is required before deleting metadata.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $error, $type, $id, $ability );
 		}
 		$target = $this->validated_target( $type, $input );
 		if ( is_wp_error( $target ) ) {
@@ -273,9 +342,12 @@ final class User_Comment_Meta_Abilities {
 		}
 		$key = isset( $input['key'] ) ? (string) $input['key'] : '';
 		if ( '' === $key || $this->is_sensitive_key( $type, $key ) ) {
-			$error = '' === $key ? new WP_Error( 'object_meta_key_required', __( 'A metadata key is required.', 'wp-native-builder-bridge' ) ) : $this->sensitive_key_error();
+			$error = '' === $key
+				? new WP_Error( 'object_meta_key_required', __( 'A metadata key is required.', 'wp-native-builder-bridge' ) )
+				: $this->sensitive_key_error();
 			return $this->logged_error( $error, $type, $id, $ability );
 		}
+
 		$allowed = $this->validate_key_access( $type, $id, $key, 'delete' );
 		if ( is_wp_error( $allowed ) ) {
 			return $this->logged_error( $allowed, $type, $id, $ability );
@@ -287,14 +359,22 @@ final class User_Comment_Meta_Abilities {
 		if ( count( $rows ) > 1 ) {
 			return $this->logged_error( new WP_Error( 'object_meta_multiple_values_unsupported', __( 'This metadata key has multiple rows. The generic deleter refuses an ambiguous value set.', 'wp-native-builder-bridge' ) ), $type, $id, $ability );
 		}
+
 		$current  = $this->state_hash( $rows );
 		$expected = isset( $input['expected_state_hash'] ) ? (string) $input['expected_state_hash'] : '';
 		if ( '' === $expected || ! hash_equals( $current, $expected ) ) {
 			return $this->logged_error( $this->stale_error(), $type, $id, $ability );
 		}
 		if ( empty( $rows ) ) {
-			return array( 'object_type' => $type, 'object_id' => $id, 'key' => $key, 'deleted' => false, 'state_hash' => $current );
+			return array(
+				'object_type' => $type,
+				'object_id'   => $id,
+				'key'         => $key,
+				'deleted'     => false,
+				'state_hash'  => $current,
+			);
 		}
+
 		$value_error = $this->supported_value( $rows[0]['value'] );
 		if ( is_wp_error( $value_error ) ) {
 			return $this->logged_error( $value_error, $type, $id, $ability );
@@ -304,9 +384,16 @@ final class User_Comment_Meta_Abilities {
 			return $this->logged_error( $result, $type, $id, $ability );
 		}
 		$this->log->record( $ability, $type . '_meta', $id, true, '' );
-		return array( 'object_type' => $type, 'object_id' => $id, 'key' => $key, 'deleted' => true, 'state_hash' => $this->state_hash( array() ) );
+		return array(
+			'object_type' => $type,
+			'object_id'   => $id,
+			'key'         => $key,
+			'deleted'     => true,
+			'state_hash'  => $this->state_hash( array() ),
+		);
 	}
 
+	/** @return array<string,mixed>|WP_Error */
 	private function create_value( $type, $id, $key, $value, $current_hash, $ability ) {
 		$creation = $this->store->create_unique_row( $type, $id, $key, $value );
 		if ( is_wp_error( $creation ) ) {
@@ -318,10 +405,14 @@ final class User_Comment_Meta_Abilities {
 		if ( is_wp_error( $after ) ) {
 			return $this->logged_error( $after, $type, $id, $ability );
 		}
+
 		if ( ! is_int( $result ) || $result < 1 ) {
-			$error = $this->state_hash( $after ) === $current_hash ? new WP_Error( 'object_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-native-builder-bridge' ) ) : $this->stale_error();
+			$error = $this->state_hash( $after ) === $current_hash
+				? new WP_Error( 'object_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-native-builder-bridge' ) )
+				: $this->stale_error();
 			return $this->logged_error( $error, $type, $id, $ability );
 		}
+
 		$created = null;
 		foreach ( $after as $row ) {
 			if ( (int) $row['meta_id'] === $result ) {
@@ -338,15 +429,20 @@ final class User_Comment_Meta_Abilities {
 			}
 			return $this->logged_error( $this->stale_error(), $type, $id, $ability );
 		}
+
 		$value_error = $this->supported_value( $created['value'] );
 		if ( is_wp_error( $value_error ) ) {
-			$this->store->cleanup_created_row( $type, $created );
+			$cleanup = $this->store->cleanup_created_row( $type, $created );
+			if ( is_wp_error( $cleanup ) ) {
+				return $this->logged_error( $cleanup, $type, $id, $ability );
+			}
 			return $this->logged_error( $value_error, $type, $id, $ability );
 		}
 		$this->log->record( $ability, $type . '_meta', $id, true, '' );
 		return $this->item_from_rows( $key, $after, true );
 	}
 
+	/** @return object|null */
 	private function authorized_target( $type, $id ) {
 		$id = (int) $id;
 		if ( $id < 1 ) {
@@ -360,24 +456,32 @@ final class User_Comment_Meta_Abilities {
 		return $target && current_user_can( 'edit_comment', $id ) ? $target : null;
 	}
 
+	/** @return object|WP_Error */
 	private function validated_target( $type, $input ) {
 		if ( ! $this->permissions->allowed( Settings::GROUP_ADVANCED_METADATA, 'read' ) ) {
 			return new WP_Error( 'advanced_metadata_access_disabled', __( 'Advanced Metadata access is disabled in WP AI Bridge settings.', 'wp-native-builder-bridge' ) );
 		}
 		$id     = $this->input_id( $type, $input );
 		$target = $this->authorized_target( $type, $id );
-		return $target ? $target : new WP_Error( 'object_meta_target_not_allowed', __( 'The requested metadata target does not exist or cannot be edited by the current WordPress user.', 'wp-native-builder-bridge' ) );
+		return $target
+			? $target
+			: new WP_Error( 'object_meta_target_not_allowed', __( 'The requested metadata target does not exist or cannot be edited by the current WordPress user.', 'wp-native-builder-bridge' ) );
 	}
 
+	/** @return true|WP_Error */
 	private function validate_key_access( $type, $id, $key, $operation ) {
-		return $this->can_access_meta_key( $type, $id, $key, $operation ) ? true : new WP_Error( 'object_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-native-builder-bridge' ) );
+		return $this->can_access_meta_key( $type, $id, $key, $operation )
+			? true
+			: new WP_Error( 'object_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-native-builder-bridge' ) );
 	}
 
+	/** @return bool */
 	private function can_access_meta_key( $type, $id, $key, $operation ) {
-		$object_cap = 'user' === $type ? 'edit_user' : 'edit_comment';
-		if ( ! current_user_can( $object_cap, (int) $id ) ) {
+		$object_capability = 'user' === $type ? 'edit_user' : 'edit_comment';
+		if ( ! current_user_can( $object_capability, (int) $id ) ) {
 			return false;
 		}
+
 		$capability = $operation . '_' . $type . '_meta';
 		$protected  = function_exists( 'is_protected_meta' ) && is_protected_meta( $key, $type );
 		if ( ! $protected || $this->has_explicit_meta_auth_contract( $type, $id, $key ) ) {
@@ -386,6 +490,7 @@ final class User_Comment_Meta_Abilities {
 		if ( ! function_exists( 'map_meta_cap' ) || ! function_exists( 'get_current_user_id' ) ) {
 			return true;
 		}
+
 		$mapped = map_meta_cap( $capability, get_current_user_id(), (int) $id, (string) $key );
 		foreach ( array_unique( (array) $mapped ) as $required ) {
 			if ( $required === $capability ) {
@@ -398,6 +503,7 @@ final class User_Comment_Meta_Abilities {
 		return true;
 	}
 
+	/** @return bool */
 	private function has_explicit_meta_auth_contract( $type, $id, $key ) {
 		$subtype = function_exists( 'get_object_subtype' ) ? get_object_subtype( $type, (int) $id ) : '';
 		if ( function_exists( 'get_registered_meta_keys' ) ) {
@@ -415,6 +521,7 @@ final class User_Comment_Meta_Abilities {
 			|| ( '' !== $subtype && (bool) has_filter( 'auth_' . $type . '_' . $subtype . '_meta_' . $key ) );
 	}
 
+	/** @return bool */
 	private function is_sensitive_key( $type, $key ) {
 		if ( Metadata_Key_Policy::is_sensitive( $key ) ) {
 			return true;
@@ -424,10 +531,10 @@ final class User_Comment_Meta_Abilities {
 		}
 		$bounded    = preg_replace( '/(?<=[a-z0-9])(?=[A-Z])/', '_', (string) $key );
 		$normalized = strtolower( trim( (string) preg_replace( '/[^A-Za-z0-9]+/', '_', (string) $bounded ), '_' ) );
-		return 1 === preg_match( '/(^|_)(capabilities|user_level|session_tokens|application_passwords?)$/', $normalized )
-			|| 1 === preg_match( '/(^|_)(capabilities|user_level|session_tokens|application_passwords?)(_|$)/', $normalized );
+		return 1 === preg_match( '/(^|_)(capabilities|user_level|session_tokens|application_passwords?)($|_)/', $normalized );
 	}
 
+	/** @return array<string,mixed>|WP_Error */
 	private function item_from_rows( $key, array $rows, $include_values ) {
 		$types  = array();
 		$values = array();
@@ -439,38 +546,58 @@ final class User_Comment_Meta_Abilities {
 				if ( is_wp_error( $json ) ) {
 					return $json;
 				}
-				$values[] = array( 'type' => $this->value_type( $value ), 'value_json' => $json );
+				$values[] = array(
+					'type'       => $this->value_type( $value ),
+					'value_json' => $json,
+				);
 			}
 		}
-		return array( 'key' => $key, 'count' => count( $rows ), 'state_hash' => $this->state_hash( $rows ), 'value_types' => array_values( array_unique( $types ) ), 'values' => $values );
+		return array(
+			'key'         => $key,
+			'count'       => count( $rows ),
+			'state_hash'  => $this->state_hash( $rows ),
+			'value_types' => array_values( array_unique( $types ) ),
+			'values'      => $values,
+		);
 	}
 
+	/** @return string */
 	private function state_hash( array $rows ) {
 		if ( empty( $rows ) ) {
 			return hash( 'sha256', (string) maybe_serialize( array() ) );
 		}
 		$identity = array();
 		foreach ( $rows as $row ) {
-			$identity[] = array( (int) $row['meta_id'], null === $row['raw_value'] ? 'null' : 'string', $row['raw_value'] );
+			$identity[] = array(
+				(int) $row['meta_id'],
+				null === $row['raw_value'] ? 'null' : 'string',
+				$row['raw_value'],
+			);
 		}
 		return hash( 'sha256', (string) maybe_serialize( $identity ) );
 	}
 
+	/** @return true|WP_Error */
 	private function supported_value( $value ) {
 		if ( $this->contains_object_or_resource( $value ) ) {
 			return new WP_Error( 'object_meta_object_value_unsupported', __( 'This metadata value contains a PHP object or resource and cannot be losslessly mutated through the generic JSON metadata contract.', 'wp-native-builder-bridge' ) );
 		}
-		return $this->is_losslessly_json_compatible( $value ) ? true : new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
+		return $this->is_losslessly_json_compatible( $value )
+			? true
+			: new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
 	}
 
+	/** @return WP_Error */
 	private function sensitive_key_error() {
 		return new WP_Error( 'sensitive_object_meta_key', __( 'Authentication, authorization, session, or credential-like metadata keys are outside the generic Bridge metadata surface.', 'wp-native-builder-bridge' ) );
 	}
 
+	/** @return WP_Error */
 	private function stale_error() {
 		return new WP_Error( 'stale_object_meta_conflict', __( 'Metadata changed after it was read. Refresh the metadata state before mutating it.', 'wp-native-builder-bridge' ) );
 	}
 
+	/** @return string|WP_Error */
 	private function encode_lossless_value( $value ) {
 		if ( ! $this->is_losslessly_json_compatible( $value ) ) {
 			return new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
@@ -482,6 +609,7 @@ final class User_Comment_Meta_Abilities {
 		}
 	}
 
+	/** @return mixed|WP_Error */
 	private function decode_value( $json ) {
 		try {
 			return json_decode( (string) $json, true, 512, JSON_THROW_ON_ERROR );
@@ -490,6 +618,7 @@ final class User_Comment_Meta_Abilities {
 		}
 	}
 
+	/** @return bool */
 	private function contains_object_or_resource( $value, $depth = 0 ) {
 		if ( $depth > 64 || is_object( $value ) || is_resource( $value ) ) {
 			return true;
@@ -504,6 +633,7 @@ final class User_Comment_Meta_Abilities {
 		return false;
 	}
 
+	/** @return bool */
 	private function is_losslessly_json_compatible( $value, $depth = 0 ) {
 		if ( $depth > 64 || is_object( $value ) || is_resource( $value ) ) {
 			return false;
@@ -523,6 +653,7 @@ final class User_Comment_Meta_Abilities {
 		}
 	}
 
+	/** @return string */
 	private function value_type( $value ) {
 		if ( is_null( $value ) ) {
 			return 'null';
@@ -545,63 +676,94 @@ final class User_Comment_Meta_Abilities {
 		return 'string';
 	}
 
+	/** @return int */
 	private function input_id( $type, $input ) {
 		$field = 'user' === $type ? 'user_id' : 'comment_id';
 		return is_array( $input ) && isset( $input[ $field ] ) ? (int) $input[ $field ] : 0;
 	}
 
+	/** @return WP_Error */
 	private function logged_error( WP_Error $error, $type, $id, $ability ) {
 		$this->log->record( $ability, $type . '_meta', (int) $id, false, $error->get_error_code() );
 		return $error;
 	}
 
+	/** @return array<string,mixed> */
 	private function read_input_schema( $type ) {
 		$field = 'user' === $type ? 'user_id' : 'comment_id';
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				$field            => array( 'type' => 'integer', 'minimum' => 1 ),
-				'key'             => array( 'type' => 'string', 'minLength' => 1, 'maxLength' => 191 ),
-				'include_values'  => array( 'type' => 'boolean', 'default' => false ),
+				$field            => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+				),
+				'key'             => array(
+					'type'      => 'string',
+					'minLength' => 1,
+					'maxLength' => 191,
+				),
+				'include_values'  => array(
+					'type'    => 'boolean',
+					'default' => false,
+				),
 			),
 			'required'             => array( $field ),
 			'additionalProperties' => false,
 		);
 	}
 
+	/** @return array<string,mixed> */
 	private function update_input_schema( $type ) {
 		$schema = $this->read_input_schema( $type );
 		unset( $schema['properties']['include_values'] );
-		$schema['properties']['expected_state_hash'] = array( 'type' => 'string', 'pattern' => '^[a-f0-9]{64}$' );
-		$schema['properties']['value_json']          = array( 'type' => 'string', 'maxLength' => 1048576 );
+		$schema['properties']['expected_state_hash'] = array(
+			'type'    => 'string',
+			'pattern' => '^[a-f0-9]{64}$',
+		);
+		$schema['properties']['value_json'] = array(
+			'type'      => 'string',
+			'maxLength' => 1048576,
+		);
 		$schema['required'][] = 'key';
 		$schema['required'][] = 'expected_state_hash';
 		$schema['required'][] = 'value_json';
 		return $schema;
 	}
 
+	/** @return array<string,mixed> */
 	private function delete_input_schema( $type ) {
 		$schema = $this->read_input_schema( $type );
 		unset( $schema['properties']['include_values'] );
-		$schema['properties']['expected_state_hash'] = array( 'type' => 'string', 'pattern' => '^[a-f0-9]{64}$' );
+		$schema['properties']['expected_state_hash'] = array(
+			'type'    => 'string',
+			'pattern' => '^[a-f0-9]{64}$',
+		);
 		$schema['required'][] = 'key';
 		$schema['required'][] = 'expected_state_hash';
 		return $schema;
 	}
 
+	/** @return array<string,mixed> */
 	private function item_schema() {
 		return array(
-			'type'       => 'object',
-			'properties' => array(
+			'type'                 => 'object',
+			'properties'           => array(
 				'key'         => array( 'type' => 'string' ),
 				'count'       => array( 'type' => 'integer' ),
 				'state_hash'  => array( 'type' => 'string' ),
-				'value_types' => array( 'type' => 'array', 'items' => array( 'type' => 'string' ) ),
+				'value_types' => array(
+					'type'  => 'array',
+					'items' => array( 'type' => 'string' ),
+				),
 				'values'      => array(
 					'type'  => 'array',
 					'items' => array(
 						'type'                 => 'object',
-						'properties'           => array( 'type' => array( 'type' => 'string' ), 'value_json' => array( 'type' => 'string' ) ),
+						'properties'           => array(
+							'type'       => array( 'type' => 'string' ),
+							'value_json' => array( 'type' => 'string' ),
+						),
 						'required'             => array( 'type', 'value_json' ),
 						'additionalProperties' => false,
 					),
@@ -612,23 +774,31 @@ final class User_Comment_Meta_Abilities {
 		);
 	}
 
+	/** @return array<string,mixed> */
 	private function read_output_schema() {
 		return array(
-			'type'       => 'object',
-			'properties' => array(
-				'object_type' => array( 'type' => 'string', 'enum' => array( 'user', 'comment' ) ),
+			'type'                 => 'object',
+			'properties'           => array(
+				'object_type' => array(
+					'type' => 'string',
+					'enum' => array( 'user', 'comment' ),
+				),
 				'object_id'   => array( 'type' => 'integer' ),
-				'items'       => array( 'type' => 'array', 'items' => $this->item_schema() ),
+				'items'       => array(
+					'type'  => 'array',
+					'items' => $this->item_schema(),
+				),
 			),
 			'required'             => array( 'object_type', 'object_id', 'items' ),
 			'additionalProperties' => false,
 		);
 	}
 
+	/** @return array<string,mixed> */
 	private function delete_output_schema() {
 		return array(
-			'type'       => 'object',
-			'properties' => array(
+			'type'                 => 'object',
+			'properties'           => array(
 				'object_type' => array( 'type' => 'string' ),
 				'object_id'   => array( 'type' => 'integer' ),
 				'key'         => array( 'type' => 'string' ),
@@ -640,10 +810,18 @@ final class User_Comment_Meta_Abilities {
 		);
 	}
 
-	private function meta( $readonly, $destructive, $idempotent ) {
+	/** @return array<string,mixed> */
+	private function meta( $read_only, $destructive, $idempotent ) {
 		return array(
-			'mcp'         => array( 'public' => true, 'type' => 'tool' ),
-			'annotations' => array( 'readonly' => (bool) $readonly, 'destructive' => (bool) $destructive, 'idempotent' => (bool) $idempotent ),
+			'mcp'         => array(
+				'public' => true,
+				'type'   => 'tool',
+			),
+			'annotations' => array(
+				'readonly'    => (bool) $read_only,
+				'destructive' => (bool) $destructive,
+				'idempotent'  => (bool) $idempotent,
+			),
 		);
 	}
 }
