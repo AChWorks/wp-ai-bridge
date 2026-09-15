@@ -83,7 +83,7 @@ final class Settings {
 			),
 			self::GROUP_ADVANCED_METADATA => array(
 				'label'       => __( 'Advanced Metadata', 'wp-native-builder-bridge' ),
-				'description' => __( 'Allow authorized MCP clients to inspect and update protected/private post and term metadata for exact WordPress objects the connected user may edit. Options, user meta, Workspace internals, and credential-like keys remain outside this surface.', 'wp-native-builder-bridge' ),
+				'description' => __( 'Allow authorized MCP clients to inspect and update protected/private post, term, user, and comment metadata for exact WordPress objects the connected user may edit. Options, Workspace internals, role/capability/session/application-password state, and credential-like keys remain outside this surface.', 'wp-native-builder-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
@@ -155,7 +155,7 @@ final class Settings {
 	/**
 	 * Gets effective settings merged with safe defaults.
 	 *
-	 * @return array<string,int> Effective access-group values.
+	 * @return array<string,int> Effective settings.
 	 */
 	public function all() {
 		$stored = get_option( self::OPTION_NAME, array() );

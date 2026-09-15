@@ -80,6 +80,9 @@ jobs:
       - name: Run Issue 58 user/comment metadata suite
         run: bash bin/run-issue58-user-comment-meta.sh '${{ matrix.wordpress_tag }}'
 
+      - name: Run Issue 58 multisite user metadata authority suite
+        run: bash bin/run-issue58-user-meta-multisite.sh '${{ matrix.wordpress_tag }}'
+
       - name: Run Issue 46 multisite source-editing suite
         run: bash bin/run-issue46-multisite.sh '${{ matrix.wordpress_tag }}'
 

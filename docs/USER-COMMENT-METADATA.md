@@ -23,6 +23,12 @@ User targets must resolve through `get_userdata()` and pass `edit_user`. Comment
 
 Registered metadata and explicit `auth_*_meta_*` provider contracts remain authoritative. For an unregistered protected key, Advanced Metadata may replace only WordPress's generic protected-key default denial. Any explicit provider denial, `do_not_allow`, or additional primitive capability produced by WordPress capability mapping still denies the operation.
 
+## Multisite authority
+
+User metadata does not grant network-user administration. WordPress's current `edit_user` mapping remains authoritative on multisite, including Super Admin and `manage_network_users` boundaries. A site administrator who cannot natively edit another network user cannot use generic metadata to read or mutate that user's metadata.
+
+Site-specific role and capability storage remains outside the generic surface. Keys such as `<blog-prefix>capabilities` and `<blog-prefix>user_level` are omitted from broad discovery and rejected for exact access even for a Super Admin. Role changes remain owned by the user-administration contract rather than metadata mutation.
+
 ## Privacy boundary
 
 Broad inspection returns bounded key/state metadata only. Values require one exact requested key.
