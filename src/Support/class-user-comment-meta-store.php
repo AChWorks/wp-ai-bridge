@@ -219,10 +219,10 @@ final class User_Comment_Meta_Store {
 		}
 		$this->after_update( $type, $row, $prepared['value'] );
 
-		$after = $this->rows( $type, $object_id, $key );
-		$expected              = $row;
-		$expected['raw_value'] = $prepared['raw_value'];
-		$expected['value']     = $prepared['value'];
+		$after                   = $this->rows( $type, $object_id, $key );
+		$expected                = $row;
+		$expected['raw_value']   = $prepared['raw_value'];
+		$expected['value']       = $prepared['value'];
 		if ( is_wp_error( $after ) || 1 !== count( $after ) || ! $this->row_matches( $after[0], $expected ) ) {
 			if ( ! $this->restore_updated_row( $type, $row, $prepared['raw_value'] ) ) {
 				return $this->compensation_error();
