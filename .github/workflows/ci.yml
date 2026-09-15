@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 permissions:
   contents: read
@@ -72,9 +72,6 @@ jobs:
           RUN_OPTIONAL_PROVIDERS: '${{ matrix.optional_providers }}'
         run: bash bin/run-integration.sh '${{ matrix.wordpress_tag }}'
 
-      - name: Run consolidated single-site regressions
-        run: bash bin/run-single-site-regressions.sh '${{ matrix.wordpress_tag }}'
-
   specialized:
     name: ${{ matrix.name }} / ${{ matrix.wordpress_tag }}
     if: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
@@ -83,6 +80,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: Single-site regressions
+            runner: bin/run-single-site-regressions.sh
+            wordpress_tag: 6.9-php8.4-apache
+          - name: Single-site regressions
+            runner: bin/run-single-site-regressions.sh
+            wordpress_tag: php8.4-apache
           - name: Issue 58 multisite
             runner: bin/run-issue58-user-meta-multisite.sh
             wordpress_tag: 6.9-php8.4-apache
