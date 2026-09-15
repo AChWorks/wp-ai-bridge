@@ -20,6 +20,7 @@ final class Settings {
 	const GROUP_LIVE_CONTENT      = 'live_content';
 	const GROUP_SITE_CONFIG       = 'site_configuration';
 	const GROUP_ADVANCED_METADATA = 'advanced_metadata';
+	const GROUP_AUTHENTICATION    = 'authentication_credentials';
 	const GROUP_CODE_EXTENSIONS   = 'code_extensions';
 	const GROUP_SOURCE_EDITING    = 'source_editing';
 	const GROUP_NATIVE_ABILITIES  = 'native_abilities';
@@ -84,6 +85,12 @@ final class Settings {
 			self::GROUP_ADVANCED_METADATA => array(
 				'label'       => __( 'Advanced Metadata', 'wp-native-builder-bridge' ),
 				'description' => __( 'Allow authorized MCP clients to inspect and update protected/private post, term, user, and comment metadata for exact WordPress objects the connected user may edit. Options, Workspace internals, role/capability/session/application-password state, and credential-like keys remain outside this surface.', 'wp-native-builder-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_AUTHENTICATION    => array(
+				'label'       => __( 'Authentication & Credentials', 'wp-native-builder-bridge' ),
+				'description' => __( 'Allow authorized MCP clients to list, create, rename, and revoke WordPress Application Passwords through Core. Generated credentials are returned only once at creation.', 'wp-native-builder-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),

@@ -58,6 +58,8 @@ final class Registrar {
 	private $source_editing_abilities;
 	/** @var User_Abilities */
 	private $user_abilities;
+	/** @var Secure_Application_Password_Abilities */
+	private $app_password_abilities;
 	/** @var Comment_Abilities */
 	private $comment_abilities;
 	/** @var Gravity_Forms_Abilities */
@@ -100,6 +102,7 @@ final class Registrar {
 		$this->extension_abilities         = new Extension_Abilities( $this->permissions, $mutation_log );
 		$this->source_editing_abilities    = new Source_Editing_Abilities( $this->permissions, $mutation_log );
 		$this->user_abilities              = new User_Abilities( $this->permissions, $mutation_log );
+		$this->app_password_abilities      = new Secure_Application_Password_Abilities( $this->permissions, $mutation_log );
 		$this->comment_abilities           = new Comment_Abilities( $this->permissions, $mutation_log );
 		$this->gravity_forms_abilities     = new Gravity_Forms_Abilities( $this->permissions, $mutation_log );
 		$this->code_snippets_abilities     = new Code_Snippets_Abilities( $this->permissions, $mutation_log );
@@ -206,6 +209,7 @@ final class Registrar {
 			$this->extension_abilities,
 			$this->source_editing_abilities,
 			$this->user_abilities,
+			$this->app_password_abilities,
 			$this->comment_abilities,
 			$this->gravity_forms_abilities,
 			$this->code_snippets_abilities,

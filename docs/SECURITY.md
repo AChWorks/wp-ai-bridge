@@ -35,12 +35,13 @@ Independent review and green CI remain evidence, not authorization. HIGH-risk in
 - **Remote Media** - default-off outbound media import; Builder Write and native upload/parent authority remain required.
 - **Live Content** — publishing and other live-state transitions.
 - **Site Configuration** — bounded global configuration.
-- **Advanced Metadata** — protected/private post and term metadata for exact WordPress objects the connected user may edit; disabled by default and intentionally separate from ordinary Site Read/Builder Write access.
+- **Advanced Metadata** — protected/private post, term, user, and comment metadata for exact WordPress objects the connected user may edit; disabled by default and intentionally separate from ordinary Site Read/Builder Write access. Authentication/authorization/session/credential state remains excluded from the generic user-meta surface.
+- **Authentication & Credentials** — default-off purpose-specific WordPress Application Password lifecycle through fixed Core REST routes. The generated plaintext credential is returned only once on successful create; stored hashes and reusable credentials are never exposed later.
 - **Code & Extensions** — managed snippets and extension lifecycle.
 - **Source Editing** — separately enabled installed plugin/theme source read/preview/apply/recovery; executable PHP is administrator-level code trust, not a sandbox.
 - **Native Abilities** — default-off broad trust for registered non-Bridge Core/provider Abilities reached through the WP AI Bridge MCP routes. It is not a sandbox; provider/Core permission checks remain mandatory.
 - **Comments** — default-off bounded standard-comment discovery, replies, and moderation through fixed Core comment REST routes. Permanent deletion additionally requires Users & Destructive.
-- **Users & Destructive** — user administration and destructive operations. Generic post-meta and term-meta deletion require this group in addition to Advanced Metadata.
+- **Users & Destructive** — user administration and destructive operations. Generic post/term/user/comment metadata deletion requires this group in addition to Advanced Metadata.
 
 Only Site Read is enabled by default.
 
@@ -52,6 +53,20 @@ A registered target must pass both enabled Native Abilities and its own native p
 
 Disabling Native Abilities takes effect on subsequent Bridge calls because settings are read at execution time. The exact Bridge request context is balanced with unconditional cleanup; unrelated REST routes are not governed by that context.
 
+
+## Application Password boundary
+
+Authentication & Credentials is separate default-off consent for WordPress Application Password administration. Existing Site Read, Users & Destructive, Advanced Metadata, Native Abilities, or historical grants do not enable it on fresh installs or upgrades.
+
+The Bridge exposes no generic authentication REST proxy. It constructs only the fixed Core `/wp/v2/users/<user>/application-passwords` collection/item routes and delegates availability, multisite target membership, and the exact `list_app_passwords`, `read_app_password`, `create_app_password`, `edit_app_password`, `delete_app_password`, and `delete_app_passwords` decisions to WordPress Core.
+
+Core returns the plaintext Application Password only when it is created. The Bridge returns that value only in the successful create response and does not store it in Bridge settings, Workspace, mutation logs, errors, later list/get/update/revoke responses, or artifacts. Read/list normalization deliberately excludes Core's stored password/hash field and also omits last-IP data; only UUID, app ID, name, creation time and last-used time are retained as bounded management metadata. Exact/bulk revocation responses discard Core `previous` records rather than relaying secret-bearing internal state.
+
+Create cleanup never trusts a filterable REST response UUID, link, `Location` header, caller value, name, app ID, list order, or public Application Password action as destructive authority. Before inspecting credential storage, Bridge first runs Core's exact target-specific create permission check; this prevents Core's legacy UUID-backfill behavior in the Application Password reader from mutating storage for an unauthorized caller. Only after authorization does Bridge snapshot the target. Create provenance is accepted only at the `_application_passwords` pre-write boundary when the observed call is the direct Core persistence chain `update_metadata()` → `update_user_meta()` → `WP_Application_Passwords::set_user_application_passwords()` → `create_new_application_password()` → the exact internal `WP_REST_Application_Passwords_Controller::create_item()` request. The nearest metadata write must be that direct Core chain, and the full call stack must contain exactly one matching `WP_REST_Application_Passwords_Controller::create_item()` invocation plus exactly one `rest_do_request()` for the exact request object. A re-entrant/provider same-key `update_user_meta()` call or nested re-dispatch of that same `WP_REST_Request` therefore cannot inherit outer-create provenance. The genuine outer persistence attempt is allowed only when no earlier metadata callback has already short-circuited it and its proposed state is current state plus exactly one new credential with all prior credential fingerprints unchanged; otherwise Bridge blocks that outer write and requires recovery. Only the exact proposed UUID, stored-hash fingerprint and full-item fingerprint are retained in memory. The later exact-request `rest_after_insert_application_password` event is only a success cross-check for the same UUID and Core-formatted one-time password.
+
+For cleanup, Bridge keeps the fixed Core REST DELETE lifecycle but does not rely on an earlier fingerprint snapshot as the decisive destructive check. A request-scoped `_application_passwords` pre-write guard runs at the actual Core delete persistence boundary and accepts only the direct chain ending in `delete_application_password()` → the exact internal `delete_item()` request. At that point the current record must still have the captured hash/full-item fingerprint, and the proposed write must equal current state minus exactly that record while every unrelated credential remains fingerprint-identical. If installed code changes or replaces the record with the same UUID anywhere between the earlier check and Core persistence, the delete write is blocked and Bridge returns `application_password_create_recovery_required`; a reused UUID cannot inherit cleanup authority. Successful create still requires final stored state to equal the baseline plus exactly the captured credential. These controls provide bounded optimistic integrity around the exact Core persistence attempts, not serializable isolation; nested, re-entrant, provider-altered or otherwise unprovable state fails closed rather than authorizing a guessed cleanup target. UUIDs, stored hashes, fingerprints and plaintext credentials are not emitted through Bridge logs/errors by this protocol.
+
+This group does not manage account passwords, password-reset keys, sessions, cookies, nonces, WP AI Bridge OAuth credentials, or generic user authentication metadata. `_application_passwords` remains blocked from generic user metadata. Revoke-all is a separate operation and requires the explicit `revoke_all` confirmation token.
 
 ## Comments administration boundary
 
@@ -110,9 +125,11 @@ Create contention cleans only the unchanged Bridge-owned row. Update compensatio
 
 The protocol provides bounded optimistic integrity, not serializable isolation. Trusted installed WordPress code can independently change state; newer writes after verification can stale a response immediately. A compensation failure is a diagnostic boundary requiring fresh inspection, not permission to overwrite newer state. The mutation log contains only ability/target type/target ID/status/error code, never term-meta keys, values, full payloads or credentials.
 
+User/comment metadata has its own object-authority, multisite, credential-exclusion and fixed-purpose persistence rules; see [User and comment metadata](./USER-COMMENT-METADATA.md).
+
 ## Stale-write protection
 
-Overwrite-sensitive content, post-metadata, term-metadata, and Workspace operations return change identities. A later update must present the expected current identity. If the object changed after inspection, the Bridge rejects the write and requires the caller to refresh.
+Overwrite-sensitive content, post/term/user/comment metadata, and Workspace operations return change identities. A later update must present the expected current identity. If the object changed after inspection, the Bridge rejects the write and requires the caller to refresh.
 
 Post metadata uses deterministic physical-row identity plus byte-exact row compare-and-swap. Verification is performed within the bounded persistence operation. Concurrent duplicate/add/update/delete interference detected before that verification completes is reported as stale; where the Bridge already changed one row, it performs row-scoped compensation and corresponding lifecycle actions rather than overwriting/deleting concurrent state. If the exact compensation predicate no longer matches, the operation returns a dedicated compensation failure instead of overwriting newer bytes or claiming success.
 

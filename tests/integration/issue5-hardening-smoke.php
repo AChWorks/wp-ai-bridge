@@ -66,8 +66,17 @@ try {
 		}
 
 		$forbidden_output = array( 'password', 'user_pass', 'application_password', 'application_passwords', 'session_token', 'session_tokens', 'access_token', 'refresh_token', 'api_key', 'api_secret', 'cookie', 'cookies' );
+		$credential_output_exceptions = array(
+			'wp-native-builder/application-password-create' => array( 'password' ),
+		);
 		foreach ( wpnb_issue5_schema_keys( $ability->get_output_schema() ) as $key ) {
-			wpnb_issue5_assert( ! in_array( strtolower( $key ), $forbidden_output, true ), $name . ' exposes credential/session output field: ' . $key );
+			$normalized_key = strtolower( $key );
+			if ( ! in_array( $normalized_key, $forbidden_output, true ) ) {
+				continue;
+			}
+			$allowed = isset( $credential_output_exceptions[ $name ] )
+				&& in_array( $normalized_key, $credential_output_exceptions[ $name ], true );
+			wpnb_issue5_assert( $allowed, $name . ' exposes credential/session output field: ' . $key );
 		}
 	}
 	sort( $names );
@@ -81,10 +90,19 @@ try {
 	wpnb_issue5_assert( 4 === count( array_intersect( $names, $source_editing_names ) ), 'Issue #46 source-editing Ability family is incomplete.' );
 	$comment_names = array( 'wp-native-builder/comments-read', 'wp-native-builder/comment-reply', 'wp-native-builder/comment-status', 'wp-native-builder/comment-delete' );
 	wpnb_issue5_assert( 4 === count( array_intersect( $names, $comment_names ) ), 'Issue #52 comment administration Ability family is incomplete.' );
+	$application_password_names = array( 'wp-native-builder/application-passwords-read', 'wp-native-builder/application-password-create', 'wp-native-builder/application-password-update', 'wp-native-builder/application-password-delete', 'wp-native-builder/application-passwords-delete-all' );
+	wpnb_issue5_assert( 5 === count( array_intersect( $names, $application_password_names ) ), 'Issue #61 Application Password Ability family is incomplete.' );
+	$create_ability = wp_get_ability( 'wp-native-builder/application-password-create' );
+	wpnb_issue5_assert( $create_ability instanceof WP_Ability, 'Issue #61 Application Password create Ability is unavailable for one-time credential exception verification.' );
+	$create_output_keys = array_map( 'strtolower', wpnb_issue5_schema_keys( $create_ability->get_output_schema() ) );
+	wpnb_issue5_assert( in_array( 'password', $create_output_keys, true ), 'Issue #61 one-time create credential output is missing from its exact bounded Ability.' );
+	foreach ( array_diff( $create_output_keys, array( 'password' ) ) as $create_output_key ) {
+		wpnb_issue5_assert( ! in_array( $create_output_key, $forbidden_output, true ), 'Issue #61 create Ability broadened the credential-output exception beyond password.' );
+	}
 
 	$defaults = $settings->defaults();
 	wpnb_issue5_assert( 1 === $defaults[ Settings::GROUP_SITE_READ ], 'Site Read is not the sole enabled default group.' );
-	foreach ( array( Settings::GROUP_BUILDER_WRITE, Settings::GROUP_REMOTE_MEDIA, Settings::GROUP_LIVE_CONTENT, Settings::GROUP_SITE_CONFIG, Settings::GROUP_ADVANCED_METADATA, Settings::GROUP_CODE_EXTENSIONS, Settings::GROUP_SOURCE_EDITING, Settings::GROUP_NATIVE_ABILITIES, Settings::GROUP_COMMENTS, Settings::GROUP_USERS_DESTRUCTIVE ) as $group ) {
+	foreach ( array( Settings::GROUP_BUILDER_WRITE, Settings::GROUP_REMOTE_MEDIA, Settings::GROUP_LIVE_CONTENT, Settings::GROUP_SITE_CONFIG, Settings::GROUP_ADVANCED_METADATA, Settings::GROUP_AUTHENTICATION, Settings::GROUP_CODE_EXTENSIONS, Settings::GROUP_SOURCE_EDITING, Settings::GROUP_NATIVE_ABILITIES, Settings::GROUP_COMMENTS, Settings::GROUP_USERS_DESTRUCTIVE ) as $group ) {
 		wpnb_issue5_assert( 0 === $defaults[ $group ], 'Sensitive group is enabled by default: ' . $group );
 	}
 	update_option( Settings::OPTION_NAME, $defaults, false );
