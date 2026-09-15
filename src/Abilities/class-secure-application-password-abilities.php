@@ -320,10 +320,10 @@ final class Secure_Application_Password_Abilities {
 	/**
 	 * Binds a metadata write to the exact Core Application Password persistence chain.
 	 *
-	 * Re-entrant update_user_meta() calls can run while the outer create/delete stack
-	 * remains present. Requiring the direct update_metadata -> update_user_meta ->
-	 * set_user_application_passwords -> operation -> exact REST-controller chain
-	 * prevents a nested/provider write from inheriting Bridge provenance.
+	 * Re-entrant update_user_meta() calls and same-request REST redispatches can run
+	 * while the outer lifecycle remains present. The nearest metadata write must be the
+	 * direct Core persistence chain, and the full stack must contain exactly one matching
+	 * controller operation plus one rest_do_request() for the exact request object.
 	 *
 	 * @param \WP_REST_Request $request           Exact Bridge request object.
 	 * @param string           $storage_operation Core storage operation method.
@@ -331,33 +331,57 @@ final class Secure_Application_Password_Abilities {
 	 * @return bool
 	 */
 	private function is_exact_application_password_storage_write( $request, $storage_operation, $rest_operation ) {
-		$trace = debug_backtrace( 0, 48 );
+		$trace                     = debug_backtrace( 0, 64 );
+		$nearest_metadata_index    = null;
+		$matching_controller_calls = 0;
+		$matching_rest_dispatches  = 0;
 
 		foreach ( $trace as $index => $frame ) {
-			if ( ! isset( $frame['function'] ) || 'update_metadata' !== $frame['function'] ) {
-				continue;
+			if ( null === $nearest_metadata_index
+				&& isset( $frame['function'] )
+				&& 'update_metadata' === $frame['function'] ) {
+				$nearest_metadata_index = $index;
 			}
 
-			$update_user = isset( $trace[ $index + 1 ] ) ? $trace[ $index + 1 ] : array();
-			$set_store   = isset( $trace[ $index + 2 ] ) ? $trace[ $index + 2 ] : array();
-			$operation   = isset( $trace[ $index + 3 ] ) ? $trace[ $index + 3 ] : array();
-			$controller  = isset( $trace[ $index + 4 ] ) ? $trace[ $index + 4 ] : array();
+			if ( isset( $frame['class'], $frame['function'], $frame['args'][0] )
+				&& 'WP_REST_Application_Passwords_Controller' === ltrim( (string) $frame['class'], '\\' )
+				&& $rest_operation === $frame['function']
+				&& $frame['args'][0] === $request ) {
+				++$matching_controller_calls;
+			}
 
-			return isset( $update_user['function'] )
-				&& 'update_user_meta' === $update_user['function']
-				&& isset( $set_store['class'], $set_store['function'] )
-				&& 'WP_Application_Passwords' === ltrim( (string) $set_store['class'], '\\' )
-				&& 'set_user_application_passwords' === $set_store['function']
-				&& isset( $operation['class'], $operation['function'] )
-				&& 'WP_Application_Passwords' === ltrim( (string) $operation['class'], '\\' )
-				&& $storage_operation === $operation['function']
-				&& isset( $controller['class'], $controller['function'], $controller['args'][0] )
-				&& 'WP_REST_Application_Passwords_Controller' === ltrim( (string) $controller['class'], '\\' )
-				&& $rest_operation === $controller['function']
-				&& $controller['args'][0] === $request;
+			if ( isset( $frame['function'], $frame['args'][0] )
+				&& 'rest_do_request' === $frame['function']
+				&& $frame['args'][0] === $request ) {
+				++$matching_rest_dispatches;
+			}
 		}
 
-		return false;
+		if ( null === $nearest_metadata_index ) {
+			return false;
+		}
+
+		$update_user = isset( $trace[ $nearest_metadata_index + 1 ] ) ? $trace[ $nearest_metadata_index + 1 ] : array();
+		$set_store   = isset( $trace[ $nearest_metadata_index + 2 ] ) ? $trace[ $nearest_metadata_index + 2 ] : array();
+		$operation   = isset( $trace[ $nearest_metadata_index + 3 ] ) ? $trace[ $nearest_metadata_index + 3 ] : array();
+		$controller  = isset( $trace[ $nearest_metadata_index + 4 ] ) ? $trace[ $nearest_metadata_index + 4 ] : array();
+
+		$direct_chain = isset( $update_user['function'] )
+			&& 'update_user_meta' === $update_user['function']
+			&& isset( $set_store['class'], $set_store['function'] )
+			&& 'WP_Application_Passwords' === ltrim( (string) $set_store['class'], '\\' )
+			&& 'set_user_application_passwords' === $set_store['function']
+			&& isset( $operation['class'], $operation['function'] )
+			&& 'WP_Application_Passwords' === ltrim( (string) $operation['class'], '\\' )
+			&& $storage_operation === $operation['function']
+			&& isset( $controller['class'], $controller['function'], $controller['args'][0] )
+			&& 'WP_REST_Application_Passwords_Controller' === ltrim( (string) $controller['class'], '\\' )
+			&& $rest_operation === $controller['function']
+			&& $controller['args'][0] === $request;
+
+		return $direct_chain
+			&& 1 === $matching_controller_calls
+			&& 1 === $matching_rest_dispatches;
 	}
 
 	/** @param array<string,mixed> $capture Capture state. @return void */

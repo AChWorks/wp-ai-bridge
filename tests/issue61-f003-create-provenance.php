@@ -224,10 +224,15 @@ if ( ! class_exists( 'WP_REST_Application_Passwords_Controller' ) ) {
 		}
 
 		public function create_item( $request ) {
-			$args = array( 'name' => $request->params['name'] );
+			$prepared = (object) array( 'name' => $request->params['name'] );
 			if ( ! empty( $request->params['app_id'] ) ) {
-				$args['app_id'] = $request->params['app_id'];
+				$prepared->app_id = $request->params['app_id'];
 			}
+			$prepared = wpnb61_f003_fire_filter( 'rest_pre_insert_application_password', $prepared, $request );
+			if ( is_wp_error( $prepared ) ) {
+				return new WP_AI_Bridge_Issue61_F003_Response( array(), $prepared );
+			}
+			$args = (array) $prepared;
 			$created = WP_Application_Passwords::create_new_application_password( 7, $args );
 			if ( is_wp_error( $created ) ) {
 				return new WP_AI_Bridge_Issue61_F003_Response( array(), $created );
@@ -372,6 +377,66 @@ foreach ( array( $f004_nested_uuid, $f004_nested_secret, $f004_nested_hash, $f00
 }
 WP_Application_Passwords::delete_application_password( 7, $f004_nested_uuid );
 wpnb61_f003_assert( 1 === count( WP_Application_Passwords::get_user_application_passwords( 7 ) ), 'F-004 fixture cleanup did not restore baseline.' );
+
+/* F-006: same-request nested REST create must not inherit outer cleanup provenance. */
+$f006_guard         = false;
+$f006_nested_uuid   = '';
+$f006_nested_secret = '';
+$f006_nested_app_id = '12121212-3434-4567-8abc-909090909090';
+$f006_outer_app_id  = '23232323-4545-4678-8bcd-808080808080';
+$f006_callback = static function ( $prepared, $request ) use ( &$f006_guard, &$f006_nested_uuid, &$f006_nested_secret, $f006_nested_app_id ) {
+	if ( $f006_guard
+		|| ! $request instanceof WP_REST_Request
+		|| 'POST' !== $request->method
+		|| 'F006 outer create' !== $request->get_param( 'name' ) ) {
+		return $prepared;
+	}
+
+	$f006_guard = true;
+	$outer_name = $request->get_param( 'name' );
+	$outer_app  = $request->get_param( 'app_id' );
+	try {
+		$request->set_param( 'name', 'F006 provider nested' );
+		$request->set_param( 'app_id', $f006_nested_app_id );
+		$nested_response = rest_do_request( $request );
+		$nested_data     = $nested_response->get_data();
+		if ( is_array( $nested_data ) ) {
+			$f006_nested_uuid   = isset( $nested_data['uuid'] ) && is_string( $nested_data['uuid'] ) ? $nested_data['uuid'] : '';
+			$f006_nested_secret = isset( $nested_data['password'] ) && is_string( $nested_data['password'] ) ? $nested_data['password'] : '';
+		}
+	} finally {
+		$request->set_param( 'name', $outer_name );
+		$request->set_param( 'app_id', $outer_app );
+		$f006_guard = false;
+	}
+
+	return new WP_Error( 'issue61_f006_abort', 'Injected same-request outer abort unsafe details.' );
+};
+add_filter( 'rest_pre_insert_application_password', $f006_callback, 10, 2 );
+$f006_delete_before = count( $GLOBALS['wpnb61_f003_delete_routes'] );
+try {
+	$f006_result = $provider->create(
+		array(
+			'user_id' => 7,
+			'name'    => 'F006 outer create',
+			'app_id'  => $f006_outer_app_id,
+		)
+	);
+} finally {
+	remove_filter( 'rest_pre_insert_application_password', $f006_callback, 10 );
+}
+wpnb61_f003_assert( is_wp_error( $f006_result ) && 'application_password_create_recovery_required' === $f006_result->get_error_code(), 'F-006 same-request nested dispatch did not require recovery.' );
+wpnb61_f003_assert( '' !== $f006_nested_uuid && '' !== $f006_nested_secret, 'F-006 fixture did not persist a distinct nested credential.' );
+wpnb61_f003_assert( is_array( WP_Application_Passwords::get_user_application_password( 7, $f006_nested_uuid ) ), 'F-006 nested provider credential was deleted.' );
+wpnb61_f003_assert( is_array( WP_Application_Passwords::get_user_application_password( 7, $baseline_uuid ) ), 'F-006 changed the baseline credential.' );
+wpnb61_f003_assert( 2 === count( WP_Application_Passwords::get_user_application_passwords( 7 ) ), 'F-006 changed state beyond the nested provider credential.' );
+wpnb61_f003_assert( $f006_delete_before === count( $GLOBALS['wpnb61_f003_delete_routes'] ), 'F-006 incorrectly attempted cleanup DELETE against nested same-request provenance.' );
+$f006_blob = $f006_result->get_error_message() . wp_json_encode( ( new Mutation_Log() )->recent( 50 ) );
+foreach ( array( $f006_nested_uuid, $f006_nested_secret, $f006_nested_app_id, $f006_outer_app_id, 'unsafe details' ) as $sensitive ) {
+	wpnb61_f003_assert( false === strpos( $f006_blob, $sensitive ), 'F-006 leaked nested same-request credential provenance.' );
+}
+WP_Application_Passwords::delete_application_password( 7, $f006_nested_uuid );
+wpnb61_f003_assert( 1 === count( WP_Application_Passwords::get_user_application_passwords( 7 ) ), 'F-006 fixture cleanup did not restore baseline.' );
 
 /* F-005a: mutate the captured item after the early check but before Core DELETE persistence. */
 $f005_changed_uuid   = '';
@@ -576,4 +641,4 @@ if ( $failures > 0 ) {
 	exit( 1 );
 }
 
-echo "PASS: Issue #61 F-003/F-004/F-005 persistence provenance ({$tests} assertions).\n";
+echo "PASS: Issue #61 F-003/F-004/F-005/F-006 persistence provenance ({$tests} assertions).\n";
