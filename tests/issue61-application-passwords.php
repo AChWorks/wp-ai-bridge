@@ -12,6 +12,57 @@ use WP_Native_Builder_Bridge\Support\Mutation_Log;
 use WP_Native_Builder_Bridge\Support\Permissions;
 use WP_Native_Builder_Bridge\Support\Settings;
 
+$GLOBALS['wpnb61_filters'] = array();
+
+if ( ! function_exists( 'add_filter' ) ) {
+	function add_filter( $hook, $callback, $priority = 10, $accepted_args = 1 ) {
+		$GLOBALS['wpnb61_filters'][ $hook ][] = array(
+			'callback'      => $callback,
+			'priority'      => (int) $priority,
+			'accepted_args' => (int) $accepted_args,
+		);
+		usort(
+			$GLOBALS['wpnb61_filters'][ $hook ],
+			static function ( $left, $right ) {
+				return $left['priority'] <=> $right['priority'];
+			}
+		);
+		return true;
+	}
+}
+
+if ( ! function_exists( 'remove_filter' ) ) {
+	function remove_filter( $hook, $callback, $priority = 10 ) {
+		if ( empty( $GLOBALS['wpnb61_filters'][ $hook ] ) ) {
+			return false;
+		}
+		foreach ( $GLOBALS['wpnb61_filters'][ $hook ] as $index => $registered ) {
+			if ( $registered['callback'] === $callback && (int) $registered['priority'] === (int) $priority ) {
+				unset( $GLOBALS['wpnb61_filters'][ $hook ][ $index ] );
+				$GLOBALS['wpnb61_filters'][ $hook ] = array_values( $GLOBALS['wpnb61_filters'][ $hook ] );
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
+if ( ! function_exists( 'wp_generate_uuid4' ) ) {
+	function wp_generate_uuid4() {
+		static $sequence = 0;
+		++$sequence;
+		return sprintf( '00000000-0000-4000-8000-%012d', $sequence );
+	}
+}
+
+function wpnb61_fire_filter( $hook, $value, ...$args ) {
+	foreach ( array_values( $GLOBALS['wpnb61_filters'][ $hook ] ?? array() ) as $registered ) {
+		$call_args = array_slice( array_merge( array( $value ), $args ), 0, max( 1, $registered['accepted_args'] ) );
+		$value     = call_user_func_array( $registered['callback'], $call_args );
+	}
+	return $value;
+}
+
 if ( ! function_exists( 'remove_action' ) ) {
 	function remove_action( $hook, $callback, $priority = 10 ) {
 		if ( empty( $GLOBALS['wpnb_test']['actions'][ $hook ] ) ) {
@@ -106,8 +157,32 @@ function rest_do_request( $request ) {
 		return new WP_AI_Bridge_Issue61_Test_Response( $GLOBALS['wpnb61_item'] );
 	}
 	if ( 'POST' === $request->method && $base === $request->route ) {
-		$item                 = $GLOBALS['wpnb61_item'];
-		$item['name']         = $request->params['name'];
+		$prepared = (object) array( 'name' => $request->params['name'] );
+		if ( ! empty( $request->params['app_id'] ) ) {
+			$prepared->app_id = $request->params['app_id'];
+		}
+		$prepared = wpnb61_fire_filter( 'rest_pre_insert_application_password', $prepared, $request );
+		if ( is_wp_error( $prepared ) ) {
+			return new WP_AI_Bridge_Issue61_Test_Response( array(), $prepared );
+		}
+		$item         = $GLOBALS['wpnb61_item'];
+		$item['name'] = $request->params['name'];
+		$args         = (array) $prepared;
+		if ( 'Unobservable create' !== $request->params['name'] ) {
+			wpnb61_fire_action( 'wp_create_application_password', 7, $item, $GLOBALS['wpnb61_secret'], $args );
+		}
+		if ( 'Ambiguous persisted creates' === $request->params['name'] ) {
+			$second_item         = $item;
+			$second_item['uuid'] = '22222222-3333-4444-5555-666666666666';
+			wpnb61_fire_action( 'wp_create_application_password', 7, $second_item, 'second generated secret', $args );
+			return new WP_AI_Bridge_Issue61_Test_Response( array(), new WP_Error( 'issue61_ambiguous_create', 'Ambiguous nested create.' ) );
+		}
+		if ( 'Persisted then WP_Error' === $request->params['name'] ) {
+			return new WP_AI_Bridge_Issue61_Test_Response( array(), new WP_Error( 'issue61_f002_injected', 'Injected post-persistence failure.' ) );
+		}
+		if ( 'Persisted then exception' === $request->params['name'] ) {
+			throw new RuntimeException( 'Injected post-persistence exception with unsafe details.' );
+		}
 		$item['new_password'] = $GLOBALS['wpnb61_secret'];
 		if ( 'Unobservable create' !== $request->params['name'] ) {
 			wpnb61_fire_action( 'rest_after_insert_application_password', $item, $request, true );
@@ -127,6 +202,7 @@ function rest_do_request( $request ) {
 		}
 		return new WP_AI_Bridge_Issue61_Test_Response( $item );
 	}
+
 	if ( 'POST' === $request->method && $base . '/' . $uuid === $request->route ) {
 		$item         = $GLOBALS['wpnb61_item'];
 		$item['name'] = $request->params['name'];
@@ -215,6 +291,26 @@ $valid_substitution = $provider->create( array( 'user_id' => 7, 'name' => 'Subst
 wpnb61_assert( is_wp_error( $valid_substitution ) && 'application_passwords_rest_invalid_response' === $valid_substitution->get_error_code(), 'Valid-shaped substituted response UUID was accepted as the created identity.' );
 $valid_substitution_requests = array_slice( $GLOBALS['wpnb61_rest_requests'], $requests_before_valid_substitution );
 wpnb61_assert( 2 === count( $valid_substitution_requests ) && '/wp/v2/users/7/application-passwords/' . $GLOBALS['wpnb61_item']['uuid'] === $valid_substitution_requests[1]['route'], 'Valid-shaped UUID substitution redirected cleanup away from the actual created credential.' );
+
+$requests_before_persisted_error = count( $GLOBALS['wpnb61_rest_requests'] );
+$persisted_error = $provider->create( array( 'user_id' => 7, 'name' => 'Persisted then WP_Error' ) );
+wpnb61_assert( is_wp_error( $persisted_error ) && 'issue61_f002_injected' === $persisted_error->get_error_code(), 'Post-persistence REST error was not returned after exact cleanup.' );
+$persisted_error_requests = array_slice( $GLOBALS['wpnb61_rest_requests'], $requests_before_persisted_error );
+wpnb61_assert( 2 === count( $persisted_error_requests ) && 'POST' === $persisted_error_requests[0]['method'] && 'DELETE' === $persisted_error_requests[1]['method'], 'Post-persistence REST error did not trigger exact cleanup.' );
+wpnb61_assert( '/wp/v2/users/7/application-passwords/' . $GLOBALS['wpnb61_item']['uuid'] === $persisted_error_requests[1]['route'], 'Post-persistence REST error cleanup targeted the wrong credential.' );
+
+$requests_before_persisted_exception = count( $GLOBALS['wpnb61_rest_requests'] );
+$persisted_exception = $provider->create( array( 'user_id' => 7, 'name' => 'Persisted then exception' ) );
+wpnb61_assert( is_wp_error( $persisted_exception ) && 'application_passwords_rest_request_failed' === $persisted_exception->get_error_code(), 'Post-persistence exception did not become a bounded REST failure after exact cleanup.' );
+wpnb61_assert( false === strpos( $persisted_exception->get_error_message(), 'unsafe details' ), 'Post-persistence exception details leaked through the bounded error.' );
+$persisted_exception_requests = array_slice( $GLOBALS['wpnb61_rest_requests'], $requests_before_persisted_exception );
+wpnb61_assert( 2 === count( $persisted_exception_requests ) && 'DELETE' === $persisted_exception_requests[1]['method'] && '/wp/v2/users/7/application-passwords/' . $GLOBALS['wpnb61_item']['uuid'] === $persisted_exception_requests[1]['route'], 'Post-persistence exception did not clean up the exact created credential.' );
+
+$requests_before_ambiguous = count( $GLOBALS['wpnb61_rest_requests'] );
+$ambiguous = $provider->create( array( 'user_id' => 7, 'name' => 'Ambiguous persisted creates' ) );
+wpnb61_assert( is_wp_error( $ambiguous ) && 'application_password_create_recovery_required' === $ambiguous->get_error_code(), 'Ambiguous persisted-create correlation did not require explicit recovery.' );
+$ambiguous_requests = array_slice( $GLOBALS['wpnb61_rest_requests'], $requests_before_ambiguous );
+wpnb61_assert( 1 === count( $ambiguous_requests ) && 'POST' === $ambiguous_requests[0]['method'], 'Ambiguous persisted-create correlation guessed a destructive cleanup target.' );
 
 $requests_before_unobservable = count( $GLOBALS['wpnb61_rest_requests'] );
 $unobservable = $provider->create( array( 'user_id' => 7, 'name' => 'Unobservable create' ) );

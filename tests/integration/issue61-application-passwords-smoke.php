@@ -47,9 +47,13 @@ $availability_filter          = null;
 $global_availability_enabled  = false;
 $malformed_capture_action     = null;
 $malformed_prepare_filter     = null;
-$substitution_capture_action  = null;
-$substitution_prepare_filter  = null;
+$substitution_capture_action   = null;
+$substitution_prepare_filter   = null;
 $preexisting_substitution_uuid = '';
+$f002_capture_action           = null;
+$f002_additional_field_active  = false;
+$f002_had_previous_name_field  = false;
+$f002_previous_name_field      = null;
 
 try {
 	wpnb_issue61_assert( 0 === $settings->defaults()[ Settings::GROUP_AUTHENTICATION ], 'Authentication & Credentials must default off.' );
@@ -101,6 +105,95 @@ try {
 	update_option( Settings::OPTION_NAME, $enabled, false );
 	add_filter( 'wp_is_application_passwords_available', '__return_true' );
 	$global_availability_enabled = true;
+
+	$f002_preexisting = wpnb_issue61_execute(
+		'wp-native-builder/application-password-create',
+		array( 'user_id' => (int) $target_user, 'name' => 'Issue 61 F002 pre-existing' )
+	);
+	wpnb_issue61_assert( ! is_wp_error( $f002_preexisting ), 'Could not create the F-002 pre-existing credential fixture.' );
+	$f002_preexisting_uuid   = $f002_preexisting['item']['uuid'];
+	$f002_preexisting_secret = $f002_preexisting['password'];
+	$f002_preexisting_stored = WP_Application_Passwords::get_user_application_password( $target_user, $f002_preexisting_uuid );
+	wpnb_issue61_assert( is_array( $f002_preexisting_stored ) && isset( $f002_preexisting_stored['password'] ), 'F-002 pre-existing credential fixture is unavailable.' );
+
+	$f002_created_uuid = '';
+	$f002_secret       = '';
+	$f002_name         = 'Issue 61 post-persistence additional-field failure';
+	$f002_app_id       = '22222222-3333-4444-8555-666666666666';
+	$f002_capture_action = static function ( $observed_user_id, $item, $new_password, $args ) use ( $target_user, $f002_name, &$f002_created_uuid, &$f002_secret ) {
+		if ( (int) $observed_user_id !== (int) $target_user
+			|| ! is_array( $item )
+			|| ! is_array( $args )
+			|| $f002_name !== ( $args['name'] ?? '' ) ) {
+			return;
+		}
+		$f002_created_uuid = isset( $item['uuid'] ) && is_string( $item['uuid'] ) ? $item['uuid'] : '';
+		$f002_secret       = is_string( $new_password ) ? $new_password : '';
+	};
+	add_action( 'wp_create_application_password', $f002_capture_action, 20, 4 );
+
+	global $wp_rest_additional_fields;
+	$f002_had_previous_name_field = isset( $wp_rest_additional_fields['application-password']['name'] );
+	if ( $f002_had_previous_name_field ) {
+		$f002_previous_name_field = $wp_rest_additional_fields['application-password']['name'];
+	}
+	register_rest_field(
+		'application-password',
+		'name',
+		array(
+			'update_callback' => static function ( $value, $object, $field_name, $request ) use ( $target_user, $f002_name ) {
+				if ( $request instanceof WP_REST_Request
+					&& 'POST' === $request->get_method()
+					&& '/wp/v2/users/' . (int) $target_user . '/application-passwords' === $request->get_route()
+					&& $f002_name === $value ) {
+					return new WP_Error( 'issue61_f002_injected', 'Injected post-persistence additional-field failure.' );
+				}
+				return true;
+			},
+		)
+	);
+	$f002_additional_field_active = true;
+	try {
+		$f002_result = wpnb_issue61_execute(
+			'wp-native-builder/application-password-create',
+			array(
+				'user_id' => (int) $target_user,
+				'name'    => $f002_name,
+				'app_id'  => $f002_app_id,
+			)
+		);
+	} finally {
+		remove_action( 'wp_create_application_password', $f002_capture_action, 20 );
+		$f002_capture_action = null;
+		if ( $f002_had_previous_name_field ) {
+			$wp_rest_additional_fields['application-password']['name'] = $f002_previous_name_field;
+		} else {
+			unset( $wp_rest_additional_fields['application-password']['name'] );
+			if ( empty( $wp_rest_additional_fields['application-password'] ) ) {
+				unset( $wp_rest_additional_fields['application-password'] );
+			}
+		}
+		$f002_additional_field_active = false;
+	}
+	wpnb_issue61_assert( is_wp_error( $f002_result ) && 'issue61_f002_injected' === $f002_result->get_error_code(), 'F-002 additional-field failure was not returned after bounded cleanup.' );
+	wpnb_issue61_assert( '' !== $f002_created_uuid && '' !== $f002_secret, 'F-002 fixture did not observe the credential persisted before the injected REST error.' );
+	wpnb_issue61_assert( $f002_created_uuid !== $f002_preexisting_uuid, 'F-002 fixture did not create a distinct credential.' );
+	wpnb_issue61_assert( is_array( WP_Application_Passwords::get_user_application_password( $target_user, $f002_preexisting_uuid ) ), 'F-002 cleanup revoked the pre-existing credential.' );
+	wpnb_issue61_assert( null === WP_Application_Passwords::get_user_application_password( $target_user, $f002_created_uuid ), 'F-002 cleanup left the newly persisted credential behind.' );
+	wpnb_issue61_assert( 1 === count( WP_Application_Passwords::get_user_application_passwords( $target_user ) ), 'F-002 cleanup changed state beyond the exact newly persisted credential.' );
+	$f002_error_blob = wp_json_encode( array( $f002_result->get_error_message(), $f002_result->get_error_data() ) );
+	wpnb_issue61_assert( false === strpos( $f002_error_blob, $f002_secret ), 'F-002 error leaked the generated credential.' );
+	wpnb_issue61_assert( false === strpos( $f002_error_blob, $f002_created_uuid ), 'F-002 error leaked the created credential UUID.' );
+	wpnb_issue61_assert( false === strpos( $f002_error_blob, $f002_app_id ), 'F-002 error leaked the Application Password app ID.' );
+	$f002_log_blob = wp_json_encode( ( new Mutation_Log() )->recent( 50 ) );
+	wpnb_issue61_assert( false === strpos( $f002_log_blob, $f002_secret ), 'F-002 mutation log leaked the generated credential.' );
+	wpnb_issue61_assert( false === strpos( $f002_log_blob, $f002_created_uuid ), 'F-002 mutation log leaked the created credential UUID.' );
+	wpnb_issue61_assert( false === strpos( $f002_log_blob, $f002_app_id ), 'F-002 mutation log leaked the Application Password app ID.' );
+	wpnb_issue61_assert( false === strpos( $f002_log_blob, $f002_preexisting_stored['password'] ), 'F-002 mutation log leaked a stored Application Password hash.' );
+	wpnb_issue61_assert( false === strpos( $f002_log_blob, $f002_preexisting_secret ), 'F-002 mutation log leaked the pre-existing plaintext credential.' );
+	wpnb_issue61_assert( ! array_key_exists( '__wp_ai_bridge_create_correlation', $f002_preexisting_stored ), 'F-002 correlation state was persisted in Application Password storage.' );
+	WP_Application_Passwords::delete_application_password( $target_user, $f002_preexisting_uuid );
+	wpnb_issue61_assert( empty( WP_Application_Passwords::get_user_application_passwords( $target_user ) ), 'F-002 fixture cleanup did not restore empty Application Password state.' );
 
 	$malformed_created_uuid = '';
 	$malformed_secret       = '';
@@ -370,6 +463,20 @@ try {
 
 	echo "PASS: Issue #61 Core Application Password lifecycle, authority and secret redaction.\n";
 } finally {
+	if ( is_callable( $f002_capture_action ) ) {
+		remove_action( 'wp_create_application_password', $f002_capture_action, 20 );
+	}
+	if ( $f002_additional_field_active ) {
+		global $wp_rest_additional_fields;
+		if ( $f002_had_previous_name_field ) {
+			$wp_rest_additional_fields['application-password']['name'] = $f002_previous_name_field;
+		} else {
+			unset( $wp_rest_additional_fields['application-password']['name'] );
+			if ( empty( $wp_rest_additional_fields['application-password'] ) ) {
+				unset( $wp_rest_additional_fields['application-password'] );
+			}
+		}
+	}
 	if ( is_callable( $malformed_prepare_filter ) ) {
 		remove_filter( 'rest_prepare_application_password', $malformed_prepare_filter, 10 );
 	}
