@@ -178,7 +178,7 @@ function rest_do_request( $request ) {
 			return new WP_AI_Bridge_Issue61_Test_Response( array(), new WP_Error( 'issue61_ambiguous_create', 'Ambiguous nested create.' ) );
 		}
 		if ( 'Persisted then WP_Error' === $request->params['name'] ) {
-			return new WP_AI_Bridge_Issue61_Test_Response( array(), new WP_Error( 'issue61_f002_injected', 'Injected post-persistence failure.' ) );
+			return new WP_AI_Bridge_Issue61_Test_Response( array(), new WP_Error( 'issue61_f002_injected', 'Injected post-persistence failure: ' . $GLOBALS['wpnb61_secret'] . '|' . $GLOBALS['wpnb61_item']['password'] . '|' . $GLOBALS['wpnb61_item']['uuid'] . '|' . $GLOBALS['wpnb61_item']['app_id'], array( 'status' => 409, 'unsafe_payload' => $GLOBALS['wpnb61_item'] ) ) );
 		}
 		if ( 'Persisted then exception' === $request->params['name'] ) {
 			throw new RuntimeException( 'Injected post-persistence exception with unsafe details.' );
@@ -294,7 +294,11 @@ wpnb61_assert( 2 === count( $valid_substitution_requests ) && '/wp/v2/users/7/ap
 
 $requests_before_persisted_error = count( $GLOBALS['wpnb61_rest_requests'] );
 $persisted_error = $provider->create( array( 'user_id' => 7, 'name' => 'Persisted then WP_Error' ) );
-wpnb61_assert( is_wp_error( $persisted_error ) && 'issue61_f002_injected' === $persisted_error->get_error_code(), 'Post-persistence REST error was not returned after exact cleanup.' );
+wpnb61_assert( is_wp_error( $persisted_error ) && 'application_passwords_rest_request_failed' === $persisted_error->get_error_code(), 'Post-persistence REST error was not normalized after exact cleanup.' );
+$persisted_error_blob = wp_json_encode( array( $persisted_error->get_error_code(), $persisted_error->get_error_message(), method_exists( $persisted_error, 'get_error_data' ) ? $persisted_error->get_error_data() : null ) );
+foreach ( array( 'issue61_f002_injected', $GLOBALS['wpnb61_secret'], $GLOBALS['wpnb61_item']['password'], $GLOBALS['wpnb61_item']['uuid'], $GLOBALS['wpnb61_item']['app_id'], 'Injected post-persistence failure' ) as $unsafe ) {
+	wpnb61_assert( false === strpos( $persisted_error_blob, $unsafe ), 'Post-persistence normalized error leaked downstream credential/error material.' );
+}
 $persisted_error_requests = array_slice( $GLOBALS['wpnb61_rest_requests'], $requests_before_persisted_error );
 wpnb61_assert( 2 === count( $persisted_error_requests ) && 'POST' === $persisted_error_requests[0]['method'] && 'DELETE' === $persisted_error_requests[1]['method'], 'Post-persistence REST error did not trigger exact cleanup.' );
 wpnb61_assert( '/wp/v2/users/7/application-passwords/' . $GLOBALS['wpnb61_item']['uuid'] === $persisted_error_requests[1]['route'], 'Post-persistence REST error cleanup targeted the wrong credential.' );

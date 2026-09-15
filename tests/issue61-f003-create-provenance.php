@@ -238,7 +238,15 @@ if ( ! class_exists( 'WP_REST_Application_Passwords_Controller' ) ) {
 				return new WP_AI_Bridge_Issue61_F003_Response( array(), $created );
 			}
 			if ( 'F002 post-persistence error' === $request->params['name'] || 0 === strpos( $request->params['name'], 'F005 ' ) ) {
-				return new WP_AI_Bridge_Issue61_F003_Response( array(), new WP_Error( 'issue61_f002_injected', 'Injected post-persistence failure.' ) );
+				$unsafe = implode( '|', array( $created[0], $created[1]['password'], $created[1]['uuid'], $created[1]['app_id'] ) );
+				return new WP_AI_Bridge_Issue61_F003_Response(
+					array(),
+					new WP_Error(
+						'issue61_f002_injected',
+						'Injected post-persistence failure: ' . $unsafe,
+						array( 'status' => 409, 'unsafe_payload' => $created[1], 'new_password' => $created[0] )
+					)
+				);
 			}
 			$item                 = WP_Application_Passwords::get_user_application_password( 7, $created[1]['uuid'] );
 			$item['new_password'] = $created[0];
@@ -311,7 +319,11 @@ WP_Application_Passwords::delete_application_password( 7, $success_uuid );
 
 $f002_before = count( $GLOBALS['wpnb61_f003_delete_routes'] );
 $f002 = $provider->create( array( 'user_id' => 7, 'name' => 'F002 post-persistence error' ) );
-wpnb61_f003_assert( is_wp_error( $f002 ) && 'issue61_f002_injected' === $f002->get_error_code(), 'Secure create did not preserve bounded F-002 cleanup behavior.' );
+wpnb61_f003_assert( is_wp_error( $f002 ) && 'application_passwords_rest_request_failed' === $f002->get_error_code(), 'Secure create did not normalize the F-002 downstream error.' );
+$f002_blob = wp_json_encode( array( $f002->get_error_code(), $f002->get_error_message(), method_exists( $f002, 'get_error_data' ) ? $f002->get_error_data() : null ) );
+foreach ( array( 'issue61_f002_injected', 'Injected post-persistence failure', 'secret-', 'hash-' ) as $unsafe ) {
+	wpnb61_f003_assert( false === strpos( $f002_blob, $unsafe ), 'Secure F-002 normalized error leaked downstream credential/error material.' );
+}
 wpnb61_f003_assert( $f002_before + 1 === count( $GLOBALS['wpnb61_f003_delete_routes'] ), 'F-002 dependency-free path did not perform one exact cleanup DELETE.' );
 wpnb61_f003_assert( 1 === count( WP_Application_Passwords::get_user_application_passwords( 7 ) ), 'F-002 cleanup did not restore baseline state.' );
 

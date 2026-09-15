@@ -779,13 +779,14 @@ final class Secure_Application_Password_Abilities {
 	private function send_request( $request ) {
 		$response = rest_do_request( $request );
 		if ( is_wp_error( $response ) ) {
-			return $response;
+			return $this->normalize_rest_error( $response );
 		}
 		if ( ! is_object( $response ) || ! method_exists( $response, 'get_data' ) ) {
 			return $this->invalid_response_error();
 		}
 		if ( method_exists( $response, 'is_error' ) && $response->is_error() ) {
-			return method_exists( $response, 'as_error' ) ? $response->as_error() : new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-native-builder-bridge' ) );
+			$error = method_exists( $response, 'as_error' ) ? $response->as_error() : null;
+			return $this->normalize_rest_error( $error );
 		}
 		return array(
 			'data'    => $response->get_data(),
@@ -805,6 +806,32 @@ final class Secure_Application_Password_Abilities {
 			'created'   => isset( $raw['created'] ) && is_string( $raw['created'] ) ? $raw['created'] : '',
 			'last_used' => isset( $raw['last_used'] ) && is_string( $raw['last_used'] ) ? $raw['last_used'] : null,
 		);
+	}
+
+	/**
+	 * Normalizes downstream REST failures before they cross the credential boundary.
+	 *
+	 * Application Password REST callbacks can see plaintext credentials and stored
+	 * hashes. Their WP_Error message/data are therefore untrusted for Bridge output.
+	 * Preserve only a bounded numeric HTTP status when one is explicitly present.
+	 *
+	 * @param mixed $error Downstream REST error.
+	 * @return WP_Error
+	 */
+	private function normalize_rest_error( $error ) {
+		$status = 0;
+		if ( is_wp_error( $error ) && method_exists( $error, 'get_error_data' ) ) {
+			$data = $error->get_error_data();
+			if ( is_array( $data ) && isset( $data['status'] ) && is_numeric( $data['status'] ) ) {
+				$status = (int) $data['status'];
+			}
+		}
+
+		$message = __( 'WordPress rejected the Application Password REST request.', 'wp-native-builder-bridge' );
+		if ( $status >= 400 && $status <= 599 ) {
+			return new WP_Error( 'application_passwords_rest_request_failed', $message, array( 'status' => $status ) );
+		}
+		return new WP_Error( 'application_passwords_rest_request_failed', $message );
 	}
 
 	/** @return WP_Error */

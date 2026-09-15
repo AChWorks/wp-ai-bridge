@@ -54,6 +54,11 @@ $f002_capture_action           = null;
 $f002_additional_field_active  = false;
 $f002_had_previous_name_field  = false;
 $f002_previous_name_field      = null;
+$f002_callback_secret          = '';
+$f002_callback_hash            = '';
+$f002_callback_uuid            = '';
+$f002_callback_app_id          = '';
+$f007_shared_error_filter      = null;
 
 try {
 	wpnb_issue61_assert( 0 === $settings->defaults()[ Settings::GROUP_AUTHENTICATION ], 'Authentication & Credentials must default off.' );
@@ -141,12 +146,29 @@ try {
 		'application-password',
 		'name',
 		array(
-			'update_callback' => static function ( $value, $object, $field_name, $request ) use ( $target_user, $f002_name ) {
+			'update_callback' => static function ( $value, $object, $field_name, $request ) use ( $target_user, $f002_name, &$f002_callback_secret, &$f002_callback_hash, &$f002_callback_uuid, &$f002_callback_app_id ) {
 				if ( $request instanceof WP_REST_Request
 					&& 'POST' === $request->get_method()
 					&& '/wp/v2/users/' . (int) $target_user . '/application-passwords' === $request->get_route()
 					&& $f002_name === $value ) {
-					return new WP_Error( 'issue61_f002_injected', 'Injected post-persistence additional-field failure.' );
+					$f002_callback_secret = is_array( $object ) && isset( $object['new_password'] ) && is_string( $object['new_password'] ) ? $object['new_password'] : '';
+					$f002_callback_hash   = is_array( $object ) && isset( $object['password'] ) && is_string( $object['password'] ) ? $object['password'] : '';
+					$f002_callback_uuid   = is_array( $object ) && isset( $object['uuid'] ) && is_string( $object['uuid'] ) ? $object['uuid'] : '';
+					$f002_callback_app_id = is_array( $object ) && isset( $object['app_id'] ) && is_string( $object['app_id'] ) ? $object['app_id'] : '';
+					$unsafe = implode( '|', array( $f002_callback_secret, $f002_callback_hash, $f002_callback_uuid, $f002_callback_app_id ) );
+					return new WP_Error(
+						'issue61_f002_injected',
+						'Injected secret-bearing post-persistence failure: ' . $unsafe,
+						array(
+							'status'         => 409,
+							'unsafe_payload' => array(
+								'new_password' => $f002_callback_secret,
+								'password'     => $f002_callback_hash,
+								'uuid'         => $f002_callback_uuid,
+								'app_id'       => $f002_callback_app_id,
+							),
+						)
+					);
 				}
 				return true;
 			},
@@ -175,25 +197,72 @@ try {
 		}
 		$f002_additional_field_active = false;
 	}
-	wpnb_issue61_assert( is_wp_error( $f002_result ) && 'issue61_f002_injected' === $f002_result->get_error_code(), 'F-002 additional-field failure was not returned after bounded cleanup.' );
+	wpnb_issue61_assert( is_wp_error( $f002_result ) && 'application_passwords_rest_request_failed' === $f002_result->get_error_code(), 'F-002 secret-bearing downstream REST failure was not normalized after bounded cleanup.' );
+	wpnb_issue61_assert( 409 === (int) ( $f002_result->get_error_data()['status'] ?? 0 ), 'F-002 normalization did not preserve the bounded HTTP status.' );
 	wpnb_issue61_assert( '' !== $f002_created_uuid && '' !== $f002_secret, 'F-002 fixture did not observe the credential persisted before the injected REST error.' );
+	wpnb_issue61_assert( WP_Application_Passwords::chunk_password( $f002_secret ) === $f002_callback_secret, 'F-002 additional-field callback did not receive the generated credential sentinel.' );
+	wpnb_issue61_assert( '' !== $f002_callback_hash, 'F-002 additional-field callback did not receive the stored password hash sentinel.' );
+	wpnb_issue61_assert( $f002_created_uuid === $f002_callback_uuid, 'F-002 additional-field callback did not receive the persisted UUID sentinel.' );
+	wpnb_issue61_assert( $f002_app_id === $f002_callback_app_id, 'F-002 additional-field callback did not receive the persisted app ID sentinel.' );
 	wpnb_issue61_assert( $f002_created_uuid !== $f002_preexisting_uuid, 'F-002 fixture did not create a distinct credential.' );
 	wpnb_issue61_assert( is_array( WP_Application_Passwords::get_user_application_password( $target_user, $f002_preexisting_uuid ) ), 'F-002 cleanup revoked the pre-existing credential.' );
 	wpnb_issue61_assert( null === WP_Application_Passwords::get_user_application_password( $target_user, $f002_created_uuid ), 'F-002 cleanup left the newly persisted credential behind.' );
 	wpnb_issue61_assert( 1 === count( WP_Application_Passwords::get_user_application_passwords( $target_user ) ), 'F-002 cleanup changed state beyond the exact newly persisted credential.' );
-	$f002_error_blob = wp_json_encode( array( $f002_result->get_error_message(), $f002_result->get_error_data() ) );
-	wpnb_issue61_assert( false === strpos( $f002_error_blob, $f002_secret ), 'F-002 error leaked the generated credential.' );
-	wpnb_issue61_assert( false === strpos( $f002_error_blob, $f002_created_uuid ), 'F-002 error leaked the created credential UUID.' );
-	wpnb_issue61_assert( false === strpos( $f002_error_blob, $f002_app_id ), 'F-002 error leaked the Application Password app ID.' );
+	$f002_error_blob = wp_json_encode( array( $f002_result->get_error_code(), $f002_result->get_error_message(), $f002_result->get_error_data() ) );
+	foreach ( array( $f002_secret, $f002_callback_secret, $f002_callback_hash, $f002_created_uuid, $f002_app_id, 'issue61_f002_injected', 'Injected secret-bearing post-persistence failure' ) as $unsafe ) {
+		wpnb_issue61_assert( false === strpos( $f002_error_blob, $unsafe ), 'F-002 normalized error leaked downstream credential/error material.' );
+	}
 	$f002_log_blob = wp_json_encode( ( new Mutation_Log() )->recent( 50 ) );
-	wpnb_issue61_assert( false === strpos( $f002_log_blob, $f002_secret ), 'F-002 mutation log leaked the generated credential.' );
-	wpnb_issue61_assert( false === strpos( $f002_log_blob, $f002_created_uuid ), 'F-002 mutation log leaked the created credential UUID.' );
-	wpnb_issue61_assert( false === strpos( $f002_log_blob, $f002_app_id ), 'F-002 mutation log leaked the Application Password app ID.' );
+	foreach ( array( $f002_secret, $f002_callback_secret, $f002_callback_hash, $f002_created_uuid, $f002_app_id, 'issue61_f002_injected' ) as $unsafe ) {
+		wpnb_issue61_assert( false === strpos( $f002_log_blob, $unsafe ), 'F-002 mutation log leaked downstream credential/error material.' );
+	}
 	wpnb_issue61_assert( false === strpos( $f002_log_blob, $f002_preexisting_stored['password'] ), 'F-002 mutation log leaked a stored Application Password hash.' );
 	wpnb_issue61_assert( false === strpos( $f002_log_blob, $f002_preexisting_secret ), 'F-002 mutation log leaked the pre-existing plaintext credential.' );
 	wpnb_issue61_assert( ! array_key_exists( '__wp_ai_bridge_create_correlation', $f002_preexisting_stored ), 'F-002 correlation state was persisted in Application Password storage.' );
+
+	$f007_shared_error_filter = static function ( $result, $server, $request ) use ( $target_user, $f002_preexisting_secret, $f002_preexisting_stored, $f002_preexisting_uuid ) {
+		if ( ! $request instanceof WP_REST_Request || 0 !== strpos( $request->get_route(), '/wp/v2/users/' . (int) $target_user . '/application-passwords' ) ) {
+			return $result;
+		}
+		$unsafe = implode( '|', array( $f002_preexisting_secret, $f002_preexisting_stored['password'], $f002_preexisting_uuid ) );
+		return new WP_Error(
+			'issue61_f007_shared_injected',
+			'Injected shared-path secret-bearing failure: ' . $unsafe,
+			array(
+				'status'         => 403,
+				'unsafe_payload' => array(
+					'new_password' => $f002_preexisting_secret,
+					'password'     => $f002_preexisting_stored['password'],
+					'uuid'         => $f002_preexisting_uuid,
+				),
+			)
+		);
+	};
+	add_filter( 'rest_pre_dispatch', $f007_shared_error_filter, 10, 3 );
+	try {
+		$f007_shared_results = array(
+			wpnb_issue61_execute( 'wp-native-builder/application-passwords-read', array( 'action' => 'list', 'user_id' => (int) $target_user ) ),
+			wpnb_issue61_execute( 'wp-native-builder/application-passwords-read', array( 'action' => 'get', 'user_id' => (int) $target_user, 'uuid' => $f002_preexisting_uuid ) ),
+			wpnb_issue61_execute( 'wp-native-builder/application-password-update', array( 'user_id' => (int) $target_user, 'uuid' => $f002_preexisting_uuid, 'name' => 'F007 denied rename' ) ),
+			wpnb_issue61_execute( 'wp-native-builder/application-password-delete', array( 'user_id' => (int) $target_user, 'uuid' => $f002_preexisting_uuid ) ),
+			wpnb_issue61_execute( 'wp-native-builder/application-passwords-delete-all', array( 'user_id' => (int) $target_user, 'confirm' => 'revoke_all' ) ),
+		);
+	} finally {
+		remove_filter( 'rest_pre_dispatch', $f007_shared_error_filter, 10 );
+		$f007_shared_error_filter = null;
+	}
+	foreach ( $f007_shared_results as $f007_shared_result ) {
+		wpnb_issue61_assert( is_wp_error( $f007_shared_result ) && 'application_passwords_rest_request_failed' === $f007_shared_result->get_error_code(), 'F-007 shared Application Password REST failure was not normalized.' );
+		wpnb_issue61_assert( 403 === (int) ( $f007_shared_result->get_error_data()['status'] ?? 0 ), 'F-007 shared error normalization did not preserve bounded HTTP status.' );
+		$f007_shared_blob = wp_json_encode( array( $f007_shared_result->get_error_code(), $f007_shared_result->get_error_message(), $f007_shared_result->get_error_data() ) );
+		foreach ( array( $f002_preexisting_secret, $f002_preexisting_stored['password'], $f002_preexisting_uuid, 'issue61_f007_shared_injected', 'Injected shared-path secret-bearing failure' ) as $unsafe ) {
+			wpnb_issue61_assert( false === strpos( $f007_shared_blob, $unsafe ), 'F-007 shared normalized error leaked downstream credential/error material.' );
+		}
+	}
+	wpnb_issue61_assert( is_array( WP_Application_Passwords::get_user_application_password( $target_user, $f002_preexisting_uuid ) ), 'F-007 shared error-path audit changed Application Password state.' );
+
 	WP_Application_Passwords::delete_application_password( $target_user, $f002_preexisting_uuid );
-	wpnb_issue61_assert( empty( WP_Application_Passwords::get_user_application_passwords( $target_user ) ), 'F-002 fixture cleanup did not restore empty Application Password state.' );
+	wpnb_issue61_assert( empty( WP_Application_Passwords::get_user_application_passwords( $target_user ) ), 'F-002/F-007 fixture cleanup did not restore empty Application Password state.' );
 
 	$malformed_created_uuid = '';
 	$malformed_secret       = '';
@@ -383,7 +452,7 @@ try {
 		'wp-native-builder/application-passwords-read',
 		array( 'action' => 'list', 'user_id' => (int) $target_user )
 	);
-	wpnb_issue61_assert( is_wp_error( $unavailable ) && 'application_passwords_disabled_for_user' === $unavailable->get_error_code(), 'Bridge bypassed Core per-user Application Password availability.' );
+	wpnb_issue61_assert( is_wp_error( $unavailable ) && 'application_passwords_rest_request_failed' === $unavailable->get_error_code(), 'Bridge did not normalize Core per-user Application Password unavailability.' );
 	remove_filter( 'wp_is_application_passwords_available_for_user', $availability_filter, 10 );
 	$availability_filter = null;
 
@@ -495,6 +564,9 @@ try {
 	}
 	if ( is_callable( $availability_filter ) ) {
 		remove_filter( 'wp_is_application_passwords_available_for_user', $availability_filter, 10 );
+	}
+	if ( is_callable( $f007_shared_error_filter ) ) {
+		remove_filter( 'rest_pre_dispatch', $f007_shared_error_filter, 10 );
 	}
 	wp_set_current_user( $admin_id );
 	if ( is_array( $admin_fixture ) && ! empty( $admin_fixture['uuid'] ) ) {
