@@ -41,6 +41,57 @@ Independent HIGH_ASSURANCE review, when required by the active contract, starts 
 
 A push to `main` always runs the full assurance set regardless of PR state.
 
+## Repository-scoped AI development and security review
+
+Routine AI-assisted implementation and security review are repository-scoped, defensive, and non-production by default. Treat source review and isolated validation as engineering work; do not expand them into live-system penetration testing, credential operations, or unrelated third-party activity unless an accepted, separately authorized work item genuinely requires that evidence.
+
+### Evidence ladder
+
+Use the smallest authoritative evidence source that can prove the accepted objective, in this order:
+
+1. current repository source, exact target-to-candidate diff, current Issue/Task Contract, and pull request;
+2. authoritative upstream source or documentation pinned to the supported WordPress, MCP Adapter, PHP, or provider version;
+3. dependency-free deterministic regression tests;
+4. isolated local/container WordPress integration fixtures using synthetic data and credentials;
+5. GitHub CI tied to the exact candidate and current target assumptions;
+6. a real external or production system only when the objective cannot be established by the earlier layers and explicit authorization permits the exact action, target, and environment.
+
+The Docker integration runners are disposable test environments. Keep their identities, credentials, content, and provider fixtures synthetic. Do not copy real Application Passwords, OAuth secrets, bearer/session material, private keys, production credentials, or unnecessary personal data into prompts, Issues, logs, fixtures, review packets, or CI artifacts.
+
+### Defensive task/review envelope
+
+For a security-sensitive AI implementation or review, record only the decision-relevant boundary:
+
+- **Repository/change:** exact repository plus target/base, candidate or PR, and current contract revision when one exists.
+- **Defensive purpose:** the correctness or security property being implemented or verified.
+- **Allowed action:** either `READ-ONLY` review or isolated, reversible implementation/test work.
+- **Prohibited effects:** no production mutation, credential collection, unrelated third-party targeting, weaponization, persistence, or evasion.
+- **Allowed evidence:** only the repository/upstream/test/fixture/CI sources needed for the objective.
+- **Secret/data minimization:** synthetic data by default; no raw secret values in prompts or artifacts.
+- **Result contract:** evidence-backed findings or implementation/validation results with exact identity and any residual uncertainty.
+- **Separate gates:** review, CI, repository access, and technical capability do not authorize integration, production, credential, destructive, or other separately gated actions.
+
+Use neutral defensive language that describes the actual engineering task. Do not label ordinary correctness review as exploitation, credential harvesting, stealth, bypass, or attack execution when those actions are not required.
+
+### HIGH_ASSURANCE review versus operational testing
+
+HIGH_ASSURANCE source review should normally be satisfiable from exact source/diffs, supported upstream contracts, deterministic fixtures, isolated WordPress integration, and exact-candidate CI. A real penetration test, production attack simulation, privileged live credential operation, or third-party target interaction is a different activity and requires a separate work item with explicit target, environment, scope, and authorization. Never silently expand source review into operational testing.
+
+For concurrency, reentrancy, authorization, and provenance invariants, prefer deterministic adversarial fixtures. Relevant patterns include hook ordering, re-entrant metadata writes, nested REST calls, same-request replay, response substitution, stale-state races, same-UUID replacement, and permission-boundary failures. Prove the defensive property in dependency-free tests or the isolated WordPress environment instead of relying on live exploitation.
+
+### Tool or provider limitations
+
+If one AI/tool route cannot inspect a security-sensitive detail:
+
+1. continue every safe repository-scoped or read-only action that remains valid;
+2. use an equivalent authoritative source when it preserves the required evidence semantics;
+3. report the exact missing evidence and its effect on completeness;
+4. never fabricate evidence, weaken the security property, or change tests merely to obtain a pass.
+
+Do not automatically escalate to production access, live credentials, or identity verification merely because one route is unavailable. A stronger authorization or verification boundary is required only when the accepted objective genuinely depends on that capability and the applicable platform or organizational policy requires it.
+
+See [Security](./SECURITY.md#repository-review-and-live-system-boundary) for the corresponding secret, live-system, and authorization boundary.
+
 ## Local quality gate
 
 Install development dependencies and run:
