@@ -20,7 +20,7 @@ function wpnb_issue58_policy_execute( $name, array $input = array() ) {
 }
 
 function wpnb_issue58_policy_item( $type, $id, $key, $include_values = false ) {
-	$field = 'user' === $type ? 'user_id' : 'comment_id';
+	$field  = 'user' === $type ? 'user_id' : 'comment_id';
 	$result = wpnb_issue58_policy_execute(
 		'wp-native-builder/' . $type . '-meta-read',
 		array(
@@ -39,6 +39,7 @@ $admin_id        = get_current_user_id();
 $user_id         = 0;
 $post_id         = 0;
 $comment_id      = 0;
+$same_cap_filter = null;
 
 try {
 	$user_id = wp_insert_user(
@@ -74,7 +75,7 @@ try {
 	add_user_meta( $user_id, 'issue58_disabled_update', 'before', true );
 	add_comment_meta( $comment_id, 'issue58_disabled_delete', 'before', true );
 
-	$disabled                                       = $settings->defaults();
+	$disabled                                      = $settings->defaults();
 	$disabled[ Settings::GROUP_ADVANCED_METADATA ] = 0;
 	$disabled[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
 	update_option( Settings::OPTION_NAME, $disabled, false );
@@ -140,6 +141,134 @@ try {
 	wpnb_issue58_policy_assert( 'provider-owned' === get_comment_meta( $comment_id, $denied_key, true ), 'Provider-denied comment metadata changed state.' );
 	remove_filter( 'auth_comment_meta_' . $denied_key, $deny_filter, 10 );
 
+	$user_policy_key           = '_issue58_user_same_cap_policy';
+	$comment_policy_key        = '_issue58_comment_same_cap_policy';
+	$user_create_policy_key    = '_issue58_user_same_cap_create';
+	$comment_create_policy_key = '_issue58_comment_same_cap_create';
+	add_user_meta( $user_id, $user_policy_key, 'user-policy-before', true );
+	add_comment_meta( $comment_id, $comment_policy_key, 'comment-policy-before', true );
+	$user_policy_state    = wpnb_issue58_policy_item( 'user', $user_id, $user_policy_key );
+	$comment_policy_state = wpnb_issue58_policy_item( 'comment', $comment_id, $comment_policy_key );
+	$user_empty_state     = wpnb_issue58_policy_item( 'user', $user_id, $user_create_policy_key );
+	$comment_empty_state  = wpnb_issue58_policy_item( 'comment', $comment_id, $comment_create_policy_key );
+
+	$same_cap_targets = array(
+		'user'    => array(
+			array( (int) $user_id, $user_policy_key ),
+			array( (int) $user_id, $user_create_policy_key ),
+		),
+		'comment' => array(
+			array( (int) $comment_id, $comment_policy_key ),
+			array( (int) $comment_id, $comment_create_policy_key ),
+		),
+	);
+	$same_cap_filter  = static function ( $caps, $cap, $filter_user_id, $args ) use ( $same_cap_targets ) {
+		if ( ! preg_match( '/^(add|edit|delete)_(user|comment)_meta$/', (string) $cap, $matches ) || count( (array) $args ) < 2 ) {
+			return $caps;
+		}
+		$type      = $matches[2];
+		$object_id = (int) $args[0];
+		$meta_key  = (string) $args[1];
+		foreach ( $same_cap_targets[ $type ] as $target ) {
+			if ( $object_id === $target[0] && $meta_key === $target[1] ) {
+				$caps[] = $cap;
+				return array_values( array_unique( $caps ) );
+			}
+		}
+		return $caps;
+	};
+	add_filter( 'map_meta_cap', $same_cap_filter, 99, 4 );
+
+	foreach ( array( 'add', 'edit', 'delete' ) as $operation ) {
+		wpnb_issue58_policy_assert( ! current_user_can( $operation . '_user_meta', $user_id, $user_policy_key ), 'Native user metadata policy unexpectedly allowed the same-capability mapped requirement.' );
+		wpnb_issue58_policy_assert( ! current_user_can( $operation . '_comment_meta', $comment_id, $comment_policy_key ), 'Native comment metadata policy unexpectedly allowed the same-capability mapped requirement.' );
+	}
+
+	$mapped_user_read = wpnb_issue58_policy_execute(
+		'wp-native-builder/user-meta-read',
+		array(
+			'user_id'        => (int) $user_id,
+			'key'            => $user_policy_key,
+			'include_values' => true,
+		)
+	);
+	wpnb_issue58_policy_assert( is_wp_error( $mapped_user_read ), 'Bridge bypassed a same-capability map_meta_cap user policy on exact read.' );
+	$mapped_comment_read = wpnb_issue58_policy_execute(
+		'wp-native-builder/comment-meta-read',
+		array(
+			'comment_id'     => (int) $comment_id,
+			'key'            => $comment_policy_key,
+			'include_values' => true,
+		)
+	);
+	wpnb_issue58_policy_assert( is_wp_error( $mapped_comment_read ), 'Bridge bypassed a same-capability map_meta_cap comment policy on exact read.' );
+
+	$mapped_user_update = wpnb_issue58_policy_execute(
+		'wp-native-builder/user-meta-update',
+		array(
+			'user_id'             => (int) $user_id,
+			'key'                 => $user_policy_key,
+			'expected_state_hash' => $user_policy_state['state_hash'],
+			'value_json'          => '"user-policy-after"',
+		)
+	);
+	wpnb_issue58_policy_assert( is_wp_error( $mapped_user_update ), 'Bridge bypassed a same-capability map_meta_cap user policy on update.' );
+	wpnb_issue58_policy_assert( 'user-policy-before' === get_user_meta( $user_id, $user_policy_key, true ), 'Denied same-capability user metadata update changed state.' );
+	$mapped_comment_update = wpnb_issue58_policy_execute(
+		'wp-native-builder/comment-meta-update',
+		array(
+			'comment_id'          => (int) $comment_id,
+			'key'                 => $comment_policy_key,
+			'expected_state_hash' => $comment_policy_state['state_hash'],
+			'value_json'          => '"comment-policy-after"',
+		)
+	);
+	wpnb_issue58_policy_assert( is_wp_error( $mapped_comment_update ), 'Bridge bypassed a same-capability map_meta_cap comment policy on update.' );
+	wpnb_issue58_policy_assert( 'comment-policy-before' === get_comment_meta( $comment_id, $comment_policy_key, true ), 'Denied same-capability comment metadata update changed state.' );
+
+	$mapped_user_delete = wpnb_issue58_policy_execute(
+		'wp-native-builder/user-meta-delete',
+		array(
+			'user_id'             => (int) $user_id,
+			'key'                 => $user_policy_key,
+			'expected_state_hash' => $user_policy_state['state_hash'],
+		)
+	);
+	wpnb_issue58_policy_assert( is_wp_error( $mapped_user_delete ) && metadata_exists( 'user', $user_id, $user_policy_key ), 'Bridge bypassed a same-capability map_meta_cap user policy on delete.' );
+	$mapped_comment_delete = wpnb_issue58_policy_execute(
+		'wp-native-builder/comment-meta-delete',
+		array(
+			'comment_id'          => (int) $comment_id,
+			'key'                 => $comment_policy_key,
+			'expected_state_hash' => $comment_policy_state['state_hash'],
+		)
+	);
+	wpnb_issue58_policy_assert( is_wp_error( $mapped_comment_delete ) && metadata_exists( 'comment', $comment_id, $comment_policy_key ), 'Bridge bypassed a same-capability map_meta_cap comment policy on delete.' );
+
+	$mapped_user_create = wpnb_issue58_policy_execute(
+		'wp-native-builder/user-meta-update',
+		array(
+			'user_id'             => (int) $user_id,
+			'key'                 => $user_create_policy_key,
+			'expected_state_hash' => $user_empty_state['state_hash'],
+			'value_json'          => '"created"',
+		)
+	);
+	wpnb_issue58_policy_assert( is_wp_error( $mapped_user_create ) && ! metadata_exists( 'user', $user_id, $user_create_policy_key ), 'Bridge bypassed a same-capability map_meta_cap user policy on create.' );
+	$mapped_comment_create = wpnb_issue58_policy_execute(
+		'wp-native-builder/comment-meta-update',
+		array(
+			'comment_id'          => (int) $comment_id,
+			'key'                 => $comment_create_policy_key,
+			'expected_state_hash' => $comment_empty_state['state_hash'],
+			'value_json'          => '"created"',
+		)
+	);
+	wpnb_issue58_policy_assert( is_wp_error( $mapped_comment_create ) && ! metadata_exists( 'comment', $comment_id, $comment_create_policy_key ), 'Bridge bypassed a same-capability map_meta_cap comment policy on create.' );
+
+	remove_filter( 'map_meta_cap', $same_cap_filter, 99 );
+	$same_cap_filter = null;
+
 	$stale_key = 'issue58_stale_delete';
 	add_comment_meta( $comment_id, $stale_key, 'before', true );
 	$stale_state = wpnb_issue58_policy_item( 'comment', $comment_id, $stale_key );
@@ -157,6 +286,9 @@ try {
 
 	echo "PASS: Issue #58 disabled, provider-auth, protected-comment, and stale-delete policy coverage.\n";
 } finally {
+	if ( null !== $same_cap_filter ) {
+		remove_filter( 'map_meta_cap', $same_cap_filter, 99 );
+	}
 	wp_set_current_user( $admin_id );
 	update_option( Settings::OPTION_NAME, $original_access, false );
 	if ( $comment_id > 0 ) {

@@ -494,20 +494,46 @@ final class User_Comment_Meta_Abilities {
 		if ( ! $protected || $this->has_explicit_meta_auth_contract( $type, $id, $key ) ) {
 			return current_user_can( $capability, (int) $id, (string) $key );
 		}
-		if ( ! function_exists( 'map_meta_cap' ) || ! function_exists( 'get_current_user_id' ) ) {
-			return true;
+
+		return $this->can_access_unregistered_protected_meta( $type, $id, $key, $capability );
+	}
+
+	/**
+	 * Allows only Core's ordinary protected-meta default to be overridden.
+	 *
+	 * The temporary subtype auth filter runs before any later provider policy, and
+	 * current_user_can() still evaluates the final map_meta_cap result in full.
+	 *
+	 * @return bool
+	 */
+	private function can_access_unregistered_protected_meta( $type, $id, $key, $capability ) {
+		if ( ! function_exists( 'get_object_subtype' ) || ! function_exists( 'get_current_user_id' ) || ! function_exists( 'add_filter' ) || ! function_exists( 'remove_filter' ) ) {
+			return false;
 		}
 
-		$mapped = map_meta_cap( $capability, get_current_user_id(), (int) $id, (string) $key );
-		foreach ( array_unique( (array) $mapped ) as $required ) {
-			if ( $required === $capability ) {
-				continue;
-			}
-			if ( 'do_not_allow' === $required || ! current_user_can( $required ) ) {
-				return false;
-			}
+		$subtype = get_object_subtype( $type, (int) $id );
+		$user_id = (int) get_current_user_id();
+		if ( '' === $subtype || $user_id < 1 ) {
+			return false;
 		}
-		return true;
+
+		$hook                         = 'auth_' . $type . '_meta_' . $key . '_for_' . $subtype;
+		$allow_core_protected_default = static function ( $allowed, $filter_key, $object_id, $filter_user_id, $filter_capability ) use ( $key, $id, $user_id, $capability ) {
+			if ( (string) $filter_key === (string) $key
+				&& (int) $object_id === (int) $id
+				&& (int) $filter_user_id === $user_id
+				&& (string) $filter_capability === (string) $capability ) {
+				return true;
+			}
+			return $allowed;
+		};
+
+		add_filter( $hook, $allow_core_protected_default, -PHP_INT_MAX, 6 );
+		try {
+			return current_user_can( $capability, (int) $id, (string) $key );
+		} finally {
+			remove_filter( $hook, $allow_core_protected_default, -PHP_INT_MAX );
+		}
 	}
 
 	/** @return bool */
@@ -536,9 +562,37 @@ final class User_Comment_Meta_Abilities {
 		if ( 'user' !== $type ) {
 			return false;
 		}
+		if ( $this->is_wordpress_user_authority_key( $key ) ) {
+			return true;
+		}
 		$bounded    = preg_replace( '/(?<=[a-z0-9])(?=[A-Z])/', '_', (string) $key );
 		$normalized = strtolower( trim( (string) preg_replace( '/[^A-Za-z0-9]+/', '_', (string) $bounded ), '_' ) );
 		return 1 === preg_match( '/(^|_)(capabilities|user_level|session_tokens|application_passwords?)($|_)/', $normalized );
+	}
+
+	/** @return bool */
+	private function is_wordpress_user_authority_key( $key ) {
+		global $table_prefix;
+
+		if ( ! isset( $table_prefix ) ) {
+			return false;
+		}
+		$base_prefix = strtolower( (string) $table_prefix );
+		$candidate   = strtolower( (string) $key );
+		if ( '' === $base_prefix ) {
+			return false;
+		}
+
+		foreach ( array( 'capabilities', 'user_level' ) as $suffix ) {
+			if ( $candidate === $base_prefix . $suffix ) {
+				return true;
+			}
+			$pattern = '/^' . preg_quote( $base_prefix, '/' ) . '[0-9]+_' . $suffix . '$/';
+			if ( 1 === preg_match( $pattern, $candidate ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** @return array<string,mixed>|WP_Error */
