@@ -44,6 +44,7 @@ An exact read returns a `state_hash` derived from physical metadata row identity
 The generic mutator supports only a single physical row for an exact key. Multi-row keys are readable as bounded state but cannot be generically updated or deleted because selecting one row would be ambiguous.
 
 Creation uses normal WordPress `add_metadata(..., true)` behavior so provider sanitization and add lifecycle hooks remain authoritative. Existing-row update/delete use a fixed-purpose internal persistence helper bound only to `usermeta` or `commentmeta`. It accepts no SQL, table, column, query fragment, or caller-selected row ID.
+\nThe create path captures the exact row identity from Core’s `added_*_meta` lifecycle by returned `meta_id`, so nested same-key writes cannot replace Bridge ownership. If a provider sanitizer expands the stored value beyond the 1 MiB bound, the Bridge removes only its own still-unchanged row before returning the bounded-value error; observer-modified or concurrent state is preserved.
 
 The helper performs byte-exact compare-and-swap on the inspected physical row, emits the normal dynamic WordPress metadata lifecycle, invalidates the normal metadata cache, and verifies the resulting physical state. If concurrency is detected after a Bridge-owned mutation, compensation is itself bound to the exact row and exact bytes written by that invocation. Newer unrelated state is preserved rather than overwritten.
 

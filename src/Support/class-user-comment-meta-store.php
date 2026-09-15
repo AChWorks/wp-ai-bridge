@@ -18,9 +18,6 @@ use WP_Error;
 final class User_Comment_Meta_Store {
 	const MAX_VALUE_BYTES = 1048576;
 
-	/** @var array<int,array<string,mixed>> Exact rows created by this store during the current request. */
-	private $created_expectations = array();
-
 	/**
 	 * Returns bounded physical rows for one exact key or a bounded value-free key list.
 	 *
@@ -142,47 +139,38 @@ final class User_Comment_Meta_Store {
 		}
 		$object_id = (int) $object_id;
 		$key       = (string) $key;
-		$captured  = false;
-		$prepared  = null;
-		$capture   = function ( $check, $candidate_id, $meta_key, $meta_value, $unique ) use ( $object_id, $key, &$captured, &$prepared ) {
-			if ( null !== $check ) {
-				return $check;
+		$captured  = array();
+		$capture   = function ( $meta_id, $candidate_id, $meta_key, $meta_value ) use ( $object_id, $key, &$captured ) {
+			if ( (int) $candidate_id !== $object_id || (string) $meta_key !== $key ) {
+				return;
 			}
-			if ( (int) $candidate_id === $object_id && (string) $meta_key === $key && true === (bool) $unique ) {
-				$captured = true;
-				$prepared = $this->stored_value( $meta_value );
-				if ( is_wp_error( $prepared ) ) {
-					return false;
-				}
-			}
-			return $check;
+			$prepared                   = $this->stored_value_unbounded( $meta_value );
+			$captured[ (int) $meta_id ] = array(
+				'meta_id'   => (int) $meta_id,
+				'object_id' => $object_id,
+				'key'       => $key,
+				'raw_value' => $prepared['raw_value'],
+				'value'     => $prepared['value'],
+			);
 		};
-		$hook      = 'add_' . $type . '_metadata';
-		add_filter( $hook, $capture, PHP_INT_MAX, 5 );
+		$hook      = 'added_' . $type . '_meta';
+		add_action( $hook, $capture, PHP_INT_MIN, 4 );
 		try {
 			$result = add_metadata( $type, $object_id, wp_slash( $key ), wp_slash( $value ), true );
 		} finally {
-			remove_filter( $hook, $capture, PHP_INT_MAX );
+			remove_action( $hook, $capture, PHP_INT_MIN );
 		}
-		if ( ! $captured ) {
+		if ( ! is_int( $result ) || $result < 1 || ! array_key_exists( $result, $captured ) ) {
 			return $this->state_error();
 		}
-		if ( is_wp_error( $prepared ) ) {
-			return $prepared;
-		}
-		$expected = array(
-			'meta_id'   => is_int( $result ) ? $result : 0,
-			'object_id' => $object_id,
-			'key'       => $key,
-			'raw_value' => $prepared['raw_value'],
-			'value'     => $prepared['value'],
-		);
-		if ( is_int( $result ) && $result > 0 ) {
-			$this->created_expectations[ $result ] = $expected;
-		}
+		$expected          = $captured[ $result ];
+		$post_commit_error = null !== $expected['raw_value'] && strlen( $expected['raw_value'] ) > self::MAX_VALUE_BYTES
+			? $this->value_too_large_error()
+			: null;
 		return array(
-			'result'       => $result,
-			'expected_row' => $expected,
+			'result'            => $result,
+			'expected_row'      => $expected,
+			'post_commit_error' => $post_commit_error,
 		);
 	}
 
@@ -273,18 +261,15 @@ final class User_Comment_Meta_Store {
 	/**
 	 * Removes only the exact unchanged row originally created by this store.
 	 *
-	 * @param string              $type User or comment.
-	 * @param array<string,mixed> $row  Current row snapshot supplied by the caller.
+	 * @param string              $type     User or comment.
+	 * @param array<string,mixed> $expected Exact row captured from Core's added-meta lifecycle.
 	 * @return true|WP_Error
 	 */
-	public function cleanup_created_row( $type, array $row ) {
+	public function cleanup_created_row( $type, array $expected ) {
 		$type = $this->type( $type );
 		if ( is_wp_error( $type ) ) {
 			return $type;
 		}
-		$meta_id  = (int) $row['meta_id'];
-		$expected = isset( $this->created_expectations[ $meta_id ] ) ? $this->created_expectations[ $meta_id ] : $row;
-		unset( $this->created_expectations[ $meta_id ] );
 		$this->before_delete( $type, $expected );
 		$result = 'user' === $type ? $this->delete_user_row( $expected ) : $this->delete_comment_row( $expected );
 		wp_cache_delete( (int) $expected['object_id'], $type . '_meta' );
@@ -354,8 +339,17 @@ final class User_Comment_Meta_Store {
 		do_action( "deleted_{$type}_meta", array( (int) $row['meta_id'] ), (int) $row['object_id'], (string) $row['key'], $row['value'] );
 	}
 
-	/** Converts an already-sanitized WordPress metadata value to its exact DB representation. */
+	/** Converts an already-sanitized WordPress metadata value to its bounded exact DB representation. */
 	private function stored_value( $value ) {
+		$stored = $this->stored_value_unbounded( $value );
+		if ( null !== $stored['raw_value'] && strlen( $stored['raw_value'] ) > self::MAX_VALUE_BYTES ) {
+			return $this->value_too_large_error();
+		}
+		return $stored;
+	}
+
+	/** Converts a Core-sanitized value to exact storage bytes for row-owned compensation. */
+	private function stored_value_unbounded( $value ) {
 		$raw_value = maybe_serialize( $value );
 		if ( null === $raw_value ) {
 			return array(
@@ -369,9 +363,6 @@ final class User_Comment_Meta_Store {
 			$raw_value = '1';
 		} elseif ( ! is_string( $raw_value ) ) {
 			$raw_value = (string) $raw_value;
-		}
-		if ( strlen( $raw_value ) > self::MAX_VALUE_BYTES ) {
-			return $this->value_too_large_error();
 		}
 		return array(
 			'value'     => $value,

@@ -162,8 +162,8 @@ final class User_Comment_Meta_Abilities {
 		if ( $this->is_sensitive_key( $type, $key ) ) {
 			return false;
 		}
-		$rows = $this->store->rows( $type, $id, $key );
-		return ! is_wp_error( $rows ) && $this->can_access_meta_key( $type, $id, $key, empty( $rows ) ? 'add' : 'edit' );
+		return $this->can_access_meta_key( $type, $id, $key, 'edit' )
+			|| $this->can_access_meta_key( $type, $id, $key, 'add' );
 	}
 
 	/** @return bool */
@@ -176,8 +176,8 @@ final class User_Comment_Meta_Abilities {
 		if ( ! $this->authorized_target( $type, $id ) || $this->is_sensitive_key( $type, $key ) ) {
 			return false;
 		}
-		$rows = $this->store->rows( $type, $id, $key );
-		return ! is_wp_error( $rows ) && $this->can_access_meta_key( $type, $id, $key, empty( $rows ) ? 'add' : 'edit' );
+		return $this->can_access_meta_key( $type, $id, $key, 'edit' )
+			|| $this->can_access_meta_key( $type, $id, $key, 'add' );
 	}
 
 	/** @return bool */
@@ -401,7 +401,14 @@ final class User_Comment_Meta_Abilities {
 		}
 		$result       = $creation['result'];
 		$expected_row = $creation['expected_row'];
-		$after        = $this->store->rows( $type, $id, $key );
+		if ( isset( $creation['post_commit_error'] ) && is_wp_error( $creation['post_commit_error'] ) ) {
+			$cleanup = $this->store->cleanup_created_row( $type, $expected_row );
+			if ( is_wp_error( $cleanup ) ) {
+				return $this->logged_error( $cleanup, $type, $id, $ability );
+			}
+			return $this->logged_error( $creation['post_commit_error'], $type, $id, $ability );
+		}
+		$after = $this->store->rows( $type, $id, $key );
 		if ( is_wp_error( $after ) ) {
 			return $this->logged_error( $after, $type, $id, $ability );
 		}
@@ -422,7 +429,7 @@ final class User_Comment_Meta_Abilities {
 		}
 		if ( null === $created || ! $this->store->row_matches( $created, $expected_row ) || 1 !== count( $after ) ) {
 			if ( null !== $created ) {
-				$cleanup = $this->store->cleanup_created_row( $type, $created );
+				$cleanup = $this->store->cleanup_created_row( $type, $expected_row );
 				if ( is_wp_error( $cleanup ) ) {
 					return $this->logged_error( $cleanup, $type, $id, $ability );
 				}
@@ -432,7 +439,7 @@ final class User_Comment_Meta_Abilities {
 
 		$value_error = $this->supported_value( $created['value'] );
 		if ( is_wp_error( $value_error ) ) {
-			$cleanup = $this->store->cleanup_created_row( $type, $created );
+			$cleanup = $this->store->cleanup_created_row( $type, $expected_row );
 			if ( is_wp_error( $cleanup ) ) {
 				return $this->logged_error( $cleanup, $type, $id, $ability );
 			}
