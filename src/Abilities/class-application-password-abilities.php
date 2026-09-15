@@ -468,7 +468,11 @@ final class Application_Password_Abilities {
 	 * @return array{data:mixed,headers:array<string,mixed>}|WP_Error
 	 */
 	private function send_request( $request ) {
-		$response = rest_do_request( $request );
+		try {
+			$response = rest_do_request( $request );
+		} catch ( \Throwable $throwable ) {
+			return new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-native-builder-bridge' ) );
+		}
 		if ( is_wp_error( $response ) ) {
 			return $this->normalize_rest_error( $response );
 		}
