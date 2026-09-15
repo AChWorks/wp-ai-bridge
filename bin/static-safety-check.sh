@@ -102,16 +102,17 @@ if [[ "$(grep -cF '@chmod(' "$source_editor" || true)" != "2" || "$(grep -cF '@c
     exit 1
 fi
 
-# Issue #34 needs exact-row compare-and-swap against wp_postmeta. Direct database use remains
-# forbidden outside the two explicitly confined metadata stores below. Those stores accept no
-# SQL text, table name, column name, row selector, or query fragment from Ability/client input.
+# Issues #34/#36/#58 need exact-row compare-and-swap against fixed metadata tables. Direct database
+# use remains forbidden outside the three explicitly confined metadata stores below. Those stores
+# accept no SQL text, table name, column name, row selector, or query fragment from Ability input.
 metadata_store='src/Support/class-post-meta-store.php'
 term_metadata_store='src/Support/class-term-meta-store.php'
-if [[ ! -f "$metadata_store" ]]; then
-    echo "ERROR: bounded post-meta store is missing." >&2
+user_comment_metadata_store='src/Support/class-user-comment-meta-store.php'
+if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comment_metadata_store" ]]; then
+    echo "ERROR: one or more bounded metadata stores are missing." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded metadata stores." >&2
@@ -150,10 +151,6 @@ fi
 
 # Issue #36 writes only termmeta; native term tables appear only in identity joins. Do not relax the
 # postmeta assertions above: the shipped postmeta CAS surface remains unchanged.
-if [[ ! -f "$term_metadata_store" ]]; then
-    echo "ERROR: bounded term-meta store is missing." >&2
-    exit 1
-fi
 if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$term_metadata_store" | grep -vE '\$wpdb->(termmeta|term_taxonomy|terms|last_error|insert_id|get_results|get_var|prepare|query)([^A-Za-z0-9_]|$)'; then
     echo "ERROR: term-meta store exceeded its fixed termmeta persistence surface." >&2
     exit 1
@@ -171,11 +168,11 @@ term_binary_value_count="$(grep -cF 'CAST(m.meta_value AS BINARY) = CAST(%s AS B
 term_null_count="$(grep -cF 'meta_value IS NULL' "$term_metadata_store" || true)"
 term_set_null_count="$(grep -cF 'SET m.meta_value = NULL' "$term_metadata_store" || true)"
 term_set_string_count="$(grep -cF 'SET m.meta_value = %s' "$term_metadata_store" || true)"
-if [[ "$term_prepare_count" != 11 || "$term_query_count" != 8 || "$term_read_count" != 2 || "$term_unique_read_count" != 1 || "$term_binary_key_count" != 6 || "$term_binary_value_count" != 3 || "$term_null_count" != 3 || "$term_set_null_count" != 2 || "$term_set_string_count" != 2 ]]; then
+if [[ "$term_prepare_count" != "11" || "$term_query_count" != "8" || "$term_read_count" != "2" || "$term_unique_read_count" != "1" || "$term_binary_key_count" != "6" || "$term_binary_value_count" != "3" || "$term_null_count" != "3" || "$term_set_null_count" != "2" || "$term_set_string_count" != "2" ]]; then
     echo "ERROR: term-meta persistence must retain two bounded reads, one native uniqueness check, six identity-bound CAS branches, and two conditional insert branches." >&2
     exit 1
 fi
-if [[ "$(grep -cF 'SELECT meta_id, term_id, meta_key, CASE WHEN OCTET_LENGTH(meta_value) <= 1048576 THEN meta_value ELSE NULL END AS meta_value, OCTET_LENGTH(meta_value) AS value_bytes FROM %i WHERE term_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) ORDER BY meta_id LIMIT 2' "$term_metadata_store" || true)" != 1 || "$(grep -cF 'SELECT MIN(meta_key) AS meta_key, COUNT(*) AS row_count FROM %i WHERE term_id = %d AND meta_key IS NOT NULL GROUP BY CAST(meta_key AS BINARY) ORDER BY CAST(meta_key AS BINARY) LIMIT %d OFFSET %d' "$term_metadata_store" || true)" != 1 ]]; then
+if [[ "$(grep -cF 'SELECT meta_id, term_id, meta_key, CASE WHEN OCTET_LENGTH(meta_value) <= 1048576 THEN meta_value ELSE NULL END AS meta_value, OCTET_LENGTH(meta_value) AS value_bytes FROM %i WHERE term_id = %d AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) ORDER BY meta_id LIMIT 2' "$term_metadata_store" || true)" != "1" || "$(grep -cF 'SELECT MIN(meta_key) AS meta_key, COUNT(*) AS row_count FROM %i WHERE term_id = %d AND meta_key IS NOT NULL GROUP BY CAST(meta_key AS BINARY) ORDER BY CAST(meta_key AS BINARY) LIMIT %d OFFSET %d' "$term_metadata_store" || true)" != "1" ]]; then
     echo "ERROR: term-meta physical reads lost their fixed bounds or value-free list contract." >&2
     exit 1
 fi
@@ -221,5 +218,6 @@ if grep -Fq "form-action 'self';" src/Auth/class-oauth-server.php; then
 fi
 
 php bin/check-term-meta-confinement.php
+php bin/check-user-comment-meta-confinement.php
 
 echo "PASS: static safety surface audit."

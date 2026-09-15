@@ -38,6 +38,8 @@ final class Registrar {
 	private $post_meta_abilities;
 	/** @var Term_Meta_Abilities */
 	private $term_meta_abilities;
+	/** @var User_Comment_Meta_Abilities */
+	private $user_comment_meta_abilities;
 	/** @var Block_Abilities */
 	private $block_abilities;
 	/** @var Media_Abilities */
@@ -77,30 +79,31 @@ final class Registrar {
 	 * @param Native_Ability_Delegation|null $native_ability_delegation Authoritative Bridge provenance service.
 	 */
 	public function __construct( Environment $environment, Settings $settings, Permissions $permissions, ?Store $workspace = null, ?Native_Ability_Delegation $native_ability_delegation = null ) {
-		$this->environment               = $environment;
-		$this->settings                  = $settings;
-		$this->permissions               = $permissions;
-		$this->native_ability_delegation = $native_ability_delegation;
-		$this->resolver                  = new Ability_Resolver();
-		$mutation_log                    = new Mutation_Log();
-		$this->site_abilities            = new Site_Abilities( $this->resolver, $this->permissions );
-		$this->catalog_abilities         = new Ability_Catalog_Abilities( $this->resolver, $this->permissions, $native_ability_delegation );
-		$this->content_abilities         = new Content_Abilities( $this->permissions, $mutation_log );
-		$this->post_meta_abilities       = new Post_Meta_Abilities( $this->permissions, $mutation_log );
-		$this->term_meta_abilities       = new Term_Meta_Abilities( $this->permissions, $mutation_log );
-		$this->block_abilities           = new Block_Abilities( $this->permissions, $mutation_log );
-		$this->media_abilities           = new Media_Abilities( $this->permissions, $mutation_log );
-		$this->taxonomy_abilities        = new Taxonomy_Abilities( $this->permissions, $mutation_log );
-		$this->navigation_abilities      = new Navigation_Abilities( $this->permissions, $mutation_log );
-		$this->integration_abilities     = new Integration_Abilities( $this->resolver, $this->permissions );
-		$this->site_config_abilities     = new Site_Config_Abilities( $this->permissions, $mutation_log );
-		$this->extension_abilities       = new Extension_Abilities( $this->permissions, $mutation_log );
-		$this->source_editing_abilities  = new Source_Editing_Abilities( $this->permissions, $mutation_log );
-		$this->user_abilities            = new User_Abilities( $this->permissions, $mutation_log );
-		$this->comment_abilities         = new Comment_Abilities( $this->permissions, $mutation_log );
-		$this->gravity_forms_abilities   = new Gravity_Forms_Abilities( $this->permissions, $mutation_log );
-		$this->code_snippets_abilities   = new Code_Snippets_Abilities( $this->permissions, $mutation_log );
-		$this->workspace_abilities       = new Workspace_Abilities( $this->permissions, $workspace ? $workspace : new Store(), $mutation_log );
+		$this->environment                 = $environment;
+		$this->settings                    = $settings;
+		$this->permissions                 = $permissions;
+		$this->native_ability_delegation   = $native_ability_delegation;
+		$this->resolver                    = new Ability_Resolver();
+		$mutation_log                      = new Mutation_Log();
+		$this->site_abilities              = new Site_Abilities( $this->resolver, $this->permissions );
+		$this->catalog_abilities           = new Ability_Catalog_Abilities( $this->resolver, $this->permissions, $native_ability_delegation );
+		$this->content_abilities           = new Content_Abilities( $this->permissions, $mutation_log );
+		$this->post_meta_abilities         = new Post_Meta_Abilities( $this->permissions, $mutation_log );
+		$this->term_meta_abilities         = new Term_Meta_Abilities( $this->permissions, $mutation_log );
+		$this->user_comment_meta_abilities = new User_Comment_Meta_Abilities( $this->permissions, $mutation_log );
+		$this->block_abilities             = new Block_Abilities( $this->permissions, $mutation_log );
+		$this->media_abilities             = new Media_Abilities( $this->permissions, $mutation_log );
+		$this->taxonomy_abilities          = new Taxonomy_Abilities( $this->permissions, $mutation_log );
+		$this->navigation_abilities        = new Navigation_Abilities( $this->permissions, $mutation_log );
+		$this->integration_abilities       = new Integration_Abilities( $this->resolver, $this->permissions );
+		$this->site_config_abilities       = new Site_Config_Abilities( $this->permissions, $mutation_log );
+		$this->extension_abilities         = new Extension_Abilities( $this->permissions, $mutation_log );
+		$this->source_editing_abilities    = new Source_Editing_Abilities( $this->permissions, $mutation_log );
+		$this->user_abilities              = new User_Abilities( $this->permissions, $mutation_log );
+		$this->comment_abilities           = new Comment_Abilities( $this->permissions, $mutation_log );
+		$this->gravity_forms_abilities     = new Gravity_Forms_Abilities( $this->permissions, $mutation_log );
+		$this->code_snippets_abilities     = new Code_Snippets_Abilities( $this->permissions, $mutation_log );
+		$this->workspace_abilities         = new Workspace_Abilities( $this->permissions, $workspace ? $workspace : new Store(), $mutation_log );
 	}
 
 	/**
@@ -193,6 +196,7 @@ final class Registrar {
 			$this->content_abilities,
 			$this->post_meta_abilities,
 			$this->term_meta_abilities,
+			$this->user_comment_meta_abilities,
 			$this->block_abilities,
 			$this->media_abilities,
 			$this->taxonomy_abilities,

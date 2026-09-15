@@ -12,7 +12,8 @@ $messages = array_merge(
 	require __DIR__ . '/fa_IR-parts/media-import.php',
 	require __DIR__ . '/fa_IR-parts/source-editing.php',
 	require __DIR__ . '/fa_IR-parts/oauth-clients.php',
-	require __DIR__ . '/fa_IR-parts/registered-settings.php'
+	require __DIR__ . '/fa_IR-parts/registered-settings.php',
+	require __DIR__ . '/fa_IR-parts/user-comment-meta.php'
 );
 
 return array(
