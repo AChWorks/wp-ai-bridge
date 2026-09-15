@@ -24,8 +24,10 @@ wp=("${compose[@]}" run --rm cli)
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-native-builder-bridge.zip
 "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration
 "${compose[@]}" cp "$root/tests/integration/issue58-user-comment-meta-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue58-user-comment-meta-smoke.php
+"${compose[@]}" cp "$root/tests/integration/issue58-user-comment-meta-race-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue58-user-comment-meta-race-smoke.php
 actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
 actual_php="$("${wp[@]}" eval 'echo PHP_VERSION;' --allow-root | tail -n 1)"
 echo "Issue #58 baseline: WordPress ${actual_wp}; PHP ${actual_php}; image ${wordpress_tag}"
 "${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue58-user-comment-meta-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue58-user-comment-meta-race-smoke.php --user=1 --allow-root
 echo 'Issue #58 user/comment metadata integration: PASS'
