@@ -157,7 +157,7 @@ final class User_Comment_Meta_Store {
 			}
 			return $check;
 		};
-		$hook = 'add_' . $type . '_metadata';
+		$hook      = 'add_' . $type . '_metadata';
 		add_filter( $hook, $capture, PHP_INT_MAX, 5 );
 		try {
 			$result = add_metadata( $type, $object_id, wp_slash( $key ), wp_slash( $value ), true );
