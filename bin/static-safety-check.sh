@@ -168,9 +168,9 @@ do {
     }
 } while ( $changed );
 
-// PHP 8.4 adds callback-taking APIs over time. Derive the internal callback surface from the
-// runtime signature instead of maintaining another incomplete name list. Legacy variadic array
-// comparison families have incomplete reflection types and are rejected as a whole below.
+// PHP adds callback-taking APIs over time. Derive the global internal callback-function surface
+// from the runtime signature. Constructors are class-qualified and safe to inventory by class;
+// method names are receiver-dependent, so they are handled structurally below instead of globally.
 $internal_callback_functions = array();
 foreach ( get_defined_functions()["internal"] as $function_name ) {
     try {
@@ -187,7 +187,6 @@ foreach ( get_defined_functions()["internal"] as $function_name ) {
         }
     }
 }
-$internal_callback_methods = array();
 $internal_callback_constructors = array();
 foreach ( get_declared_classes() as $class_name ) {
     try {
@@ -199,24 +198,16 @@ foreach ( get_declared_classes() as $class_name ) {
     if ( ! $class->isInternal() ) {
         continue;
     }
-    foreach ( $class->getMethods() as $method ) {
-        $has_callable = false;
-        foreach ( $method->getParameters() as $parameter ) {
-            $type = $parameter->getType();
-            if ( null !== $type && false !== stripos( (string) $type, "callable" ) ) {
-                $has_callable = true;
-                break;
-            }
-        }
-        if ( ! $has_callable ) {
-            continue;
-        }
-        $method_name = strtolower( $method->getName() );
-        if ( "__construct" === $method_name ) {
+    $constructor = $class->getConstructor();
+    if ( null === $constructor ) {
+        continue;
+    }
+    foreach ( $constructor->getParameters() as $parameter ) {
+        $type = $parameter->getType();
+        if ( null !== $type && false !== stripos( (string) $type, "callable" ) ) {
             $parts = preg_split( "/\\\\+/", strtolower( $class_name ) );
             $internal_callback_constructors[ end( $parts ) ] = true;
-        } else {
-            $internal_callback_methods[ $method_name ] = true;
+            break;
         }
     }
 }
@@ -228,6 +219,7 @@ for ( $i = 0; $i < $token_count; ++$i ) {
     if ( "(" === $text ) {
         $previous = $i > 0 ? $tokens[ $i - 1 ] : null;
         $before_previous = $i > 1 ? $tokens[ $i - 2 ] : null;
+        $receiver = $i > 2 ? $tokens[ $i - 3 ] : null;
         $dynamic_callable = is_array( $previous )
             ? in_array( $previous[0], $dynamic_callable_tokens, true )
             : in_array( $previous, array( ")", "]", "}", "\"" ), true );
@@ -248,8 +240,9 @@ for ( $i = 0; $i < $token_count; ++$i ) {
                         exit( 6 );
                     }
                 } elseif ( T_OBJECT_OPERATOR === $before_id || ( defined( "T_NULLSAFE_OBJECT_OPERATOR" ) && T_NULLSAFE_OBJECT_OPERATOR === $before_id ) || T_DOUBLE_COLON === $before_id ) {
-                    if ( "__invoke" === $call_name || isset( $internal_callback_methods[ $call_name ] ) ) {
-                        fwrite( STDERR, "ERROR: external package provider must not use a PHP internal callback-dispatch method.\n" );
+                    $receiver_name = is_array( $receiver ) && in_array( $receiver[0], $name_tokens, true ) ? $normalize_name( $receiver ) : "";
+                    if ( "__invoke" === $call_name || ( T_DOUBLE_COLON === $before_id && "fromcallable" === $call_name && "closure" === $receiver_name ) ) {
+                        fwrite( STDERR, "ERROR: external package provider must not use callable conversion/invocation methods.\n" );
                         exit( 7 );
                     }
                 } else {
