@@ -14,7 +14,7 @@ function wpai_catalog_assert( $condition, $message ) {
 	if ( ! $condition ) { throw new RuntimeException( $message ); }
 }
 
-final class WPNB_Catalog_Test_Ability {
+final class WPAI_Catalog_Test_Ability {
 	public $name;
 	public $input = array( 'type' => 'object', 'properties' => array( 'target' => array( 'type' => 'integer' ) ), 'additionalProperties' => false );
 	public $output = array( 'type' => 'string' );
@@ -47,12 +47,12 @@ wpai_catalog_assert( $catalog->can_read(), 'Safe default must permit contract in
 
 for ( $i = 136; $i >= 0; --$i ) {
 	$name = sprintf( 'unknown-provider/operation-%03d', $i );
-	$GLOBALS['wpai_test']['abilities'][ $name ] = new WPNB_Catalog_Test_Ability( $name );
+	$GLOBALS['wpai_test']['abilities'][ $name ] = new WPAI_Catalog_Test_Ability( $name );
 }
-$private = new WPNB_Catalog_Test_Ability( 'hidden/private' );
+$private = new WPAI_Catalog_Test_Ability( 'hidden/private' );
 $private->meta = array( 'public' => false );
 $GLOBALS['wpai_test']['abilities'][ $private->name ] = $private;
-$optout = new WPNB_Catalog_Test_Ability( 'hidden/optout' );
+$optout = new WPAI_Catalog_Test_Ability( 'hidden/optout' );
 $optout->meta = array( 'public' => true, 'mcp' => array( 'public' => false ) );
 $GLOBALS['wpai_test']['abilities'][ $optout->name ] = $optout;
 
@@ -124,7 +124,7 @@ wpai_catalog_assert( is_wp_error( $catalog->read( array( 'action' => 'get', 'nam
 unset( $fixture->input['recursive'] );
 $fixture->input = array( 'type' => 'string' );
 $long_name = 'unknown-provider/' . str_repeat( 'a', 300 );
-$GLOBALS['wpai_test']['abilities'][ $long_name ] = new WPNB_Catalog_Test_Ability( $long_name );
+$GLOBALS['wpai_test']['abilities'][ $long_name ] = new WPAI_Catalog_Test_Ability( $long_name );
 wpai_catalog_assert( ! is_wp_error( $catalog->read( array( 'action' => 'get', 'name' => $long_name ) ) ), 'Valid registered names must not be rejected by an invented provider/name allowlist.' );
 $fixture->input = array( 'type' => 'object', 'default' => new class extends stdClass implements JsonSerializable {
 	public function jsonSerialize(): mixed { throw new RuntimeException( 'A stdClass subclass must not execute custom serialization during inspection.' ); }
@@ -144,7 +144,7 @@ $exposure_cases = array(
 );
 $resolver = new Ability_Resolver();
 foreach ( $exposure_cases as $index => $case ) {
-	$exposure = new WPNB_Catalog_Test_Ability( 'exposure/case-' . $index );
+	$exposure = new WPAI_Catalog_Test_Ability( 'exposure/case-' . $index );
 	$exposure->meta = $case[0];
 	$GLOBALS['wpai_test']['abilities'][ $exposure->name ] = $exposure;
 	wpai_catalog_assert( $case[1] === $resolver->is_mcp_exposed( $exposure ), 'Resolver disagrees with pinned Adapter exposure semantics.' );

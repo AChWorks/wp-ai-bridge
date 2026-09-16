@@ -41,7 +41,7 @@ $settings        = new Settings();
 $original_access = get_option( Settings::OPTION_NAME, $settings->defaults() );
 $original_log    = get_option( Mutation_Log::OPTION_NAME, array() );
 $created_post    = 0;
-$secret_marker   = 'WPNB_SECRET_' . wp_generate_password( 24, false, false );
+$secret_marker   = 'WPAI_SECRET_' . wp_generate_password( 24, false, false );
 
 try {
 	$names = array();

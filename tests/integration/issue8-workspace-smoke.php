@@ -179,7 +179,7 @@ try {
 	wpai_issue8_assert( ! is_wp_error( $after_prune ) && $updated_document['state_hash'] === $after_prune['state_hash'], 'Workspace state changed after revision pruning.' );
 
 	$export = $store->export_snapshot();
-	wpai_issue8_assert( 'wp-native-builder-workspace-v1' === $export['format'], 'Workspace export format identifier is missing.' );
+	wpai_issue8_assert( 'wp-ai-bridge-workspace-v1' === $export['format'], 'Workspace export format identifier is missing.' );
 	wpai_issue8_assert( 1 === count( $export['documents'] ) && 1 === count( $export['tasks'] ), 'Workspace export omitted current records.' );
 
 	// Permission gates remain separate from storage correctness.

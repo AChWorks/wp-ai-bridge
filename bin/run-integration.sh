@@ -106,8 +106,8 @@ if [[ ! "$http_port" =~ ^[1-9][0-9]*$ ]]; then
     echo "ERROR: Could not resolve the isolated WordPress HTTP port." >&2
     exit 1
 fi
-WPNB_HTTP_BASE_URL="http://127.0.0.1:${http_port}" \
-WPNB_PUBLIC_ORIGIN='https://localhost' \
+WPAI_HTTP_BASE_URL="http://127.0.0.1:${http_port}" \
+WPAI_PUBLIC_ORIGIN='https://localhost' \
 bash "$root/bin/run-direct-http-smoke.sh"
 
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue4-code-snippets-smoke.php --user=1 --allow-root

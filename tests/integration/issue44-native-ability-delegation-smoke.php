@@ -139,8 +139,7 @@ wpai_issue44_live_assert( 'ability_specific' === wpai_issue44_live_delegation( $
 $store     = new OAuth_Store();
 $oauth     = new OAuth_Server( $store );
 $resources = array(
-	OAuth_Server::MCP_REQUEST_ROUTE         => $oauth->mcp_endpoint_url(),
-	OAuth_Server::LEGACY_MCP_REQUEST_ROUTE => $oauth->legacy_mcp_endpoint_url(),
+	OAuth_Server::MCP_REQUEST_ROUTE => $oauth->mcp_endpoint_url(),
 );
 $id = 10;
 foreach ( $resources as $route => $resource ) {

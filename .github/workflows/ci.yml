@@ -17,7 +17,7 @@ concurrency:
 jobs:
   quality:
     name: Quality / PHP 8.4
-    if: ${{ github.event.action == 'ready_for_review' || ((github.event.action == 'opened' || github.event.action == 'reopened') && github.event.pull_request.draft == false) }}
+    if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -47,7 +47,7 @@ jobs:
 
   integration:
     name: Integration / ${{ matrix.wordpress_tag }}
-    if: ${{ github.event.action == 'ready_for_review' || ((github.event.action == 'opened' || github.event.action == 'reopened') && github.event.pull_request.draft == false) }}
+    if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -75,7 +75,7 @@ jobs:
 
   specialized:
     name: ${{ matrix.name }} / ${{ matrix.wordpress_tag }}
-    if: ${{ github.event.action == 'ready_for_review' || ((github.event.action == 'opened' || github.event.action == 'reopened') && github.event.pull_request.draft == false) }}
+    if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
