@@ -46,8 +46,8 @@ if [[ "$package_url_schema_files" != "$external_package_provider" || "$(grep -cF
     echo "ERROR: package_url must remain one exact extension-lifecycle schema field." >&2
     exit 1
 fi
-# Tokenize PHP identifiers so comments, whitespace, case, or namespace separators cannot hide
-# relevant HTTP helpers or forbidden primitives from this fixed-purpose provider inventory.
+# Tokenize executable PHP syntax so comments, whitespace, case, namespace separators, and
+# ordinary dynamic callable forms cannot hide a second request path or forbidden primitive.
 external_package_identifier_inventory="$(
     php -r '
 $source = file_get_contents( $argv[1] );
@@ -56,19 +56,31 @@ if ( false === $source ) {
     exit( 2 );
 }
 $name_tokens = array( T_STRING, T_NAME_FULLY_QUALIFIED, T_NAME_QUALIFIED, T_NAME_RELATIVE );
+$ignored_tokens = array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT, T_OPEN_TAG, T_CLOSE_TAG );
+$dynamic_callable_tokens = array( T_VARIABLE, T_CONSTANT_ENCAPSED_STRING, T_END_HEREDOC );
+$previous_significant = null;
 foreach ( token_get_all( $source ) as $token ) {
-    if ( ! is_array( $token ) ) {
+    if ( is_array( $token ) && in_array( $token[0], $ignored_tokens, true ) ) {
         continue;
     }
-    if ( T_EVAL === $token[0] ) {
-        echo "eval\n";
-        continue;
+    if ( "(" === $token ) {
+        $dynamic_callable = is_array( $previous_significant )
+            ? in_array( $previous_significant[0], $dynamic_callable_tokens, true )
+            : in_array( $previous_significant, array( ")", "]", "}", "\"" ), true );
+        if ( $dynamic_callable ) {
+            fwrite( STDERR, "ERROR: external package provider must not use dynamic function/callable invocation.\n" );
+            exit( 3 );
+        }
     }
-    if ( ! in_array( $token[0], $name_tokens, true ) ) {
-        continue;
+    if ( is_array( $token ) ) {
+        if ( T_EVAL === $token[0] ) {
+            echo "eval\n";
+        } elseif ( in_array( $token[0], $name_tokens, true ) ) {
+            $parts = preg_split( "/\\\\+/", strtolower( $token[1] ) );
+            echo end( $parts ), "\n";
+        }
     }
-    $parts = preg_split( "/\\\\+/", strtolower( $token[1] ) );
-    echo end( $parts ), "\n";
+    $previous_significant = $token;
 }
 ' "$external_package_provider"
 )"
@@ -81,7 +93,7 @@ if [[ "$external_package_http_helper_count" != "1" || "$external_package_safe_ge
     echo "ERROR: external package installation must retain exactly one wp_safe_remote_get() request and one WordPress temp allocation." >&2
     exit 1
 fi
-external_package_forbidden='^(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir|curl_exec|curl_init|fsockopen|stream_socket_client|file_get_contents|wp_remote_get|wp_remote_post|wp_remote_request|wp_remote_head)$'
+external_package_forbidden='^(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir|curl_exec|curl_init|fsockopen|stream_socket_client|file_get_contents|wp_remote_get|wp_remote_post|wp_remote_request|wp_remote_head|call_user_func|call_user_func_array|forward_static_call|forward_static_call_array)$'
 if printf '%s\n' "$external_package_identifier_inventory" | grep -E "$external_package_forbidden"; then
     echo "ERROR: external package installation introduced an unbounded execution/filesystem/HTTP primitive." >&2
     exit 1
