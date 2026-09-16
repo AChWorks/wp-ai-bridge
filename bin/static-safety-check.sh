@@ -46,8 +46,10 @@ if [[ "$package_url_schema_files" != "$external_package_provider" || "$(grep -cF
     echo "ERROR: package_url must remain one exact extension-lifecycle schema field." >&2
     exit 1
 fi
-# Tokenize executable PHP syntax so comments, whitespace, case, namespace separators, and
-# ordinary dynamic callable forms cannot hide a second request path or forbidden primitive.
+# Tokenize executable PHP syntax and fail closed on ordinary callable dispatch. Besides rejecting
+# dynamic invocation syntax, protect forbidden callable names passed through any call/constructor,
+# taint local variables derived from those names, and reject PHP internal callback-taking APIs by
+# reflection. The only internal callback exception is the exact array_filter() seam pinned below.
 external_package_identifier_inventory="$(
     php -r '
 $source = file_get_contents( $argv[1] );
@@ -58,29 +60,233 @@ if ( false === $source ) {
 $name_tokens = array( T_STRING, T_NAME_FULLY_QUALIFIED, T_NAME_QUALIFIED, T_NAME_RELATIVE );
 $ignored_tokens = array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT, T_OPEN_TAG, T_CLOSE_TAG );
 $dynamic_callable_tokens = array( T_VARIABLE, T_CONSTANT_ENCAPSED_STRING, T_END_HEREDOC );
-$previous_significant = null;
+$protected_callable_names = array_fill_keys(
+    array(
+        "shell_exec", "exec", "system", "passthru", "proc_open", "popen", "eval",
+        "file_put_contents", "fopen", "fwrite", "unlink", "rename", "copy", "mkdir", "rmdir",
+        "curl_exec", "curl_init", "fsockopen", "stream_socket_client", "file_get_contents", "wp_tempnam",
+        "wp_remote_request", "wp_remote_get", "wp_remote_post", "wp_remote_head",
+        "wp_safe_remote_request", "wp_safe_remote_get", "wp_safe_remote_post", "wp_safe_remote_head",
+        "call_user_func", "call_user_func_array", "forward_static_call", "forward_static_call_array"
+    ),
+    true
+);
+$tokens = array();
 foreach ( token_get_all( $source ) as $token ) {
     if ( is_array( $token ) && in_array( $token[0], $ignored_tokens, true ) ) {
         continue;
     }
-    if ( "(" === $token ) {
-        $dynamic_callable = is_array( $previous_significant )
-            ? in_array( $previous_significant[0], $dynamic_callable_tokens, true )
-            : in_array( $previous_significant, array( ")", "]", "}", "\"" ), true );
+    $tokens[] = $token;
+}
+$token_text = static function ( $token ) {
+    return is_array( $token ) ? $token[1] : $token;
+};
+$normalize_name = static function ( $token ) {
+    $parts = preg_split( "/\\\\+/", strtolower( is_array( $token ) ? $token[1] : (string) $token ) );
+    return end( $parts );
+};
+$literal_value = static function ( $token ) {
+    $text = $token[1];
+    $value = substr( $text, 1, -1 );
+    return 34 === ord( $text[0] ) ? stripcslashes( $value ) : str_replace( "\\\\", "\\", $value );
+};
+$slice_has_protected_callable = static function ( $slice ) use ( $protected_callable_names, $literal_value ) {
+    $values = array();
+    foreach ( $slice as $token ) {
+        if ( is_array( $token ) && T_CONSTANT_ENCAPSED_STRING === $token[0] ) {
+            $values[] = strtolower( $literal_value( $token ) );
+        }
+    }
+    $count = count( $values );
+    for ( $i = 0; $i < $count; ++$i ) {
+        $joined = "";
+        for ( $j = $i; $j < $count && $j < $i + 4; ++$j ) {
+            $joined .= $values[ $j ];
+            if ( isset( $protected_callable_names[ $joined ] ) ) {
+                return true;
+            }
+        }
+    }
+    return false;
+};
+
+// Taint local variables that are ever derived from a protected callable name. Taint is monotonic:
+// later reuse cannot make a previously dangerous source silently acceptable to a callback surface.
+$assignments = array();
+$token_count = count( $tokens );
+for ( $i = 0; $i < $token_count - 2; ++$i ) {
+    if ( ! is_array( $tokens[ $i ] ) || T_VARIABLE !== $tokens[ $i ][0] || "=" !== $token_text( $tokens[ $i + 1 ] ) ) {
+        continue;
+    }
+    $depth = array( "(" => 0, "[" => 0, "{" => 0 );
+    $expression = array();
+    for ( $j = $i + 2; $j < $token_count; ++$j ) {
+        $part = $tokens[ $j ];
+        $part_text = $token_text( $part );
+        if ( ";" === $part_text && 0 === $depth["("] && 0 === $depth["["] && 0 === $depth["{"] ) {
+            break;
+        }
+        if ( "(" === $part_text ) {
+            ++$depth["("];
+        } elseif ( ")" === $part_text ) {
+            --$depth["("];
+        } elseif ( "[" === $part_text ) {
+            ++$depth["["];
+        } elseif ( "]" === $part_text ) {
+            --$depth["["];
+        } elseif ( "{" === $part_text ) {
+            ++$depth["{"];
+        } elseif ( "}" === $part_text ) {
+            --$depth["{"];
+        }
+        $expression[] = $part;
+    }
+    $assignments[] = array( $tokens[ $i ][1], $expression );
+}
+$tainted_variables = array();
+do {
+    $changed = false;
+    foreach ( $assignments as $assignment ) {
+        $variable = $assignment[0];
+        $expression = $assignment[1];
+        if ( isset( $tainted_variables[ $variable ] ) ) {
+            continue;
+        }
+        $tainted = $slice_has_protected_callable( $expression );
+        if ( ! $tainted ) {
+            foreach ( $expression as $part ) {
+                if ( is_array( $part ) && T_VARIABLE === $part[0] && isset( $tainted_variables[ $part[1] ] ) ) {
+                    $tainted = true;
+                    break;
+                }
+            }
+        }
+        if ( $tainted ) {
+            $tainted_variables[ $variable ] = true;
+            $changed = true;
+        }
+    }
+} while ( $changed );
+
+// PHP 8.4 adds callback-taking APIs over time. Derive the internal callback surface from the
+// runtime signature instead of maintaining another incomplete name list. Legacy variadic array
+// comparison families have incomplete reflection types and are rejected as a whole below.
+$internal_callback_functions = array();
+foreach ( get_defined_functions()["internal"] as $function_name ) {
+    try {
+        $reflection = new ReflectionFunction( $function_name );
+    } catch ( Throwable $error ) {
+        fwrite( STDERR, "ERROR: could not reflect PHP internal callback surface.\n" );
+        exit( 4 );
+    }
+    foreach ( $reflection->getParameters() as $parameter ) {
+        $type = $parameter->getType();
+        if ( null !== $type && false !== stripos( (string) $type, "callable" ) ) {
+            $internal_callback_functions[ strtolower( $function_name ) ] = true;
+            break;
+        }
+    }
+}
+$internal_callback_methods = array();
+$internal_callback_constructors = array();
+foreach ( get_declared_classes() as $class_name ) {
+    try {
+        $class = new ReflectionClass( $class_name );
+    } catch ( Throwable $error ) {
+        fwrite( STDERR, "ERROR: could not reflect PHP internal callback class surface.\n" );
+        exit( 5 );
+    }
+    if ( ! $class->isInternal() ) {
+        continue;
+    }
+    foreach ( $class->getMethods() as $method ) {
+        $has_callable = false;
+        foreach ( $method->getParameters() as $parameter ) {
+            $type = $parameter->getType();
+            if ( null !== $type && false !== stripos( (string) $type, "callable" ) ) {
+                $has_callable = true;
+                break;
+            }
+        }
+        if ( ! $has_callable ) {
+            continue;
+        }
+        $method_name = strtolower( $method->getName() );
+        if ( "__construct" === $method_name ) {
+            $parts = preg_split( "/\\\\+/", strtolower( $class_name ) );
+            $internal_callback_constructors[ end( $parts ) ] = true;
+        } else {
+            $internal_callback_methods[ $method_name ] = true;
+        }
+    }
+}
+
+$parentheses = array();
+for ( $i = 0; $i < $token_count; ++$i ) {
+    $token = $tokens[ $i ];
+    $text = $token_text( $token );
+    if ( "(" === $text ) {
+        $previous = $i > 0 ? $tokens[ $i - 1 ] : null;
+        $before_previous = $i > 1 ? $tokens[ $i - 2 ] : null;
+        $dynamic_callable = is_array( $previous )
+            ? in_array( $previous[0], $dynamic_callable_tokens, true )
+            : in_array( $previous, array( ")", "]", "}", "\"" ), true );
         if ( $dynamic_callable ) {
             fwrite( STDERR, "ERROR: external package provider must not use dynamic function/callable invocation.\n" );
             exit( 3 );
+        }
+        $is_call = false;
+        if ( is_array( $previous ) && in_array( $previous[0], $name_tokens, true ) ) {
+            $before_id = is_array( $before_previous ) ? $before_previous[0] : null;
+            if ( T_FUNCTION !== $before_id ) {
+                $is_call = true;
+                $call_name = $normalize_name( $previous );
+                if ( T_NEW === $before_id ) {
+                    if ( isset( $internal_callback_constructors[ $call_name ] ) ) {
+                        fwrite( STDERR, "ERROR: external package provider must not construct a PHP internal callback dispatcher.\n" );
+                        exit( 6 );
+                    }
+                } elseif ( T_OBJECT_OPERATOR === $before_id || ( defined( "T_NULLSAFE_OBJECT_OPERATOR" ) && T_NULLSAFE_OBJECT_OPERATOR === $before_id ) || T_DOUBLE_COLON === $before_id ) {
+                    if ( "__invoke" === $call_name || isset( $internal_callback_methods[ $call_name ] ) ) {
+                        fwrite( STDERR, "ERROR: external package provider must not use a PHP internal callback-dispatch method.\n" );
+                        exit( 7 );
+                    }
+                } else {
+                    if ( isset( $internal_callback_functions[ $call_name ] ) && "array_filter" !== $call_name ) {
+                        fwrite( STDERR, "ERROR: external package provider must not use PHP internal callback-dispatch functions.\n" );
+                        exit( 8 );
+                    }
+                    if ( preg_match( "/^array_u?(diff|intersect)(_|$)/", $call_name ) ) {
+                        fwrite( STDERR, "ERROR: external package provider must not use array comparison callback families.\n" );
+                        exit( 9 );
+                    }
+                }
+            }
+        }
+        $parentheses[] = array( "start" => $i, "call" => $is_call );
+    } elseif ( ")" === $text && ! empty( $parentheses ) ) {
+        $frame = array_pop( $parentheses );
+        if ( $frame["call"] ) {
+            $arguments = array_slice( $tokens, $frame["start"] + 1, $i - $frame["start"] - 1 );
+            if ( $slice_has_protected_callable( $arguments ) ) {
+                fwrite( STDERR, "ERROR: external package provider must not pass protected callable names through call arguments.\n" );
+                exit( 10 );
+            }
+            foreach ( $arguments as $argument ) {
+                if ( is_array( $argument ) && T_VARIABLE === $argument[0] && isset( $tainted_variables[ $argument[1] ] ) ) {
+                    fwrite( STDERR, "ERROR: external package provider must not pass protected callable-derived variables through call arguments.\n" );
+                    exit( 11 );
+                }
+            }
         }
     }
     if ( is_array( $token ) ) {
         if ( T_EVAL === $token[0] ) {
             echo "eval\n";
         } elseif ( in_array( $token[0], $name_tokens, true ) ) {
-            $parts = preg_split( "/\\\\+/", strtolower( $token[1] ) );
-            echo end( $parts ), "\n";
+            echo $normalize_name( $token ), "\n";
         }
     }
-    $previous_significant = $token;
 }
 ' "$external_package_provider"
 )"
