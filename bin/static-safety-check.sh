@@ -46,6 +46,7 @@ if [[ "$package_url_schema_files" != "$external_package_provider" || "$(grep -cF
     echo "ERROR: package_url must remain one exact extension-lifecycle schema field." >&2
     exit 1
 fi
+php bin/check-external-package-carrier-taint.php "$external_package_provider"
 # Tokenize executable PHP syntax and fail closed on ordinary callable dispatch. Besides rejecting
 # dynamic invocation syntax, protect forbidden callable names passed through any call/constructor,
 # taint local variables derived from those names, and reject PHP internal callback-taking APIs by
