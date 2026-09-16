@@ -46,8 +46,13 @@ if [[ "$package_url_schema_files" != "$external_package_provider" || "$(grep -cF
     echo "ERROR: package_url must remain one exact extension-lifecycle schema field." >&2
     exit 1
 fi
-if [[ "$(grep -cF 'wp_safe_remote_get(' "$external_package_provider" || true)" != "1" || "$(grep -cF "wp_tempnam( 'wp-ai-bridge-package.zip' )" "$external_package_provider" || true)" != "1" ]]; then
-    echo "ERROR: external package installation must retain one safe streamed request and one WordPress temp allocation." >&2
+external_package_http_helper_pattern='(^|[^[:alnum:]_])wp_(safe_)?remote_(request|get|post|head)[[:space:]]*\('
+external_package_safe_get_pattern='(^|[^[:alnum:]_])wp_safe_remote_get[[:space:]]*\('
+external_package_http_helper_count="$(grep -Ec "$external_package_http_helper_pattern" "$external_package_provider" || true)"
+external_package_safe_get_count="$(grep -Ec "$external_package_safe_get_pattern" "$external_package_provider" || true)"
+if [[ "$external_package_http_helper_count" != "1" || "$external_package_safe_get_count" != "1" || "$(grep -cF "wp_tempnam( 'wp-ai-bridge-package.zip' )" "$external_package_provider" || true)" != "1" ]]; then
+    grep -nE "$external_package_http_helper_pattern" "$external_package_provider" || true
+    echo "ERROR: external package installation must retain exactly one wp_safe_remote_get() request and one WordPress temp allocation." >&2
     exit 1
 fi
 external_package_forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir|curl_exec|curl_init|fsockopen|stream_socket_client|file_get_contents|wp_remote_get|wp_remote_post|wp_remote_request)[[:space:]]*\('
