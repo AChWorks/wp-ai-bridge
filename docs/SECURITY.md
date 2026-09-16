@@ -38,6 +38,7 @@ Independent review and green CI remain evidence, not authorization. HIGH-risk in
 - **Advanced Metadata** — protected/private post, term, user, and comment metadata for exact WordPress objects the connected user may edit; disabled by default and intentionally separate from ordinary Site Read/Builder Write access. Authentication/authorization/session/credential state remains excluded from the generic user-meta surface.
 - **Authentication & Credentials** — default-off purpose-specific WordPress Application Password lifecycle through fixed Core REST routes. The generated plaintext credential is returned only once on successful create; stored hashes and reusable credentials are never exposed later.
 - **Code & Extensions** — managed snippets and extension lifecycle.
+- **External Packages** — default-off installation from one explicit public HTTPS plugin/theme package URL. It additionally requires Code & Extensions plus the exact native WordPress plugin/theme install capability; it does not grant a generic HTTP/package proxy, local package-path access, caller-supplied request credentials, or automatic activation.
 - **Source Editing** — separately enabled installed plugin/theme source read/preview/apply/recovery; executable PHP is administrator-level code trust, not a sandbox.
 - **Native Abilities** — default-off broad trust for registered non-Bridge Core/provider Abilities reached through the WP AI Bridge MCP routes. It is not a sandbox; provider/Core permission checks remain mandatory.
 - **Comments** — default-off bounded standard-comment discovery, replies, and moderation through fixed Core comment REST routes. Permanent deletion additionally requires Users & Destructive.
@@ -160,7 +161,7 @@ This contract does not make imports transactional or retries idempotent. A proce
 
 ## Extension boundary
 
-Plugin/theme installation accepts WordPress.org slugs resolved through WordPress Core APIs. Arbitrary package URLs, uploaded plugin ZIPs, PHP files, and caller-selected server paths are not accepted.
+Plugin/theme installation preserves the existing WordPress.org slug workflow under **Code & Extensions**. Installation from an explicit public HTTPS package URL additionally requires **External Packages**, Code & Extensions, and the current native `install_plugins` or `install_themes` authority for the selected kind. External package requests are bounded to one validated public HTTPS source, stream only into Bridge-owned WordPress temporary storage, and hand the completed package to the native Core Upgrader. Local package paths, HTTP/FTP sources, caller-supplied request headers/cookies/credentials, generic transport controls, and automatic activation are not accepted.
 
 Deletion requires destructive access in addition to the action-specific WordPress capability. Active extensions are protected where deletion would be unsafe.
 
