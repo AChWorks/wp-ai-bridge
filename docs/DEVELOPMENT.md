@@ -11,35 +11,52 @@ Do not reconstruct active work from old chats or historical reference files. Cur
 
 ## Fast development loop
 
-Development uses two validation tiers so iteration stays fast without weakening the final merge evidence.
+Development is evidence-driven: reuse still-valid proof and regenerate only the evidence a change can invalidate. A passing test or review does not become stale merely because time passed, a new commit SHA exists, or unrelated documentation changed.
+
+### Evidence reuse and invalidation
+
+Before rerunning a check, identify what changed since the evidence was produced and whether that change can affect the property the check proved.
+
+- Documentation-only changes under `docs/**` or root Markdown files do not invalidate PHP, WordPress, package, compatibility, or historical regression evidence.
+- A narrow runtime change should first rerun the smallest test that exercises the changed behavior. Do not rerun unrelated historical suites while implementation is still moving.
+- A test/fixture-only change invalidates only the affected test or harness evidence unless it changes a shared test/bootstrap mechanism used by broader assurance.
+- Dependency, build/package, CI workflow, shared authorization/core execution, migration, or other cross-cutting changes use the conservative broader/full fallback because their impact is not safely local.
+- Target/base SHA drift by itself is not a reason for a broad rerun. Inspect the effective target-to-candidate delta and material assumptions. If the target change is tree-equivalent or documentation-only and cannot affect the tested behavior, reuse the technical evidence and refresh only the identity/review evidence that actually became stale.
+- For HIGH_ASSURANCE work, a verdict must still bind to the current exact candidate/target when required, but a fresh reviewer may reuse prior analysis of unchanged surfaces and inspect only the delta plus assumptions that delta can affect.
+
+Do not rerun broad validation solely to make otherwise-current evidence look newer. If repository/platform policy requires a current status check, satisfy that requirement with the narrowest meaningful current check rather than repeating unrelated suites.
 
 ### Draft / implementation
 
 Keep an implementation PR in Draft while the candidate is still changing.
 
 - Run the narrowest test that exercises the changed behavior first.
-- Run the current workstream's dedicated integration runner when real WordPress behavior is relevant.
-- Run `composer check` before a coherent checkpoint/push.
+- Run the current workstream's dedicated integration runner only when real WordPress behavior is relevant to the change.
+- Run `composer check` before a coherent runtime/build/test checkpoint when it adds useful signal; documentation-only edits do not require it.
 - Batch related fixes before pushing instead of creating a remote CI run for every tiny edit.
 - Do not repeat the full historical WordPress regression matrix after every formatting, test-fixture, documentation, or narrowly scoped remediation change.
-- A new push supersedes older PR CI; stale in-progress runs are cancelled automatically.
+- A new push supersedes older CI for the same PR or branch; stale in-progress runs are cancelled automatically.
 
-Draft pull requests run the Quality job in GitHub. Full WordPress assurance is intentionally deferred until the PR is marked ready for review.
+Draft and intermediate `synchronize` updates do not run automatic validation jobs. Development uses targeted local checks until the candidate is deliberately marked ready for review. Documentation-only pull requests do not start plugin CI at all.
 
-### Review-ready / exact candidate
+### Review-ready / final candidate
 
-Mark the PR ready only after implementation, targeted validation, documentation, and self-review are complete enough to freeze a candidate SHA.
+Mark the PR ready only after implementation, targeted validation, documentation, and self-review are complete enough to freeze a candidate.
 
-Ready-for-review and non-draft PR updates run the complete supported WordPress assurance set:
+The complete supported WordPress assurance set runs when a runtime-relevant PR is explicitly ready for review, or is opened/reopened as a non-draft PR. A later `synchronize` push does not automatically launch the full matrix again.
+
+Full assurance includes:
 
 - the normal WordPress 6.9 and current integration lanes;
 - consolidated single-site regressions for previously integrated security/administration slices;
 - dedicated multisite source-editing and user-metadata authority suites;
 - exact-base identity migration coverage.
 
-Independent HIGH_ASSURANCE review, when required by the active contract, starts only after this exact candidate is fully green. If review returns required findings, fix all related findings together, run targeted tests while iterating, then produce one new exact-head full CI result before re-review. Do not request repeated independent reviews for intermediate remediation commits.
+If a ready PR needs remediation, return it to Draft, batch related fixes, use targeted validation while the candidate is changing, then mark it Ready once to generate the next full-assurance candidate. Do not request a fresh full run or independent review for every intermediate remediation commit.
 
-A push to `main` always runs the full assurance set regardless of PR state.
+Independent HIGH_ASSURANCE review, when required by the active contract, starts only after the required candidate evidence is complete. If the candidate later changes, re-review only the changed surface and any assumptions it can affect; do not discard sound analysis of unchanged code.
+
+`main` is protected and PR-only, including for administrators; direct pushes, force pushes, and branch deletion are disabled. CI is therefore PR-only and does not rerun the same assurance suite after merge. Immediately before integration, refresh the candidate/target identity and reuse existing evidence unless target drift can affect the property or assumption it proved; tree-equivalent or documentation-only drift does not justify repeating broad technical validation.
 
 ## Repository-scoped AI development and security review
 
