@@ -22,6 +22,7 @@ final class Settings {
 	const GROUP_ADVANCED_METADATA = 'advanced_metadata';
 	const GROUP_AUTHENTICATION    = 'authentication_credentials';
 	const GROUP_CODE_EXTENSIONS   = 'code_extensions';
+	const GROUP_EXTERNAL_PACKAGES = 'external_packages';
 	const GROUP_SOURCE_EDITING    = 'source_editing';
 	const GROUP_NATIVE_ABILITIES  = 'native_abilities';
 	const GROUP_COMMENTS          = 'comments';
@@ -97,6 +98,12 @@ final class Settings {
 			self::GROUP_CODE_EXTENSIONS   => array(
 				'label'       => __( 'Code & Extensions', 'wp-native-builder-bridge' ),
 				'description' => __( 'Allow supported managed snippets and plugin/theme lifecycle operations. This does not expose arbitrary code execution.', 'wp-native-builder-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_EXTERNAL_PACKAGES => array(
+				'label'       => __( 'External Packages', 'wp-native-builder-bridge' ),
+				'description' => __( 'Allow plugin/theme installation from explicit safe public HTTPS package URLs. Code & Extensions and native WordPress install authority are also required. Installed package code runs with normal WordPress runtime authority.', 'wp-native-builder-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),

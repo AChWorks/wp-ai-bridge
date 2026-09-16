@@ -36,12 +36,15 @@ Keep an implementation PR in Draft while the candidate is still changing.
 - Batch related fixes before pushing instead of creating a remote CI run for every tiny edit.
 - Do not repeat the full historical WordPress regression matrix after every formatting, test-fixture, documentation, or narrowly scoped remediation change.
 - A new push supersedes older CI for the same PR or branch; stale in-progress runs are cancelled automatically.
+- When a parent/program Issue intentionally owns several coherent child outcomes or remediations, keep the completion PR Draft through that meaningful program slice. Do not manufacture a separate final-assurance/review cycle for every absorbed child or reviewer observation unless a real dependency, rollback, or authority boundary requires it.
 
 Draft and intermediate `synchronize` updates do not run automatic validation jobs. Development uses targeted local checks until the candidate is deliberately marked ready for review. Documentation-only pull requests do not start plugin CI at all.
 
+Security regression coverage belongs to implementation and CI. Add or adjust deterministic repository tests when a concrete invariant needs coverage, but do not turn every security observation into a separate remote probing session or full-assurance cycle while the implementation is still moving.
+
 ### Review-ready / final candidate
 
-Mark the PR ready only after implementation, targeted validation, documentation, and self-review are complete enough to freeze a candidate.
+Mark the PR ready only after implementation, targeted validation, documentation, and self-review are complete enough to freeze a candidate. For a parent/program completion PR, that means the accepted parent cutline is complete, not merely that one absorbed child or remediation commit is ready.
 
 The complete supported WordPress assurance set runs when a runtime-relevant PR is explicitly ready for review, or is opened/reopened as a non-draft PR. A later `synchronize` push does not automatically launch the full matrix again.
 
@@ -52,9 +55,9 @@ Full assurance includes:
 - dedicated multisite source-editing and user-metadata authority suites;
 - exact-base identity migration coverage.
 
-If a ready PR needs remediation, return it to Draft, batch related fixes, use targeted validation while the candidate is changing, then mark it Ready once to generate the next full-assurance candidate. Do not request a fresh full run or independent review for every intermediate remediation commit.
+If a ready PR needs remediation, return it to Draft, batch all related fixes that are reasonably discoverable from the finding, use targeted validation while the candidate is changing, then mark it Ready once to generate the next meaningful full-assurance candidate. Do not request a fresh full run or independent review for every intermediate remediation commit.
 
-Independent HIGH_ASSURANCE review, when required by the active contract, starts only after the required candidate evidence is complete. If the candidate later changes, re-review only the changed surface and any assumptions it can affect; do not discard sound analysis of unchanged code.
+Independent HIGH_ASSURANCE review, when required by the active contract, starts only after the required candidate evidence is complete. The reviewer is expected to inspect the exact source/diff, contracts, existing tests and CI evidence. Do not task the independent reviewer with inventing or executing new exploit-style, synthetic attack, credential, live-system, or operational probe matrices. If a reviewer identifies an invariant that needs new executable coverage, return that finding to implementation; the implementation/CI path owns the regression fixture and validation. If the candidate later changes, re-review only the changed surface and any assumptions it can affect; do not discard sound analysis of unchanged code.
 
 `main` is protected and PR-only, including for administrators; direct pushes, force pushes, and branch deletion are disabled. CI is therefore PR-only and does not rerun the same assurance suite after merge. Immediately before integration, refresh the candidate/target identity and reuse existing evidence unless target drift can affect the property or assumption it proved; tree-equivalent or documentation-only drift does not justify repeating broad technical validation.
 
@@ -90,20 +93,24 @@ For a security-sensitive AI implementation or review, record only the decision-r
 
 Use neutral defensive language that describes the actual engineering task. Do not label ordinary correctness review as exploitation, credential harvesting, stealth, bypass, or attack execution when those actions are not required.
 
-### HIGH_ASSURANCE review versus operational testing
+### HIGH_ASSURANCE review versus implementation validation
 
-HIGH_ASSURANCE source review should normally be satisfiable from exact source/diffs, supported upstream contracts, deterministic fixtures, isolated WordPress integration, and exact-candidate CI. A real penetration test, production attack simulation, privileged live credential operation, or third-party target interaction is a different activity and requires a separate work item with explicit target, environment, scope, and authorization. Never silently expand source review into operational testing.
+HIGH_ASSURANCE source review should normally be satisfiable from exact source/diffs, supported upstream contracts, existing deterministic fixtures, isolated WordPress integration results, and exact-candidate CI. A real penetration test, production attack simulation, privileged live credential operation, or third-party target interaction is a different activity and requires a separate work item with explicit target, environment, scope, and authorization. Never silently expand source review into operational testing.
 
-For concurrency, reentrancy, authorization, and provenance invariants, prefer deterministic adversarial fixtures. Relevant patterns include hook ordering, re-entrant metadata writes, nested REST calls, same-request replay, response substitution, stale-state races, same-UUID replacement, and permission-boundary failures. Prove the defensive property in dependency-free tests or the isolated WordPress environment instead of relying on live exploitation.
+Implementation and CI may maintain deterministic defensive regressions for concurrency, reentrancy, authorization, provenance, stale-state and similar invariants. Those fixtures can model difficult ordering/state conditions inside disposable repository-controlled environments. The independent reviewer inspects the fixture design, source changes and recorded results; the review handoff should not ask another AI to generate payload recipes, recreate attack sequences, or execute new security probes. A missing regression is a review finding for implementation to address, not an instruction for the reviewer to become an active test operator.
+
+Keep independent-review packets concise: exact repository/change identity, accepted defensive invariants, authoritative source/docs to inspect, existing test/CI evidence, and the required findings/result contract. Avoid long catalogs of hypothetical probe payloads when source/diff/evidence review can answer the decision.
 
 ### Tool or provider limitations
 
-If one AI/tool route cannot inspect a security-sensitive detail:
+If one AI/tool route cannot inspect a security-sensitive detail or returns a platform restriction such as content not being shown:
 
-1. continue every safe repository-scoped or read-only action that remains valid;
-2. use an equivalent authoritative source when it preserves the required evidence semantics;
-3. report the exact missing evidence and its effect on completeness;
-4. never fabricate evidence, weaken the security property, or change tests merely to obtain a pass.
+1. do not rephrase, fragment, or route the request merely to evade that restriction;
+2. continue every safe repository-scoped/read-only action that remains valid;
+3. reduce the handoff to source/diff/contracts/existing-test/CI evidence when that still proves the objective;
+4. use an equivalent authoritative source when it preserves the required evidence semantics;
+5. report the exact missing evidence and its effect on completeness;
+6. never fabricate evidence, weaken the security property, or change tests merely to obtain a pass.
 
 Do not automatically escalate to production access, live credentials, or identity verification merely because one route is unavailable. A stronger authorization or verification boundary is required only when the accepted objective genuinely depends on that capability and the applicable platform or organizational policy requires it.
 

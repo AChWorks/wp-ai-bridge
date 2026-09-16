@@ -32,6 +32,293 @@ if [[ "$(grep -cF 'wp_safe_remote_get(' src/Abilities/class-media-abilities.php 
     exit 1
 fi
 
+# Issue #67 permits one exact package_url schema seam only on extension-lifecycle.
+# The implementation must retain one bounded safe-HTTP stream into one WordPress temp allocation;
+# generic HTTP/filesystem primitives and package_url on any other Ability remain forbidden.
+external_package_provider='src/Abilities/class-extension-abilities.php'
+if [[ ! -f "$external_package_provider" ]]; then
+    echo "ERROR: bounded external-package provider is missing." >&2
+    exit 1
+fi
+package_url_schema_files="$(grep -R -lF "'package_url' => array(" src/Abilities --include='*.php' || true)"
+if [[ "$package_url_schema_files" != "$external_package_provider" || "$(grep -cF "'package_url' => array(" "$external_package_provider" || true)" != "1" ]]; then
+    printf '%s\n' "$package_url_schema_files"
+    echo "ERROR: package_url must remain one exact extension-lifecycle schema field." >&2
+    exit 1
+fi
+php bin/check-external-package-carrier-taint.php "$external_package_provider"
+# Tokenize executable PHP syntax and fail closed on ordinary callable dispatch. Besides rejecting
+# dynamic invocation syntax, protect forbidden callable names passed through any call/constructor,
+# taint local variables derived from those names, and reject PHP internal callback-taking APIs by
+# reflection. The only internal callback exception is the exact array_filter() seam pinned below.
+external_package_identifier_inventory="$(
+    php -r '
+$source = file_get_contents( $argv[1] );
+if ( false === $source ) {
+    fwrite( STDERR, "ERROR: could not read external package provider.\n" );
+    exit( 2 );
+}
+$name_tokens = array( T_STRING, T_NAME_FULLY_QUALIFIED, T_NAME_QUALIFIED, T_NAME_RELATIVE );
+$ignored_tokens = array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT, T_OPEN_TAG, T_CLOSE_TAG );
+$dynamic_callable_tokens = array( T_VARIABLE, T_CONSTANT_ENCAPSED_STRING, T_END_HEREDOC );
+$protected_callable_names = array_fill_keys(
+    array(
+        "shell_exec", "exec", "system", "passthru", "proc_open", "popen", "eval",
+        "file_put_contents", "fopen", "fwrite", "unlink", "rename", "copy", "mkdir", "rmdir",
+        "curl_exec", "curl_init", "fsockopen", "stream_socket_client", "file_get_contents", "wp_tempnam",
+        "wp_remote_request", "wp_remote_get", "wp_remote_post", "wp_remote_head",
+        "wp_safe_remote_request", "wp_safe_remote_get", "wp_safe_remote_post", "wp_safe_remote_head",
+        "call_user_func", "call_user_func_array", "forward_static_call", "forward_static_call_array"
+    ),
+    true
+);
+$tokens = array();
+foreach ( token_get_all( $source ) as $token ) {
+    if ( is_array( $token ) && in_array( $token[0], $ignored_tokens, true ) ) {
+        continue;
+    }
+    $tokens[] = $token;
+}
+$token_text = static function ( $token ) {
+    return is_array( $token ) ? $token[1] : $token;
+};
+$normalize_name = static function ( $token ) {
+    $parts = preg_split( "/\\\\+/", strtolower( is_array( $token ) ? $token[1] : (string) $token ) );
+    return end( $parts );
+};
+$literal_value = static function ( $token ) {
+    $text = $token[1];
+    $value = substr( $text, 1, -1 );
+    return 34 === ord( $text[0] ) ? stripcslashes( $value ) : str_replace( "\\\\", "\\", $value );
+};
+$slice_has_protected_callable = static function ( $slice ) use ( $protected_callable_names, $literal_value ) {
+    $values = array();
+    foreach ( $slice as $token ) {
+        if ( is_array( $token ) && T_CONSTANT_ENCAPSED_STRING === $token[0] ) {
+            $values[] = strtolower( $literal_value( $token ) );
+        }
+    }
+    $count = count( $values );
+    for ( $i = 0; $i < $count; ++$i ) {
+        $joined = "";
+        for ( $j = $i; $j < $count && $j < $i + 4; ++$j ) {
+            $joined .= $values[ $j ];
+            if ( isset( $protected_callable_names[ $joined ] ) ) {
+                return true;
+            }
+        }
+    }
+    return false;
+};
+
+// Taint local variables that are ever derived from a protected callable name. Taint is monotonic:
+// later reuse cannot make a previously dangerous source silently acceptable to a callback surface.
+$assignments = array();
+$token_count = count( $tokens );
+for ( $i = 0; $i < $token_count - 2; ++$i ) {
+    if ( ! is_array( $tokens[ $i ] ) || T_VARIABLE !== $tokens[ $i ][0] || "=" !== $token_text( $tokens[ $i + 1 ] ) ) {
+        continue;
+    }
+    $depth = array( "(" => 0, "[" => 0, "{" => 0 );
+    $expression = array();
+    for ( $j = $i + 2; $j < $token_count; ++$j ) {
+        $part = $tokens[ $j ];
+        $part_text = $token_text( $part );
+        if ( ";" === $part_text && 0 === $depth["("] && 0 === $depth["["] && 0 === $depth["{"] ) {
+            break;
+        }
+        if ( "(" === $part_text ) {
+            ++$depth["("];
+        } elseif ( ")" === $part_text ) {
+            --$depth["("];
+        } elseif ( "[" === $part_text ) {
+            ++$depth["["];
+        } elseif ( "]" === $part_text ) {
+            --$depth["["];
+        } elseif ( "{" === $part_text ) {
+            ++$depth["{"];
+        } elseif ( "}" === $part_text ) {
+            --$depth["{"];
+        }
+        $expression[] = $part;
+    }
+    $assignments[] = array( $tokens[ $i ][1], $expression );
+}
+$tainted_variables = array();
+do {
+    $changed = false;
+    foreach ( $assignments as $assignment ) {
+        $variable = $assignment[0];
+        $expression = $assignment[1];
+        if ( isset( $tainted_variables[ $variable ] ) ) {
+            continue;
+        }
+        $tainted = $slice_has_protected_callable( $expression );
+        if ( ! $tainted ) {
+            foreach ( $expression as $part ) {
+                if ( is_array( $part ) && T_VARIABLE === $part[0] && isset( $tainted_variables[ $part[1] ] ) ) {
+                    $tainted = true;
+                    break;
+                }
+            }
+        }
+        if ( $tainted ) {
+            $tainted_variables[ $variable ] = true;
+            $changed = true;
+        }
+    }
+} while ( $changed );
+
+// PHP adds callback-taking APIs over time. Derive the global internal callback-function surface
+// from the runtime signature. Constructors are class-qualified and safe to inventory by class;
+// method names are receiver-dependent, so they are handled structurally below instead of globally.
+$internal_callback_functions = array();
+foreach ( get_defined_functions()["internal"] as $function_name ) {
+    try {
+        $reflection = new ReflectionFunction( $function_name );
+    } catch ( Throwable $error ) {
+        fwrite( STDERR, "ERROR: could not reflect PHP internal callback surface.\n" );
+        exit( 4 );
+    }
+    foreach ( $reflection->getParameters() as $parameter ) {
+        $type = $parameter->getType();
+        if ( null !== $type && false !== stripos( (string) $type, "callable" ) ) {
+            $internal_callback_functions[ strtolower( $function_name ) ] = true;
+            break;
+        }
+    }
+}
+$internal_callback_constructors = array();
+foreach ( get_declared_classes() as $class_name ) {
+    try {
+        $class = new ReflectionClass( $class_name );
+    } catch ( Throwable $error ) {
+        fwrite( STDERR, "ERROR: could not reflect PHP internal callback class surface.\n" );
+        exit( 5 );
+    }
+    if ( ! $class->isInternal() ) {
+        continue;
+    }
+    $constructor = $class->getConstructor();
+    if ( null === $constructor ) {
+        continue;
+    }
+    foreach ( $constructor->getParameters() as $parameter ) {
+        $type = $parameter->getType();
+        if ( null !== $type && false !== stripos( (string) $type, "callable" ) ) {
+            $parts = preg_split( "/\\\\+/", strtolower( $class_name ) );
+            $internal_callback_constructors[ end( $parts ) ] = true;
+            break;
+        }
+    }
+}
+
+$parentheses = array();
+for ( $i = 0; $i < $token_count; ++$i ) {
+    $token = $tokens[ $i ];
+    $text = $token_text( $token );
+    if ( "(" === $text ) {
+        $previous = $i > 0 ? $tokens[ $i - 1 ] : null;
+        $before_previous = $i > 1 ? $tokens[ $i - 2 ] : null;
+        $receiver = $i > 2 ? $tokens[ $i - 3 ] : null;
+        $dynamic_callable = is_array( $previous )
+            ? in_array( $previous[0], $dynamic_callable_tokens, true )
+            : in_array( $previous, array( ")", "]", "}", "\"" ), true );
+        if ( $dynamic_callable ) {
+            fwrite( STDERR, "ERROR: external package provider must not use dynamic function/callable invocation.\n" );
+            exit( 3 );
+        }
+        $is_call = false;
+        $call_name = "";
+        if ( is_array( $previous ) && in_array( $previous[0], $name_tokens, true ) ) {
+            $before_id = is_array( $before_previous ) ? $before_previous[0] : null;
+            if ( T_FUNCTION !== $before_id ) {
+                $is_call = true;
+                $call_name = $normalize_name( $previous );
+                if ( T_NEW === $before_id ) {
+                    if ( isset( $internal_callback_constructors[ $call_name ] ) ) {
+                        fwrite( STDERR, "ERROR: external package provider must not construct a PHP internal callback dispatcher.\n" );
+                        exit( 6 );
+                    }
+                } elseif ( T_OBJECT_OPERATOR === $before_id || ( defined( "T_NULLSAFE_OBJECT_OPERATOR" ) && T_NULLSAFE_OBJECT_OPERATOR === $before_id ) || T_DOUBLE_COLON === $before_id ) {
+                    $receiver_name = is_array( $receiver ) && in_array( $receiver[0], $name_tokens, true ) ? $normalize_name( $receiver ) : "";
+                    if ( "__invoke" === $call_name || ( T_DOUBLE_COLON === $before_id && "fromcallable" === $call_name && "closure" === $receiver_name ) ) {
+                        fwrite( STDERR, "ERROR: external package provider must not use callable conversion/invocation methods.\n" );
+                        exit( 7 );
+                    }
+                } else {
+                    if ( isset( $internal_callback_functions[ $call_name ] ) && "array_filter" !== $call_name ) {
+                        fwrite( STDERR, "ERROR: external package provider must not use PHP internal callback-dispatch functions.\n" );
+                        exit( 8 );
+                    }
+                    if ( preg_match( "/^array_u?(diff|intersect)(_|$)/", $call_name ) ) {
+                        fwrite( STDERR, "ERROR: external package provider must not use array comparison callback families.\n" );
+                        exit( 9 );
+                    }
+                }
+            }
+        }
+        $parentheses[] = array( "start" => $i, "call" => $is_call, "name" => $call_name );
+    } elseif ( ")" === $text && ! empty( $parentheses ) ) {
+        $frame = array_pop( $parentheses );
+        if ( $frame["call"] ) {
+            $arguments = array_slice( $tokens, $frame["start"] + 1, $i - $frame["start"] - 1 );
+            $allowed_temp_helper_probe = "function_exists" === $frame["name"]
+                && 1 === count( $arguments )
+                && is_array( $arguments[0] )
+                && T_CONSTANT_ENCAPSED_STRING === $arguments[0][0]
+                && "wp_tempnam" === strtolower( $literal_value( $arguments[0] ) );
+            if ( ! $allowed_temp_helper_probe && $slice_has_protected_callable( $arguments ) ) {
+                fwrite( STDERR, "ERROR: external package provider must not pass protected callable names through call arguments.\n" );
+                exit( 10 );
+            }
+            foreach ( $arguments as $argument ) {
+                if ( is_array( $argument ) && T_VARIABLE === $argument[0] && isset( $tainted_variables[ $argument[1] ] ) ) {
+                    fwrite( STDERR, "ERROR: external package provider must not pass protected callable-derived variables through call arguments.\n" );
+                    exit( 11 );
+                }
+            }
+        }
+    }
+    if ( is_array( $token ) ) {
+        if ( T_EVAL === $token[0] ) {
+            echo "eval\n";
+        } elseif ( in_array( $token[0], $name_tokens, true ) ) {
+            echo $normalize_name( $token ), "\n";
+        }
+    }
+}
+' "$external_package_provider"
+)"
+external_package_http_helper_pattern='^wp_(safe_)?remote_(request|get|post|head)$'
+external_package_safe_get_pattern='^wp_safe_remote_get$'
+external_package_http_helper_count="$(printf '%s\n' "$external_package_identifier_inventory" | grep -Ec "$external_package_http_helper_pattern" || true)"
+external_package_safe_get_count="$(printf '%s\n' "$external_package_identifier_inventory" | grep -Ec "$external_package_safe_get_pattern" || true)"
+if [[ "$external_package_http_helper_count" != "1" || "$external_package_safe_get_count" != "1" || "$(grep -cF "wp_tempnam( 'wp-ai-bridge-package.zip' )" "$external_package_provider" || true)" != "1" ]]; then
+    printf '%s\n' "$external_package_identifier_inventory" | grep -E "$external_package_http_helper_pattern" || true
+    echo "ERROR: external package installation must retain exactly one wp_safe_remote_get() request and one WordPress temp allocation." >&2
+    exit 1
+fi
+external_package_forbidden='^(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir|curl_exec|curl_init|fsockopen|stream_socket_client|file_get_contents|wp_remote_get|wp_remote_post|wp_remote_request|wp_remote_head|call_user_func|call_user_func_array|forward_static_call|forward_static_call_array|array_map|array_reduce|array_walk|array_walk_recursive|array_udiff|array_udiff_assoc|array_udiff_uassoc|array_uintersect|array_uintersect_assoc|array_uintersect_uassoc|array_diff_uassoc|array_intersect_uassoc|usort|uasort|uksort|preg_replace_callback|preg_replace_callback_array|iterator_apply|register_shutdown_function|register_tick_function|set_error_handler|set_exception_handler|spl_autoload_register|header_register_callback|ob_start|session_set_save_handler|pcntl_signal|add_filter)$'
+if printf '%s\n' "$external_package_identifier_inventory" | grep -E "$external_package_forbidden"; then
+    echo "ERROR: external package installation introduced an unbounded execution/filesystem/HTTP/callback primitive." >&2
+    exit 1
+fi
+
+# The provider has three legitimate callback-bearing surfaces. Pin their exact current shape so
+# they cannot become an indirect forbidden-primitive dispatcher while the lexical inventory passes.
+external_package_array_filter_count="$(printf '%s\n' "$external_package_identifier_inventory" | grep -Ec '^array_filter$' || true)"
+external_package_add_action_count="$(printf '%s\n' "$external_package_identifier_inventory" | grep -Ec '^add_action$' || true)"
+external_package_register_ability_count="$(printf '%s\n' "$external_package_identifier_inventory" | grep -Ec '^wp_register_ability$' || true)"
+external_package_redirect_guard_assignment_count="$(grep -Ec '\$redirect_guard[[:space:]]*=[[:space:]]*function[[:space:]]*\(' "$external_package_provider" || true)"
+external_package_redirect_guard_all_assignment_count="$(grep -Ec '\$redirect_guard[[:space:]]*=' "$external_package_provider" || true)"
+external_package_execute_callback_count="$(grep -cF "'execute_callback'" "$external_package_provider" || true)"
+external_package_permission_callback_count="$(grep -cF "'permission_callback'" "$external_package_provider" || true)"
+if [[ "$external_package_array_filter_count" != "1" || "$(grep -cF "array_filter( \$registered, 'is_object' )" "$external_package_provider" || true)" != "1" || "$external_package_add_action_count" != "1" || "$(grep -cF "add_action( 'requests-requests.before_redirect', \$redirect_guard, PHP_INT_MAX, 4 );" "$external_package_provider" || true)" != "1" || "$external_package_redirect_guard_assignment_count" != "1" || "$external_package_redirect_guard_all_assignment_count" != "1" || "$external_package_register_ability_count" != "2" || "$external_package_execute_callback_count" != "2" || "$external_package_permission_callback_count" != "2" || "$(grep -cF "'execute_callback'    => array( \$this, 'read' )," "$external_package_provider" || true)" != "1" || "$(grep -cF "'execute_callback'    => array( \$this, 'mutate' )," "$external_package_provider" || true)" != "1" || "$(grep -cF "'permission_callback' => array( \$this, 'can_read' )," "$external_package_provider" || true)" != "1" || "$(grep -cF "'permission_callback' => array( \$this, 'can_mutate' )," "$external_package_provider" || true)" != "1" ]]; then
+    echo "ERROR: external package provider callback-bearing surfaces changed outside their fixed direct-call contract." >&2
+    exit 1
+fi
+
 # Issue #46 source editing is a fixed-purpose installed-extension lifecycle, not a generic filesystem proxy.
 source_editor='src/Abilities/class-source-editing-abilities.php'
 if [[ ! -f "$source_editor" ]]; then
@@ -183,7 +470,7 @@ fi
 
 # These names are forbidden in AI-exposed Ability schemas. OAuth protocol responses
 # legitimately use access_token, but no OAuth bearer material may become an Ability input.
-if grep -R -nE "['\"](server_path|file_path|package_url|shell_command|sql_query|application_password|session_token|access_token|refresh_token|authorization_code|api_secret)['\"][[:space:]]*=>" src/Abilities --include='*.php'; then
+if grep -R -nE "['\"](server_path|file_path|shell_command|sql_query|application_password|session_token|access_token|refresh_token|authorization_code|api_secret)['\"][[:space:]]*=>" src/Abilities --include='*.php'; then
     echo "ERROR: forbidden generic path/command/secret schema field found in an exposed Ability." >&2
     exit 1
 fi
