@@ -8,12 +8,12 @@ This surface is not an arbitrary database, user-role, authentication, session, o
 
 | Ability | Bridge delegation | WordPress authority |
 | --- | --- | --- |
-| `wp-native-builder/user-meta-read` | Advanced Metadata | exact target `edit_user` plus applicable metadata capability/provider authorization |
-| `wp-native-builder/user-meta-update` | Advanced Metadata | exact target `edit_user` plus `add_user_meta` or `edit_user_meta` as applicable |
-| `wp-native-builder/user-meta-delete` | Advanced Metadata + Users & Destructive | exact target `edit_user` plus `delete_user_meta` |
-| `wp-native-builder/comment-meta-read` | Advanced Metadata | exact target `edit_comment` plus applicable metadata capability/provider authorization |
-| `wp-native-builder/comment-meta-update` | Advanced Metadata | exact target `edit_comment` plus `add_comment_meta` or `edit_comment_meta` as applicable |
-| `wp-native-builder/comment-meta-delete` | Advanced Metadata + Users & Destructive | exact target `edit_comment` plus `delete_comment_meta` |
+| `wp-ai-bridge/user-meta-read` | Advanced Metadata | exact target `edit_user` plus applicable metadata capability/provider authorization |
+| `wp-ai-bridge/user-meta-update` | Advanced Metadata | exact target `edit_user` plus `add_user_meta` or `edit_user_meta` as applicable |
+| `wp-ai-bridge/user-meta-delete` | Advanced Metadata + Users & Destructive | exact target `edit_user` plus `delete_user_meta` |
+| `wp-ai-bridge/comment-meta-read` | Advanced Metadata | exact target `edit_comment` plus applicable metadata capability/provider authorization |
+| `wp-ai-bridge/comment-meta-update` | Advanced Metadata | exact target `edit_comment` plus `add_comment_meta` or `edit_comment_meta` as applicable |
+| `wp-ai-bridge/comment-meta-delete` | Advanced Metadata + Users & Destructive | exact target `edit_comment` plus `delete_comment_meta` |
 
 The Bridge rechecks these boundaries during execution. Enabling Advanced Metadata never grants a WordPress capability that the connected principal does not already have.
 

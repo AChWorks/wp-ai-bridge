@@ -1,6 +1,6 @@
 # Ability reference
 
-Bridge-owned Ability names use the `wp-native-builder/` namespace.
+Bridge-owned Ability names use the `wp-ai-bridge/` namespace.
 
 The baseline installation registers the core Bridge surfaces below. Optional Gravity Forms and Code Snippets fallbacks are registered only when their supported provider APIs are available. Astra and other suitable provider Abilities are reused rather than duplicated.
 
@@ -111,7 +111,7 @@ Explicitly authorized PHP source has normal WordPress-runtime authority. **Sourc
 
 `Advanced Metadata` is disabled by default and must be enabled by a WordPress administrator from **WP AI Bridge → Settings**. It is intentionally provider- and object-type-neutral across the bounded post, term, user, and comment metadata surfaces; the Bridge does not maintain provider-specific meta-key allowlists.
 
-Post metadata can target a real WordPress post object when the connected WordPress user may edit that exact object. The post type does not need to be public, REST-exposed, or editor-capable. Bridge-private Workspace types (`wpnb_doc` and `wpnb_task`) remain explicitly excluded. Revision IDs are canonicalized to their parent post before metadata authorization, physical-state inspection, hashing, or mutation so the authorized object is the object whose post metadata is changed.
+Post metadata can target a real WordPress post object when the connected WordPress user may edit that exact object. The post type does not need to be public, REST-exposed, or editor-capable. Bridge-private Workspace types (`wpai_doc` and `wpai_task`) remain explicitly excluded. Revision IDs are canonicalized to their parent post before metadata authorization, physical-state inspection, hashing, or mutation so the authorized object is the object whose post metadata is changed.
 
 Protected/private keys (including keys beginning with `_`) can be reached under that administrator-controlled boundary. When Core or a provider explicitly registers a key or installs a metadata authorization filter, that explicit authorization contract remains authoritative. Protected unregistered keys with no explicit authorization contract may use the exact object's native edit authority once Advanced Metadata is enabled instead of WordPress's generic protected-meta default denial. Additional primitive capabilities or `do_not_allow` injected by `map_meta_cap` remain authoritative.
 
@@ -171,7 +171,7 @@ Provider-native Abilities discovered in the WordPress registry may also be avail
 
 ## URL media import
 
-`wp-native-builder/media-import-url` requires `url` and `filename`. Optional `post_id`, `title`, `caption`, `description`, and `alt_text` use the normal attachment contract. The result is the same attachment summary returned by `media-upload`. No server path, arbitrary headers, cookies, HTTP method, credentials, or package-install action is accepted.
+`wp-ai-bridge/media-import-url` requires `url` and `filename`. Optional `post_id`, `title`, `caption`, `description`, and `alt_text` use the normal attachment contract. The result is the same attachment summary returned by `media-upload`. No server path, arbitrary headers, cookies, HTTP method, credentials, or package-install action is accepted.
 
 An administrator must explicitly enable **Remote Media** and **Builder Write**. Existing settings without Remote Media remain disabled on upgrade. The current WordPress principal also needs `upload_files` and authority to edit any supplied parent. Permission is checked before HTTP and again before upload/attachment mutation.
 
@@ -188,7 +188,7 @@ Import is not idempotent: importing the same URL again can create another attach
 
 ## Public Ability contract inspection
 
-Use `wp-native-builder/abilities-read` with `action: "list"` (the default), optional exact `namespace`, case-insensitive `search` over public name/label/description, `page` (default 1) and `per_page` (default 25, maximum 100). Results sort by exact Ability name and report `total` and `total_pages`; all pages of the current registry are reachable. The registry is a live view, not an immutable snapshot across requests.
+Use `wp-ai-bridge/abilities-read` with `action: "list"` (the default), optional exact `namespace`, case-insensitive `search` over public name/label/description, `page` (default 1) and `per_page` (default 25, maximum 100). Results sort by exact Ability name and report `total` and `total_pages`; all pages of the current registry are reachable. The registry is a live view, not an immutable snapshot across requests.
 
 An exact `action: "get"` plus `name` returns the provider's actual input/output schemas. An absent native schema stays empty; the Bridge does not invent one. Public name, namespace, label, description, category, MCP type and the three standard boolean-or-null annotations are selected explicitly. Arbitrary provider metadata and callbacks are not returned. Explicit MCP opt-out remains authoritative for both list and exact reads, with no name-guessing bypass. Malformed MCP metadata and non-boolean inherited public flags fail closed, matching the pinned official Adapter exposure rule.
 

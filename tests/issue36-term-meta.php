@@ -2,12 +2,12 @@
 /** Focused term-meta contract checks. Real WordPress tests own capability and CAS proofs. */
 require __DIR__ . '/bootstrap.php';
 
-use WP_Native_Builder_Bridge\Abilities\Term_Meta_Abilities;
-use WP_Native_Builder_Bridge\Support\Metadata_Key_Policy;
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
-use WP_Native_Builder_Bridge\Support\Term_Meta_Store;
+use WP_AI_Bridge\Abilities\Term_Meta_Abilities;
+use WP_AI_Bridge\Support\Metadata_Key_Policy;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Term_Meta_Store;
 
 define( 'ARRAY_A', 'ARRAY_A' );
 $assertions = 0;
@@ -56,7 +56,7 @@ $settings = new Settings();
 $abilities = new Term_Meta_Abilities( new Permissions( $settings ), new Mutation_Log() );
 $abilities->register();
 foreach ( array( 'read', 'update', 'delete' ) as $operation ) {
-    $schema = $GLOBALS['wpnb_test']['registered_abilities'][ 'wp-native-builder/term-meta-' . $operation ]['input_schema'];
+    $schema = $GLOBALS['wpai_test']['registered_abilities'][ 'wp-ai-bridge/term-meta-' . $operation ]['input_schema'];
     wpnb36_assert( false === $schema['additionalProperties'] && in_array( 'taxonomy', $schema['required'], true ) && in_array( 'term_id', $schema['required'], true ), 'Closed exact target schema missing.' );
 }
 $base = array( 'term_id' => 101, 'taxonomy' => 'fixture' );
@@ -70,16 +70,16 @@ foreach ( array( 'read', 'update', 'delete' ) as $operation ) {
 $groups[ Settings::GROUP_ADVANCED_METADATA ] = 1;
 $groups[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
 update_option( Settings::OPTION_NAME, $groups );
-foreach ( array( 'edit_term', 'edit_term_meta', 'add_term_meta', 'delete_term_meta' ) as $cap ) { $GLOBALS['wpnb_test']['capabilities'][ $cap ] = true; }
+foreach ( array( 'edit_term', 'edit_term_meta', 'add_term_meta', 'delete_term_meta' ) as $cap ) { $GLOBALS['wpai_test']['capabilities'][ $cap ] = true; }
 foreach ( array( array( 'term_id' => 101 ), array( 'term_id' => '101', 'taxonomy' => 'fixture' ), array( 'term_id' => 101, 'taxonomy' => 'other' ), array( 'term_id' => 102, 'taxonomy' => 'fixture' ) ) as $bad ) {
     wpnb36_assert( ! $abilities->can_read( $bad ) && is_wp_error( $abilities->read( $bad ) ), 'Unverified term/taxonomy target passed.' );
 }
 $GLOBALS['wpnb36_shared'] = true;
 wpnb36_assert( ! $abilities->can_read( $base ), 'Shared term identity passed.' );
 $GLOBALS['wpnb36_shared'] = false;
-$GLOBALS['wpnb_test']['capabilities']['edit_term'] = false;
+$GLOBALS['wpai_test']['capabilities']['edit_term'] = false;
 wpnb36_assert( ! $abilities->can_read( $base ), 'Term edit authority was ignored.' );
-$GLOBALS['wpnb_test']['capabilities']['edit_term'] = true;
+$GLOBALS['wpai_test']['capabilities']['edit_term'] = true;
 $put( 'ordinary', 'first', 10 );
 $put( '_private', 'private-value', 11 );
 $put( 'sessionToken', 'do-not-disclose', 12 );

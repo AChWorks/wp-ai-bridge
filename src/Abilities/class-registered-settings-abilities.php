@@ -2,15 +2,15 @@
 /**
  * Provider-neutral WordPress registered REST settings abilities.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Abilities;
+namespace WP_AI_Bridge\Abilities;
 
-use WP_Native_Builder_Bridge\Support\Metadata_Key_Policy;
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Metadata_Key_Policy;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
 use WP_Error;
 
 /**
@@ -45,10 +45,10 @@ final class Registered_Settings_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/registered-settings-list',
+			'wp-ai-bridge/registered-settings-list',
 			array(
-				'label'               => __( 'List Registered Settings', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Discovers non-sensitive WordPress settings currently registered for the REST API without returning their values.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'List Registered Settings', 'wp-ai-bridge' ),
+				'description'         => __( 'Discovers non-sensitive WordPress settings currently registered for the REST API without returning their values.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -74,10 +74,10 @@ final class Registered_Settings_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/registered-setting-read',
+			'wp-ai-bridge/registered-setting-read',
 			array(
-				'label'               => __( 'Read Registered Setting', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Reads one exact non-sensitive REST-registered WordPress setting under Site Configuration authority.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Registered Setting', 'wp-ai-bridge' ),
+				'description'         => __( 'Reads one exact non-sensitive REST-registered WordPress setting under Site Configuration authority.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->name_input_schema(),
 				'output_schema'       => $this->value_schema(),
@@ -87,10 +87,10 @@ final class Registered_Settings_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/registered-setting-update',
+			'wp-ai-bridge/registered-setting-update',
 			array(
-				'label'               => __( 'Update Registered Setting', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Updates one exact non-sensitive REST-registered WordPress setting through the fixed Core settings route.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Update Registered Setting', 'wp-ai-bridge' ),
+				'description'         => __( 'Updates one exact non-sensitive REST-registered WordPress setting through the fixed Core settings route.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -137,17 +137,17 @@ final class Registered_Settings_Abilities {
 	 */
 	public function list_settings( $input ) {
 		if ( ! $this->can_list() ) {
-			return new WP_Error( 'registered_settings_list_denied', __( 'Site Read access and WordPress settings permission are required to discover registered settings.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'registered_settings_list_denied', __( 'Site Read access and WordPress settings permission are required to discover registered settings.', 'wp-ai-bridge' ) );
 		}
 
 		$input    = is_array( $input ) ? $input : array();
 		$page     = isset( $input['page'] ) ? (int) $input['page'] : 1;
 		$per_page = isset( $input['per_page'] ) ? (int) $input['per_page'] : 50;
 		if ( $page < 1 || $per_page < 1 || $per_page > 100 ) {
-			return new WP_Error( 'registered_settings_invalid_pagination', __( 'Registered settings pagination is invalid.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'registered_settings_invalid_pagination', __( 'Registered settings pagination is invalid.', 'wp-ai-bridge' ) );
 		}
 		if ( $page - 1 > intdiv( PHP_INT_MAX, $per_page ) ) {
-			return new WP_Error( 'registered_settings_invalid_pagination', __( 'Registered settings pagination is invalid.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'registered_settings_invalid_pagination', __( 'Registered settings pagination is invalid.', 'wp-ai-bridge' ) );
 		}
 
 		$entries = $this->registered_rest_settings();
@@ -184,7 +184,7 @@ final class Registered_Settings_Abilities {
 	 */
 	public function read_setting( $input ) {
 		if ( ! $this->can_manage() ) {
-			return new WP_Error( 'registered_setting_read_denied', __( 'Site Configuration access and WordPress settings permission are required to read a registered setting value.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'registered_setting_read_denied', __( 'Site Configuration access and WordPress settings permission are required to read a registered setting value.', 'wp-ai-bridge' ) );
 		}
 
 		$entry = $this->resolve_setting( is_array( $input ) && isset( $input['name'] ) ? (string) $input['name'] : '' );
@@ -222,7 +222,7 @@ final class Registered_Settings_Abilities {
 	 */
 	public function update_setting( $input ) {
 		if ( ! $this->can_manage() ) {
-			return new WP_Error( 'registered_setting_update_denied', __( 'Site Configuration access and WordPress settings permission are required to update a registered setting.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'registered_setting_update_denied', __( 'Site Configuration access and WordPress settings permission are required to update a registered setting.', 'wp-ai-bridge' ) );
 		}
 
 		$entry = $this->resolve_setting( is_array( $input ) && isset( $input['name'] ) ? (string) $input['name'] : '' );
@@ -232,8 +232,8 @@ final class Registered_Settings_Abilities {
 		if ( $this->requires_specialized_update( $entry ) ) {
 			return new WP_Error(
 				'registered_setting_specialized_update_required',
-				__( 'The requested setting is unavailable through the bounded registered settings contract.', 'wp-native-builder-bridge' ),
-				array( 'ability' => 'wp-native-builder/site-settings-update' )
+				__( 'The requested setting is unavailable through the bounded registered settings contract.', 'wp-ai-bridge' ),
+				array( 'ability' => 'wp-ai-bridge/site-settings-update' )
 			);
 		}
 
@@ -248,7 +248,7 @@ final class Registered_Settings_Abilities {
 			$entry['rest_name']
 		);
 		if ( is_wp_error( $result ) ) {
-			$this->log->record( 'wp-native-builder/registered-setting-update', 'site', 0, false, $result->get_error_code() );
+			$this->log->record( 'wp-ai-bridge/registered-setting-update', 'site', 0, false, $result->get_error_code() );
 			return $result;
 		}
 
@@ -260,7 +260,7 @@ final class Registered_Settings_Abilities {
 			$output_value = $this->bounded_value( $result[ $entry['rest_name'] ] );
 		}
 
-		$this->log->record( 'wp-native-builder/registered-setting-update', 'site', 0, true, '' );
+		$this->log->record( 'wp-ai-bridge/registered-setting-update', 'site', 0, true, '' );
 
 		return array(
 			'setting'         => $this->contract( $entry ),
@@ -276,7 +276,7 @@ final class Registered_Settings_Abilities {
 	 */
 	private function registered_rest_settings() {
 		if ( ! function_exists( 'rest_get_server' ) || ! function_exists( 'get_registered_settings' ) || ! class_exists( 'WP_REST_Settings_Controller' ) ) {
-			return new WP_Error( 'registered_settings_rest_unavailable', __( 'The WordPress registered settings REST contract is unavailable.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'registered_settings_rest_unavailable', __( 'The WordPress registered settings REST contract is unavailable.', 'wp-ai-bridge' ) );
 		}
 
 		rest_get_server();
@@ -563,12 +563,12 @@ final class Registered_Settings_Abilities {
 	 */
 	private function decode_value( $json ) {
 		if ( '' === $json || strlen( $json ) > self::VALUE_MAX_BYTES ) {
-			return new WP_Error( 'registered_setting_invalid_value', __( 'Registered setting value_json must contain one bounded JSON value.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'registered_setting_invalid_value', __( 'Registered setting value_json must contain one bounded JSON value.', 'wp-ai-bridge' ) );
 		}
 
 		$value = json_decode( $json, true, 64 );
 		if ( JSON_ERROR_NONE !== json_last_error() || null === $value ) {
-			return new WP_Error( 'registered_setting_invalid_value', __( 'Registered setting value_json must contain one bounded non-null JSON value.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'registered_setting_invalid_value', __( 'Registered setting value_json must contain one bounded non-null JSON value.', 'wp-ai-bridge' ) );
 		}
 
 		return $value;
@@ -587,7 +587,7 @@ final class Registered_Settings_Abilities {
 	 */
 	private function dispatch( $method, array $params, $field ) {
 		if ( ! in_array( $method, array( 'GET', 'POST' ), true ) || ! class_exists( 'WP_REST_Request' ) || ! function_exists( 'rest_do_request' ) ) {
-			return new WP_Error( 'registered_settings_rest_unavailable', __( 'The WordPress registered settings REST contract is unavailable.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'registered_settings_rest_unavailable', __( 'The WordPress registered settings REST contract is unavailable.', 'wp-ai-bridge' ) );
 		}
 
 		$request = new \WP_REST_Request( $method, '/wp/v2/settings' );
@@ -601,15 +601,15 @@ final class Registered_Settings_Abilities {
 			return $response;
 		}
 		if ( ! is_object( $response ) || ! method_exists( $response, 'get_data' ) ) {
-			return new WP_Error( 'registered_settings_invalid_response', __( 'WordPress returned an invalid registered settings REST response.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'registered_settings_invalid_response', __( 'WordPress returned an invalid registered settings REST response.', 'wp-ai-bridge' ) );
 		}
 		if ( method_exists( $response, 'is_error' ) && $response->is_error() ) {
-			return method_exists( $response, 'as_error' ) ? $response->as_error() : new WP_Error( 'registered_settings_request_failed', __( 'WordPress rejected the registered settings REST request.', 'wp-native-builder-bridge' ) );
+			return method_exists( $response, 'as_error' ) ? $response->as_error() : new WP_Error( 'registered_settings_request_failed', __( 'WordPress rejected the registered settings REST request.', 'wp-ai-bridge' ) );
 		}
 
 		$data = $response->get_data();
 		if ( ! is_array( $data ) ) {
-			return new WP_Error( 'registered_settings_invalid_response', __( 'WordPress returned an invalid registered settings REST response.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'registered_settings_invalid_response', __( 'WordPress returned an invalid registered settings REST response.', 'wp-ai-bridge' ) );
 		}
 
 		return array_key_exists( (string) $field, $data ) ? array( (string) $field => $data[ $field ] ) : array();
@@ -617,7 +617,7 @@ final class Registered_Settings_Abilities {
 
 	/** @return WP_Error */
 	private function unavailable() {
-		return new WP_Error( 'registered_setting_unavailable', __( 'The requested setting is unavailable through the bounded registered settings contract.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'registered_setting_unavailable', __( 'The requested setting is unavailable through the bounded registered settings contract.', 'wp-ai-bridge' ) );
 	}
 
 	/**

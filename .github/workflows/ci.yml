@@ -99,11 +99,11 @@ jobs:
           - name: Issue 46 multisite
             runner: bin/run-issue46-multisite.sh
             wordpress_tag: php8.4-apache
-          - name: Issue 47 migration
-            runner: bin/run-issue47-migration.sh
+          - name: Issue 74 canonical migration
+            runner: bin/run-issue74-migration.sh
             wordpress_tag: 6.9-php8.4-apache
-          - name: Issue 47 migration
-            runner: bin/run-issue47-migration.sh
+          - name: Issue 74 canonical migration
+            runner: bin/run-issue74-migration.sh
             wordpress_tag: php8.4-apache
     steps:
       - name: Checkout

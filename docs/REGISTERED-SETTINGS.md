@@ -6,9 +6,9 @@ This surface is intentionally narrower than arbitrary option access.
 
 ## Abilities
 
-- `wp-native-builder/registered-settings-list` discovers currently registered, non-sensitive REST settings and returns contract metadata only. It never returns setting values.
-- `wp-native-builder/registered-setting-read` reads one exact non-sensitive REST-visible setting under **Site Configuration** authority.
-- `wp-native-builder/registered-setting-update` updates one exact non-sensitive REST-visible setting under **Site Configuration** authority.
+- `wp-ai-bridge/registered-settings-list` discovers currently registered, non-sensitive REST settings and returns contract metadata only. It never returns setting values.
+- `wp-ai-bridge/registered-setting-read` reads one exact non-sensitive REST-visible setting under **Site Configuration** authority.
+- `wp-ai-bridge/registered-setting-update` updates one exact non-sensitive REST-visible setting under **Site Configuration** authority.
 
 The historical `site-settings-read` and `site-settings-update` abilities remain available for their existing bounded Core behavior, including front-page invariants and permalink/rewrite impact handling.
 

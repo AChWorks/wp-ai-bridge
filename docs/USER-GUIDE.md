@@ -41,11 +41,11 @@ Tasks use the same `version` + `state_hash` stale-write protection as Workspace 
 - dependency/HTTPS readiness;
 - Bridge access groups.
 
-Enable the smallest access set needed for the current work. Existing bookmarks that use the former `wp-native-builder...` admin page slugs continue to resolve through hidden compatibility aliases; new navigation uses `wp-ai-bridge...` slugs.
+Enable the smallest access set needed for the current work. Version 0.4.0 uses only the canonical `wp-ai-bridge...` admin page slugs; former admin aliases are not registered.
 
 ## Workspace resume
 
-The `workspace-resume` Ability returns compact orientation information for a connected client. Its public Ability identifier remains in the stable `wp-native-builder/*` namespace for compatibility even though the product is now named WP AI Bridge. It is designed to help continue a site project without dumping complete document bodies, task notes, or chat history into every new conversation.
+The `workspace-resume` Ability returns compact orientation information for a connected client. Its public Ability identifier uses the canonical `wp-ai-bridge/*` namespace. It is designed to help continue a site project without dumping complete document bodies, task notes, or chat history into every new conversation.
 
 ## Export and clear
 
@@ -53,4 +53,4 @@ Workspace administration provides explicit export/clear lifecycle controls. Clea
 
 ## Language and RTL
 
-The plugin uses standard WordPress localization APIs. Persian (`fa_IR`) is bundled, and the admin screens are designed to work in both RTL and LTR WordPress installations. The existing text domain remains `wp-native-builder-bridge` as a compatibility identifier; it is not the current public brand.
+The plugin uses standard WordPress localization APIs. Persian (`fa_IR`) is bundled, and the admin screens are designed to work in both RTL and LTR WordPress installations. The canonical text domain is `wp-ai-bridge`.

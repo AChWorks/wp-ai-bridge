@@ -2,13 +2,13 @@
 /**
  * Optional provider discovery and capability-mode reporting.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Abilities;
+namespace WP_AI_Bridge\Abilities;
 
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
 
 /**
  * Reports optional provider availability without inventing unsupported operations.
@@ -32,10 +32,10 @@ final class Integration_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/integration-status',
+			'wp-ai-bridge/integration-status',
 			array(
-				'label'               => __( 'Integration Status', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Reports supported optional provider integration modes and observed public provider abilities without requiring those providers.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Integration Status', 'wp-ai-bridge' ),
+				'description'         => __( 'Reports supported optional provider integration modes and observed public provider abilities without requiring those providers.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',

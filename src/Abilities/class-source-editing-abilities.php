@@ -2,14 +2,14 @@
 /**
  * Administrator-controlled installed plugin/theme source editing.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Abilities;
+namespace WP_AI_Bridge\Abilities;
 
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
 use WP_Error;
 
 /**
@@ -17,7 +17,7 @@ use WP_Error;
  */
 final class Source_Editing_Abilities {
 	const MAX_SOURCE_BYTES = 2097152;
-	const RECOVERY_OPTION  = 'wp_native_builder_bridge_source_recovery';
+	const RECOVERY_OPTION  = 'wp_ai_bridge_source_recovery';
 
 	/** @var Permissions */
 	private $permissions;
@@ -62,10 +62,10 @@ final class Source_Editing_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/source-files-read',
+			'wp-ai-bridge/source-files-read',
 			array(
-				'label'               => __( 'Read Installed Extension Source', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists or reads editable installed plugin/theme source files behind the explicit Source Editing trust boundary.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Installed Extension Source', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists or reads editable installed plugin/theme source files behind the explicit Source Editing trust boundary.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->read_input_schema(),
 				'output_schema'       => $this->read_output_schema(),
@@ -76,10 +76,10 @@ final class Source_Editing_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/source-file-preview',
+			'wp-ai-bridge/source-file-preview',
 			array(
-				'label'               => __( 'Preview Installed Extension Source Edit', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Validates an exact source candidate and binds it to the current installed-file preimage without writing the file.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Preview Installed Extension Source Edit', 'wp-ai-bridge' ),
+				'description'         => __( 'Validates an exact source candidate and binds it to the current installed-file preimage without writing the file.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->candidate_input_schema( false ),
 				'output_schema'       => $this->preview_output_schema(),
@@ -90,10 +90,10 @@ final class Source_Editing_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/source-file-apply',
+			'wp-ai-bridge/source-file-apply',
 			array(
-				'label'               => __( 'Apply Installed Extension Source Edit', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Applies one exact preview-bound installed plugin/theme source candidate with verified persistence and bounded recovery.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Apply Installed Extension Source Edit', 'wp-ai-bridge' ),
+				'description'         => __( 'Applies one exact preview-bound installed plugin/theme source candidate with verified persistence and bounded recovery.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->candidate_input_schema( true ),
 				'output_schema'       => $this->apply_output_schema(),
@@ -104,10 +104,10 @@ final class Source_Editing_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/source-file-recover',
+			'wp-ai-bridge/source-file-recover',
 			array(
-				'label'               => __( 'Recover Installed Extension Source Edit', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Recovers the single pending Bridge-owned source preimage only when the current file still has the exact candidate identity.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Recover Installed Extension Source Edit', 'wp-ai-bridge' ),
+				'description'         => __( 'Recovers the single pending Bridge-owned source preimage only when the current file still has the exact candidate identity.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->recover_input_schema(),
 				'output_schema'       => $this->recover_output_schema(),
@@ -127,7 +127,7 @@ final class Source_Editing_Abilities {
 	 * @return bool
 	 */
 	public function can_source_action( $input ) {
-		if ( ! $this->source_boundary_enabled() || ! wp_is_file_mod_allowed( 'wp_native_builder_bridge_source_editing' ) || ! is_array( $input ) || empty( $input['kind'] ) ) {
+		if ( ! $this->source_boundary_enabled() || ! wp_is_file_mod_allowed( 'wp_ai_bridge_source_editing' ) || ! is_array( $input ) || empty( $input['kind'] ) ) {
 			return false;
 		}
 		$kind = (string) $input['kind'];
@@ -143,7 +143,7 @@ final class Source_Editing_Abilities {
 	 * @return bool
 	 */
 	public function can_recover() {
-		if ( ! $this->source_boundary_enabled() || ! wp_is_file_mod_allowed( 'wp_native_builder_bridge_source_editing' ) ) {
+		if ( ! $this->source_boundary_enabled() || ! wp_is_file_mod_allowed( 'wp_ai_bridge_source_editing' ) ) {
 			return false;
 		}
 
@@ -293,11 +293,11 @@ final class Source_Editing_Abilities {
 		}
 		$candidate_hash = hash( 'sha256', $candidate );
 		if ( ! hash_equals( strtolower( $input['candidate_sha256'] ), $candidate_hash ) ) {
-			return new WP_Error( 'source_candidate_changed', __( 'The submitted source candidate no longer matches the previewed candidate hash.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
+			return new WP_Error( 'source_candidate_changed', __( 'The submitted source candidate no longer matches the previewed candidate hash.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 		}
 		$expected_id = $this->candidate_id( $target, strtolower( $input['preimage_sha256'] ), $candidate_hash );
 		if ( ! hash_equals( strtolower( $input['candidate_id'] ), $expected_id ) ) {
-			return new WP_Error( 'source_candidate_binding_changed', __( 'The submitted source candidate is not bound to this exact target and preimage.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
+			return new WP_Error( 'source_candidate_binding_changed', __( 'The submitted source candidate is not bound to this exact target and preimage.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 		}
 
 		$preimage = $this->read_target_bytes( $target );
@@ -306,13 +306,13 @@ final class Source_Editing_Abilities {
 		}
 		$preimage_hash = hash( 'sha256', $preimage );
 		if ( ! hash_equals( strtolower( $input['preimage_sha256'] ), $preimage_hash ) ) {
-			return new WP_Error( 'source_preimage_stale', __( 'The installed source file changed after preview. Read and preview it again before applying.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
+			return new WP_Error( 'source_preimage_stale', __( 'The installed source file changed after preview. Read and preview it again before applying.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 		}
 		if ( ! $target['writable'] ) {
-			return new WP_Error( 'source_file_not_directly_writable', __( 'The exact installed source file is not directly writable by the WordPress PHP process. Bridge does not collect FTP or SSH filesystem credentials.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_file_not_directly_writable', __( 'The exact installed source file is not directly writable by the WordPress PHP process. Bridge does not collect FTP or SSH filesystem credentials.', 'wp-ai-bridge' ) );
 		}
 		if ( false !== $this->state_get( self::RECOVERY_OPTION, false ) ) {
-			return new WP_Error( 'source_recovery_required', __( 'A previous source edit still owns pending recovery material. Recover or reconcile it before another source write.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_required', __( 'A previous source edit still owns pending recovery material. Recover or reconcile it before another source write.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 
 		$locked = $this->acquire_file_lock( $target );
@@ -324,11 +324,11 @@ final class Source_Editing_Abilities {
 		try {
 			$locked_target = $this->resolve_target_from_input( $input );
 			if ( is_wp_error( $locked_target ) || $locked_target['canonical_path'] !== $target['canonical_path'] ) {
-				return new WP_Error( 'source_target_changed', __( 'The installed source target changed before the write could begin.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
+				return new WP_Error( 'source_target_changed', __( 'The installed source target changed before the write could begin.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 			}
 			$locked_preimage = $this->read_target_bytes( $locked_target );
 			if ( is_wp_error( $locked_preimage ) || ! hash_equals( $preimage_hash, hash( 'sha256', (string) $locked_preimage ) ) ) {
-				return new WP_Error( 'source_preimage_stale', __( 'The installed source file changed before the write could begin.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
+				return new WP_Error( 'source_preimage_stale', __( 'The installed source file changed before the write could begin.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 			}
 
 			$record = array(
@@ -345,7 +345,7 @@ final class Source_Editing_Abilities {
 				'created_gmt'      => gmdate( 'c' ),
 			);
 			if ( ! $this->state_add( self::RECOVERY_OPTION, $record ) ) {
-				return new WP_Error( 'source_recovery_required', __( 'Recovery material already exists for another source edit.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+				return new WP_Error( 'source_recovery_required', __( 'Recovery material already exists for another source edit.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
 			register_shutdown_function( array( $this, 'shutdown_recover' ), $token );
 
@@ -368,18 +368,18 @@ final class Source_Editing_Abilities {
 				if ( is_wp_error( $runtime ) ) {
 					$restored = $this->restore_record( $record );
 					if ( true === $restored ) {
-						$this->log->record( 'wp-native-builder/source-file-apply', $target['kind'], 0, false, 'runtime_validation_failed' );
-						return new WP_Error( 'source_runtime_validation_failed', __( 'WordPress runtime validation failed and the exact previous source bytes were restored.', 'wp-native-builder-bridge' ), array( 'outcome' => 'validation_failed_restored' ) );
+						$this->log->record( 'wp-ai-bridge/source-file-apply', $target['kind'], 0, false, 'runtime_validation_failed' );
+						return new WP_Error( 'source_runtime_validation_failed', __( 'WordPress runtime validation failed and the exact previous source bytes were restored.', 'wp-ai-bridge' ), array( 'outcome' => 'validation_failed_restored' ) );
 					}
 					return $restored;
 				}
 			}
 
 			if ( ! $this->delete_recovery_if_token( $token ) ) {
-				return new WP_Error( 'source_recovery_cleanup_failed', __( 'The source candidate was verified, but Bridge could not clear its private recovery record.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+				return new WP_Error( 'source_recovery_cleanup_failed', __( 'The source candidate was verified, but Bridge could not clear its private recovery record.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
 
-			$this->log->record( 'wp-native-builder/source-file-apply', $target['kind'], 0, true, '' );
+			$this->log->record( 'wp-ai-bridge/source-file-apply', $target['kind'], 0, true, '' );
 			return array(
 				'kind'               => $target['kind'],
 				'extension'          => $target['extension'],
@@ -413,12 +413,12 @@ final class Source_Editing_Abilities {
 		}
 		if ( ! is_array( $input ) || empty( $input['candidate_sha256'] ) || ! is_string( $input['candidate_sha256'] )
 			|| ! hash_equals( (string) $record['candidate_sha256'], strtolower( $input['candidate_sha256'] ) ) ) {
-			return new WP_Error( 'source_recovery_identity_required', __( 'Recovery requires the exact pending candidate hash.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
+			return new WP_Error( 'source_recovery_identity_required', __( 'Recovery requires the exact pending candidate hash.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 		}
 
 		$context = $this->trusted_record_path( $record );
 		if ( is_wp_error( $context ) ) {
-			return new WP_Error( 'source_recovery_target_changed', __( 'The pending source recovery target changed and cannot be restored automatically.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_target_changed', __( 'The pending source recovery target changed and cannot be restored automatically.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 		$coordination = $this->acquire_coordination_lock( $context['canonical_path'] );
 		if ( is_wp_error( $coordination ) ) {
@@ -433,7 +433,7 @@ final class Source_Editing_Abilities {
 
 			$target = $this->resolve_record_target( $record );
 			if ( is_wp_error( $target ) ) {
-				return new WP_Error( 'source_recovery_target_changed', __( 'The pending source recovery target changed and cannot be restored automatically.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+				return new WP_Error( 'source_recovery_target_changed', __( 'The pending source recovery target changed and cannot be restored automatically.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
 			$locked = $this->acquire_file_lock( $target );
 			if ( is_wp_error( $locked ) ) {
@@ -444,7 +444,7 @@ final class Source_Editing_Abilities {
 			if ( true !== $result ) {
 				return $result;
 			}
-			$this->log->record( 'wp-native-builder/source-file-recover', (string) $record['kind'], 0, true, '' );
+			$this->log->record( 'wp-ai-bridge/source-file-recover', (string) $record['kind'], 0, true, '' );
 			return array(
 				'outcome'         => 'success',
 				'recovered'       => true,
@@ -528,7 +528,7 @@ final class Source_Editing_Abilities {
 		$extension = $input['extension'];
 		$file      = $input['file'];
 		if ( ! in_array( $kind, array( 'plugin', 'theme' ), true ) || 0 !== validate_file( $file ) || '' === $file ) {
-			return new WP_Error( 'source_target_invalid', __( 'The source target must identify one installed plugin/theme and one relative editable file.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_target_invalid', __( 'The source target must identify one installed plugin/theme and one relative editable file.', 'wp-ai-bridge' ) );
 		}
 		return 'plugin' === $kind ? $this->resolve_plugin_target( $extension, $file ) : $this->resolve_theme_target( $extension, $file );
 	}
@@ -544,15 +544,15 @@ final class Source_Editing_Abilities {
 		$this->load_editor_files();
 		$plugins = get_plugins();
 		if ( ! isset( $plugins[ $plugin ] ) ) {
-			return new WP_Error( 'source_extension_not_found', __( 'The installed source extension was not found.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_extension_not_found', __( 'The installed source extension was not found.', 'wp-ai-bridge' ) );
 		}
 		$plugin_base = realpath( WP_PLUGIN_DIR );
 		$root        = realpath( dirname( WP_PLUGIN_DIR . '/' . $plugin ) );
 		if ( false === $plugin_base || false === $root ) {
-			return new WP_Error( 'source_root_unavailable', __( 'The installed extension source root cannot be resolved.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_root_unavailable', __( 'The installed extension source root cannot be resolved.', 'wp-ai-bridge' ) );
 		}
 		if ( $root !== $plugin_base && ! $this->path_is_within( $root, $plugin_base ) ) {
-			return new WP_Error( 'source_path_escape', __( 'The installed source file resolves outside its exact extension root and cannot be edited through Bridge.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_path_escape', __( 'The installed source file resolves outside its exact extension root and cannot be edited through Bridge.', 'wp-ai-bridge' ) );
 		}
 		$plugin_dir = dirname( $plugin );
 		$allowed    = array();
@@ -566,7 +566,7 @@ final class Source_Editing_Abilities {
 		}
 		$file = wp_normalize_path( $file );
 		if ( ! isset( $allowed[ $file ] ) ) {
-			return new WP_Error( 'source_file_not_editable', __( 'That installed extension file is not in WordPress editable source inventory.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_file_not_editable', __( 'That installed extension file is not in WordPress editable source inventory.', 'wp-ai-bridge' ) );
 		}
 		return $this->resolved_target(
 			'plugin',
@@ -590,15 +590,15 @@ final class Source_Editing_Abilities {
 		$this->load_editor_files();
 		$theme = wp_get_theme( $stylesheet );
 		if ( ! $theme->exists() ) {
-			return new WP_Error( 'source_extension_not_found', __( 'The installed source extension was not found.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_extension_not_found', __( 'The installed source extension was not found.', 'wp-ai-bridge' ) );
 		}
 		$theme_base = realpath( get_theme_root( $stylesheet ) );
 		$root       = realpath( $theme->get_stylesheet_directory() );
 		if ( false === $theme_base || false === $root ) {
-			return new WP_Error( 'source_root_unavailable', __( 'The installed extension source root cannot be resolved.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_root_unavailable', __( 'The installed extension source root cannot be resolved.', 'wp-ai-bridge' ) );
 		}
 		if ( $root !== $theme_base && ! $this->path_is_within( $root, $theme_base ) ) {
-			return new WP_Error( 'source_path_escape', __( 'The installed source file resolves outside its exact extension root and cannot be edited through Bridge.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_path_escape', __( 'The installed source file resolves outside its exact extension root and cannot be edited through Bridge.', 'wp-ai-bridge' ) );
 		}
 		$allowed = array();
 		foreach ( wp_get_theme_file_editable_extensions( $theme ) as $type ) {
@@ -609,7 +609,7 @@ final class Source_Editing_Abilities {
 		}
 		$file = wp_normalize_path( $file );
 		if ( ! isset( $allowed[ $file ] ) ) {
-			return new WP_Error( 'source_file_not_editable', __( 'That installed extension file is not in WordPress editable source inventory.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_file_not_editable', __( 'That installed extension file is not in WordPress editable source inventory.', 'wp-ai-bridge' ) );
 		}
 		$active = get_stylesheet() === $stylesheet || get_template() === $stylesheet;
 		return $this->resolved_target( 'theme', $stylesheet, $file, $root, $allowed[ $file ], $active, false );
@@ -630,7 +630,7 @@ final class Source_Editing_Abilities {
 	private function resolved_target( $kind, $extension, $file, $root, $path, $active, $network_active ) {
 		$canonical = realpath( $path );
 		if ( is_link( $path ) || false === $canonical || ! is_file( $canonical ) || ! $this->path_is_within( $canonical, $root ) ) {
-			return new WP_Error( 'source_path_escape', __( 'The installed source file resolves outside its exact extension root and cannot be edited through Bridge.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_path_escape', __( 'The installed source file resolves outside its exact extension root and cannot be edited through Bridge.', 'wp-ai-bridge' ) );
 		}
 		$type = strtolower( pathinfo( $canonical, PATHINFO_EXTENSION ) );
 		return array(
@@ -714,14 +714,14 @@ final class Source_Editing_Abilities {
 		$filesystem = $this->filesystem();
 		$size       = $filesystem->size( $target['canonical_path'] );
 		if ( false === $size || $size < 0 ) {
-			return new WP_Error( 'source_read_failed', __( 'The installed source file could not be read.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_read_failed', __( 'The installed source file could not be read.', 'wp-ai-bridge' ) );
 		}
 		if ( $size > self::MAX_SOURCE_BYTES ) {
-			return new WP_Error( 'source_file_too_large', __( 'The installed source file exceeds the Bridge source-editing safety bound.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_file_too_large', __( 'The installed source file exceeds the Bridge source-editing safety bound.', 'wp-ai-bridge' ) );
 		}
 		$bytes = $filesystem->get_contents( $target['canonical_path'] );
 		if ( false === $bytes || strlen( $bytes ) !== (int) $size ) {
-			return new WP_Error( 'source_read_failed', __( 'The installed source file could not be read completely.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_read_failed', __( 'The installed source file could not be read completely.', 'wp-ai-bridge' ) );
 		}
 		return $bytes;
 	}
@@ -735,7 +735,7 @@ final class Source_Editing_Abilities {
 	 */
 	private function validate_candidate( $target, $candidate ) {
 		if ( strlen( $candidate ) > self::MAX_SOURCE_BYTES ) {
-			return new WP_Error( 'source_candidate_too_large', __( 'The source candidate exceeds the Bridge source-editing safety bound.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_candidate_too_large', __( 'The source candidate exceeds the Bridge source-editing safety bound.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $target['php'] ) {
 			return true;
@@ -743,7 +743,7 @@ final class Source_Editing_Abilities {
 		try {
 			token_get_all( $candidate, TOKEN_PARSE );
 		} catch ( \ParseError $error ) {
-			return new WP_Error( 'source_php_syntax_invalid', __( 'The PHP source candidate has invalid syntax and was not written.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_php_syntax_invalid', __( 'The PHP source candidate has invalid syntax and was not written.', 'wp-ai-bridge' ) );
 		}
 		return true;
 	}
@@ -760,7 +760,7 @@ final class Source_Editing_Abilities {
 	 */
 	private function acquire_file_lock( $target ) {
 		if ( $this->file_lock instanceof \SplFileObject ) {
-			return new WP_Error( 'source_edit_locked', __( 'Another Bridge source edit is already in progress.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_edit_locked', __( 'Another Bridge source edit is already in progress.', 'wp-ai-bridge' ) );
 		}
 
 		$coordination_was_held = $this->coordination_lock instanceof \SplFileObject;
@@ -777,14 +777,14 @@ final class Source_Editing_Abilities {
 			if ( ! $coordination_was_held ) {
 				$this->release_file_lock();
 			}
-			return new WP_Error( 'source_lock_unavailable', __( 'Bridge could not acquire a cooperative lock for the exact source file.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_lock_unavailable', __( 'Bridge could not acquire a cooperative lock for the exact source file.', 'wp-ai-bridge' ) );
 		}
 
 		if ( ! $target_lock->flock( LOCK_EX | LOCK_NB ) ) {
 			if ( ! $coordination_was_held ) {
 				$this->release_file_lock();
 			}
-			return new WP_Error( 'source_edit_locked', __( 'Another Bridge source edit is already in progress.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_edit_locked', __( 'Another Bridge source edit is already in progress.', 'wp-ai-bridge' ) );
 		}
 		$this->file_lock = $target_lock;
 		return true;
@@ -803,10 +803,10 @@ final class Source_Editing_Abilities {
 		try {
 			$coordination = new \SplFileObject( $this->coordination_lock_path( $canonical_path ), 'c+b' );
 		} catch ( \RuntimeException $error ) {
-			return new WP_Error( 'source_lock_unavailable', __( 'Bridge could not acquire a cooperative lock for the exact source file.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_lock_unavailable', __( 'Bridge could not acquire a cooperative lock for the exact source file.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $coordination->flock( LOCK_EX | LOCK_NB ) ) {
-			return new WP_Error( 'source_edit_locked', __( 'Another Bridge source edit is already in progress.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_edit_locked', __( 'Another Bridge source edit is already in progress.', 'wp-ai-bridge' ) );
 		}
 		$this->coordination_lock = $coordination;
 		return true;
@@ -831,7 +831,7 @@ final class Source_Editing_Abilities {
 	/** @param string $canonical_path Trusted canonical source pathname. @return string */
 	private function coordination_lock_path( $canonical_path ) {
 		$key = wp_normalize_path( ABSPATH ) . "\0" . wp_normalize_path( $canonical_path );
-		return trailingslashit( get_temp_dir() ) . 'wpnb-source-lock-' . hash( 'sha256', $key ) . '.lock';
+		return trailingslashit( get_temp_dir() ) . 'wpai-source-lock-' . hash( 'sha256', $key ) . '.lock';
 	}
 
 	/**
@@ -857,7 +857,7 @@ final class Source_Editing_Abilities {
 		}
 		foreach ( $paths as $artifact ) {
 			if ( $this->path_exists( $artifact ) ) {
-				return new WP_Error( 'source_recovery_artifact_pending', __( 'A previous source replacement artifact still requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+				return new WP_Error( 'source_recovery_artifact_pending', __( 'A previous source replacement artifact still requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
 		}
 
@@ -870,7 +870,7 @@ final class Source_Editing_Abilities {
 		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- guarded CAS converts primitive failure to fail-closed state.
 		if ( ! @link( $paths['stage'], $paths['probe'] ) ) {
 			$cleanup = $this->remove_replacement_artifact( $paths['stage'] );
-			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_atomic_replace_unavailable', __( 'This filesystem cannot provide the no-overwrite replacement primitive required for safe source editing.', 'wp-native-builder-bridge' ) );
+			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_atomic_replace_unavailable', __( 'This filesystem cannot provide the no-overwrite replacement primitive required for safe source editing.', 'wp-ai-bridge' ) );
 		}
 		$probe_cleanup = $this->remove_replacement_artifact( $paths['probe'] );
 		if ( is_wp_error( $probe_cleanup ) ) {
@@ -879,7 +879,7 @@ final class Source_Editing_Abilities {
 
 		if ( ! @rename( $path, $paths['hold'] ) ) {
 			$cleanup = $this->remove_replacement_artifact( $paths['stage'] );
-			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_target_changed', __( 'The installed source target changed before the guarded replacement boundary.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
+			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_target_changed', __( 'The installed source target changed before the guarded replacement boundary.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 		}
 
 		$held = $this->read_regular_path( $paths['hold'] );
@@ -890,9 +890,9 @@ final class Source_Editing_Abilities {
 				return $cleanup;
 			}
 			if ( true === $restored ) {
-				return new WP_Error( 'source_recovery_required', __( 'Bridge restored the quarantined source pathname but could not verify its bytes. Recovery ownership was retained.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+				return new WP_Error( 'source_recovery_required', __( 'Bridge restored the quarantined source pathname but could not verify its bytes. Recovery ownership was retained.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
-			return new WP_Error( 'source_recovery_required', __( 'Bridge quarantined the source path but could not verify or restore it without risking another writer.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_required', __( 'Bridge quarantined the source path but could not verify or restore it without risking another writer.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 		$held_hash = hash( 'sha256', $held );
 		if ( ! hash_equals( strtolower( $expected_hash ), $held_hash ) ) {
@@ -902,9 +902,9 @@ final class Source_Editing_Abilities {
 				return $cleanup;
 			}
 			if ( true === $restored ) {
-				return new WP_Error( 'source_concurrent_write_detected', __( 'The source path changed at the replacement boundary. The newer bytes were preserved and no Bridge replacement was published.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
+				return new WP_Error( 'source_concurrent_write_detected', __( 'The source path changed at the replacement boundary. The newer bytes were preserved and no Bridge replacement was published.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 			}
-			return new WP_Error( 'source_recovery_required', __( 'The source path changed during guarded replacement and requires administrator reconciliation. Bridge did not overwrite the competing path.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_required', __( 'The source path changed during guarded replacement and requires administrator reconciliation. Bridge did not overwrite the competing path.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 
 		$metadata = $this->match_stage_metadata( $paths['stage'], $paths['hold'] );
@@ -915,7 +915,7 @@ final class Source_Editing_Abilities {
 				return $cleanup;
 			}
 			if ( true !== $restored ) {
-				return new WP_Error( 'source_recovery_required', __( 'Bridge could not restore the quarantined source after replacement preparation failed. Recovery ownership was retained.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+				return new WP_Error( 'source_recovery_required', __( 'Bridge could not restore the quarantined source after replacement preparation failed. Recovery ownership was retained.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
 			return $metadata;
 		}
@@ -932,7 +932,7 @@ final class Source_Editing_Abilities {
 					return $cleanup;
 				}
 				if ( is_wp_error( $held_after ) || ! hash_equals( $held_hash, hash( 'sha256', (string) $held_after ) ) ) {
-					return new WP_Error( 'source_recovery_required', __( 'Another writer recreated the source path and also changed the quarantined source inode. Bridge preserved both versions for administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+					return new WP_Error( 'source_recovery_required', __( 'Another writer recreated the source path and also changed the quarantined source inode. Bridge preserved both versions for administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
 				// The competing live pathname already owns the installed generation. The verified hold is the
 				// superseded preimage, not a second live target; descriptors retained from before quarantine
@@ -941,7 +941,7 @@ final class Source_Editing_Abilities {
 				if ( is_wp_error( $hold_cleanup ) ) {
 					return $hold_cleanup;
 				}
-				return new WP_Error( 'source_concurrent_write_detected', __( 'Another writer recreated the source path during guarded replacement. Its bytes were preserved and Bridge did not overwrite them.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
+				return new WP_Error( 'source_concurrent_write_detected', __( 'Another writer recreated the source path during guarded replacement. Its bytes were preserved and Bridge did not overwrite them.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 			}
 
 			$restored = $this->restore_quarantined_path( $paths['hold'], $path );
@@ -950,9 +950,9 @@ final class Source_Editing_Abilities {
 				return $cleanup;
 			}
 			if ( true === $restored ) {
-				return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not publish the guarded replacement and restored the exact previous pathname without overwriting another writer.', 'wp-native-builder-bridge' ), array( 'outcome' => 'validation_failed_restored' ) );
+				return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not publish the guarded replacement and restored the exact previous pathname without overwriting another writer.', 'wp-ai-bridge' ), array( 'outcome' => 'validation_failed_restored' ) );
 			}
-			return new WP_Error( 'source_recovery_required', __( 'Bridge could not publish or safely restore the guarded replacement pathname. Recovery ownership was retained.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_required', __( 'Bridge could not publish or safely restore the guarded replacement pathname. Recovery ownership was retained.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 
 		$stage_cleanup = $this->remove_replacement_artifact( $paths['stage'] );
@@ -962,17 +962,17 @@ final class Source_Editing_Abilities {
 		$published = $this->read_regular_path( $path );
 		$wanted    = hash( 'sha256', $bytes );
 		if ( is_wp_error( $published ) || ! hash_equals( $wanted, hash( 'sha256', (string) $published ) ) ) {
-			return new WP_Error( 'source_write_state_uncertain', __( 'Bridge published the replacement boundary but could not verify the exact current source bytes. Recovery material was retained.', 'wp-native-builder-bridge' ), array( 'outcome' => 'uncertain_partial_state' ) );
+			return new WP_Error( 'source_write_state_uncertain', __( 'Bridge published the replacement boundary but could not verify the exact current source bytes. Recovery material was retained.', 'wp-ai-bridge' ), array( 'outcome' => 'uncertain_partial_state' ) );
 		}
 
 		// Detect a writer that retained the pre-replacement inode and changed it before cleanup.
 		$held_after = $this->read_regular_path( $paths['hold'] );
 		if ( is_wp_error( $held_after ) ) {
-			return new WP_Error( 'source_recovery_required', __( 'Bridge could not verify the quarantined pre-replacement source before cleanup.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_required', __( 'Bridge could not verify the quarantined pre-replacement source before cleanup.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 		$held_after_hash = hash( 'sha256', $held_after );
 		if ( ! hash_equals( $held_hash, $held_after_hash ) ) {
-			return new WP_Error( 'source_recovery_required', __( 'A writer changed the previous source inode during replacement. Bridge preserved that quarantined version and requires administrator reconciliation instead of overwriting it.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_required', __( 'A writer changed the previous source inode during replacement. Bridge preserved that quarantined version and requires administrator reconciliation instead of overwriting it.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 
 		// No-replace publication has committed a new installed generation and that live pathname was
@@ -999,13 +999,13 @@ final class Source_Editing_Abilities {
 	private function stage_exact_bytes( $path, $bytes ) {
 		$handle = @fopen( $path, 'x+b' );
 		if ( false === $handle ) {
-			return new WP_Error( 'source_stage_failed', __( 'Bridge could not create a private source replacement stage file.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_stage_failed', __( 'Bridge could not create a private source replacement stage file.', 'wp-ai-bridge' ) );
 		}
 		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- failure is checked and the private stage is removed.
 		if ( ! @chmod( $path, 0600 ) ) {
 			fclose( $handle );
 			$cleanup = $this->remove_replacement_artifact( $path );
-			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_stage_failed', __( 'Bridge could not create a private source replacement stage file.', 'wp-native-builder-bridge' ) );
+			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_stage_failed', __( 'Bridge could not create a private source replacement stage file.', 'wp-ai-bridge' ) );
 		}
 		$length = strlen( $bytes );
 		$offset = 0;
@@ -1015,14 +1015,14 @@ final class Source_Editing_Abilities {
 			if ( false === $written || 0 === $written ) {
 				fclose( $handle );
 				$cleanup = $this->remove_replacement_artifact( $path );
-				return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_stage_failed', __( 'Bridge could not write the complete source replacement stage file.', 'wp-native-builder-bridge' ) );
+				return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_stage_failed', __( 'Bridge could not write the complete source replacement stage file.', 'wp-ai-bridge' ) );
 			}
 			$offset += $written;
 		}
 		if ( ! fflush( $handle ) ) {
 			fclose( $handle );
 			$cleanup = $this->remove_replacement_artifact( $path );
-			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_stage_failed', __( 'Bridge could not flush the complete source replacement stage file.', 'wp-native-builder-bridge' ) );
+			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_stage_failed', __( 'Bridge could not flush the complete source replacement stage file.', 'wp-ai-bridge' ) );
 		}
 		if ( function_exists( 'fsync' ) ) {
 			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- guarded CAS converts primitive failure to fail-closed state.
@@ -1042,22 +1042,22 @@ final class Source_Editing_Abilities {
 	private function match_stage_metadata( $stage, $hold ) {
 		$source = @stat( $hold );
 		if ( false === $source || is_link( $hold ) || ! is_file( $hold ) ) {
-			return new WP_Error( 'source_target_changed', __( 'The quarantined source is no longer the expected regular file.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
+			return new WP_Error( 'source_target_changed', __( 'The quarantined source is no longer the expected regular file.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 		}
 		$mode = $source['mode'] & 0777;
 		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- guarded CAS converts primitive failure to fail-closed state.
 		if ( ! @chmod( $stage, $mode ) ) {
-			return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not preserve the source file mode for atomic replacement.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not preserve the source file mode for atomic replacement.', 'wp-ai-bridge' ) );
 		}
 		$stage_owner = @fileowner( $stage );
 		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- guarded CAS converts primitive failure to fail-closed state.
 		if ( false === $stage_owner || ( (int) $stage_owner !== (int) $source['uid'] && ! @chown( $stage, (int) $source['uid'] ) ) ) {
-			return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not preserve source file ownership for atomic replacement.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not preserve source file ownership for atomic replacement.', 'wp-ai-bridge' ) );
 		}
 		$stage_group = @filegroup( $stage );
 		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- guarded CAS converts primitive failure to fail-closed state.
 		if ( false === $stage_group || ( (int) $stage_group !== (int) $source['gid'] && ! @chgrp( $stage, (int) $source['gid'] ) ) ) {
-			return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not preserve source file group ownership for atomic replacement.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not preserve source file group ownership for atomic replacement.', 'wp-ai-bridge' ) );
 		}
 		clearstatcache( true, $stage );
 		return true;
@@ -1118,15 +1118,15 @@ final class Source_Editing_Abilities {
 		}
 		if ( is_callable( $this->replacement_artifact_cleanup_hook )
 			&& false === call_user_func( $this->replacement_artifact_cleanup_hook, $path ) ) {
-			return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- removal is verified immediately below and failure keeps recovery ownership.
 		if ( ! @unlink( $path ) ) {
-			return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 		clearstatcache( true, $path );
 		if ( $this->path_exists( $path ) ) {
-			return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 		return true;
 	}
@@ -1142,15 +1142,15 @@ final class Source_Editing_Abilities {
 	private function replacement_paths( $path, $token, $phase ) {
 		$directory = realpath( dirname( $path ) );
 		if ( false === $directory || wp_normalize_path( $directory ) !== wp_normalize_path( dirname( $path ) ) ) {
-			return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not resolve the exact source directory for guarded replacement.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not resolve the exact source directory for guarded replacement.', 'wp-ai-bridge' ) );
 		}
 		$safe_token = preg_replace( '/[^a-zA-Z0-9_-]/', '', (string) $token );
 		$safe_phase = preg_replace( '/[^a-zA-Z0-9_-]/', '', (string) $phase );
 		if ( '' === $safe_token || '' === $safe_phase ) {
-			return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not derive a private replacement identity.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'source_atomic_replace_unavailable', __( 'Bridge could not derive a private replacement identity.', 'wp-ai-bridge' ) );
 		}
 		$key    = hash( 'sha256', $safe_token . "\\0" . $safe_phase . "\\0" . wp_normalize_path( $path ) );
-		$prefix = trailingslashit( wp_normalize_path( $directory ) ) . '.ht-wpnb-source-cas-' . substr( $key, 0, 40 );
+		$prefix = trailingslashit( wp_normalize_path( $directory ) ) . '.ht-wpai-source-cas-' . substr( $key, 0, 40 );
 		return array(
 			'stage' => $prefix . '.stage',
 			'probe' => $prefix . '.probe',
@@ -1238,25 +1238,25 @@ final class Source_Editing_Abilities {
 	private function handle_failed_write( $record ) {
 		$target = $this->resolve_record_target( $record );
 		if ( is_wp_error( $target ) ) {
-			return new WP_Error( 'source_write_state_uncertain', __( 'The source write outcome is uncertain and its recovery target can no longer be resolved safely.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_write_state_uncertain', __( 'The source write outcome is uncertain and its recovery target can no longer be resolved safely.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 		$current = $this->read_target_bytes( $target );
 		if ( is_wp_error( $current ) ) {
-			return new WP_Error( 'source_write_state_uncertain', __( 'The source write outcome is uncertain and Bridge could not verify current persisted bytes.', 'wp-native-builder-bridge' ), array( 'outcome' => 'uncertain_partial_state' ) );
+			return new WP_Error( 'source_write_state_uncertain', __( 'The source write outcome is uncertain and Bridge could not verify current persisted bytes.', 'wp-ai-bridge' ), array( 'outcome' => 'uncertain_partial_state' ) );
 		}
 		$current_hash = hash( 'sha256', $current );
 		if ( hash_equals( (string) $record['preimage_sha256'], $current_hash ) ) {
 			$this->delete_recovery_if_token( (string) $record['token'] );
-			return new WP_Error( 'source_write_failed_restored', __( 'The source write failed without changing the verified previous bytes.', 'wp-native-builder-bridge' ), array( 'outcome' => 'validation_failed_restored' ) );
+			return new WP_Error( 'source_write_failed_restored', __( 'The source write failed without changing the verified previous bytes.', 'wp-ai-bridge' ), array( 'outcome' => 'validation_failed_restored' ) );
 		}
 		if ( hash_equals( (string) $record['candidate_sha256'], $current_hash ) ) {
 			$restored = $this->restore_record( $record );
 			if ( true === $restored ) {
-				return new WP_Error( 'source_write_failed_restored', __( 'The source write failed and the exact previous source bytes were restored.', 'wp-native-builder-bridge' ), array( 'outcome' => 'validation_failed_restored' ) );
+				return new WP_Error( 'source_write_failed_restored', __( 'The source write failed and the exact previous source bytes were restored.', 'wp-ai-bridge' ), array( 'outcome' => 'validation_failed_restored' ) );
 			}
 			return $restored;
 		}
-		return new WP_Error( 'source_write_state_uncertain', __( 'The source write produced bytes that match neither the exact preimage nor the candidate. Recovery material was retained.', 'wp-native-builder-bridge' ), array( 'outcome' => 'uncertain_partial_state' ) );
+		return new WP_Error( 'source_write_state_uncertain', __( 'The source write produced bytes that match neither the exact preimage nor the candidate. Recovery material was retained.', 'wp-ai-bridge' ), array( 'outcome' => 'uncertain_partial_state' ) );
 	}
 
 	/**
@@ -1268,11 +1268,11 @@ final class Source_Editing_Abilities {
 	private function restore_record( $record ) {
 		$target = $this->resolve_record_target( $record );
 		if ( is_wp_error( $target ) ) {
-			return new WP_Error( 'source_recovery_target_changed', __( 'The pending source recovery target changed and cannot be restored automatically.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_target_changed', __( 'The pending source recovery target changed and cannot be restored automatically.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 		$current = $this->read_target_bytes( $target );
 		if ( is_wp_error( $current ) ) {
-			return new WP_Error( 'source_recovery_read_failed', __( 'Bridge could not read the pending recovery target safely.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_read_failed', __( 'Bridge could not read the pending recovery target safely.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 		$current_hash = hash( 'sha256', $current );
 		if ( hash_equals( (string) $record['preimage_sha256'], $current_hash ) ) {
@@ -1280,10 +1280,10 @@ final class Source_Editing_Abilities {
 			if ( is_wp_error( $artifacts ) ) {
 				return $artifacts;
 			}
-			return $this->delete_recovery_if_token( (string) $record['token'] ) ? true : new WP_Error( 'source_recovery_cleanup_failed', __( 'The previous source bytes are already restored, but Bridge could not clear its recovery record.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return $this->delete_recovery_if_token( (string) $record['token'] ) ? true : new WP_Error( 'source_recovery_cleanup_failed', __( 'The previous source bytes are already restored, but Bridge could not clear its recovery record.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 		if ( ! hash_equals( (string) $record['candidate_sha256'], $current_hash ) ) {
-			return new WP_Error( 'source_recovery_conflict', __( 'The source file changed after the Bridge candidate. Recovery will not overwrite newer bytes.', 'wp-native-builder-bridge' ), array( 'outcome' => 'conflict' ) );
+			return new WP_Error( 'source_recovery_conflict', __( 'The source file changed after the Bridge candidate. Recovery will not overwrite newer bytes.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 		}
 		$write = $this->replace_exact_bytes( $target, (string) $record['candidate_sha256'], (string) $record['preimage'], (string) $record['token'], 'recovery' );
 		if ( is_wp_error( $write ) ) {
@@ -1291,14 +1291,14 @@ final class Source_Editing_Abilities {
 		}
 		$verified = $this->read_target_bytes( $target );
 		if ( is_wp_error( $verified ) || ! hash_equals( (string) $record['preimage_sha256'], hash( 'sha256', (string) $verified ) ) ) {
-			return new WP_Error( 'source_recovery_verification_failed', __( 'Bridge attempted recovery but could not verify the exact previous source bytes. Recovery material was retained.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_verification_failed', __( 'Bridge attempted recovery but could not verify the exact previous source bytes. Recovery material was retained.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 		$artifacts = $this->cleanup_known_replacement_holds( $record );
 		if ( is_wp_error( $artifacts ) ) {
 			return $artifacts;
 		}
 		if ( ! $this->delete_recovery_if_token( (string) $record['token'] ) ) {
-			return new WP_Error( 'source_recovery_cleanup_failed', __( 'The exact previous source bytes were restored, but Bridge could not clear its recovery record.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+			return new WP_Error( 'source_recovery_cleanup_failed', __( 'The exact previous source bytes were restored, but Bridge could not clear its recovery record.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
 		return true;
 	}
@@ -1325,7 +1325,7 @@ final class Source_Editing_Abilities {
 			}
 			$held = $this->read_regular_path( $paths['hold'] );
 			if ( is_wp_error( $held ) || ! in_array( hash( 'sha256', (string) $held ), $known, true ) ) {
-				return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+				return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
 			// The live pathname has already been verified at a known terminal generation. This hold is a
 			// known superseded generation, so retiring it cannot overwrite the installed source target.
@@ -1364,16 +1364,16 @@ final class Source_Editing_Abilities {
 			if ( $this->path_exists( $paths['hold'] ) ) {
 				$held = $this->read_regular_path( $paths['hold'] );
 				if ( is_wp_error( $held ) ) {
-					return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+					return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
 				$held_hash = hash( 'sha256', $held );
 				if ( ! in_array( $held_hash, $known, true ) ) {
-					return new WP_Error( 'source_recovery_artifact_pending', __( 'A concurrent writer changed a quarantined source inode. Bridge preserved it for administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+					return new WP_Error( 'source_recovery_artifact_pending', __( 'A concurrent writer changed a quarantined source inode. Bridge preserved it for administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
 				if ( ! $this->path_exists( $path ) ) {
 					// Absence is ambiguous: publication may not have happened, or a later writer may have
 					// legitimately deleted/renamed the published pathname. Never recreate it speculatively.
-					return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+					return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
 			}
 
@@ -1384,7 +1384,7 @@ final class Source_Editing_Abilities {
 				}
 				$artifact_bytes = $this->read_regular_path( $artifact );
 				if ( is_wp_error( $artifact_bytes ) || ! in_array( hash( 'sha256', (string) $artifact_bytes ), $known, true ) ) {
-					return new WP_Error( 'source_recovery_artifact_pending', __( 'A private source replacement artifact has unexpected bytes and requires administrator reconciliation.', 'wp-native-builder-bridge' ), array( 'outcome' => 'recovery_required' ) );
+					return new WP_Error( 'source_recovery_artifact_pending', __( 'A private source replacement artifact has unexpected bytes and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
 				$cleanup = $this->remove_replacement_artifact( $artifact );
 				if ( is_wp_error( $cleanup ) ) {
@@ -1596,12 +1596,12 @@ final class Source_Editing_Abilities {
 
 	/** @return WP_Error */
 	private function permission_denied() {
-		return new WP_Error( 'source_editing_permission_denied', __( 'Source Editing, Code & Extensions, WordPress file-modification policy, and the matching native file-editor capability must all allow this operation.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'source_editing_permission_denied', __( 'Source Editing, Code & Extensions, WordPress file-modification policy, and the matching native file-editor capability must all allow this operation.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function invalid_input() {
-		return new WP_Error( 'invalid_source_editing_input', __( 'Use one exact installed plugin/theme identity and relative editable source file with the fields required by this source-editing action.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'invalid_source_editing_input', __( 'Use one exact installed plugin/theme identity and relative editable source file with the fields required by this source-editing action.', 'wp-ai-bridge' ) );
 	}
 
 	/** @param bool $is_readonly Read-only annotation. @param bool $destructive Destructive annotation. @param bool $idempotent Idempotent annotation. @return array<string,mixed> */

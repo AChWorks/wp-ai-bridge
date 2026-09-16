@@ -2,14 +2,14 @@
 /**
  * WordPress navigation abilities.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Abilities;
+namespace WP_AI_Bridge\Abilities;
 
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
 use WP_Error;
 
 /**
@@ -49,10 +49,10 @@ final class Navigation_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/navigation-read',
+			'wp-ai-bridge/navigation-read',
 			array(
-				'label'               => __( 'Read Navigation', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Inspects classic menus, theme menu locations, and block-navigation entities available on the current site.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Navigation', 'wp-ai-bridge' ),
+				'description'         => __( 'Inspects classic menus, theme menu locations, and block-navigation entities available on the current site.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -67,10 +67,10 @@ final class Navigation_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/classic-navigation-mutate',
+			'wp-ai-bridge/classic-navigation-mutate',
 			array(
-				'label'               => __( 'Mutate Classic Navigation', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Creates or updates classic menus, menu items, ordering, and theme menu-location assignments; permanent item removal additionally requires destructive access.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Mutate Classic Navigation', 'wp-ai-bridge' ),
+				'description'         => __( 'Creates or updates classic menus, menu items, ordering, and theme menu-location assignments; permanent item removal additionally requires destructive access.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->mutate_input_schema(),
 				'output_schema'       => array(
@@ -175,8 +175,8 @@ final class Navigation_Abilities {
 					'status'         => (string) $post->post_status,
 					'modified_gmt'   => (string) $post->post_modified_gmt,
 					'content_hash'   => hash( 'sha256', (string) $post->post_content ),
-					'blocks_ability' => 'wp-native-builder/blocks-read',
-					'mutate_ability' => 'wp-native-builder/blocks-mutate',
+					'blocks_ability' => 'wp-ai-bridge/blocks-read',
+					'mutate_ability' => 'wp-ai-bridge/blocks-mutate',
 				);
 			}
 		}
@@ -195,7 +195,7 @@ final class Navigation_Abilities {
 	 * @return array<string,mixed>|WP_Error Mutation result.
 	 */
 	public function mutate_classic( $input ) {
-		$ability = 'wp-native-builder/classic-navigation-mutate';
+		$ability = 'wp-ai-bridge/classic-navigation-mutate';
 		$action  = (string) $input['action'];
 		$result  = array(
 			'action'   => $action,
@@ -208,10 +208,10 @@ final class Navigation_Abilities {
 		if ( 'create_menu' === $action || 'update_menu' === $action ) {
 			$menu_id = 'update_menu' === $action && ! empty( $input['menu_id'] ) ? (int) $input['menu_id'] : 0;
 			if ( $menu_id && ! wp_get_nav_menu_object( $menu_id ) ) {
-				return $this->logged_error( 'navigation_menu_not_found', __( 'The requested classic navigation menu does not exist.', 'wp-native-builder-bridge' ), $menu_id );
+				return $this->logged_error( 'navigation_menu_not_found', __( 'The requested classic navigation menu does not exist.', 'wp-ai-bridge' ), $menu_id );
 			}
 			if ( empty( $input['name'] ) ) {
-				return $this->logged_error( 'navigation_menu_name_required', __( 'name is required when creating or updating a classic navigation menu.', 'wp-native-builder-bridge' ), $menu_id );
+				return $this->logged_error( 'navigation_menu_name_required', __( 'name is required when creating or updating a classic navigation menu.', 'wp-ai-bridge' ), $menu_id );
 			}
 			$args = array( 'menu-name' => wp_slash( sanitize_text_field( (string) $input['name'] ) ) );
 			if ( array_key_exists( 'description', $input ) ) {
@@ -226,13 +226,13 @@ final class Navigation_Abilities {
 		} elseif ( 'upsert_item' === $action ) {
 			$menu_id = ! empty( $input['menu_id'] ) ? (int) $input['menu_id'] : 0;
 			if ( ! $menu_id || ! wp_get_nav_menu_object( $menu_id ) ) {
-				return $this->logged_error( 'navigation_menu_not_found', __( 'A valid menu_id is required for menu-item mutation.', 'wp-native-builder-bridge' ), $menu_id );
+				return $this->logged_error( 'navigation_menu_not_found', __( 'A valid menu_id is required for menu-item mutation.', 'wp-ai-bridge' ), $menu_id );
 			}
 			$item_id  = ! empty( $input['item_id'] ) ? (int) $input['item_id'] : 0;
 			$existing = null;
 			if ( $item_id ) {
 				if ( ! is_nav_menu_item( $item_id ) ) {
-					return $this->logged_error( 'navigation_item_not_found', __( 'The requested menu item does not exist.', 'wp-native-builder-bridge' ), $item_id );
+					return $this->logged_error( 'navigation_item_not_found', __( 'The requested menu item does not exist.', 'wp-ai-bridge' ), $item_id );
 				}
 				$existing = wp_setup_nav_menu_item( get_post( $item_id ) );
 			}
@@ -250,15 +250,15 @@ final class Navigation_Abilities {
 			$result['item_id'] = (int) $item_id;
 		} elseif ( 'remove_item' === $action ) {
 			if ( ! $this->permissions->allowed( Settings::GROUP_USERS_DESTRUCTIVE, 'edit_theme_options' ) ) {
-				return $this->logged_error( 'navigation_destructive_access_required', __( 'Permanent menu-item removal requires Users & Destructive access.', 'wp-native-builder-bridge' ) );
+				return $this->logged_error( 'navigation_destructive_access_required', __( 'Permanent menu-item removal requires Users & Destructive access.', 'wp-ai-bridge' ) );
 			}
 			$item_id = ! empty( $input['item_id'] ) ? (int) $input['item_id'] : 0;
 			if ( ! $item_id || ! is_nav_menu_item( $item_id ) ) {
-				return $this->logged_error( 'navigation_item_not_found', __( 'A valid item_id is required to remove a classic navigation item.', 'wp-native-builder-bridge' ), $item_id );
+				return $this->logged_error( 'navigation_item_not_found', __( 'A valid item_id is required to remove a classic navigation item.', 'wp-ai-bridge' ), $item_id );
 			}
 			$item = wp_delete_post( $item_id, true );
 			if ( ! $item ) {
-				return $this->logged_error( 'navigation_item_remove_failed', __( 'WordPress could not remove the classic navigation item.', 'wp-native-builder-bridge' ), $item_id );
+				return $this->logged_error( 'navigation_item_remove_failed', __( 'WordPress could not remove the classic navigation item.', 'wp-ai-bridge' ), $item_id );
 			}
 			$result['item_id'] = $item_id;
 			$result['removed'] = true;
@@ -266,11 +266,11 @@ final class Navigation_Abilities {
 			$location   = ! empty( $input['location'] ) ? sanitize_key( (string) $input['location'] ) : '';
 			$registered = get_registered_nav_menus();
 			if ( '' === $location || ! array_key_exists( $location, $registered ) ) {
-				return $this->logged_error( 'navigation_location_not_found', __( 'location must identify a menu location registered by the active theme.', 'wp-native-builder-bridge' ) );
+				return $this->logged_error( 'navigation_location_not_found', __( 'location must identify a menu location registered by the active theme.', 'wp-ai-bridge' ) );
 			}
 			$menu_id = isset( $input['menu_id'] ) ? (int) $input['menu_id'] : 0;
 			if ( $menu_id && ! wp_get_nav_menu_object( $menu_id ) ) {
-				return $this->logged_error( 'navigation_menu_not_found', __( 'The requested classic navigation menu does not exist.', 'wp-native-builder-bridge' ), $menu_id );
+				return $this->logged_error( 'navigation_menu_not_found', __( 'The requested classic navigation menu does not exist.', 'wp-ai-bridge' ), $menu_id );
 			}
 			$locations              = get_nav_menu_locations();
 			$locations[ $location ] = $menu_id;
@@ -278,7 +278,7 @@ final class Navigation_Abilities {
 			$result['menu_id']  = $menu_id;
 			$result['location'] = $location;
 		} else {
-			return $this->logged_error( 'invalid_navigation_action', __( 'The requested classic navigation action is not supported.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( 'invalid_navigation_action', __( 'The requested classic navigation action is not supported.', 'wp-ai-bridge' ) );
 		}
 
 		$target_type = $result['item_id'] ? 'nav_menu_item' : 'nav_menu';
@@ -305,11 +305,11 @@ final class Navigation_Abilities {
 			$url   = array_key_exists( 'url', $input ) ? (string) $input['url'] : ( $existing ? (string) $existing->url : '' );
 			$title = array_key_exists( 'title', $input ) ? (string) $input['title'] : ( $existing ? (string) $existing->title : '' );
 			if ( '' === $url || '' === $title ) {
-				return new WP_Error( 'navigation_custom_item_fields_required', __( 'Custom menu items require both title and url.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'navigation_custom_item_fields_required', __( 'Custom menu items require both title and url.', 'wp-ai-bridge' ) );
 			}
 			$sanitized_url = esc_url_raw( $url );
 			if ( '' === $sanitized_url ) {
-				return new WP_Error( 'navigation_invalid_url', __( 'The custom menu item URL is not valid.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'navigation_invalid_url', __( 'The custom menu item URL is not valid.', 'wp-ai-bridge' ) );
 			}
 			$args['menu-item-url']    = $sanitized_url;
 			$args['menu-item-title']  = wp_slash( sanitize_text_field( $title ) );
@@ -317,13 +317,13 @@ final class Navigation_Abilities {
 		} else {
 			$object = array_key_exists( 'object', $input ) ? (string) $input['object'] : ( $existing ? (string) $existing->object : '' );
 			if ( '' === $object ) {
-				return new WP_Error( 'navigation_item_object_required', __( 'Non-custom menu items require an object identifier.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'navigation_item_object_required', __( 'Non-custom menu items require an object identifier.', 'wp-ai-bridge' ) );
 			}
 			$args['menu-item-object'] = sanitize_key( $object );
 			if ( 'post_type_archive' !== $type ) {
 				$object_id = array_key_exists( 'object_id', $input ) ? (int) $input['object_id'] : ( $existing ? (int) $existing->object_id : 0 );
 				if ( ! $object_id ) {
-					return new WP_Error( 'navigation_item_object_id_required', __( 'This menu item type requires object_id.', 'wp-native-builder-bridge' ) );
+					return new WP_Error( 'navigation_item_object_id_required', __( 'This menu item type requires object_id.', 'wp-ai-bridge' ) );
 				}
 				$args['menu-item-object-id'] = $object_id;
 			}
@@ -567,7 +567,7 @@ final class Navigation_Abilities {
 	 * @return WP_Error Error object.
 	 */
 	private function logged_error( $code, $message, $target_id = 0 ) {
-		$this->log->record( 'wp-native-builder/classic-navigation-mutate', 'navigation', (int) $target_id, false, $code );
+		$this->log->record( 'wp-ai-bridge/classic-navigation-mutate', 'navigation', (int) $target_id, false, $code );
 		return new WP_Error( $code, $message );
 	}
 }

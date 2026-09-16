@@ -2,15 +2,15 @@
 /**
  * Dependency-free Throwable normalization coverage for Issue #61 / F-008.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
 require __DIR__ . '/bootstrap.php';
 
-use WP_Native_Builder_Bridge\Abilities\Application_Password_Abilities;
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Abilities\Application_Password_Abilities;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
 
 $failures = 0;
 $tests    = 0;
@@ -69,11 +69,11 @@ function rest_do_request( $request ) {
 	);
 }
 
-wpnb_test_reset_state();
+wpai_test_reset_state();
 $settings = new Settings();
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = $settings->defaults();
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_AUTHENTICATION ] = 1;
-$GLOBALS['wpnb_test']['capabilities']['read'] = true;
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = $settings->defaults();
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_AUTHENTICATION ] = 1;
+$GLOBALS['wpai_test']['capabilities']['read'] = true;
 
 $provider = new Application_Password_Abilities( new Permissions( $settings ), new Mutation_Log() );
 $uuid     = $GLOBALS['wpnb61_f008_uuid'];

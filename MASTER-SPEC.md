@@ -18,7 +18,7 @@ Historical documents under `docs/maintainer/reference/` are design evidence only
 
 ## 1. Purpose
 
-WP AI Bridge is a small, free, self-hosted WordPress plugin whose goal is to make the full range of administration available to a real WordPress administrator discoverable and delegable to an AI through the Bridge. The installed plugin directory/entrypoint may retain `wp-native-builder-bridge` as a compatibility identity so existing WordPress installations upgrade in place.
+WP AI Bridge is a small, free, self-hosted WordPress plugin whose goal is to make the full range of administration available to a real WordPress administrator discoverable and delegable to an AI through the Bridge. The canonical WordPress plugin installation identity is `wp-ai-bridge/wp-ai-bridge.php`; maintained PHP, localization, Ability, admin, OAuth/MCP, and Bridge-owned storage identifiers use the WP AI Bridge identity. A bounded one-time migration may read pre-0.4.0 Workspace identifiers solely to preserve durable Workspace Documents and Tasks.
 
 The intended experience is an additional WordPress administrator whose effective access the principal site administrator can increase, reduce, or revoke in WordPress settings. The AI must be able to discover the operations available on the actual installation, understand their inputs and required permissions, and perform the operations the administrator has delegated. Broad administrator-equivalent access and narrower grants must use the same simple access model.
 
@@ -150,7 +150,7 @@ Discovery must make the following information available where authorized:
 
 Discovery must not leak secret values, private object contents, source code, or full metadata values through broad lists. A registered operation's existence does not establish current permission; execution still applies the full contract.
 
-Bridge-owned Abilities use `wp-native-builder/<ability-name>`. Each requires a precise description, closed input schema, output schema where practical, a permission callback, deterministic errors, compact results, and no hidden effects beyond the declared operation. Reused provider contracts retain their own namespaces, schemas, permissions, and lifecycle rather than being needlessly cloned.
+Bridge-owned Abilities use `wp-ai-bridge/<ability-name>`. Each requires a precise description, closed input schema, output schema where practical, a permission callback, deterministic errors, compact results, and no hidden effects beyond the declared operation. Reused provider contracts retain their own namespaces, schemas, permissions, and lifecycle rather than being needlessly cloned.
 
 A caller chooses a discovered supported operation and valid inputs, not arbitrary PHP callable names, SQL fragments, server paths, or unaudited remote URLs. Unknown or private third-party UI behavior must be reported as an implementation gap requiring a verified execution path; do not pretend that discovery or a permission checkbox alone implements it.
 

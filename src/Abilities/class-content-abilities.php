@@ -2,14 +2,14 @@
 /**
  * Core content abilities.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Abilities;
+namespace WP_AI_Bridge\Abilities;
 
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
 use WP_Error;
 
 /**
@@ -49,10 +49,10 @@ final class Content_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/content-read',
+			'wp-ai-bridge/content-read',
 			array(
-				'label'               => __( 'Read Content', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists or retrieves posts, pages, and editable custom post types through WordPress APIs.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Content', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists or retrieves posts, pages, and editable custom post types through WordPress APIs.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->read_input_schema(),
 				'output_schema'       => $this->read_output_schema(),
@@ -63,10 +63,10 @@ final class Content_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/content-upsert',
+			'wp-ai-bridge/content-upsert',
 			array(
-				'label'               => __( 'Create or Update Content', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Creates or updates one WordPress content object with access-group, capability, and stale-write checks.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Create or Update Content', 'wp-ai-bridge' ),
+				'description'         => __( 'Creates or updates one WordPress content object with access-group, capability, and stale-write checks.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->upsert_input_schema(),
 				'output_schema'       => $this->item_schema( true ),
@@ -77,10 +77,10 @@ final class Content_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/content-delete',
+			'wp-ai-bridge/content-delete',
 			array(
-				'label'               => __( 'Trash or Delete Content', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Moves content to Trash or permanently deletes it when destructive access is enabled.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Trash or Delete Content', 'wp-ai-bridge' ),
+				'description'         => __( 'Moves content to Trash or permanently deletes it when destructive access is enabled.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->delete_input_schema(),
 				'output_schema'       => array(
@@ -100,10 +100,10 @@ final class Content_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/revisions-read',
+			'wp-ai-bridge/revisions-read',
 			array(
-				'label'               => __( 'Read Content Revisions', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists WordPress revisions for one content object.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Content Revisions', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists WordPress revisions for one content object.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -137,10 +137,10 @@ final class Content_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/revision-restore',
+			'wp-ai-bridge/revision-restore',
 			array(
-				'label'               => __( 'Restore Content Revision', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Restores a WordPress revision after checking the expected current content identity.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Restore Content Revision', 'wp-ai-bridge' ),
+				'description'         => __( 'Restores a WordPress revision after checking the expected current content identity.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -294,7 +294,7 @@ final class Content_Abilities {
 			}
 
 			if ( ! $post || ! $this->editable_post_type( $post->post_type ) || ! current_user_can( 'read_post', $post->ID ) ) {
-				return new WP_Error( 'content_not_found', __( 'The requested content is not available.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'content_not_found', __( 'The requested content is not available.', 'wp-ai-bridge' ) );
 			}
 
 			return array(
@@ -309,13 +309,13 @@ final class Content_Abilities {
 		$type = isset( $input['post_type'] ) ? (string) $input['post_type'] : 'post';
 		$obj  = $this->editable_post_type( $type );
 		if ( ! $obj ) {
-			return new WP_Error( 'unsupported_post_type', __( 'The requested post type is not available for Bridge content operations.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'unsupported_post_type', __( 'The requested post type is not available for Bridge content operations.', 'wp-ai-bridge' ) );
 		}
 
 		$can_edit = current_user_can( $obj->cap->edit_posts );
 		$status   = isset( $input['status'] ) && '' !== $input['status'] ? (string) $input['status'] : ( $can_edit ? 'any' : 'publish' );
 		if ( ! $can_edit && 'publish' !== $status ) {
-			return new WP_Error( 'content_status_forbidden', __( 'The current user may only list published content for this post type.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'content_status_forbidden', __( 'The current user may only list published content for this post type.', 'wp-ai-bridge' ) );
 		}
 
 		$page     = isset( $input['page'] ) ? max( 1, (int) $input['page'] ) : 1;
@@ -356,22 +356,22 @@ final class Content_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function upsert( $input ) {
-		$ability = 'wp-native-builder/content-upsert';
+		$ability = 'wp-ai-bridge/content-upsert';
 		$action  = (string) $input['action'];
 		$id      = ! empty( $input['id'] ) ? (int) $input['id'] : 0;
 		$post    = $id ? get_post( $id ) : null;
 
 		if ( 'update' === $action && ! $post ) {
-			return $this->logged_error( $ability, 'content_not_found', __( 'The content to update does not exist.', 'wp-native-builder-bridge' ), $id );
+			return $this->logged_error( $ability, 'content_not_found', __( 'The content to update does not exist.', 'wp-ai-bridge' ), $id );
 		}
 
 		if ( isset( $input['status'] ) && ! $this->valid_authoring_status( (string) $input['status'] ) ) {
-			return $this->logged_error( $ability, 'invalid_content_status', __( 'status must be a registered authoring status and cannot be a destructive or internal status.', 'wp-native-builder-bridge' ), $id );
+			return $this->logged_error( $ability, 'invalid_content_status', __( 'status must be a registered authoring status and cannot be a destructive or internal status.', 'wp-ai-bridge' ), $id );
 		}
 
 		$type = 'create' === $action ? (string) $input['post_type'] : $post->post_type;
 		if ( ! $this->editable_post_type( $type ) ) {
-			return $this->logged_error( $ability, 'unsupported_post_type', __( 'The requested post type is not available for Bridge content operations.', 'wp-native-builder-bridge' ), $id );
+			return $this->logged_error( $ability, 'unsupported_post_type', __( 'The requested post type is not available for Bridge content operations.', 'wp-ai-bridge' ), $id );
 		}
 
 		$featured_media = null;
@@ -380,7 +380,7 @@ final class Content_Abilities {
 			if ( 0 !== $featured_media ) {
 				$attachment = get_post( $featured_media );
 				if ( ! $attachment || 'attachment' !== $attachment->post_type || ! wp_attachment_is_image( $featured_media ) ) {
-					return $this->logged_error( $ability, 'invalid_featured_media', __( 'featured_media must reference an existing image attachment.', 'wp-native-builder-bridge' ), $id );
+					return $this->logged_error( $ability, 'invalid_featured_media', __( 'featured_media must reference an existing image attachment.', 'wp-ai-bridge' ), $id );
 				}
 			}
 		}
@@ -440,7 +440,7 @@ final class Content_Abilities {
 				$this->log->record( $ability, 'post', $id, false, 'featured_media_failed' );
 				return new WP_Error(
 					'featured_media_failed',
-					__( 'The content was saved, but WordPress could not assign the featured media.', 'wp-native-builder-bridge' ),
+					__( 'The content was saved, but WordPress could not assign the featured media.', 'wp-ai-bridge' ),
 					array(
 						'content_saved' => true,
 						'id'            => $id,
@@ -460,17 +460,17 @@ final class Content_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function delete( $input ) {
-		$ability = 'wp-native-builder/content-delete';
+		$ability = 'wp-ai-bridge/content-delete';
 		$id      = (int) $input['id'];
 		$post    = get_post( $id );
 		if ( ! $post || ! $this->editable_post_type( $post->post_type ) ) {
-			return $this->logged_error( $ability, 'content_not_found', __( 'The requested content does not exist.', 'wp-native-builder-bridge' ), $id );
+			return $this->logged_error( $ability, 'content_not_found', __( 'The requested content does not exist.', 'wp-ai-bridge' ), $id );
 		}
 
 		$force  = ! empty( $input['force'] );
 		$result = $force ? wp_delete_post( $id, true ) : wp_trash_post( $id );
 		if ( ! $result ) {
-			return $this->logged_error( $ability, 'content_delete_failed', __( 'WordPress could not trash or delete the content.', 'wp-native-builder-bridge' ), $id );
+			return $this->logged_error( $ability, 'content_delete_failed', __( 'WordPress could not trash or delete the content.', 'wp-ai-bridge' ), $id );
 		}
 
 		$this->log->record( $ability, 'post', $id, true, '' );
@@ -490,7 +490,7 @@ final class Content_Abilities {
 	public function read_revisions( $input ) {
 		$post = get_post( (int) $input['post_id'] );
 		if ( ! $post ) {
-			return new WP_Error( 'content_not_found', __( 'The requested content does not exist.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'content_not_found', __( 'The requested content does not exist.', 'wp-ai-bridge' ) );
 		}
 		$limit     = isset( $input['limit'] ) ? max( 1, min( 50, (int) $input['limit'] ) ) : 10;
 		$revisions = wp_get_post_revisions( $post->ID, array( 'posts_per_page' => $limit ) );
@@ -508,13 +508,13 @@ final class Content_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function restore_revision( $input ) {
-		$ability     = 'wp-native-builder/revision-restore';
+		$ability     = 'wp-ai-bridge/revision-restore';
 		$post_id     = (int) $input['post_id'];
 		$revision_id = (int) $input['revision_id'];
 		$post        = get_post( $post_id );
 		$revision    = wp_get_post_revision( $revision_id );
 		if ( ! $post || ! $revision || (int) $revision->post_parent !== $post_id ) {
-			return $this->logged_error( $ability, 'revision_not_found', __( 'The requested revision does not belong to this content object.', 'wp-native-builder-bridge' ), $post_id );
+			return $this->logged_error( $ability, 'revision_not_found', __( 'The requested revision does not belong to this content object.', 'wp-ai-bridge' ), $post_id );
 		}
 		$post     = get_post( $post_id );
 		$conflict = $this->check_expected_identity( $post, (string) $input['expected_modified_gmt'], (string) $input['expected_state_hash'] );
@@ -525,7 +525,7 @@ final class Content_Abilities {
 
 		$result = wp_restore_post_revision( $revision_id );
 		if ( ! $result ) {
-			return $this->logged_error( $ability, 'revision_restore_failed', __( 'WordPress could not restore the requested revision.', 'wp-native-builder-bridge' ), $post_id );
+			return $this->logged_error( $ability, 'revision_restore_failed', __( 'WordPress could not restore the requested revision.', 'wp-ai-bridge' ), $post_id );
 		}
 		$this->log->record( $ability, 'post', $post_id, true, '' );
 		return $this->format_post( get_post( $post_id ), true );
@@ -582,14 +582,14 @@ final class Content_Abilities {
 	 */
 	private function check_expected_identity( $post, $expected_modified, $expected_hash ) {
 		if ( ! $post || ! is_string( $expected_modified ) || '' === $expected_modified || ! is_string( $expected_hash ) || 64 !== strlen( $expected_hash ) ) {
-			return new WP_Error( 'expected_identity_required', __( 'expected_modified_gmt and expected_state_hash are required for overwrite-sensitive full-content updates.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'expected_identity_required', __( 'expected_modified_gmt and expected_state_hash are required for overwrite-sensitive full-content updates.', 'wp-ai-bridge' ) );
 		}
 
 		$current_hash = $this->state_hash( $post );
 		if ( (string) $post->post_modified_gmt !== $expected_modified || $current_hash !== $expected_hash ) {
 			return new WP_Error(
 				'stale_content_conflict',
-				__( 'The content state changed after it was inspected. Refresh it before applying this update.', 'wp-native-builder-bridge' ),
+				__( 'The content state changed after it was inspected. Refresh it before applying this update.', 'wp-ai-bridge' ),
 				array(
 					'current_modified_gmt' => (string) $post->post_modified_gmt,
 					'current_state_hash'   => $current_hash,

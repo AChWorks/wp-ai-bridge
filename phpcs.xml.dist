@@ -6,7 +6,7 @@
     <arg name="colors" />
     <config name="testVersion" value="8.4-" />
 
-    <file>wp-native-builder-bridge.php</file>
+    <file>wp-ai-bridge.php</file>
     <file>uninstall.php</file>
     <file>src</file>
 

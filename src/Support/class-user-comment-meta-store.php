@@ -2,10 +2,10 @@
 /**
  * Fixed-purpose user/comment metadata storage helpers.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Support;
+namespace WP_AI_Bridge\Support;
 
 use WP_Error;
 
@@ -195,7 +195,7 @@ final class User_Comment_Meta_Store {
 		}
 		$short_circuit = apply_filters( "update_{$type}_metadata", null, (int) $object_id, (string) $key, $prepared['value'], $row['value'] );
 		if ( null !== $short_circuit ) {
-			return new WP_Error( 'object_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata row atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'object_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata row atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-ai-bridge' ) );
 		}
 		$this->before_update( $type, $row, $prepared['value'] );
 		$result = 'user' === $type
@@ -239,7 +239,7 @@ final class User_Comment_Meta_Store {
 		}
 		$short_circuit = apply_filters( "delete_{$type}_metadata", null, (int) $object_id, (string) $key, $row['value'], false );
 		if ( null !== $short_circuit ) {
-			return new WP_Error( 'object_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata row atomically. The generic Bridge refuses the mutation to avoid a stale delete.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'object_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata row atomically. The generic Bridge refuses the mutation to avoid a stale delete.', 'wp-ai-bridge' ) );
 		}
 		$this->before_delete( $type, $row );
 		$result = 'user' === $type ? $this->delete_user_row( $row ) : $this->delete_comment_row( $row );
@@ -274,7 +274,7 @@ final class User_Comment_Meta_Store {
 		$result = 'user' === $type ? $this->delete_user_row( $expected ) : $this->delete_comment_row( $expected );
 		wp_cache_delete( (int) $expected['object_id'], $type . '_meta' );
 		if ( false === $result ) {
-			return new WP_Error( 'object_meta_cleanup_failed', __( 'The Bridge could not remove its exact raced metadata row safely.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'object_meta_cleanup_failed', __( 'The Bridge could not remove its exact raced metadata row safely.', 'wp-ai-bridge' ) );
 		}
 		if ( 1 !== $result ) {
 			return $this->stale_error();
@@ -375,27 +375,27 @@ final class User_Comment_Meta_Store {
 		$type = (string) $type;
 		return in_array( $type, array( 'user', 'comment' ), true )
 			? $type
-			: new WP_Error( 'unsupported_object_meta_type', __( 'The requested metadata object type is not supported.', 'wp-native-builder-bridge' ) );
+			: new WP_Error( 'unsupported_object_meta_type', __( 'The requested metadata object type is not supported.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function state_error() {
-		return new WP_Error( 'object_meta_physical_state_unavailable', __( 'Physical metadata state could not be established safely.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'object_meta_physical_state_unavailable', __( 'Physical metadata state could not be established safely.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function value_too_large_error() {
-		return new WP_Error( 'object_meta_value_too_large', __( 'This metadata value is too large for the bounded generic metadata contract.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'object_meta_value_too_large', __( 'This metadata value is too large for the bounded generic metadata contract.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function stale_error() {
-		return new WP_Error( 'stale_object_meta_conflict', __( 'Metadata changed after it was read. Refresh the metadata state before mutating it.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'stale_object_meta_conflict', __( 'Metadata changed after it was read. Refresh the metadata state before mutating it.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function compensation_error() {
-		return new WP_Error( 'object_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'object_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 	}
 
 	/** Performs one fixed-schema usermeta row update. */

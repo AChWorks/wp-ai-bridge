@@ -50,7 +50,7 @@ Only Site Read is enabled by default.
 
 Native Abilities is provider-neutral broad consent, not effect inference or a provider allowlist. It gates registered non-Bridge Ability execution only while the request is executing through the exact canonical or retained legacy Bridge MCP route. It does not affect direct `WP_Ability::execute()`, the Adapter default server, or WP-CLI.
 
-A registered target must pass both enabled Native Abilities and its own native permission callback. The Bridge may add a denial but never converts a provider/Core denial into allow. Names, descriptions, categories, optimistic annotations, provider-supplied metadata, and custom Ability getters do not authorize execution. Bridge ownership is bound only to the exact successful Ability objects returned to Bridge provider code by its own Core `wp_register_ability()` calls and forwarded by `Registrar` to the injected delegation instance. Re-entrant provider registrations, filter ordering, later same-name replacements, the historical `wp-native-builder/*` namespace, `wp_ai_bridge_owned`, and overridden `get_meta()` cannot establish or inherit Bridge ownership. The private provenance set contains only object identity and is not a parallel Ability registry.
+A registered target must pass both enabled Native Abilities and its own native permission callback. The Bridge may add a denial but never converts a provider/Core denial into allow. Names, descriptions, categories, optimistic annotations, provider-supplied metadata, and custom Ability getters do not authorize execution. Bridge ownership is bound only to the exact successful Ability objects returned to Bridge provider code by its own Core `wp_register_ability()` calls and forwarded by `Registrar` to the injected delegation instance. Re-entrant provider registrations, filter ordering, later same-name replacements, the historical `wp-ai-bridge/*` namespace, `wp_ai_bridge_owned`, and overridden `get_meta()` cannot establish or inherit Bridge ownership. The private provenance set contains only object identity and is not a parallel Ability registry.
 
 Disabling Native Abilities takes effect on subsequent Bridge calls because settings are read at execution time. The exact Bridge request context is balanced with unconditional cleanup; unrelated REST routes are not governed by that context.
 
@@ -87,7 +87,7 @@ The boundary is deliberately layered:
 - the target must be a real WordPress post object and the connected WordPress user must be able to edit that exact object;
 - revision IDs are canonicalized to the parent before metadata authorization, physical-state inspection, hashing, or mutation, matching the target used by WordPress post-meta mutation wrappers;
 - the target post type does not need to be public, REST-exposed, or editor-capable;
-- Bridge-private Workspace post types (`wpnb_doc` and `wpnb_task`) are explicitly excluded;
+- Bridge-private Workspace post types (`wpai_doc` and `wpai_task`) are explicitly excluded;
 - normal post-meta capabilities remain authoritative for public keys and for keys where Core/provider code registered metadata or installed an explicit authorization filter;
 - protected/private unregistered keys may use the target post's `edit_post` authority once Advanced Metadata is enabled, because WordPress otherwise denies such keys generically merely for being protected;
 - additional capability requirements and `do_not_allow` returned by the final `map_meta_cap` pipeline remain authoritative;

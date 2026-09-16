@@ -2,10 +2,10 @@
 /**
  * Generic content eligibility rules.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Abilities;
+namespace WP_AI_Bridge\Abilities;
 
 /**
  * Keeps generic Builder content coverage broad without exposing administrative records by show_ui alone.
@@ -53,7 +53,7 @@ final class Content_Eligibility {
 	 * @return bool
 	 */
 	public static function is_workspace_internal_type( $type ) {
-		return in_array( $type, array( 'wpnb_doc', 'wpnb_task' ), true );
+		return in_array( $type, array( 'wpai_doc', 'wpai_task' ), true );
 	}
 
 	/**

@@ -2,10 +2,10 @@
 /**
  * Ability permission checks.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Support;
+namespace WP_AI_Bridge\Support;
 
 /**
  * Combines bridge access groups with WordPress capability checks.

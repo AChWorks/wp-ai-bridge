@@ -2,7 +2,7 @@
 /**
  * Static architecture guard for Issue #44 direct registration-return provenance.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
 $root     = dirname( __DIR__ );

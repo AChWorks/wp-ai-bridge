@@ -2,16 +2,16 @@
 /**
  * Generic user and comment metadata abilities.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Abilities;
+namespace WP_AI_Bridge\Abilities;
 
-use WP_Native_Builder_Bridge\Support\Metadata_Key_Policy;
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
-use WP_Native_Builder_Bridge\Support\User_Comment_Meta_Store;
+use WP_AI_Bridge\Support\Metadata_Key_Policy;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\User_Comment_Meta_Store;
 use WP_Error;
 
 /** Provider-neutral bounded user/comment metadata surface. */
@@ -42,10 +42,10 @@ final class User_Comment_Meta_Abilities {
 		$registered = array();
 		foreach ( array( 'user', 'comment' ) as $type ) {
 			$registered[] = wp_register_ability(
-				'wp-native-builder/' . $type . '-meta-read',
+				'wp-ai-bridge/' . $type . '-meta-read',
 				array(
-					'label'               => 'user' === $type ? __( 'Read User Metadata', 'wp-native-builder-bridge' ) : __( 'Read Comment Metadata', 'wp-native-builder-bridge' ),
-					'description'         => __( 'Lists bounded metadata state or reads one exact authorized metadata key when Advanced Metadata access is enabled.', 'wp-native-builder-bridge' ),
+					'label'               => 'user' === $type ? __( 'Read User Metadata', 'wp-ai-bridge' ) : __( 'Read Comment Metadata', 'wp-ai-bridge' ),
+					'description'         => __( 'Lists bounded metadata state or reads one exact authorized metadata key when Advanced Metadata access is enabled.', 'wp-ai-bridge' ),
 					'category'            => Registrar::CATEGORY,
 					'input_schema'        => $this->read_input_schema( $type ),
 					'output_schema'       => $this->read_output_schema(),
@@ -55,10 +55,10 @@ final class User_Comment_Meta_Abilities {
 				)
 			);
 			$registered[] = wp_register_ability(
-				'wp-native-builder/' . $type . '-meta-update',
+				'wp-ai-bridge/' . $type . '-meta-update',
 				array(
-					'label'               => 'user' === $type ? __( 'Update User Metadata', 'wp-native-builder-bridge' ) : __( 'Update Comment Metadata', 'wp-native-builder-bridge' ),
-					'description'         => __( 'Creates or replaces one authorized single-value metadata key with exact stale-state protection.', 'wp-native-builder-bridge' ),
+					'label'               => 'user' === $type ? __( 'Update User Metadata', 'wp-ai-bridge' ) : __( 'Update Comment Metadata', 'wp-ai-bridge' ),
+					'description'         => __( 'Creates or replaces one authorized single-value metadata key with exact stale-state protection.', 'wp-ai-bridge' ),
 					'category'            => Registrar::CATEGORY,
 					'input_schema'        => $this->update_input_schema( $type ),
 					'output_schema'       => $this->item_schema(),
@@ -68,10 +68,10 @@ final class User_Comment_Meta_Abilities {
 				)
 			);
 			$registered[] = wp_register_ability(
-				'wp-native-builder/' . $type . '-meta-delete',
+				'wp-ai-bridge/' . $type . '-meta-delete',
 				array(
-					'label'               => 'user' === $type ? __( 'Delete User Metadata', 'wp-native-builder-bridge' ) : __( 'Delete Comment Metadata', 'wp-native-builder-bridge' ),
-					'description'         => __( 'Deletes one authorized single-value metadata key with exact stale-state protection and destructive access.', 'wp-native-builder-bridge' ),
+					'label'               => 'user' === $type ? __( 'Delete User Metadata', 'wp-ai-bridge' ) : __( 'Delete Comment Metadata', 'wp-ai-bridge' ),
+					'description'         => __( 'Deletes one authorized single-value metadata key with exact stale-state protection and destructive access.', 'wp-ai-bridge' ),
 					'category'            => Registrar::CATEGORY,
 					'input_schema'        => $this->delete_input_schema( $type ),
 					'output_schema'       => $this->delete_output_schema(),
@@ -202,7 +202,7 @@ final class User_Comment_Meta_Abilities {
 		$key            = isset( $input['key'] ) ? (string) $input['key'] : '';
 		$include_values = ! empty( $input['include_values'] );
 		if ( $include_values && '' === $key ) {
-			return new WP_Error( 'object_meta_key_required_for_values', __( 'Specify one exact metadata key before requesting metadata values.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'object_meta_key_required_for_values', __( 'Specify one exact metadata key before requesting metadata values.', 'wp-ai-bridge' ) );
 		}
 
 		if ( '' !== $key ) {
@@ -260,14 +260,14 @@ final class User_Comment_Meta_Abilities {
 	/** @return array<string,mixed>|WP_Error */
 	private function update( $type, $input ) {
 		$id      = $this->input_id( $type, $input );
-		$ability = 'wp-native-builder/' . $type . '-meta-update';
+		$ability = 'wp-ai-bridge/' . $type . '-meta-update';
 		$target  = $this->validated_target( $type, $input );
 		if ( is_wp_error( $target ) ) {
 			return $this->logged_error( $target, $type, $id, $ability );
 		}
 		$key = isset( $input['key'] ) ? (string) $input['key'] : '';
 		if ( '' === $key ) {
-			return $this->logged_error( new WP_Error( 'object_meta_key_required', __( 'A metadata key is required.', 'wp-native-builder-bridge' ) ), $type, $id, $ability );
+			return $this->logged_error( new WP_Error( 'object_meta_key_required', __( 'A metadata key is required.', 'wp-ai-bridge' ) ), $type, $id, $ability );
 		}
 		if ( $this->is_sensitive_key( $type, $key ) ) {
 			return $this->logged_error( $this->sensitive_key_error(), $type, $id, $ability );
@@ -282,7 +282,7 @@ final class User_Comment_Meta_Abilities {
 			return $this->logged_error( $allowed, $type, $id, $ability );
 		}
 		if ( count( $rows ) > 1 ) {
-			return $this->logged_error( new WP_Error( 'object_meta_multiple_values_unsupported', __( 'This metadata key has multiple rows. The generic updater refuses an ambiguous value set.', 'wp-native-builder-bridge' ) ), $type, $id, $ability );
+			return $this->logged_error( new WP_Error( 'object_meta_multiple_values_unsupported', __( 'This metadata key has multiple rows. The generic updater refuses an ambiguous value set.', 'wp-ai-bridge' ) ), $type, $id, $ability );
 		}
 		if ( $rows ) {
 			$value_error = $this->supported_value( $rows[0]['value'] );
@@ -301,7 +301,7 @@ final class User_Comment_Meta_Abilities {
 			return $this->logged_error( $value, $type, $id, $ability );
 		}
 		if ( ! $this->is_losslessly_json_compatible( $value ) ) {
-			$error = new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
+			$error = new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-ai-bridge' ) );
 			return $this->logged_error( $error, $type, $id, $ability );
 		}
 		if ( empty( $rows ) ) {
@@ -331,9 +331,9 @@ final class User_Comment_Meta_Abilities {
 	/** @return array<string,mixed>|WP_Error */
 	private function delete( $type, $input ) {
 		$id      = $this->input_id( $type, $input );
-		$ability = 'wp-native-builder/' . $type . '-meta-delete';
+		$ability = 'wp-ai-bridge/' . $type . '-meta-delete';
 		if ( ! $this->permissions->allowed( Settings::GROUP_USERS_DESTRUCTIVE, 'read' ) ) {
-			$error = new WP_Error( 'destructive_access_disabled', __( 'Users & Destructive access is required before deleting metadata.', 'wp-native-builder-bridge' ) );
+			$error = new WP_Error( 'destructive_access_disabled', __( 'Users & Destructive access is required before deleting metadata.', 'wp-ai-bridge' ) );
 			return $this->logged_error( $error, $type, $id, $ability );
 		}
 		$target = $this->validated_target( $type, $input );
@@ -343,7 +343,7 @@ final class User_Comment_Meta_Abilities {
 		$key = isset( $input['key'] ) ? (string) $input['key'] : '';
 		if ( '' === $key || $this->is_sensitive_key( $type, $key ) ) {
 			$error = '' === $key
-				? new WP_Error( 'object_meta_key_required', __( 'A metadata key is required.', 'wp-native-builder-bridge' ) )
+				? new WP_Error( 'object_meta_key_required', __( 'A metadata key is required.', 'wp-ai-bridge' ) )
 				: $this->sensitive_key_error();
 			return $this->logged_error( $error, $type, $id, $ability );
 		}
@@ -357,7 +357,7 @@ final class User_Comment_Meta_Abilities {
 			return $this->logged_error( $rows, $type, $id, $ability );
 		}
 		if ( count( $rows ) > 1 ) {
-			return $this->logged_error( new WP_Error( 'object_meta_multiple_values_unsupported', __( 'This metadata key has multiple rows. The generic deleter refuses an ambiguous value set.', 'wp-native-builder-bridge' ) ), $type, $id, $ability );
+			return $this->logged_error( new WP_Error( 'object_meta_multiple_values_unsupported', __( 'This metadata key has multiple rows. The generic deleter refuses an ambiguous value set.', 'wp-ai-bridge' ) ), $type, $id, $ability );
 		}
 
 		$current  = $this->state_hash( $rows );
@@ -415,7 +415,7 @@ final class User_Comment_Meta_Abilities {
 
 		if ( ! is_int( $result ) || $result < 1 ) {
 			$error = $this->state_hash( $after ) === $current_hash
-				? new WP_Error( 'object_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-native-builder-bridge' ) )
+				? new WP_Error( 'object_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-ai-bridge' ) )
 				: $this->stale_error();
 			return $this->logged_error( $error, $type, $id, $ability );
 		}
@@ -466,20 +466,20 @@ final class User_Comment_Meta_Abilities {
 	/** @return object|WP_Error */
 	private function validated_target( $type, $input ) {
 		if ( ! $this->permissions->allowed( Settings::GROUP_ADVANCED_METADATA, 'read' ) ) {
-			return new WP_Error( 'advanced_metadata_access_disabled', __( 'Advanced Metadata access is disabled in WP AI Bridge settings.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'advanced_metadata_access_disabled', __( 'Advanced Metadata access is disabled in WP AI Bridge settings.', 'wp-ai-bridge' ) );
 		}
 		$id     = $this->input_id( $type, $input );
 		$target = $this->authorized_target( $type, $id );
 		return $target
 			? $target
-			: new WP_Error( 'object_meta_target_not_allowed', __( 'The requested metadata target does not exist or cannot be edited by the current WordPress user.', 'wp-native-builder-bridge' ) );
+			: new WP_Error( 'object_meta_target_not_allowed', __( 'The requested metadata target does not exist or cannot be edited by the current WordPress user.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return true|WP_Error */
 	private function validate_key_access( $type, $id, $key, $operation ) {
 		return $this->can_access_meta_key( $type, $id, $key, $operation )
 			? true
-			: new WP_Error( 'object_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-native-builder-bridge' ) );
+			: new WP_Error( 'object_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return bool */
@@ -641,32 +641,32 @@ final class User_Comment_Meta_Abilities {
 	/** @return true|WP_Error */
 	private function supported_value( $value ) {
 		if ( $this->contains_object_or_resource( $value ) ) {
-			return new WP_Error( 'object_meta_object_value_unsupported', __( 'This metadata value contains a PHP object or resource and cannot be losslessly mutated through the generic JSON metadata contract.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'object_meta_object_value_unsupported', __( 'This metadata value contains a PHP object or resource and cannot be losslessly mutated through the generic JSON metadata contract.', 'wp-ai-bridge' ) );
 		}
 		return $this->is_losslessly_json_compatible( $value )
 			? true
-			: new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
+			: new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function sensitive_key_error() {
-		return new WP_Error( 'sensitive_object_meta_key', __( 'Authentication, authorization, session, or credential-like metadata keys are outside the generic Bridge metadata surface.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'sensitive_object_meta_key', __( 'Authentication, authorization, session, or credential-like metadata keys are outside the generic Bridge metadata surface.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function stale_error() {
-		return new WP_Error( 'stale_object_meta_conflict', __( 'Metadata changed after it was read. Refresh the metadata state before mutating it.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'stale_object_meta_conflict', __( 'Metadata changed after it was read. Refresh the metadata state before mutating it.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return string|WP_Error */
 	private function encode_lossless_value( $value ) {
 		if ( ! $this->is_losslessly_json_compatible( $value ) ) {
-			return new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-ai-bridge' ) );
 		}
 		try {
 			return json_encode( $value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR );
 		} catch ( \JsonException $exception ) {
-			return new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'object_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-ai-bridge' ) );
 		}
 	}
 
@@ -675,7 +675,7 @@ final class User_Comment_Meta_Abilities {
 		try {
 			return json_decode( (string) $json, true, 512, JSON_THROW_ON_ERROR );
 		} catch ( \JsonException $exception ) {
-			return new WP_Error( 'invalid_object_meta_value_json', __( 'value_json must contain one valid JSON value.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'invalid_object_meta_value_json', __( 'value_json must contain one valid JSON value.', 'wp-ai-bridge' ) );
 		}
 	}
 

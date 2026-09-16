@@ -2,10 +2,10 @@
 /**
  * Physical term metadata storage helpers for exact-row mutations.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Support;
+namespace WP_AI_Bridge\Support;
 
 use WP_Error;
 
@@ -51,7 +51,7 @@ final class Term_Meta_Store {
 				return $this->state_error();
 			}
 			if ( (int) $meta['value_bytes'] > self::MAX_VALUE_BYTES ) {
-				return new WP_Error( 'term_meta_value_too_large', __( 'Term metadata values are limited to 1 MiB per key.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'term_meta_value_too_large', __( 'Term metadata values are limited to 1 MiB per key.', 'wp-ai-bridge' ) );
 			}
 			$raw   = null === $meta['meta_value'] ? null : (string) $meta['meta_value'];
 			$value = $raw;
@@ -169,7 +169,7 @@ final class Term_Meta_Store {
 
 	/** @return WP_Error */
 	private function state_error() {
-		return new WP_Error( 'term_meta_physical_state_unavailable', __( 'Physical term metadata state could not be established safely.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'term_meta_physical_state_unavailable', __( 'Physical term metadata state could not be established safely.', 'wp-ai-bridge' ) );
 	}
 
 	/**
@@ -191,7 +191,7 @@ final class Term_Meta_Store {
 		}
 
 		if ( ! $guard( $value ) ) {
-			return new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-ai-bridge' ) );
 		}
 		return $this->stored_value( $value );
 	}
@@ -219,21 +219,21 @@ final class Term_Meta_Store {
 		}
 		// Match the native termmeta key column; direct SQL must not silently truncate it.
 		if ( 1 !== preg_match( '/\A.{1,255}\z/us', $key ) ) {
-			return new WP_Error( 'term_meta_key_not_storable', __( 'The metadata key must fit the native WordPress 255-character storage limit.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_key_not_storable', __( 'The metadata key must fit the native WordPress 255-character storage limit.', 'wp-ai-bridge' ) );
 		}
 		// Inputs are already unslashed, as after Core's one unslash pass. Use the
 		// authorized subtype, and recheck the same target after extensible callbacks.
 		$sanitized = sanitize_meta( $key, $value, 'term', $target['target_taxonomy'] );
 		$check     = apply_filters( 'add_term_metadata', null, $term_id, $key, $sanitized, true );
 		if ( null !== $check ) {
-			return is_wp_error( $check ) ? $check : new WP_Error( 'term_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata value atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-native-builder-bridge' ) );
+			return is_wp_error( $check ) ? $check : new WP_Error( 'term_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata value atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $guard( $sanitized ) ) {
-			return new WP_Error( 'term_meta_create_refused', __( 'The sanitized term metadata value or current target authority does not permit safe creation.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_create_refused', __( 'The sanitized term metadata value or current target authority does not permit safe creation.', 'wp-ai-bridge' ) );
 		}
 		$prepared = $this->stored_value( $sanitized );
 		if ( strlen( (string) $prepared['raw_value'] ) > self::MAX_VALUE_BYTES ) {
-			return new WP_Error( 'term_meta_create_refused', __( 'The sanitized term metadata value or current target authority does not permit safe creation.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_create_refused', __( 'The sanitized term metadata value or current target authority does not permit safe creation.', 'wp-ai-bridge' ) );
 		}
 		// Core's unique check intentionally uses the column's normal key collation.
 		// It is still a precheck, not a new unique constraint or serializable protocol.
@@ -253,7 +253,7 @@ final class Term_Meta_Store {
 		if ( 0 === (int) $existing ) {
 			do_action( 'add_term_meta', $term_id, $key, $sanitized );
 			if ( ! $guard( $sanitized ) ) {
-				return new WP_Error( 'term_meta_create_refused', __( 'The sanitized term metadata value or current target authority does not permit safe creation.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'term_meta_create_refused', __( 'The sanitized term metadata value or current target authority does not permit safe creation.', 'wp-ai-bridge' ) );
 			}
 			$inserted = $this->insert_raw_row( $row );
 			if ( 1 === $inserted ) {
@@ -289,11 +289,11 @@ final class Term_Meta_Store {
 			return $current;
 		}
 		if ( 1 !== count( $current ) || ! $this->row_matches( $current[0], $row ) ) {
-			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-ai-bridge' ) );
 		}
 
 		if ( ! $guard() ) {
-			return new WP_Error( 'term_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-ai-bridge' ) );
 		}
 		if ( $row['raw_value'] === $prepared['raw_value'] ) {
 			return $current[0];
@@ -301,24 +301,24 @@ final class Term_Meta_Store {
 
 		$short_circuit = apply_filters( 'update_term_metadata', null, (int) $term_id, (string) $key, $prepared['value'], $row['value'] );
 		if ( null !== $short_circuit ) {
-			return new WP_Error( 'term_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata value atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata value atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-ai-bridge' ) );
 		}
 
 		$meta_id = (int) $row['meta_id'];
 		do_action( 'update_term_meta', $meta_id, (int) $term_id, (string) $key, $prepared['value'] );
 
 		if ( ! $guard() ) {
-			return new WP_Error( 'term_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-ai-bridge' ) );
 		}
 
 		$result = $this->exact_update_raw_row( $meta_id, (int) $term_id, (string) $key, $row['raw_value'], $prepared['raw_value'], $row );
 		if ( false === $result ) {
 			wp_cache_delete( (int) $term_id, 'term_meta' );
-			return new WP_Error( 'term_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-ai-bridge' ) );
 		}
 		if ( 1 !== $result ) {
 			wp_cache_delete( (int) $term_id, 'term_meta' );
-			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-ai-bridge' ) );
 		}
 
 		wp_cache_delete( (int) $term_id, 'term_meta' );
@@ -327,7 +327,7 @@ final class Term_Meta_Store {
 		$after = $this->rows( $term_id, $key );
 		if ( is_wp_error( $after ) ) {
 			if ( ! $this->restore_updated_row( $row, $prepared['raw_value'] ) ) {
-				return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 			}
 			return $after;
 		}
@@ -335,9 +335,9 @@ final class Term_Meta_Store {
 		$expected_row['raw_value'] = $prepared['raw_value'];
 		if ( 1 !== count( $after ) || ! $this->row_matches( $after[0], $expected_row ) ) {
 			if ( ! $this->restore_updated_row( $row, $prepared['raw_value'] ) ) {
-				return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 			}
-			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-ai-bridge' ) );
 		}
 
 		return $after[0];
@@ -359,12 +359,12 @@ final class Term_Meta_Store {
 			return $current;
 		}
 		if ( 1 !== count( $current ) || ! $this->row_matches( $current[0], $row ) ) {
-			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-ai-bridge' ) );
 		}
 
 		$short_circuit = apply_filters( 'delete_term_metadata', null, (int) $term_id, (string) $key, $row['value'], false );
 		if ( null !== $short_circuit ) {
-			return new WP_Error( 'term_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata value atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata value atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-ai-bridge' ) );
 		}
 
 		$meta_id  = (int) $row['meta_id'];
@@ -372,17 +372,17 @@ final class Term_Meta_Store {
 		do_action( 'delete_term_meta', $meta_ids, (int) $term_id, (string) $key, $row['value'] );
 
 		if ( ! $guard() ) {
-			return new WP_Error( 'term_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-ai-bridge' ) );
 		}
 
 		$result = $this->exact_delete_raw_row( $meta_id, (int) $term_id, (string) $key, $row['raw_value'], $row );
 		if ( false === $result ) {
 			wp_cache_delete( (int) $term_id, 'term_meta' );
-			return new WP_Error( 'term_meta_delete_failed', __( 'WordPress could not delete the requested metadata key.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_delete_failed', __( 'WordPress could not delete the requested metadata key.', 'wp-ai-bridge' ) );
 		}
 		if ( 1 !== $result ) {
 			wp_cache_delete( (int) $term_id, 'term_meta' );
-			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-ai-bridge' ) );
 		}
 
 		wp_cache_delete( (int) $term_id, 'term_meta' );
@@ -391,15 +391,15 @@ final class Term_Meta_Store {
 		$after = $this->rows( $term_id, $key );
 		if ( is_wp_error( $after ) ) {
 			if ( ! $this->restore_deleted_row( $row ) ) {
-				return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 			}
 			return $after;
 		}
 		if ( ! empty( $after ) ) {
 			if ( ! $this->restore_deleted_row( $row ) ) {
-				return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 			}
-			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-ai-bridge' ) );
 		}
 
 		return true;
@@ -466,23 +466,23 @@ final class Term_Meta_Store {
 	 */
 	public function cleanup_created_row( array $row ) {
 		if ( ! $this->target_matches( $row, true ) ) {
-			return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 		}
 		$meta_id  = (int) $row['meta_id'];
 		$meta_ids = array( $meta_id );
 		do_action( 'delete_term_meta', $meta_ids, (int) $row['term_id'], (string) $row['key'], $row['value'] );
 		if ( ! $this->target_matches( $row, true ) ) {
-			return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 		}
 
 		$result = $this->exact_delete_raw_row( $meta_id, (int) $row['term_id'], (string) $row['key'], $row['raw_value'], $row, true );
 		if ( false === $result ) {
 			wp_cache_delete( (int) $row['term_id'], 'term_meta' );
-			return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 		}
 		if ( 1 !== $result ) {
 			wp_cache_delete( (int) $row['term_id'], 'term_meta' );
-			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_term_meta_conflict', __( 'Term metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-ai-bridge' ) );
 		}
 
 		wp_cache_delete( (int) $row['term_id'], 'term_meta' );

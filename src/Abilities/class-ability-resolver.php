@@ -2,10 +2,10 @@
 /**
  * Existing Ability discovery and compatibility checks.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Abilities;
+namespace WP_AI_Bridge\Abilities;
 
 /**
  * Discovers reusable public Abilities without depending on the private registry class.
@@ -24,7 +24,7 @@ final class Ability_Resolver {
 		}
 
 		foreach ( $candidates as $name ) {
-			if ( ! is_string( $name ) || '' === $name || 0 === strpos( $name, 'wp-native-builder/' ) ) {
+			if ( ! is_string( $name ) || '' === $name || 0 === strpos( $name, 'wp-ai-bridge/' ) ) {
 				continue;
 			}
 
@@ -69,7 +69,7 @@ final class Ability_Resolver {
 			}
 
 			$name = $ability->get_name();
-			if ( 0 === strpos( $name, 'wp-native-builder/' ) || 0 === strpos( $name, 'mcp-adapter/' ) ) {
+			if ( 0 === strpos( $name, 'wp-ai-bridge/' ) || 0 === strpos( $name, 'mcp-adapter/' ) ) {
 				continue;
 			}
 

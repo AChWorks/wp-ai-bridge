@@ -2,11 +2,11 @@
 /**
  * Validates the bundled Persian localization catalog and source coverage.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
 $root    = dirname( __DIR__ );
-$catalog = $root . '/languages/wp-native-builder-bridge-fa_IR.l10n.php';
+$catalog = $root . '/languages/wp-ai-bridge-fa_IR.l10n.php';
 
 if ( ! is_file( $catalog ) ) {
 	fwrite( STDERR, "ERROR: Persian localization catalog is missing.\n" );
@@ -48,7 +48,7 @@ foreach ( $required as $source => $translation ) {
  * @param string $literal T_CONSTANT_ENCAPSED_STRING token text.
  * @return string
  */
-function wpnb_i18n_decode_literal( $literal ) {
+function wpai_i18n_decode_literal( $literal ) {
 	$quote = substr( $literal, 0, 1 );
 	$body  = substr( $literal, 1, -1 );
 	if ( "'" === $quote ) {
@@ -65,7 +65,7 @@ function wpnb_i18n_decode_literal( $literal ) {
  * @param int              $open_index Index of opening parenthesis.
  * @return array<int,string>
  */
-function wpnb_i18n_literal_arguments( $tokens, $open_index ) {
+function wpai_i18n_literal_arguments( $tokens, $open_index ) {
 	$arguments = array();
 	$argument  = 0;
 	$depth     = 1;
@@ -89,7 +89,7 @@ function wpnb_i18n_literal_arguments( $tokens, $open_index ) {
 			continue;
 		}
 		if ( 1 === $depth && is_array( $token ) && T_CONSTANT_ENCAPSED_STRING === $token[0] && ! isset( $arguments[ $argument ] ) ) {
-			$arguments[ $argument ] = wpnb_i18n_decode_literal( $token[1] );
+			$arguments[ $argument ] = wpai_i18n_decode_literal( $token[1] );
 		}
 	}
 
@@ -108,7 +108,7 @@ $translation_functions = array(
 	'esc_attr__'   => 1,
 	'esc_attr_e'   => 1,
 );
-$source_files          = array( $root . '/wp-native-builder-bridge.php' );
+$source_files          = array( $root . '/wp-ai-bridge.php' );
 $iterator              = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root . '/src', FilesystemIterator::SKIP_DOTS ) );
 foreach ( $iterator as $file ) {
 	if ( $file->isFile() && 'php' === strtolower( $file->getExtension() ) ) {
@@ -134,7 +134,7 @@ foreach ( $source_files as $file ) {
 			continue;
 		}
 
-		$arguments = wpnb_i18n_literal_arguments( $tokens, $open_index );
+		$arguments = wpai_i18n_literal_arguments( $tokens, $open_index );
 		$required_arguments = $translation_functions[ $token[1] ];
 		for ( $argument = 0; $argument < $required_arguments; $argument++ ) {
 			if ( isset( $arguments[ $argument ] ) && '' !== trim( $arguments[ $argument ] ) ) {

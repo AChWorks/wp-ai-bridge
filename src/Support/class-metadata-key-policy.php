@@ -2,10 +2,10 @@
 /**
  * Provider-neutral metadata key exclusion policy.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Support;
+namespace WP_AI_Bridge\Support;
 
 /** Shared unchanged credential-name policy for Advanced Metadata. */
 final class Metadata_Key_Policy {

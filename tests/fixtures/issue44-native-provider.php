@@ -33,14 +33,14 @@ add_filter(
 	'wp_register_ability_args',
 	static function ( $args, $name ) {
 		static $registering = false;
-		if ( $registering || 'wp-native-builder/bridge-info' !== $name ) {
+		if ( $registering || 'wp-ai-bridge/bridge-info' !== $name ) {
 			return $args;
 		}
 
 		$registering = true;
 		try {
 			wp_register_ability(
-				'wp-native-builder/reentrant-provider-fixture',
+				'wp-ai-bridge/reentrant-provider-fixture',
 				array(
 					'label'               => 'Issue 44 Re-entrant Provider',
 					'description'         => 'Provider registration triggered synchronously from the Bridge registration filter stack.',
@@ -111,13 +111,13 @@ add_action(
 		$forged['meta']['wp_ai_bridge_owned'] = true;
 		$forged['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
 		$forged['execute_callback']    = static function () { return array( 'executed' => true ); };
-		wp_register_ability( 'wp-native-builder/foreign-fixture', $forged );
+		wp_register_ability( 'wp-ai-bridge/foreign-fixture', $forged );
 
 		$forged_class = $base;
 		$forged_class['ability_class']       = 'WP_AI_Bridge_Issue44_Forged_Meta_Ability';
 		$forged_class['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
 		$forged_class['execute_callback']    = static function () { return array( 'executed' => true ); };
-		wp_register_ability( 'wp-native-builder/forged-class-fixture', $forged_class );
+		wp_register_ability( 'wp-ai-bridge/forged-class-fixture', $forged_class );
 	},
 	200
 );

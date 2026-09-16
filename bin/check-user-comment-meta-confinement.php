@@ -2,7 +2,7 @@
 /**
  * Static confinement guard for Issue #58 user/comment metadata persistence.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
 $root   = dirname( __DIR__ );

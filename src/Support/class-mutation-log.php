@@ -2,16 +2,16 @@
 /**
  * Bounded bridge mutation logging.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Support;
+namespace WP_AI_Bridge\Support;
 
 /**
  * Stores a small metadata-only recent mutation log.
  */
 final class Mutation_Log {
-	const OPTION_NAME = 'wp_native_builder_bridge_recent_actions';
+	const OPTION_NAME = 'wp_ai_bridge_recent_actions';
 	const LIMIT       = 50;
 
 	/**
