@@ -46,18 +46,43 @@ if [[ "$package_url_schema_files" != "$external_package_provider" || "$(grep -cF
     echo "ERROR: package_url must remain one exact extension-lifecycle schema field." >&2
     exit 1
 fi
-# Count occurrences rather than matching lines so multiple helpers on one line cannot false-pass.
-external_package_http_helper_pattern='wp_(safe_)?remote_(request|get|post|head)[[:space:]]*\('
-external_package_safe_get_pattern='wp_safe_remote_get[[:space:]]*\('
-external_package_http_helper_count="$( ( grep -Eo "$external_package_http_helper_pattern" "$external_package_provider" || true ) | wc -l | tr -d '[:space:]' )"
-external_package_safe_get_count="$( ( grep -Eo "$external_package_safe_get_pattern" "$external_package_provider" || true ) | wc -l | tr -d '[:space:]' )"
+# Tokenize PHP identifiers so comments, whitespace, case, or namespace separators cannot hide
+# relevant HTTP helpers or forbidden primitives from this fixed-purpose provider inventory.
+external_package_identifier_inventory="$(
+    php -r '
+$source = file_get_contents( $argv[1] );
+if ( false === $source ) {
+    fwrite( STDERR, "ERROR: could not read external package provider.\n" );
+    exit( 2 );
+}
+$name_tokens = array( T_STRING, T_NAME_FULLY_QUALIFIED, T_NAME_QUALIFIED, T_NAME_RELATIVE );
+foreach ( token_get_all( $source ) as $token ) {
+    if ( ! is_array( $token ) ) {
+        continue;
+    }
+    if ( T_EVAL === $token[0] ) {
+        echo "eval\n";
+        continue;
+    }
+    if ( ! in_array( $token[0], $name_tokens, true ) ) {
+        continue;
+    }
+    $parts = preg_split( "/\\\\+/", strtolower( $token[1] ) );
+    echo end( $parts ), "\n";
+}
+' "$external_package_provider"
+)"
+external_package_http_helper_pattern='^wp_(safe_)?remote_(request|get|post|head)$'
+external_package_safe_get_pattern='^wp_safe_remote_get$'
+external_package_http_helper_count="$(printf '%s\n' "$external_package_identifier_inventory" | grep -Ec "$external_package_http_helper_pattern" || true)"
+external_package_safe_get_count="$(printf '%s\n' "$external_package_identifier_inventory" | grep -Ec "$external_package_safe_get_pattern" || true)"
 if [[ "$external_package_http_helper_count" != "1" || "$external_package_safe_get_count" != "1" || "$(grep -cF "wp_tempnam( 'wp-ai-bridge-package.zip' )" "$external_package_provider" || true)" != "1" ]]; then
-    grep -nE "$external_package_http_helper_pattern" "$external_package_provider" || true
+    printf '%s\n' "$external_package_identifier_inventory" | grep -E "$external_package_http_helper_pattern" || true
     echo "ERROR: external package installation must retain exactly one wp_safe_remote_get() request and one WordPress temp allocation." >&2
     exit 1
 fi
-external_package_forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir|curl_exec|curl_init|fsockopen|stream_socket_client|file_get_contents|wp_remote_get|wp_remote_post|wp_remote_request)[[:space:]]*\('
-if grep -nE "$external_package_forbidden" "$external_package_provider"; then
+external_package_forbidden='^(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir|curl_exec|curl_init|fsockopen|stream_socket_client|file_get_contents|wp_remote_get|wp_remote_post|wp_remote_request|wp_remote_head)$'
+if printf '%s\n' "$external_package_identifier_inventory" | grep -E "$external_package_forbidden"; then
     echo "ERROR: external package installation introduced an unbounded execution/filesystem/HTTP primitive." >&2
     exit 1
 fi
