@@ -101,7 +101,7 @@ final class Migrator {
 		// Retire disposable legacy state only after the durable Workspace migration is
 		// committed. This cleanup is repeat-safe and runs again on later activations.
 		self::retire_legacy_site_state();
-		self::verify_retired_runtime_state();
+		self::verify_legacy_runtime_state_retired();
 	}
 
 	/** @return void */
@@ -196,18 +196,20 @@ final class Migrator {
 	}
 
 	/** @return void */
-	private static function verify_retired_runtime_state() {
+	private static function verify_legacy_runtime_state_retired() {
 		foreach (
 			array(
-				'wp_ai_bridge_settings',
-				'wp_ai_bridge_recent_actions',
-				'wp_ai_bridge_oauth_instance',
-				'wp_ai_bridge_oauth_clients',
-				'wp_ai_bridge_oauth_clients_revision',
-			) as $canonical_runtime_option
+				'wp_native_builder_bridge_settings',
+				'wp_native_builder_bridge_recent_actions',
+				'wp_native_builder_bridge_oauth_instance',
+				'wp_native_builder_bridge_oauth_clients',
+				'wp_native_builder_bridge_oauth_clients_revision',
+				'wp_native_builder_bridge_source_recovery',
+				'wp_native_builder_bridge_source_lock',
+			) as $legacy_runtime_option
 		) {
-			if ( false !== get_option( $canonical_runtime_option, false ) ) {
-				throw new RuntimeException( 'Disposable legacy runtime state was imported unexpectedly into ' . $canonical_runtime_option . '.' );
+			if ( false !== get_option( $legacy_runtime_option, false ) ) {
+				throw new RuntimeException( 'Disposable legacy runtime state remained after canonical migration: ' . $legacy_runtime_option . '.' );
 			}
 		}
 	}
