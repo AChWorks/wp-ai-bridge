@@ -93,9 +93,23 @@ if [[ "$external_package_http_helper_count" != "1" || "$external_package_safe_ge
     echo "ERROR: external package installation must retain exactly one wp_safe_remote_get() request and one WordPress temp allocation." >&2
     exit 1
 fi
-external_package_forbidden='^(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir|curl_exec|curl_init|fsockopen|stream_socket_client|file_get_contents|wp_remote_get|wp_remote_post|wp_remote_request|wp_remote_head|call_user_func|call_user_func_array|forward_static_call|forward_static_call_array)$'
+external_package_forbidden='^(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir|curl_exec|curl_init|fsockopen|stream_socket_client|file_get_contents|wp_remote_get|wp_remote_post|wp_remote_request|wp_remote_head|call_user_func|call_user_func_array|forward_static_call|forward_static_call_array|array_map|array_reduce|array_walk|array_walk_recursive|array_udiff|array_udiff_assoc|array_udiff_uassoc|array_uintersect|array_uintersect_assoc|array_uintersect_uassoc|array_diff_uassoc|array_intersect_uassoc|usort|uasort|uksort|preg_replace_callback|preg_replace_callback_array|iterator_apply|register_shutdown_function|register_tick_function|set_error_handler|set_exception_handler|spl_autoload_register|header_register_callback|ob_start|session_set_save_handler|pcntl_signal|add_filter)$'
 if printf '%s\n' "$external_package_identifier_inventory" | grep -E "$external_package_forbidden"; then
-    echo "ERROR: external package installation introduced an unbounded execution/filesystem/HTTP primitive." >&2
+    echo "ERROR: external package installation introduced an unbounded execution/filesystem/HTTP/callback primitive." >&2
+    exit 1
+fi
+
+# The provider has three legitimate callback-bearing surfaces. Pin their exact current shape so
+# they cannot become an indirect forbidden-primitive dispatcher while the lexical inventory passes.
+external_package_array_filter_count="$(printf '%s\n' "$external_package_identifier_inventory" | grep -Ec '^array_filter$' || true)"
+external_package_add_action_count="$(printf '%s\n' "$external_package_identifier_inventory" | grep -Ec '^add_action$' || true)"
+external_package_register_ability_count="$(printf '%s\n' "$external_package_identifier_inventory" | grep -Ec '^wp_register_ability$' || true)"
+external_package_redirect_guard_assignment_count="$(grep -Ec '\$redirect_guard[[:space:]]*=[[:space:]]*function[[:space:]]*\(' "$external_package_provider" || true)"
+external_package_redirect_guard_all_assignment_count="$(grep -Ec '\$redirect_guard[[:space:]]*=' "$external_package_provider" || true)"
+external_package_execute_callback_count="$(grep -cF "'execute_callback'" "$external_package_provider" || true)"
+external_package_permission_callback_count="$(grep -cF "'permission_callback'" "$external_package_provider" || true)"
+if [[ "$external_package_array_filter_count" != "1" || "$(grep -cF "array_filter( \$registered, 'is_object' )" "$external_package_provider" || true)" != "1" || "$external_package_add_action_count" != "1" || "$(grep -cF "add_action( 'requests-requests.before_redirect', \$redirect_guard, PHP_INT_MAX, 4 );" "$external_package_provider" || true)" != "1" || "$external_package_redirect_guard_assignment_count" != "1" || "$external_package_redirect_guard_all_assignment_count" != "1" || "$external_package_register_ability_count" != "2" || "$external_package_execute_callback_count" != "2" || "$external_package_permission_callback_count" != "2" || "$(grep -cF "'execute_callback'    => array( \$this, 'read' )," "$external_package_provider" || true)" != "1" || "$(grep -cF "'execute_callback'    => array( \$this, 'mutate' )," "$external_package_provider" || true)" != "1" || "$(grep -cF "'permission_callback' => array( \$this, 'can_read' )," "$external_package_provider" || true)" != "1" || "$(grep -cF "'permission_callback' => array( \$this, 'can_mutate' )," "$external_package_provider" || true)" != "1" ]]; then
+    echo "ERROR: external package provider callback-bearing surfaces changed outside their fixed direct-call contract." >&2
     exit 1
 fi
 
