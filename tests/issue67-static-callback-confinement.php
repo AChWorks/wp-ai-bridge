@@ -59,6 +59,11 @@ $reject(
 );
 
 $reject(
+	"<?php\n\$callbacks = array();\n\$callbacks['cb'] = 'wp_safe_remote_post';\nif ( [\$callback] = \$callbacks ) {\n\t\$zip = new ZipArchive();\n\t\$zip->registerCancelCallback( \$callback );\n}\n",
+	'Short-array destructuring assignment expression from protected callable carrier'
+);
+
+$reject(
 	"<?php\n\$callbacks = array();\n\$callbacks['cb'] = 'wp_safe_remote_get';\nlist( \$callback ) = \$callbacks;\n\$zip = new ZipArchive();\n\$zip->registerCancelCallback( \$callback );\n",
 	'List destructuring from protected callable carrier'
 );
@@ -76,6 +81,11 @@ $accept(
 $accept(
 	"<?php\n\$plain = array();\n\$plain['value'] = 'ordinary';\nforeach ( \$plain as \$key => \$value ) {\n\tordinary_call( \$key, \$value );\n}\n[\$first] = \$plain;\nlist( \$second ) = \$plain;\nclass PlainHolder {\n\tprivate string \$value = 'ordinary';\n\tpublic function read() { return \$this->value; }\n}\n",
 	'Ordinary local binding forms'
+);
+
+$accept(
+	"<?php\n\$plain = array( 'ordinary' );\nif ( [\$value] = \$plain ) {\n\tordinary_call( \$value );\n}\n",
+	'Ordinary short-array destructuring assignment expression'
 );
 
 $provider_path = __DIR__ . '/../src/Abilities/class-extension-abilities.php';
