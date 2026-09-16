@@ -43,7 +43,7 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `site-settings-read` | Site Read | Read the bounded site-settings allowlist. |
 | `site-settings-update` | Site Configuration | Update bounded site settings. |
 | `extensions-read` | Site Read | Read installed plugin/theme metadata. |
-| `extension-lifecycle` | Code & Extensions | WordPress.org install/update/activate/deactivate; deletion is destructive. |
+| `extension-lifecycle` | Code & Extensions; External Packages additionally for external HTTPS install | Preserve WordPress.org slug install/update/activate/deactivate and separately allow one public-HTTPS package install when additionally authorized; deletion is destructive. |
 | `source-files-read` | Code & Extensions + Source Editing | List or read exact installed plugin/theme editable source targets; source payloads require the elevated boundary. |
 | `source-file-preview` | Code & Extensions + Source Editing | Validate and bind an exact candidate to the current target/preimage without writing. |
 | `source-file-apply` | Code & Extensions + Source Editing | Apply one preview-bound candidate with exact persistence verification and recovery ownership. |
@@ -64,7 +64,11 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `workspace-document` | Site Read / Builder Write | List/read/create/update/archive private Workspace documents. |
 | `workspace-task` | Site Read / Builder Write | List/read/create/update/transition/archive private Workspace tasks. |
 
+## External package installation boundary
 
+`extension-lifecycle` keeps the existing WordPress.org slug installation workflow under **Code & Extensions**. Supplying `package_url` selects a separate elevated path that additionally requires the default-off **External Packages** delegation plus the current native `install_plugins` or `install_themes` capability for the selected kind. External Packages alone never grants installation authority.
+
+The external source is one explicit public HTTPS package URL. The Bridge does not accept local package paths, HTTP/FTP URLs, URL credentials, caller-supplied headers/cookies, or generic transport controls. It validates the initial/redirect destination boundary, streams the package into Bridge-owned WordPress temporary storage under the bounded resource policy, rechecks authority at the network-to-install boundary, and hands the completed file to the native Core `Plugin_Upgrader` or `Theme_Upgrader`. Installation does not activate the extension automatically. See [External package installation](./EXTERNAL-PACKAGES.md) for the complete lifecycle and recovery contract.
 
 
 ## Application Password boundary
