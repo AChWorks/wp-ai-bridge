@@ -2,7 +2,7 @@
 error_reporting( E_ALL );
 
 define( 'ABSPATH', '/tmp/wp/' );
-define( 'WP_NATIVE_BUILDER_BRIDGE_VERSION', '0.2.0' );
+define( 'WP_NATIVE_BUILDER_BRIDGE_VERSION', '0.3.0' );
 
 $GLOBALS['wp_version'] = '7.1';
 $GLOBALS['wpnb_test']  = array(
