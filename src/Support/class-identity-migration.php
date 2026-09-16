@@ -89,9 +89,10 @@ final class Identity_Migration {
 			return new WP_Error( 'identity_migration_status_conflict', 'The WP AI Bridge migration status option contains an unexpected value.' );
 		}
 
-		$has_legacy_state = self::legacy_state_exists();
+		$migration_started = is_array( $status ) && self::VERSION === (int) ( $status['version'] ?? 0 ) && ! empty( $status['migrated_legacy'] );
+		$has_legacy_state  = self::legacy_state_exists();
 		if ( ! $has_legacy_state ) {
-			return self::write_completion_status( false );
+			return self::write_completion_status( $migration_started );
 		}
 
 		$result = self::preflight_options();
@@ -101,6 +102,12 @@ final class Identity_Migration {
 		$result = self::preflight_workspace();
 		if ( is_wp_error( $result ) ) {
 			return $result;
+		}
+		if ( ! $migration_started ) {
+			$result = self::write_in_progress_status();
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
 		}
 
 		foreach ( self::$option_map as $legacy => $canonical ) {
@@ -124,6 +131,31 @@ final class Identity_Migration {
 		}
 
 		return self::write_completion_status( true );
+	}
+
+	/**
+	 * Persists migration intent before the first destructive old-to-new write.
+	 *
+	 * If the final completion-marker write later fails, this durable checkpoint
+	 * prevents a retry from misclassifying the already-migrated site as fresh.
+	 *
+	 * @return true|WP_Error
+	 */
+	private static function write_in_progress_status() {
+		$pending = array(
+			'version'         => self::VERSION,
+			'completed'       => false,
+			'started_gmt'     => gmdate( 'c' ),
+			'migrated_legacy' => true,
+			'reconnect_oauth' => true,
+		);
+		if ( ! update_option( self::STATUS_OPTION, $pending, false ) ) {
+			$current = get_option( self::STATUS_OPTION, array() );
+			if ( ! is_array( $current ) || self::VERSION !== (int) ( $current['version'] ?? 0 ) || empty( $current['migrated_legacy'] ) || ! empty( $current['completed'] ) ) {
+				return new WP_Error( 'identity_migration_checkpoint_write_failed', 'WP AI Bridge could not persist the pre-migration checkpoint; no legacy state was changed.' );
+			}
+		}
+		return true;
 	}
 
 	/**

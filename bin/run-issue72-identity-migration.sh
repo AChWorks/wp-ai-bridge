@@ -131,7 +131,7 @@ fi
 $fixture = get_option("wpai_issue72_fixture", array());
 if (!is_array($fixture) || empty($fixture["legacy_token"])) { exit(1); }
 $status = get_option("wp_ai_bridge_identity_migration", array());
-if (!is_array($status) || 1 !== (int)($status["version"] ?? 0) || empty($status["completed"]) || empty($status["reconnect_oauth"])) { exit(1); }
+if (!is_array($status) || 1 !== (int)($status["version"] ?? 0) || empty($status["completed"]) || empty($status["migrated_legacy"]) || empty($status["reconnect_oauth"])) { exit(1); }
 if (get_option("wp_native_builder_bridge_settings", false) !== false) { exit(1); }
 if (get_option("wp_native_builder_bridge_recent_actions", false) !== false) { exit(1); }
 if (get_option("wp_native_builder_bridge_oauth_instance", false) !== false) { exit(1); }
