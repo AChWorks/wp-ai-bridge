@@ -346,7 +346,7 @@ $initialize->set_body(
 				'protocolVersion' => '2025-11-25',
 				'capabilities'    => (object) array(),
 				'clientInfo'      => array(
-					'name'    => 'wp-native-builder-direct-oauth-smoke',
+					'name'    => 'wp-ai-bridge-direct-oauth-smoke',
 					'version' => '1.0.0',
 				),
 			),

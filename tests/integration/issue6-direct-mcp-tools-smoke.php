@@ -86,7 +86,7 @@ $initialize = wpai_issue6_direct_tools_request(
 			'protocolVersion' => '2025-11-25',
 			'capabilities'    => (object) array(),
 			'clientInfo'      => array(
-				'name'    => 'wp-native-builder-direct-tools-smoke',
+				'name'    => 'wp-ai-bridge-direct-tools-smoke',
 				'version' => '1.0.0',
 			),
 		),

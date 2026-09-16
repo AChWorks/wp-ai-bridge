@@ -60,13 +60,13 @@ run_mcp '{"jsonrpc":"2.0","id":41,"method":"tools/call","params":{"name":"mcp-ad
 jq -e '.result.structuredContent.success == true and (.result.structuredContent.data.counts | type == "object")' "$output_file" >/dev/null
 
 echo "MCP discover/get-info/read + Workspace resume: PASS"
-run_mcp '{"jsonrpc":"2.0","id":420,"method":"tools/call","params":{"name":"mcp-adapter-execute-ability","arguments":{"ability_name":"wp-ai-bridge/abilities-read","parameters":{"namespace":"wp-native-builder","per_page":1,"page":2}}}}'
+run_mcp '{"jsonrpc":"2.0","id":420,"method":"tools/call","params":{"name":"mcp-adapter-execute-ability","arguments":{"ability_name":"wp-ai-bridge/abilities-read","parameters":{"namespace":"wp-ai-bridge","per_page":1,"page":2}}}}'
 jq -e '.result.structuredContent.success == true and .result.structuredContent.data.page == 2 and (.result.structuredContent.data.items | length == 1) and .result.structuredContent.data.execution_permission == "not_evaluated"' "$output_file" >/dev/null
 run_mcp '{"jsonrpc":"2.0","id":421,"method":"tools/call","params":{"name":"mcp-adapter-execute-ability","arguments":{"ability_name":"wp-ai-bridge/abilities-read","parameters":{"action":"get","name":"wp-ai-bridge/bridge-info"}}}}'
 jq -e '.result.structuredContent.success == true and .result.structuredContent.data.items[0].name == "wp-ai-bridge/bridge-info" and .result.structuredContent.data.items[0].input_schema.type == "object"' "$output_file" >/dev/null
 echo "MCP paginated contract list and exact schema: PASS"
 
-run_mcp '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"mcp-adapter-execute-ability","arguments":{"ability_name":"wp-ai-bridge/content-upsert","parameters":{"action":"create","post_type":"post","title":"WPNB MCP CI draft","content":"<!-- wp:paragraph --><p>Initial MCP CI content</p><!-- /wp:paragraph -->","status":"draft"}}}}'
+run_mcp '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"mcp-adapter-execute-ability","arguments":{"ability_name":"wp-ai-bridge/content-upsert","parameters":{"action":"create","post_type":"post","title":"WPAI MCP CI draft","content":"<!-- wp:paragraph --><p>Initial MCP CI content</p><!-- /wp:paragraph -->","status":"draft"}}}}'
 post_id="$(jq -r '.result.structuredContent.data.id' "$output_file")"
 [[ "$post_id" =~ ^[1-9][0-9]*$ ]]
 
