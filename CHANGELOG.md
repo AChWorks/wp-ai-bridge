@@ -4,6 +4,10 @@ All notable public changes are documented here.
 
 ## 0.3.0
 
+- Add admin-controlled generic term metadata read/update/delete for exact authorized taxonomy terms, including private/non-REST taxonomies, with physical-row identity, stale-state protection, secret-policy exclusions, and destructive gating.
+- Add explicitly enabled safe public-URL Media Library import with bounded streaming, WordPress-native sideload/attachment handling, authority rechecks, cleanup, and redacted failures.
+- Add a separate default-off Source Editing boundary for installed plugin/theme source read, preview, apply, and conflict-safe recovery, using target-bound hashes and fixed-purpose no-overwrite replacement semantics while preserving native WordPress source-edit authority.
+- Add paginated provider-neutral Ability catalog discovery so administrators/clients can inspect registered Core/provider contracts and Bridge delegation requirements without executing permission callbacks during discovery.
 - Add a separate default-off External Packages boundary for administrator-authorized plugin/theme installation from bounded public HTTPS package URLs, preserving native WordPress install authority, Core Upgrader validation, redirect/SSRF protections, temporary-package cleanup, and secret-safe errors/logging.
 - Add a default-off Authentication & Credentials boundary for Core-native WordPress Application Password list/get/create/rename/revoke lifecycle, with one-time plaintext return on create and strict hash/secret/log redaction.
 - Add admin-controlled provider-neutral user/comment metadata read, update, and delete with exact WordPress target authority, role/session/credential exclusions, byte-exact stale-state protection, and destructive gating for delete.
