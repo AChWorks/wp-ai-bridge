@@ -236,6 +236,7 @@ for ( $i = 0; $i < $token_count; ++$i ) {
             exit( 3 );
         }
         $is_call = false;
+        $call_name = "";
         if ( is_array( $previous ) && in_array( $previous[0], $name_tokens, true ) ) {
             $before_id = is_array( $before_previous ) ? $before_previous[0] : null;
             if ( T_FUNCTION !== $before_id ) {
@@ -263,12 +264,17 @@ for ( $i = 0; $i < $token_count; ++$i ) {
                 }
             }
         }
-        $parentheses[] = array( "start" => $i, "call" => $is_call );
+        $parentheses[] = array( "start" => $i, "call" => $is_call, "name" => $call_name );
     } elseif ( ")" === $text && ! empty( $parentheses ) ) {
         $frame = array_pop( $parentheses );
         if ( $frame["call"] ) {
             $arguments = array_slice( $tokens, $frame["start"] + 1, $i - $frame["start"] - 1 );
-            if ( $slice_has_protected_callable( $arguments ) ) {
+            $allowed_temp_helper_probe = "function_exists" === $frame["name"]
+                && 1 === count( $arguments )
+                && is_array( $arguments[0] )
+                && T_CONSTANT_ENCAPSED_STRING === $arguments[0][0]
+                && "wp_tempnam" === strtolower( $literal_value( $arguments[0] ) );
+            if ( ! $allowed_temp_helper_probe && $slice_has_protected_callable( $arguments ) ) {
                 fwrite( STDERR, "ERROR: external package provider must not pass protected callable names through call arguments.\n" );
                 exit( 10 );
             }
