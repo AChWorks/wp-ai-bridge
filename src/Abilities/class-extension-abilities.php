@@ -151,8 +151,11 @@ final class Extension_Abilities {
 			$has_slug    = '' !== $slug;
 			$package_url = isset( $input['package_url'] ) && is_string( $input['package_url'] ) ? $input['package_url'] : '';
 			$has_package = '' !== $package_url;
-			if ( $has_slug === $has_package ) {
-				return new WP_Error( 'extension_install_source_required', __( 'Choose exactly one install source: a WordPress.org slug or an external package URL.', 'wp-native-builder-bridge' ) );
+			if ( ! $has_slug && ! $has_package ) {
+				return new WP_Error( 'extension_slug_required', __( 'A WordPress.org slug or an external package URL is required for installation.', 'wp-native-builder-bridge' ) );
+			}
+			if ( $has_slug && $has_package ) {
+				return new WP_Error( 'extension_install_source_conflict', __( 'Choose only one install source: a WordPress.org slug or an external package URL.', 'wp-native-builder-bridge' ) );
 			}
 			if ( $has_package ) {
 				return $this->install_external_package( $kind, $input );
