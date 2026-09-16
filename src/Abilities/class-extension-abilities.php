@@ -262,7 +262,7 @@ final class Extension_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private function install_external_package( $kind, $input ) {
-		$state = array(
+		$state      = array(
 			'temp_file'        => '',
 			'install_started'  => false,
 			'installed_target' => '',
