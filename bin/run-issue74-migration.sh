@@ -132,10 +132,38 @@ if (false === get_option("wp_native_builder_bridge_source_recovery", false)) { e
 if (is_dir(WP_PLUGIN_DIR . "/wp-native-builder-bridge")) { exit(9); }
 ' --allow-root >/dev/null
 
-# Install/activate the clean canonical plugin. Activation migrates Workspace only.
+# Install the clean canonical plugin but keep it inactive while proving migration conflicts fail closed.
 "${compose[@]}" cp "$candidate_zip" wordpress:/var/www/html/wp-ai-bridge-candidate.zip
-"${wp[@]}" plugin install /var/www/html/wp-ai-bridge-candidate.zip --activate --allow-root >/dev/null
+"${wp[@]}" plugin install /var/www/html/wp-ai-bridge-candidate.zip --allow-root >/dev/null
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge-candidate.zip
+
+# A canonical Workspace meta row beside the legacy row is ambiguous. Activation must fail
+# without changing the legacy Workspace or persisting the canonical schema marker.
+"${wp[@]}" eval '
+$fixture = get_option("wpai_issue74_fixture", array());
+if (!is_array($fixture) || empty($fixture["document_id"])) { exit(1); }
+if (!add_post_meta((int)$fixture["document_id"], "_wpai_workspace_state", "issue74-conflict", true)) { exit(2); }
+' --allow-root >/dev/null
+if "${wp[@]}" plugin activate wp-ai-bridge --allow-root >/tmp/wpai-issue74-conflict.log 2>&1; then
+    echo "ERROR: canonical/legacy Workspace metadata conflict did not stop activation." >&2
+    exit 1
+fi
+if "${wp[@]}" plugin is-active wp-ai-bridge --allow-root >/dev/null 2>&1; then
+    echo "ERROR: WP AI Bridge remained active after fail-closed migration conflict." >&2
+    exit 1
+fi
+"${wp[@]}" eval '
+$fixture = get_option("wpai_issue74_fixture", array());
+global $wpdb;
+if (1 !== (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->posts} WHERE ID = %d AND post_type = %s", (int)$fixture["document_id"], "wpnb_doc"))) { exit(1); }
+if (1 !== (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = %s", (int)$fixture["document_id"], "_wpnb_workspace_state"))) { exit(2); }
+if (0 !== (int)get_option("wp_ai_bridge_schema_version", 0)) { exit(3); }
+if (!delete_post_meta((int)$fixture["document_id"], "_wpai_workspace_state", "issue74-conflict")) { exit(4); }
+' --allow-root >/dev/null
+rm -f /tmp/wpai-issue74-conflict.log
+
+# With the synthetic conflict removed, activation migrates Workspace only.
+"${wp[@]}" plugin activate wp-ai-bridge --allow-root >/dev/null
 
 # Verify exact Workspace continuity and an intentionally fresh runtime/security state.
 "${wp[@]}" eval '
