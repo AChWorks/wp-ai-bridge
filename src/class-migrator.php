@@ -69,10 +69,14 @@ final class Migrator {
 
 		if ( (int) get_option( self::SCHEMA_OPTION, 0 ) < self::SCHEMA_VERSION ) {
 			self::assert_workspace_conflicts_absent();
+			$pre_migration_state = self::workspace_migration_fingerprint();
 
 			$started = false;
 			try {
-				$started = false !== $wpdb->query( 'START TRANSACTION' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- One-time migration transaction on WordPress-owned tables.
+				if ( false === $wpdb->query( 'START TRANSACTION' ) ) { // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- One-time migration transaction on WordPress-owned tables.
+					throw new RuntimeException( 'WP AI Bridge could not establish the required Workspace migration transaction.' );
+				}
+				$started = true;
 
 				self::migrate_workspace_rows();
 
@@ -85,15 +89,20 @@ final class Migrator {
 
 				self::verify_workspace_migration();
 
-				if ( $started ) {
-					$wpdb->query( 'COMMIT' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Completes the bounded migration transaction.
+				if ( false === $wpdb->query( 'COMMIT' ) ) { // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Completes the bounded migration transaction.
+					throw new RuntimeException( 'WP AI Bridge could not commit the Workspace migration transaction.' );
 				}
+				$started = false;
 				wp_cache_flush();
 			} catch ( \Throwable $exception ) {
 				if ( $started ) {
-					$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Restores pre-migration database state on failure.
+					if ( false === $wpdb->query( 'ROLLBACK' ) ) { // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Restores pre-migration database state on failure.
+						wp_cache_flush();
+						throw new RuntimeException( 'WP AI Bridge Workspace migration failed and rollback could not be confirmed: ' . $exception->getMessage() );
+					}
 				}
 				wp_cache_flush();
+				self::assert_workspace_state_matches( $pre_migration_state );
 				throw new RuntimeException( 'WP AI Bridge Workspace migration failed closed: ' . $exception->getMessage() );
 			}
 		}
@@ -102,6 +111,44 @@ final class Migrator {
 		// committed. This cleanup is repeat-safe and runs again on later activations.
 		self::retire_legacy_site_state();
 		self::verify_legacy_runtime_state_retired();
+	}
+
+	/**
+	 * Returns a stable fingerprint of every migration-sensitive Workspace identity.
+	 *
+	 * @return string
+	 */
+	private static function workspace_migration_fingerprint() {
+		global $wpdb;
+
+		$posts = $wpdb->get_results( "SELECT ID, post_type FROM {$wpdb->posts} WHERE post_type IN ('wpnb_doc','wpnb_task','wpai_doc','wpai_task') ORDER BY ID", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Bounded pre/post rollback verification for migration-owned identities.
+		$meta  = $wpdb->get_results( "SELECT meta_id, post_id, meta_key, meta_value FROM {$wpdb->postmeta} WHERE meta_key IN ('_wpnb_workspace_state','_wpai_workspace_state') ORDER BY meta_id", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Bounded pre/post rollback verification for migration-owned identities.
+		if ( ! is_array( $posts ) || ! is_array( $meta ) ) {
+			throw new RuntimeException( 'WP AI Bridge could not inspect Workspace state for migration rollback protection.' );
+		}
+
+		return hash(
+			'sha256',
+			wp_json_encode(
+				array(
+					'posts'          => $posts,
+					'meta'           => $meta,
+					'schema_version' => get_option( self::SCHEMA_OPTION, false ),
+				)
+			)
+		);
+	}
+
+	/**
+	 * Verifies that a failed transaction restored the exact pre-migration identities.
+	 *
+	 * @param string $expected Expected pre-migration fingerprint.
+	 * @return void
+	 */
+	private static function assert_workspace_state_matches( $expected ) {
+		if ( ! hash_equals( $expected, self::workspace_migration_fingerprint() ) ) {
+			throw new RuntimeException( 'WP AI Bridge could not verify restoration of the pre-migration Workspace state.' );
+		}
 	}
 
 	/** @return void */

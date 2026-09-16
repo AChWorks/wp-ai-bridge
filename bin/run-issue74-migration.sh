@@ -137,6 +137,59 @@ if (is_dir(WP_PLUGIN_DIR . "/wp-native-builder-bridge")) { exit(9); }
 "${wp[@]}" plugin install /var/www/html/wp-ai-bridge-candidate.zip --allow-root >/dev/null
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge-candidate.zip
 
+# Transaction protection is mandatory: failure to start, commit, or confirm rollback must fail closed.
+"${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/mu-plugins
+"${compose[@]}" cp "$root/tests/fixtures/issue74-transaction-failure.php" wordpress:/var/www/html/wp-content/mu-plugins/wpai-issue74-transaction-failure.php
+assert_legacy_workspace_intact() {
+    "${wp[@]}" eval '
+$fixture = get_option("wpai_issue74_fixture", array());
+if (!is_array($fixture) || empty($fixture["document_id"]) || empty($fixture["task_id"])) { exit(1); }
+global $wpdb;
+if (1 !== (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->posts} WHERE ID = %d AND post_type = %s", (int)$fixture["document_id"], "wpnb_doc"))) { exit(2); }
+if (1 !== (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->posts} WHERE ID = %d AND post_type = %s", (int)$fixture["task_id"], "wpnb_task"))) { exit(3); }
+if (1 !== (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = %s", (int)$fixture["document_id"], "_wpnb_workspace_state"))) { exit(4); }
+if (1 !== (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = %s", (int)$fixture["task_id"], "_wpnb_workspace_state"))) { exit(5); }
+if (0 !== (int)$wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type IN (\"wpai_doc\",\"wpai_task\")")) { exit(6); }
+if (0 !== (int)$wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = \"_wpai_workspace_state\"")) { exit(7); }
+if (0 !== (int)get_option("wp_ai_bridge_schema_version", 0)) { exit(8); }
+if (false === get_option("wp_native_builder_bridge_source_recovery", false)) { exit(9); }
+' --allow-root >/dev/null
+}
+
+for tx_failure in 'START TRANSACTION' 'COMMIT'; do
+    tx_log="/tmp/wpai-issue74-tx-${tx_failure// /-}.log"
+    wp_tx=("${compose[@]}" run --rm -e "WPAI_ISSUE74_TX_FAIL=${tx_failure}" cli)
+    if "${wp_tx[@]}" plugin activate wp-ai-bridge --allow-root >"$tx_log" 2>&1; then
+        echo "ERROR: injected ${tx_failure} failure did not stop activation." >&2
+        exit 1
+    fi
+    if "${wp[@]}" plugin is-active wp-ai-bridge --allow-root >/dev/null 2>&1; then
+        echo "ERROR: WP AI Bridge remained active after injected ${tx_failure} failure." >&2
+        exit 1
+    fi
+    assert_legacy_workspace_intact
+    rm -f "$tx_log"
+done
+
+rollback_log=/tmp/wpai-issue74-tx-rollback.log
+wp_tx=("${compose[@]}" run --rm -e 'WPAI_ISSUE74_TX_FAIL=COMMIT,ROLLBACK' cli)
+if "${wp_tx[@]}" plugin activate wp-ai-bridge --allow-root >"$rollback_log" 2>&1; then
+    echo 'ERROR: injected COMMIT+ROLLBACK failure did not stop activation.' >&2
+    exit 1
+fi
+if ! grep -Fq 'rollback could not be confirmed' "$rollback_log"; then
+    echo 'ERROR: rollback failure was not surfaced explicitly.' >&2
+    cat "$rollback_log" >&2
+    exit 1
+fi
+if "${wp[@]}" plugin is-active wp-ai-bridge --allow-root >/dev/null 2>&1; then
+    echo 'ERROR: WP AI Bridge remained active after injected rollback failure.' >&2
+    exit 1
+fi
+assert_legacy_workspace_intact
+rm -f "$rollback_log"
+echo 'PASS: Issue #74 transaction start/commit/rollback failures stop activation without Workspace identity drift.'
+
 # A canonical Workspace meta row beside the legacy row is ambiguous. Activation must fail
 # without changing the legacy Workspace or persisting the canonical schema marker.
 "${wp[@]}" eval '
