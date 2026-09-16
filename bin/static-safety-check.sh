@@ -32,6 +32,30 @@ if [[ "$(grep -cF 'wp_safe_remote_get(' src/Abilities/class-media-abilities.php 
     exit 1
 fi
 
+# Issue #67 permits one exact package_url schema seam only on extension-lifecycle.
+# The implementation must retain one bounded safe-HTTP stream into one WordPress temp allocation;
+# generic HTTP/filesystem primitives and package_url on any other Ability remain forbidden.
+external_package_provider='src/Abilities/class-extension-abilities.php'
+if [[ ! -f "$external_package_provider" ]]; then
+    echo "ERROR: bounded external-package provider is missing." >&2
+    exit 1
+fi
+package_url_schema_files="$(grep -R -lF "'package_url' => array(" src/Abilities --include='*.php' || true)"
+if [[ "$package_url_schema_files" != "$external_package_provider" || "$(grep -cF "'package_url' => array(" "$external_package_provider" || true)" != "1" ]]; then
+    printf '%s\n' "$package_url_schema_files"
+    echo "ERROR: package_url must remain one exact extension-lifecycle schema field." >&2
+    exit 1
+fi
+if [[ "$(grep -cF 'wp_safe_remote_get(' "$external_package_provider" || true)" != "1" || "$(grep -cF "wp_tempnam( 'wp-ai-bridge-package.zip' )" "$external_package_provider" || true)" != "1" ]]; then
+    echo "ERROR: external package installation must retain one safe streamed request and one WordPress temp allocation." >&2
+    exit 1
+fi
+external_package_forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir|curl_exec|curl_init|fsockopen|stream_socket_client|file_get_contents|wp_remote_get|wp_remote_post|wp_remote_request)[[:space:]]*\('
+if grep -nE "$external_package_forbidden" "$external_package_provider"; then
+    echo "ERROR: external package installation introduced an unbounded execution/filesystem/HTTP primitive." >&2
+    exit 1
+fi
+
 # Issue #46 source editing is a fixed-purpose installed-extension lifecycle, not a generic filesystem proxy.
 source_editor='src/Abilities/class-source-editing-abilities.php'
 if [[ ! -f "$source_editor" ]]; then
@@ -183,7 +207,7 @@ fi
 
 # These names are forbidden in AI-exposed Ability schemas. OAuth protocol responses
 # legitimately use access_token, but no OAuth bearer material may become an Ability input.
-if grep -R -nE "['\"](server_path|file_path|package_url|shell_command|sql_query|application_password|session_token|access_token|refresh_token|authorization_code|api_secret)['\"][[:space:]]*=>" src/Abilities --include='*.php'; then
+if grep -R -nE "['\"](server_path|file_path|shell_command|sql_query|application_password|session_token|access_token|refresh_token|authorization_code|api_secret)['\"][[:space:]]*=>" src/Abilities --include='*.php'; then
     echo "ERROR: forbidden generic path/command/secret schema field found in an exposed Ability." >&2
     exit 1
 fi
