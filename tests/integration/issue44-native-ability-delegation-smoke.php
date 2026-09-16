@@ -210,4 +210,4 @@ foreach ( $resources as $route => $resource ) {
 wp_set_current_user( $user_id );
 update_option( Settings::OPTION_NAME, $before_settings, false );
 delete_option( 'wp_ai_bridge_issue44_provider_executed' );
-echo "PASS: Issue #44 native Ability delegation across canonical and legacy Bridge MCP routes.\n";
+echo "PASS: Issue #44 native Ability delegation on the canonical Bridge MCP route.\n";

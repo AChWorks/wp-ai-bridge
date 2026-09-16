@@ -23,7 +23,7 @@ while ( true ) {
 	$result = $catalog->execute(
 		array(
 			'action'    => 'list',
-			'namespace' => 'wp-native-builder',
+			'namespace' => 'wp-ai-bridge',
 			'page'      => $page,
 			'per_page'  => 50,
 		)
