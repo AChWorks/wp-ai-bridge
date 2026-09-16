@@ -43,9 +43,39 @@ $reject(
 	'Multi-hop protected callable carrier'
 );
 
+$reject(
+	"<?php\n\$callbacks = array();\n\$callbacks['cb'] = 'wp_remote_post';\nforeach ( \$callbacks as \$callback ) {\n\t\$zip = new ZipArchive();\n\t\$zip->registerCancelCallback( \$callback );\n}\n",
+	'Foreach value binding from protected callable carrier'
+);
+
+$reject(
+	"<?php\n\$callbacks = array();\n\$callbacks['cb'] = 'wp_remote_get';\nforeach ( \$callbacks as \$callback_key => \$callback ) {\n\t\$zip = new ZipArchive();\n\t\$zip->registerCancelCallback( \$callback_key );\n}\n",
+	'Foreach key binding from protected callable carrier'
+);
+
+$reject(
+	"<?php\n\$callbacks = array();\n\$callbacks['cb'] = 'wp_safe_remote_post';\n[\$callback] = \$callbacks;\n\$zip = new ZipArchive();\n\$zip->registerCancelCallback( \$callback );\n",
+	'Short-array destructuring from protected callable carrier'
+);
+
+$reject(
+	"<?php\n\$callbacks = array();\n\$callbacks['cb'] = 'wp_safe_remote_get';\nlist( \$callback ) = \$callbacks;\n\$zip = new ZipArchive();\n\$zip->registerCancelCallback( \$callback );\n",
+	'List destructuring from protected callable carrier'
+);
+
+$reject(
+	"<?php\nclass CallbackHolder {\n\tprivate string \$callback = 'wp_remote_request';\n\tpublic function register( \$zip ) {\n\t\t\$zip->registerCancelCallback( \$this->callback );\n\t}\n}\n",
+	'Initialized instance-property protected callable carrier'
+);
+
 $accept(
 	"<?php\n// wp_remote_post stays inert in comments.\n\$label = 'wp_remote_request';\n\$items = array( new stdClass() );\narray_filter( \$items, 'is_object' );\nfunction_exists( 'wp_tempnam' );\n\$plain = new stdClass();\n\$plain->ordinaryMethod( 'value' );\nPlainType::ordinaryStatic( 'value' );\n",
 	'Inert strings/comments and ordinary non-callback calls'
+);
+
+$accept(
+	"<?php\n\$plain = array();\n\$plain['value'] = 'ordinary';\nforeach ( \$plain as \$key => \$value ) {\n\tordinary_call( \$key, \$value );\n}\n[\$first] = \$plain;\nlist( \$second ) = \$plain;\nclass PlainHolder {\n\tprivate string \$value = 'ordinary';\n\tpublic function read() { return \$this->value; }\n}\n",
+	'Ordinary local binding forms'
 );
 
 $provider_path = __DIR__ . '/../src/Abilities/class-extension-abilities.php';
