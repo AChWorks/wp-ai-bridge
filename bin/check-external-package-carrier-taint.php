@@ -1,10 +1,11 @@
 <?php
 /**
  * Fail closed when protected callable identities are transported through local
- * variables, array offsets, or object/static properties into a PHP call.
+ * variables, array offsets, object/static properties, or ordinary local
+ * bindings into a PHP call.
  *
  * This development-only check supplements bin/static-safety-check.sh. It is
- * intentionally conservative at the root-container level and never executes
+ * intentionally conservative at the local-carrier level and never executes
  * the analyzed source.
  */
 
@@ -133,18 +134,12 @@ final class WP_AI_Bridge_External_Package_Carrier_Taint {
 			}
 			return null;
 		};
-
-		$assignments = array();
-		$token_count = count( $tokens );
-		for ( $i = 0; $i < $token_count; ++$i ) {
-			$rhs_start = $assignment_rhs_start( $tokens, $i );
-			if ( null === $rhs_start ) {
-				continue;
-			}
+		$expression_until_semicolon = static function ( $all_tokens, $start ) use ( $token_text ) {
+			$count      = count( $all_tokens );
 			$depth      = array( '(' => 0, '[' => 0, '{' => 0 );
 			$expression = array();
-			for ( $j = $rhs_start; $j < $token_count; ++$j ) {
-				$part      = $tokens[ $j ];
+			for ( $i = $start; $i < $count; ++$i ) {
+				$part      = $all_tokens[ $i ];
 				$part_text = $token_text( $part );
 				if ( ';' === $part_text && 0 === $depth['('] && 0 === $depth['['] && 0 === $depth['{'] ) {
 					break;
@@ -164,30 +159,169 @@ final class WP_AI_Bridge_External_Package_Carrier_Taint {
 				}
 				$expression[] = $part;
 			}
-			$assignments[] = array( $tokens[ $i ][1], $expression );
-		}
-
-		$tainted_variables = array();
-		do {
-			$changed = false;
-			foreach ( $assignments as $assignment ) {
-				$variable   = $assignment[0];
-				$expression = $assignment[1];
-				if ( isset( $tainted_variables[ $variable ] ) ) {
+			return $expression;
+		};
+		$instance_property_declaration = static function ( $all_tokens, $variable_index ) use ( $token_text ) {
+			if ( ! is_array( $all_tokens[ $variable_index ] ) || T_VARIABLE !== $all_tokens[ $variable_index ][0] ) {
+				return null;
+			}
+			$is_static = false;
+			for ( $i = $variable_index - 1; $i >= 0; --$i ) {
+				$token = $all_tokens[ $i ];
+				$text  = $token_text( $token );
+				if ( '(' === $text || ';' === $text || '{' === $text || '}' === $text ) {
+					return null;
+				}
+				if ( is_array( $token ) && T_STATIC === $token[0] ) {
+					$is_static = true;
 					continue;
 				}
-				$tainted = $slice_has_protected_callable( $expression );
-				if ( ! $tainted ) {
-					foreach ( $expression as $part ) {
-						if ( is_array( $part ) && T_VARIABLE === $part[0] && isset( $tainted_variables[ $part[1] ] ) ) {
-							$tainted = true;
-							break;
-						}
+				if ( is_array( $token ) && in_array( $token[0], array( T_PUBLIC, T_PROTECTED, T_PRIVATE, T_VAR ), true ) ) {
+					return $is_static ? null : substr( $all_tokens[ $variable_index ][1], 1 );
+				}
+			}
+			return null;
+		};
+		$collect_variables = static function ( $slice ) {
+			$variables = array();
+			foreach ( $slice as $token ) {
+				if ( is_array( $token ) && T_VARIABLE === $token[0] ) {
+					$variables[ $token[1] ] = true;
+				}
+			}
+			return array_keys( $variables );
+		};
+
+		$bindings    = array();
+		$token_count = count( $tokens );
+		for ( $i = 0; $i < $token_count; ++$i ) {
+			$rhs_start = $assignment_rhs_start( $tokens, $i );
+			if ( null === $rhs_start ) {
+				continue;
+			}
+			$properties = array();
+			$property   = $instance_property_declaration( $tokens, $i );
+			if ( null !== $property ) {
+				$properties[] = $property;
+			}
+			$bindings[] = array(
+				'variables'  => array( $tokens[ $i ][1] ),
+				'properties' => $properties,
+				'expression' => $expression_until_semicolon( $tokens, $rhs_start ),
+			);
+		}
+
+		for ( $i = 0; $i < $token_count; ++$i ) {
+			$token = $tokens[ $i ];
+			if ( is_array( $token ) && T_FOREACH === $token[0] ) {
+				$open = $i + 1;
+				if ( $open >= $token_count || '(' !== $token_text( $tokens[ $open ] ) ) {
+					continue;
+				}
+				$after_close = $skip_balanced( $tokens, $open, '(', ')' );
+				if ( null === $after_close ) {
+					continue;
+				}
+				$close = $after_close - 1;
+				$as    = null;
+				for ( $j = $open + 1; $j < $close; ++$j ) {
+					if ( is_array( $tokens[ $j ] ) && T_AS === $tokens[ $j ][0] ) {
+						$as = $j;
+						break;
 					}
 				}
-				if ( $tainted ) {
+				if ( null === $as ) {
+					continue;
+				}
+				$variables = $collect_variables( array_slice( $tokens, $as + 1, $close - $as - 1 ) );
+				if ( empty( $variables ) ) {
+					continue;
+				}
+				$bindings[] = array(
+					'variables'  => $variables,
+					'properties' => array(),
+					'expression' => array_slice( $tokens, $open + 1, $as - $open - 1 ),
+				);
+				continue;
+			}
+
+			$is_list  = is_array( $token ) && T_LIST === $token[0];
+			$is_short = '[' === $token_text( $token );
+			if ( ! $is_list && ! $is_short ) {
+				continue;
+			}
+			if ( $is_short && $i > 0 ) {
+				$previous_text = $token_text( $tokens[ $i - 1 ] );
+				if ( ! in_array( $previous_text, array( ';', '{', '}', ':', '=' ), true ) ) {
+					continue;
+				}
+			}
+			$open = $is_list ? $i + 1 : $i;
+			if ( $open >= $token_count || ( $is_list && '(' !== $token_text( $tokens[ $open ] ) ) ) {
+				continue;
+			}
+			$after_close = $skip_balanced( $tokens, $open, $is_list ? '(' : '[', $is_list ? ')' : ']' );
+			if ( null === $after_close || $after_close >= $token_count || '=' !== $token_text( $tokens[ $after_close ] ) ) {
+				continue;
+			}
+			$variables = $collect_variables( array_slice( $tokens, $open + 1, $after_close - $open - 2 ) );
+			if ( empty( $variables ) ) {
+				continue;
+			}
+			$bindings[] = array(
+				'variables'  => $variables,
+				'properties' => array(),
+				'expression' => $expression_until_semicolon( $tokens, $after_close + 1 ),
+			);
+		}
+
+		$slice_has_tainted_carrier = static function ( $slice, $tainted_variables, $tainted_properties ) {
+			$count = count( $slice );
+			for ( $i = 0; $i < $count; ++$i ) {
+				$token = $slice[ $i ];
+				if ( is_array( $token ) && T_VARIABLE === $token[0] && isset( $tainted_variables[ $token[1] ] ) ) {
+					return true;
+				}
+				if ( ! is_array( $token ) || ( T_OBJECT_OPERATOR !== $token[0] && ( ! defined( 'T_NULLSAFE_OBJECT_OPERATOR' ) || T_NULLSAFE_OBJECT_OPERATOR !== $token[0] ) ) ) {
+					continue;
+				}
+				if ( $i + 1 >= $count || ! is_array( $slice[ $i + 1 ] ) || T_STRING !== $slice[ $i + 1 ][0] ) {
+					continue;
+				}
+				$member = $slice[ $i + 1 ][1];
+				if ( ! isset( $tainted_properties[ $member ] ) ) {
+					continue;
+				}
+				if ( $i + 2 < $count && '(' === ( is_array( $slice[ $i + 2 ] ) ? $slice[ $i + 2 ][1] : $slice[ $i + 2 ] ) ) {
+					continue;
+				}
+				return true;
+			}
+			return false;
+		};
+
+		$tainted_variables  = array();
+		$tainted_properties = array();
+		do {
+			$changed = false;
+			foreach ( $bindings as $binding ) {
+				$tainted = $slice_has_protected_callable( $binding['expression'] ) || $slice_has_tainted_carrier( $binding['expression'], $tainted_variables, $tainted_properties );
+				if ( ! $tainted ) {
+					continue;
+				}
+				foreach ( $binding['variables'] as $variable ) {
+					if ( isset( $tainted_variables[ $variable ] ) ) {
+						continue;
+					}
 					$tainted_variables[ $variable ] = true;
-					$changed = true;
+					$changed                         = true;
+				}
+				foreach ( $binding['properties'] as $property ) {
+					if ( isset( $tainted_properties[ $property ] ) ) {
+						continue;
+					}
+					$tainted_properties[ $property ] = true;
+					$changed                          = true;
 				}
 			}
 		} while ( $changed );
@@ -211,10 +345,8 @@ final class WP_AI_Bridge_External_Package_Carrier_Taint {
 					continue;
 				}
 				$arguments = array_slice( $tokens, $frame['start'] + 1, $i - $frame['start'] - 1 );
-				foreach ( $arguments as $argument ) {
-					if ( is_array( $argument ) && T_VARIABLE === $argument[0] && isset( $tainted_variables[ $argument[1] ] ) ) {
-						throw new WP_AI_Bridge_External_Package_Carrier_Taint_Exception( 'Protected callable identity can reach a call through a local variable/container/property carrier.' );
-					}
+				if ( $slice_has_tainted_carrier( $arguments, $tainted_variables, $tainted_properties ) ) {
+					throw new WP_AI_Bridge_External_Package_Carrier_Taint_Exception( 'Protected callable identity can reach a call through a local variable/container/property/binding carrier.' );
 				}
 			}
 		}
