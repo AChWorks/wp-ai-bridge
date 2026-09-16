@@ -250,12 +250,6 @@ final class WP_AI_Bridge_External_Package_Carrier_Taint {
 			if ( ! $is_list && ! $is_short ) {
 				continue;
 			}
-			if ( $is_short && $i > 0 ) {
-				$previous_text = $token_text( $tokens[ $i - 1 ] );
-				if ( ! in_array( $previous_text, array( ';', '{', '}', ':', '=' ), true ) ) {
-					continue;
-				}
-			}
 			$open = $is_list ? $i + 1 : $i;
 			if ( $open >= $token_count || ( $is_list && '(' !== $token_text( $tokens[ $open ] ) ) ) {
 				continue;
