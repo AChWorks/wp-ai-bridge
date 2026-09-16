@@ -196,7 +196,12 @@ final class Identity_Migration {
 			return true;
 		}
 		$legacy_oauth = (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-			$wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( 'wpnb_oauth_' ) . '%' )
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
+				$wpdb->esc_like( 'wpnb_oauth_' ) . '%',
+				$wpdb->esc_like( '_transient_wpnb_oauth_' ) . '%',
+				$wpdb->esc_like( '_transient_timeout_wpnb_oauth_' ) . '%'
+			)
 		);
 		return $legacy_oauth > 0 || false !== get_option( self::LEGACY_SOURCE_LOCK, false );
 	}
@@ -223,6 +228,20 @@ final class Identity_Migration {
 	/** @return true|WP_Error */
 	private static function preflight_workspace() {
 		global $wpdb;
+
+		$duplicate_legacy = (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM (SELECT pm.post_id FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} posts ON posts.ID = pm.post_id WHERE pm.meta_key = %s AND posts.post_type IN (%s, %s, %s, %s) GROUP BY pm.post_id HAVING COUNT(*) > 1) duplicate_rows",
+				'_wpnb_workspace_state',
+				'wpnb_doc',
+				'wpnb_task',
+				'wpai_doc',
+				'wpai_task'
+			)
+		);
+		if ( $duplicate_legacy > 0 ) {
+			return new WP_Error( 'identity_migration_workspace_ambiguous', 'A legacy Workspace record contains multiple state rows; migration refused before mutation.' );
+		}
 
 		$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$wpdb->prepare(

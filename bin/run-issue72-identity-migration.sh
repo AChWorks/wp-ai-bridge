@@ -82,6 +82,7 @@ $legacy_token = $oauth_store->issue(
     ),
     WP_Native_Builder_Bridge\Auth\OAuth_Server::ACCESS_TTL
 );
+if (!$oauth_store->claim_client_assertion("issue72-legacy-replay", 300)) { exit(1); }
 update_option("wp_native_builder_bridge_oauth_clients", array("https://gateway.example.invalid/oauth/client.json"), false);
 update_option("wp_native_builder_bridge_oauth_clients_revision", 7, false);
 update_option("wpai_issue72_fixture", array(
@@ -155,6 +156,15 @@ if ("" === (string)get_post_meta((int)$fixture["document_id"], "_wpai_workspace_
 if (metadata_exists("post", (int)$fixture["document_id"], "_wpnb_workspace_state")) { exit(1); }
 $oauth_store = new WP_Native_Builder_Bridge\Auth\OAuth_Store();
 if (false !== $oauth_store->read(WP_Native_Builder_Bridge\Auth\OAuth_Store::TYPE_ACCESS, (string)$fixture["legacy_token"], false)) { exit(1); }
+global $wpdb;
+$legacy_oauth_rows = (int)$wpdb->get_var($wpdb->prepare(
+    "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
+    $wpdb->esc_like("wpnb_oauth_") . "%",
+    $wpdb->esc_like("_transient_wpnb_oauth_") . "%",
+    $wpdb->esc_like("_transient_timeout_wpnb_oauth_") . "%"
+));
+if (0 !== $legacy_oauth_rows) { exit(1); }
+if (wp_next_scheduled("wpnb_oauth_cleanup_client_assertion")) { exit(1); }
 $routes = rest_get_server()->get_routes();
 foreach (array("/wp-ai-bridge/v1/mcp", "/wp-ai-bridge/v1/oauth/token", "/wp-ai-bridge/v1/oauth/revoke") as $route) {
     if (!isset($routes[$route])) { exit(1); }
