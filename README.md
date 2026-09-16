@@ -16,7 +16,7 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 - Media Library read, upload, safe URL import, update, and delete operations.
 - Taxonomy and classic navigation management.
 - Bounded WordPress site settings.
-- WordPress.org plugin/theme lifecycle operations.
+- WordPress.org plugin/theme lifecycle operations plus separately authorized bounded external HTTPS package installation.
 - Separately enabled installed plugin/theme source read, preview, apply, and conflict-safe recovery using native WordPress authority.
 - User and role administration behind an explicit destructive-access group.
 - Persistent Workspace documents and tasks for durable project context.
@@ -93,6 +93,7 @@ Bridge permissions are additive to normal WordPress capabilities. Enabling a Bri
 | **Advanced Metadata** | Permit generic bounded metadata read/update for exact authorized post, term, user, and comment targets; role/capability/session/application-password/credential-like state, options, and Workspace internals remain excluded. |
 | **Authentication & Credentials** | Permit Core-native WordPress Application Password list/get/create/rename/revoke operations. Disabled by default including upgrades; generated plaintext credentials are returned only once on successful create and are never persisted by the Bridge. |
 | **Code & Extensions** | Permit supported managed-snippet and plugin/theme lifecycle operations. |
+| **External Packages** | Permit plugin/theme installation from an explicit safe public HTTPS package URL. Disabled by default including upgrades; Code & Extensions plus native WordPress install authority are also required. |
 | **Source Editing** | Separately permit installed plugin/theme source read/preview/apply/recovery. Code & Extensions and native WordPress source-edit authority are still required. Disabled by default, including upgrades. |
 | **Native Abilities** | Permit registered Core/provider Abilities to execute through the WP AI Bridge MCP routes when their own WordPress/provider permission checks also allow it. This is broad registered-operation trust, not a sandbox, and is disabled by default including upgrades. |
 | **Comments** | Permit bounded standard-comment discovery, replies, and moderation through the fixed WordPress Core comments REST contract. Disabled by default including upgrades; permanent comment deletion additionally requires Users & Destructive. |
@@ -106,7 +107,9 @@ Only **Site Read** is enabled by default.
 
 `wp-native-builder/media-import-url` accepts a public HTTP(S) URL and a filename, streams it within the current WordPress upload limit, and creates a normal attachment. It requires explicit **Remote Media** plus **Builder Write** access; upgrades do not enable it automatically. See [URL media import](./docs/ABILITIES.md#url-media-import).
 
-Plugin/theme installation is deliberately narrower: it accepts WordPress.org slugs through WordPress administration APIs. Source Editing is a separate administrator-level trust boundary and is not enabled by Code & Extensions alone. The Bridge does **not** expose arbitrary package URLs, shell commands, generic SQL, unrestricted filesystem access, arbitrary WordPress options, or generic credential retrieval. WordPress Application Passwords are available only through the separate default-off purpose-specific lifecycle described above.
+`wp-native-builder/extension-lifecycle` keeps the existing WordPress.org slug installation path under **Code & Extensions**. For a non-WordPress.org source, an administrator must additionally enable **External Packages** and the connected WordPress user must have the native plugin/theme install capability. The caller supplies one exact public HTTPS package URL; the Bridge does not accept local package paths, HTTP/FTP sources, URL credentials, caller-supplied request headers/cookies, or generic transport configuration. The package is streamed into a Bridge-owned temporary file with TLS/redirect/SSRF checks and a maximum of the smaller of the current WordPress upload limit and **100 MiB**, then handed to the native WordPress Core Upgrader. The temporary package is retired and verified before success is returned. Installation does not activate the plugin/theme automatically, and package code has normal WordPress runtime authority once later activated. See [External package installation](./docs/EXTERNAL-PACKAGES.md).
+
+Source Editing remains a separate administrator-level trust boundary and is not enabled by Code & Extensions or External Packages alone. The Bridge does **not** expose a generic HTTP client, arbitrary package request credentials, shell commands, generic SQL, unrestricted filesystem access, arbitrary WordPress options, or generic credential retrieval. WordPress Application Passwords are available only through the separate default-off purpose-specific lifecycle described above.
 
 ## Compatibility identifiers
 
@@ -135,13 +138,14 @@ WP AI Bridge is intentionally not a general remote-administration shell. It comb
 - bounded mutation logging;
 - provider-native permission checks where integrations are used.
 
-Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Authentication & Credentials, Source Editing, Native Abilities, or destructive access on an important site.
+Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Authentication & Credentials, External Packages, Source Editing, Native Abilities, or destructive access on an important site.
 
 ## Documentation
 
 - [Installation and connection](./docs/INSTALLATION.md)
 - [User guide](./docs/USER-GUIDE.md)
 - [Ability reference](./docs/ABILITIES.md)
+- [External package installation](./docs/EXTERNAL-PACKAGES.md)
 - [Application Password boundary](./docs/ABILITIES.md#application-password-boundary)
 - [Integrations](./docs/INTEGRATIONS.md)
 - [Security](./docs/SECURITY.md)
