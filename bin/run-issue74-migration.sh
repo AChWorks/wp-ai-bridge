@@ -163,6 +163,16 @@ for tx_failure in 'START TRANSACTION' 'COMMIT'; do
         echo "ERROR: injected ${tx_failure} failure did not stop activation." >&2
         exit 1
     fi
+    if [[ "$tx_failure" == 'START TRANSACTION' ]]; then
+        expected_tx_error='could not establish the required Workspace migration transaction'
+    else
+        expected_tx_error='could not commit the Workspace migration transaction'
+    fi
+    if ! grep -Fq "$expected_tx_error" "$tx_log"; then
+        echo "ERROR: injected ${tx_failure} failure did not reach the expected fail-closed path." >&2
+        cat "$tx_log" >&2
+        exit 1
+    fi
     if "${wp[@]}" plugin is-active wp-ai-bridge --allow-root >/dev/null 2>&1; then
         echo "ERROR: WP AI Bridge remained active after injected ${tx_failure} failure." >&2
         exit 1
