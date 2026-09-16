@@ -61,8 +61,17 @@ try {
 		wpnb_issue5_assert( false === ( $input['additionalProperties'] ?? null ), $name . ' does not reject unknown top-level input properties.' );
 
 		$forbidden_input = array( 'password', 'user_pass', 'application_password', 'application_passwords', 'session_token', 'session_tokens', 'access_token', 'refresh_token', 'api_key', 'api_secret', 'server_path', 'file_path', 'package_url', 'shell_command', 'sql_query' );
+		$input_exceptions = array(
+			'wp-native-builder/extension-lifecycle' => array( 'package_url' ),
+		);
 		foreach ( wpnb_issue5_schema_keys( $input ) as $key ) {
-			wpnb_issue5_assert( ! in_array( strtolower( $key ), $forbidden_input, true ), $name . ' exposes forbidden input field: ' . $key );
+			$normalized_key = strtolower( $key );
+			if ( ! in_array( $normalized_key, $forbidden_input, true ) ) {
+				continue;
+			}
+			$allowed = isset( $input_exceptions[ $name ] )
+				&& in_array( $normalized_key, $input_exceptions[ $name ], true );
+			wpnb_issue5_assert( $allowed, $name . ' exposes forbidden input field: ' . $key );
 		}
 
 		$forbidden_output = array( 'password', 'user_pass', 'application_password', 'application_passwords', 'session_token', 'session_tokens', 'access_token', 'refresh_token', 'api_key', 'api_secret', 'cookie', 'cookies' );
@@ -99,10 +108,17 @@ try {
 	foreach ( array_diff( $create_output_keys, array( 'password' ) ) as $create_output_key ) {
 		wpnb_issue5_assert( ! in_array( $create_output_key, $forbidden_output, true ), 'Issue #61 create Ability broadened the credential-output exception beyond password.' );
 	}
+	$extension_lifecycle = wp_get_ability( 'wp-native-builder/extension-lifecycle' );
+	wpnb_issue5_assert( $extension_lifecycle instanceof WP_Ability, 'Issue #67 extension lifecycle Ability is unavailable for bounded package_url exception verification.' );
+	$extension_input_keys = array_map( 'strtolower', wpnb_issue5_schema_keys( $extension_lifecycle->get_input_schema() ) );
+	wpnb_issue5_assert( in_array( 'package_url', $extension_input_keys, true ), 'Issue #67 package_url input is missing from the exact bounded extension lifecycle Ability.' );
+	foreach ( array_diff( $extension_input_keys, array( 'package_url' ) ) as $extension_input_key ) {
+		wpnb_issue5_assert( ! in_array( $extension_input_key, $forbidden_input, true ), 'Issue #67 broadened the package input exception beyond package_url.' );
+	}
 
 	$defaults = $settings->defaults();
 	wpnb_issue5_assert( 1 === $defaults[ Settings::GROUP_SITE_READ ], 'Site Read is not the sole enabled default group.' );
-	foreach ( array( Settings::GROUP_BUILDER_WRITE, Settings::GROUP_REMOTE_MEDIA, Settings::GROUP_LIVE_CONTENT, Settings::GROUP_SITE_CONFIG, Settings::GROUP_ADVANCED_METADATA, Settings::GROUP_AUTHENTICATION, Settings::GROUP_CODE_EXTENSIONS, Settings::GROUP_SOURCE_EDITING, Settings::GROUP_NATIVE_ABILITIES, Settings::GROUP_COMMENTS, Settings::GROUP_USERS_DESTRUCTIVE ) as $group ) {
+	foreach ( array( Settings::GROUP_BUILDER_WRITE, Settings::GROUP_REMOTE_MEDIA, Settings::GROUP_LIVE_CONTENT, Settings::GROUP_SITE_CONFIG, Settings::GROUP_ADVANCED_METADATA, Settings::GROUP_AUTHENTICATION, Settings::GROUP_CODE_EXTENSIONS, Settings::GROUP_EXTERNAL_PACKAGES, Settings::GROUP_SOURCE_EDITING, Settings::GROUP_NATIVE_ABILITIES, Settings::GROUP_COMMENTS, Settings::GROUP_USERS_DESTRUCTIVE ) as $group ) {
 		wpnb_issue5_assert( 0 === $defaults[ $group ], 'Sensitive group is enabled by default: ' . $group );
 	}
 	update_option( Settings::OPTION_NAME, $defaults, false );
@@ -118,7 +134,7 @@ try {
 	wpnb_issue5_assert( is_wp_error( wpnb_issue5_execute( 'wp-native-builder/content-upsert', array( 'action'=>'update' ) ) ), 'Incomplete content update was not rejected.' );
 	wpnb_issue5_assert( is_wp_error( wpnb_issue5_execute( 'wp-native-builder/term-upsert', array( 'action'=>'create' ) ) ), 'Incomplete taxonomy create was not rejected.' );
 	wpnb_issue5_assert( is_wp_error( wpnb_issue5_execute( 'wp-native-builder/media-upload', array( 'filename'=>'missing-bytes.png' ) ) ), 'Media upload without bytes was not rejected.' );
-	wpnb_issue5_assert( is_wp_error( wpnb_issue5_execute( 'wp-native-builder/extension-lifecycle', array( 'kind'=>'plugin', 'action'=>'install' ) ) ), 'Extension install without a WordPress.org slug was not rejected.' );
+	wpnb_issue5_assert( is_wp_error( wpnb_issue5_execute( 'wp-native-builder/extension-lifecycle', array( 'kind'=>'plugin', 'action'=>'install' ) ) ), 'Extension install without a slug or external package URL was not rejected.' );
 
 	$write = $defaults;
 	$write[ Settings::GROUP_BUILDER_WRITE ] = 1;
