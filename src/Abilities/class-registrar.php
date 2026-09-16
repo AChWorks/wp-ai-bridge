@@ -18,7 +18,7 @@ use WP_Native_Builder_Bridge\Workspace\Store;
  * Registers bridge ability categories and providers.
  */
 final class Registrar {
-	const CATEGORY = 'wp-native-builder';
+	const CATEGORY = 'wp-ai-bridge';
 
 	/** @var Environment */
 	private $environment;
@@ -123,8 +123,8 @@ final class Registrar {
 		wp_register_ability_category(
 			self::CATEGORY,
 			array(
-				'label'       => __( 'WP AI Bridge', 'wp-native-builder-bridge' ),
-				'description' => __( 'Typed WordPress administration abilities exposed by WP AI Bridge.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'WP AI Bridge', 'wp-ai-bridge' ),
+				'description' => __( 'Typed WordPress administration abilities exposed by WP AI Bridge.', 'wp-ai-bridge' ),
 			)
 		);
 	}
@@ -142,10 +142,10 @@ final class Registrar {
 		$registered = array();
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/bridge-info',
+			'wp-ai-bridge/bridge-info',
 			array(
-				'label'               => __( 'Bridge Info', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Returns the bridge dependency state and enabled access groups without exposing secrets.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Bridge Info', 'wp-ai-bridge' ),
+				'description'         => __( 'Returns the bridge dependency state and enabled access groups without exposing secrets.', 'wp-ai-bridge' ),
 				'category'            => self::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',

@@ -5,7 +5,7 @@ compose_file="$root/tests/integration/compose.yml"
 wordpress_tag="${1:-6.9-php8.4-apache}"
 safe_tag="$(printf '%s' "$wordpress_tag" | tr -c 'A-Za-z0-9' '-')"
 export WORDPRESS_TAG="$wordpress_tag"
-export COMPOSE_PROJECT_NAME="wpnb-issue61-${safe_tag}-$$"
+export COMPOSE_PROJECT_NAME="wpai-issue61-${safe_tag}-$$"
 compose=(docker compose -f "$compose_file")
 cleanup() { "${compose[@]}" down -v --remove-orphans >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -23,18 +23,18 @@ wp=("${compose[@]}" run --rm cli)
 "${wp[@]}" plugin install "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.6.1/mcp-adapter.zip}" --activate --allow-root
 "${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge.zip
-"${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration
-"${compose[@]}" cp "$root/tests/integration/issue61-application-passwords-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-application-passwords-smoke.php
-"${compose[@]}" cp "$root/tests/integration/issue61-f008-throwable-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-f008-throwable-smoke.php
-"${compose[@]}" cp "$root/tests/integration/issue61-f003-create-provenance-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-f003-create-provenance-smoke.php
-"${compose[@]}" cp "$root/tests/integration/issue61-f004-f005-persistence-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-f004-f005-persistence-smoke.php
-"${compose[@]}" cp "$root/tests/integration/issue61-f006-same-request-dispatch-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-f006-same-request-dispatch-smoke.php
+"${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration
+"${compose[@]}" cp "$root/tests/integration/issue61-application-passwords-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue61-application-passwords-smoke.php
+"${compose[@]}" cp "$root/tests/integration/issue61-f008-throwable-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue61-f008-throwable-smoke.php
+"${compose[@]}" cp "$root/tests/integration/issue61-f003-create-provenance-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue61-f003-create-provenance-smoke.php
+"${compose[@]}" cp "$root/tests/integration/issue61-f004-f005-persistence-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue61-f004-f005-persistence-smoke.php
+"${compose[@]}" cp "$root/tests/integration/issue61-f006-same-request-dispatch-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue61-f006-same-request-dispatch-smoke.php
 actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
 actual_php="$("${wp[@]}" eval 'echo PHP_VERSION;' --allow-root | tail -n 1)"
 echo "Issue #61 baseline: WordPress ${actual_wp}; PHP ${actual_php}; image ${wordpress_tag}"
-"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-application-passwords-smoke.php --user=1 --allow-root
-"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-f008-throwable-smoke.php --user=1 --allow-root
-"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-f003-create-provenance-smoke.php --user=1 --allow-root
-"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-f004-f005-persistence-smoke.php --user=1 --allow-root
-"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue61-f006-same-request-dispatch-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue61-application-passwords-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue61-f008-throwable-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue61-f003-create-provenance-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue61-f004-f005-persistence-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue61-f006-same-request-dispatch-smoke.php --user=1 --allow-root
 echo "PASS: Issue #61 Application Password integration for ${wordpress_tag}."

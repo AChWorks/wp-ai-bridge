@@ -11,7 +11,7 @@ namespace WP_Native_Builder_Bridge\Auth;
  * Stores opaque OAuth artifacts without persisting bearer secrets in plaintext.
  */
 final class OAuth_Store {
-	const INSTANCE_OPTION = 'wp_native_builder_bridge_oauth_instance';
+	const INSTANCE_OPTION = 'wp_ai_bridge_oauth_instance';
 
 	const TYPE_CONSENT = 'consent';
 	const TYPE_CODE    = 'code';
@@ -178,11 +178,11 @@ final class OAuth_Store {
 		}
 		$expires_at = time() + $ttl;
 		$material   = '' === $client_id ? $jti : $client_id . "\0" . $jti;
-		$key        = 'wpnb_oauth_assertion_' . substr( hash( 'sha256', $material ), 0, 40 );
+		$key        = 'wpai_oauth_assertion_' . substr( hash( 'sha256', $material ), 0, 40 );
 		if ( ! add_option( $key, $expires_at, '', false ) ) {
 			return false;
 		}
-		wp_schedule_single_event( $expires_at + MINUTE_IN_SECONDS, 'wpnb_oauth_cleanup_client_assertion', array( $key, $expires_at ) );
+		wp_schedule_single_event( $expires_at + MINUTE_IN_SECONDS, 'wpai_oauth_cleanup_client_assertion', array( $key, $expires_at ) );
 		return true;
 	}
 
@@ -194,7 +194,7 @@ final class OAuth_Store {
 	 * @return void
 	 */
 	public function cleanup_client_assertion( $key, $expected_expiry ) {
-		if ( ! is_string( $key ) || 1 !== preg_match( '/^wpnb_oauth_assertion_[a-f0-9]{40}$/', $key ) ) {
+		if ( ! is_string( $key ) || 1 !== preg_match( '/^wpai_oauth_assertion_[a-f0-9]{40}$/', $key ) ) {
 			return;
 		}
 		$stored = get_option( $key, false );
@@ -257,17 +257,17 @@ final class OAuth_Store {
 	/** @param string $type Artifact type. @return string Prefix. */
 	private function token_prefix( $type ) {
 		$prefixes = array(
-			self::TYPE_CONSENT => 'wpnb_q',
-			self::TYPE_CODE    => 'wpnb_c',
-			self::TYPE_ACCESS  => 'wpnb_a',
-			self::TYPE_REFRESH => 'wpnb_r',
+			self::TYPE_CONSENT => 'wpai_q',
+			self::TYPE_CODE    => 'wpai_c',
+			self::TYPE_ACCESS  => 'wpai_a',
+			self::TYPE_REFRESH => 'wpai_r',
 		);
 		return isset( $prefixes[ $type ] ) ? $prefixes[ $type ] : '';
 	}
 
 	/** @param string $type Artifact type. @param string $selector Selector. @return string Transient key. */
 	private function transient_key( $type, $selector ) {
-		return 'wpnb_oauth_' . sanitize_key( $type ) . '_' . $selector;
+		return 'wpai_oauth_' . sanitize_key( $type ) . '_' . $selector;
 	}
 
 	/** @param string $secret Bearer secret. @return string Secret hash. */

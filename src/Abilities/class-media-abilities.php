@@ -51,10 +51,10 @@ final class Media_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/media-read',
+			'wp-ai-bridge/media-read',
 			array(
-				'label'               => __( 'Read Media', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists or retrieves Media Library attachments without exposing server filesystem paths.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Media', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists or retrieves Media Library attachments without exposing server filesystem paths.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->read_input_schema(),
 				'output_schema'       => $this->read_output_schema(),
@@ -65,10 +65,10 @@ final class Media_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/media-upload',
+			'wp-ai-bridge/media-upload',
 			array(
-				'label'               => __( 'Upload Media', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Uploads base64-encoded media through WordPress upload and MIME handling. Client-supplied server paths are not accepted.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Upload Media', 'wp-ai-bridge' ),
+				'description'         => __( 'Uploads base64-encoded media through WordPress upload and MIME handling. Client-supplied server paths are not accepted.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->upload_input_schema(),
 				'output_schema'       => $this->item_schema(),
@@ -79,10 +79,10 @@ final class Media_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/media-import-url',
+			'wp-ai-bridge/media-import-url',
 			array(
-				'label'               => __( 'Import Media from URL', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Downloads safe HTTP(S) media into the Media Library when Remote Media and Builder Write are enabled.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Import Media from URL', 'wp-ai-bridge' ),
+				'description'         => __( 'Downloads safe HTTP(S) media into the Media Library when Remote Media and Builder Write are enabled.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->import_url_input_schema(),
 				'output_schema'       => $this->item_schema(),
@@ -93,10 +93,10 @@ final class Media_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/media-update',
+			'wp-ai-bridge/media-update',
 			array(
-				'label'               => __( 'Update Media', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Updates bounded Media Library metadata and attachment parent using WordPress APIs.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Update Media', 'wp-ai-bridge' ),
+				'description'         => __( 'Updates bounded Media Library metadata and attachment parent using WordPress APIs.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->update_input_schema(),
 				'output_schema'       => $this->item_schema(),
@@ -107,10 +107,10 @@ final class Media_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/media-delete',
+			'wp-ai-bridge/media-delete',
 			array(
-				'label'               => __( 'Delete Media', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Permanently deletes a Media Library attachment when destructive access is enabled.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Delete Media', 'wp-ai-bridge' ),
+				'description'         => __( 'Permanently deletes a Media Library attachment when destructive access is enabled.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -205,7 +205,7 @@ final class Media_Abilities {
 		if ( 'get' === $action ) {
 			$attachment = ! empty( $input['id'] ) ? get_post( (int) $input['id'] ) : null;
 			if ( ! $attachment || 'attachment' !== $attachment->post_type || ! current_user_can( 'read_post', $attachment->ID ) ) {
-				return new WP_Error( 'media_not_found', __( 'The requested Media Library item is not available.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'media_not_found', __( 'The requested Media Library item is not available.', 'wp-ai-bridge' ) );
 			}
 			return array(
 				'items'       => array( $this->format_attachment( $attachment ) ),
@@ -260,29 +260,29 @@ final class Media_Abilities {
 	 * @return array<string,mixed>|WP_Error Uploaded attachment or error.
 	 */
 	public function upload( $input ) {
-		$ability  = 'wp-native-builder/media-upload';
+		$ability  = 'wp-ai-bridge/media-upload';
 		$filename = sanitize_file_name( (string) $input['filename'] );
 		if ( '' === $filename || false === strpos( $filename, '.' ) ) {
-			return $this->logged_error( $ability, 'invalid_media_filename', __( 'A valid filename with an extension is required.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'invalid_media_filename', __( 'A valid filename with an extension is required.', 'wp-ai-bridge' ) );
 		}
 
 		$max_bytes   = min( (int) wp_max_upload_size(), self::ABSOLUTE_MAX_UPLOAD_BYTES );
 		$encoded     = (string) $input['content_base64'];
 		$encoded_max = (int) ceil( $max_bytes * 4 / 3 ) + 8;
 		if ( '' === $encoded || strlen( $encoded ) > $encoded_max ) {
-			return $this->logged_error( $ability, 'media_too_large', __( 'The media payload exceeds the permitted upload size.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_too_large', __( 'The media payload exceeds the permitted upload size.', 'wp-ai-bridge' ) );
 		}
 
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- MCP transports binary media as explicit base64 data.
 		$bytes = base64_decode( $encoded, true );
 		if ( false === $bytes || '' === $bytes || strlen( $bytes ) > $max_bytes ) {
-			return $this->logged_error( $ability, 'invalid_media_payload', __( 'content_base64 must be valid base64 within the permitted upload size.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'invalid_media_payload', __( 'content_base64 must be valid base64 within the permitted upload size.', 'wp-ai-bridge' ) );
 		}
 
 		$this->load_media_dependencies();
 		$tmp_name = wp_tempnam( $filename );
 		if ( ! $tmp_name ) {
-			return $this->logged_error( $ability, 'media_temp_failed', __( 'WordPress could not allocate a temporary upload file.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_temp_failed', __( 'WordPress could not allocate a temporary upload file.', 'wp-ai-bridge' ) );
 		}
 
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- wp_tempnam() created this bounded upload staging file.
@@ -290,7 +290,7 @@ final class Media_Abilities {
 		unset( $bytes );
 		if ( false === $written ) {
 			wp_delete_file( $tmp_name );
-			return $this->logged_error( $ability, 'media_temp_write_failed', __( 'WordPress could not write the temporary upload file.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_temp_write_failed', __( 'WordPress could not write the temporary upload file.', 'wp-ai-bridge' ) );
 		}
 
 		$post_data = array();
@@ -334,11 +334,11 @@ final class Media_Abilities {
 	 * @return array<string,mixed>|WP_Error Updated attachment or error.
 	 */
 	public function update( $input ) {
-		$ability    = 'wp-native-builder/media-update';
+		$ability    = 'wp-ai-bridge/media-update';
 		$id         = (int) $input['id'];
 		$attachment = get_post( $id );
 		if ( ! $attachment || 'attachment' !== $attachment->post_type ) {
-			return $this->logged_error( $ability, 'media_not_found', __( 'The requested Media Library item does not exist.', 'wp-native-builder-bridge' ), $id );
+			return $this->logged_error( $ability, 'media_not_found', __( 'The requested Media Library item does not exist.', 'wp-ai-bridge' ), $id );
 		}
 
 		$data = array( 'ID' => $id );
@@ -374,16 +374,16 @@ final class Media_Abilities {
 	 * @return array<string,mixed>|WP_Error Delete result.
 	 */
 	public function delete( $input ) {
-		$ability    = 'wp-native-builder/media-delete';
+		$ability    = 'wp-ai-bridge/media-delete';
 		$id         = (int) $input['id'];
 		$attachment = get_post( $id );
 		if ( ! $attachment || 'attachment' !== $attachment->post_type ) {
-			return $this->logged_error( $ability, 'media_not_found', __( 'The requested Media Library item does not exist.', 'wp-native-builder-bridge' ), $id );
+			return $this->logged_error( $ability, 'media_not_found', __( 'The requested Media Library item does not exist.', 'wp-ai-bridge' ), $id );
 		}
 
 		$result = wp_delete_attachment( $id, true );
 		if ( ! $result ) {
-			return $this->logged_error( $ability, 'media_delete_failed', __( 'WordPress could not delete the Media Library item.', 'wp-native-builder-bridge' ), $id );
+			return $this->logged_error( $ability, 'media_delete_failed', __( 'WordPress could not delete the Media Library item.', 'wp-ai-bridge' ), $id );
 		}
 		$this->log->record( $ability, 'attachment', $id, true, '' );
 		return array(
@@ -670,7 +670,7 @@ final class Media_Abilities {
 		}
 		if ( ! is_wp_error( $result ) ) {
 			try {
-				$this->log->record( 'wp-native-builder/media-import-url', 'attachment', $state['attachment_id'], true, '' );
+				$this->log->record( 'wp-ai-bridge/media-import-url', 'attachment', $state['attachment_id'], true, '' );
 			} catch ( \Throwable $error ) {
 				return $this->import_recovery_error( $state, $cleaned );
 			}
@@ -721,13 +721,13 @@ final class Media_Abilities {
 		try {
 			if ( $id > 0 ) {
 				/* translators: %d: ID of an already-created Media Library attachment. */
-				$message = sprintf( __( 'The media import stopped after creating attachment %d. Inspect that Media Library item before retrying.', 'wp-native-builder-bridge' ), $id );
+				$message = sprintf( __( 'The media import stopped after creating attachment %d. Inspect that Media Library item before retrying.', 'wp-ai-bridge' ), $id );
 			} elseif ( ! $state['sideload_started'] && $cleaned ) {
-				$message = __( 'The media import stopped before attachment creation. Known temporary files were cleaned up.', 'wp-native-builder-bridge' );
+				$message = __( 'The media import stopped before attachment creation. Known temporary files were cleaned up.', 'wp-ai-bridge' );
 			} else {
-				$message = __( 'The media import could not finish safely. Inspect the Media Library and upload storage before retrying.', 'wp-native-builder-bridge' );
+				$message = __( 'The media import could not finish safely. Inspect the Media Library and upload storage before retrying.', 'wp-ai-bridge' );
 			}
-			$this->log->record( 'wp-native-builder/media-import-url', 'attachment', $id, false, 'media_import_recovery_required' );
+			$this->log->record( 'wp-ai-bridge/media-import-url', 'attachment', $id, false, 'media_import_recovery_required' );
 		} catch ( \Throwable $error ) {
 			// Recovery reporting must not create another diagnostic disclosure.
 		}
@@ -750,37 +750,37 @@ final class Media_Abilities {
 	 * @return array<string,mixed>|WP_Error Attachment summary or redacted failure.
 	 */
 	private function import_url_checked( $input, &$state ) {
-		$ability = 'wp-native-builder/media-import-url';
+		$ability = 'wp-ai-bridge/media-import-url';
 		if ( ! $this->can_import_url( $input ) ) {
-			return $this->logged_error( $ability, 'media_import_permission_denied', __( 'Remote Media, Builder Write, and the required WordPress upload authority must be enabled.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_import_permission_denied', __( 'Remote Media, Builder Write, and the required WordPress upload authority must be enabled.', 'wp-ai-bridge' ) );
 		}
 		if ( ! isset( $input['url'], $input['filename'] ) || ! is_string( $input['url'] ) || ! is_string( $input['filename'] )
 			|| strlen( $input['url'] ) > 8192 || strlen( $input['filename'] ) > 255
 			|| preg_match( '/[\x00-\x20\x7f]/', $input['url'] )
 			|| preg_match( '/[\\\\\/\x00-\x1f\x7f]/', $input['filename'] ) ) {
-			return $this->logged_error( $ability, 'invalid_media_import_input', __( 'Provide a valid HTTP(S) URL and a filename without directory components.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'invalid_media_import_input', __( 'Provide a valid HTTP(S) URL and a filename without directory components.', 'wp-ai-bridge' ) );
 		}
 		$filename = sanitize_file_name( $input['filename'] );
 		// A media import is never an executable-package installation path.
 		if ( '' === $filename || false === strpos( $filename, '.' )
 			|| preg_match( '/(^|\.)(php[0-9]*|phtml|pht|phar|cgi)(\.|$)/i', $filename ) ) {
-			return $this->logged_error( $ability, 'invalid_media_filename', __( 'A valid filename with an extension is required.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'invalid_media_filename', __( 'A valid filename with an extension is required.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $this->is_safe_import_destination( $input['url'] ) ) {
-			return $this->logged_error( $ability, 'unsafe_media_import_url', __( 'WordPress did not accept the media URL as a safe HTTP(S) destination.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'unsafe_media_import_url', __( 'WordPress did not accept the media URL as a safe HTTP(S) destination.', 'wp-ai-bridge' ) );
 		}
 		$max_bytes = (int) wp_max_upload_size();
 		if ( $max_bytes < 1 || $max_bytes >= PHP_INT_MAX ) {
-			return $this->logged_error( $ability, 'media_import_limit_unavailable', __( 'WordPress must provide a finite positive upload limit before remote media can be imported.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_import_limit_unavailable', __( 'WordPress must provide a finite positive upload limit before remote media can be imported.', 'wp-ai-bridge' ) );
 		}
 		$this->load_media_dependencies();
 		$temp_file          = wp_tempnam( $filename );
 		$state['temp_file'] = $temp_file;
 		if ( ! $temp_file ) {
-			return $this->logged_error( $ability, 'media_temp_failed', __( 'WordPress could not allocate a temporary upload file.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_temp_failed', __( 'WordPress could not allocate a temporary upload file.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $this->can_import_url( $input ) ) {
-			return $this->logged_error( $ability, 'media_import_permission_denied', __( 'Remote Media, Builder Write, and the required WordPress upload authority must be enabled.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_import_permission_denied', __( 'Remote Media, Builder Write, and the required WordPress upload authority must be enabled.', 'wp-ai-bridge' ) );
 		}
 		$redirect_failure = '';
 		$redirect_guard   = function ( $location, $headers, $data, $options ) use ( $temp_file, $input, &$redirect_failure ) {
@@ -794,7 +794,7 @@ final class Media_Abilities {
 				$redirect_failure = 'destination';
 			}
 			if ( '' !== $redirect_failure ) {
-				throw new \WpOrg\Requests\Exception( 'The media redirect was refused.', 'wpnb_media_redirect_refused' );
+				throw new \WpOrg\Requests\Exception( 'The media redirect was refused.', 'wpai_media_redirect_refused' );
 			}
 		};
 		add_action( 'requests-requests.before_redirect', $redirect_guard, PHP_INT_MAX, 4 );
@@ -817,36 +817,36 @@ final class Media_Abilities {
 			remove_action( 'requests-requests.before_redirect', $redirect_guard, PHP_INT_MAX );
 		}
 		if ( 'permission' === $redirect_failure ) {
-			return $this->logged_error( $ability, 'media_import_permission_denied', __( 'Remote Media, Builder Write, and the required WordPress upload authority must be enabled.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_import_permission_denied', __( 'Remote Media, Builder Write, and the required WordPress upload authority must be enabled.', 'wp-ai-bridge' ) );
 		}
 		if ( 'destination' === $redirect_failure ) {
-			return $this->logged_error( $ability, 'unsafe_media_import_url', __( 'WordPress did not accept the media URL as a safe HTTP(S) destination.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'unsafe_media_import_url', __( 'WordPress did not accept the media URL as a safe HTTP(S) destination.', 'wp-ai-bridge' ) );
 		}
 		// HTTP/provider errors can contain signed URLs, paths, or response bodies.
 		if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
-			return $this->logged_error( $ability, 'media_import_http_failed', __( 'WordPress could not download a complete media response.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_import_http_failed', __( 'WordPress could not download a complete media response.', 'wp-ai-bridge' ) );
 		}
 		clearstatcache( true, $temp_file );
 		$bytes  = is_file( $temp_file ) ? filesize( $temp_file ) : false;
 		$length = wp_remote_retrieve_header( $response, 'content-length' );
 		if ( false === $bytes || $bytes < 1 || $bytes > $max_bytes ) {
-			return $this->logged_error( $ability, 'media_import_size_invalid', __( 'The downloaded media is empty or exceeds the WordPress upload limit.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_import_size_invalid', __( 'The downloaded media is empty or exceeds the WordPress upload limit.', 'wp-ai-bridge' ) );
 		}
 		if ( '' !== $length && ( ! is_scalar( $length ) || ! ctype_digit( (string) $length ) || ltrim( (string) $length, '0' ) !== (string) $bytes ) ) {
-			return $this->logged_error( $ability, 'media_import_incomplete', __( 'The downloaded media length does not match the complete response.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_import_incomplete', __( 'The downloaded media length does not match the complete response.', 'wp-ai-bridge' ) );
 		}
 		$type = wp_check_filetype_and_ext( $temp_file, $filename, get_allowed_mime_types() );
 		if ( empty( $type['ext'] ) || empty( $type['type'] ) ) {
-			return $this->logged_error( $ability, 'media_import_type_denied', __( 'WordPress did not accept the downloaded file type.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_import_type_denied', __( 'WordPress did not accept the downloaded file type.', 'wp-ai-bridge' ) );
 		}
 		if ( ! empty( $type['proper_filename'] ) ) {
 			$filename = sanitize_file_name( $type['proper_filename'] );
 			if ( preg_match( '/(^|\.)(php[0-9]*|phtml|pht|phar|cgi)(\.|$)/i', $filename ) ) {
-				return $this->logged_error( $ability, 'media_import_type_denied', __( 'WordPress did not accept the downloaded file type.', 'wp-native-builder-bridge' ) );
+				return $this->logged_error( $ability, 'media_import_type_denied', __( 'WordPress did not accept the downloaded file type.', 'wp-ai-bridge' ) );
 			}
 		}
 		if ( ! $this->can_import_url( $input ) ) {
-			return $this->logged_error( $ability, 'media_import_permission_denied', __( 'Remote Media, Builder Write, and the required WordPress upload authority must be enabled.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_import_permission_denied', __( 'Remote Media, Builder Write, and the required WordPress upload authority must be enabled.', 'wp-ai-bridge' ) );
 		}
 		return $this->attach_remote_media( $temp_file, $filename, (int) $bytes, $input, $state );
 	}
@@ -905,7 +905,7 @@ final class Media_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private function attach_remote_media( $temp_file, $filename, $bytes, $input, &$state ) {
-		$ability                   = 'wp-native-builder/media-import-url';
+		$ability                   = 'wp-ai-bridge/media-import-url';
 		$file_array                = array(
 			'name'     => $filename,
 			'tmp_name' => $temp_file,
@@ -918,13 +918,13 @@ final class Media_Abilities {
 			array( 'test_form' => false )
 		);
 		if ( ! empty( $upload['error'] ) || empty( $upload['file'] ) ) {
-			return $this->logged_error( $ability, 'media_import_sideload_failed', __( 'WordPress could not store the downloaded media.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_import_sideload_failed', __( 'WordPress could not store the downloaded media.', 'wp-ai-bridge' ) );
 		}
 		// Destination paths come only from WordPress, never from Ability input.
 		$file                      = $upload['file'];
 		$state['destination_file'] = $file;
 		if ( ! $this->can_import_url( $input ) ) {
-			return $this->logged_error( $ability, 'media_import_permission_denied', __( 'Remote Media, Builder Write, and the required WordPress upload authority must be enabled.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_import_permission_denied', __( 'Remote Media, Builder Write, and the required WordPress upload authority must be enabled.', 'wp-ai-bridge' ) );
 		}
 		$post_data               = array(
 			'guid'           => $upload['url'],
@@ -939,7 +939,7 @@ final class Media_Abilities {
 		$id                      = wp_insert_attachment( wp_slash( $post_data ), $file, $post_id, true );
 		if ( is_wp_error( $id ) || ! $id ) {
 			$state['insert_started'] = false;
-			return $this->logged_error( $ability, 'media_import_attachment_failed', __( 'WordPress could not create the imported attachment.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'media_import_attachment_failed', __( 'WordPress could not create the imported attachment.', 'wp-ai-bridge' ) );
 		}
 		$id                     = (int) $id;
 		$state['attachment_id'] = $id;

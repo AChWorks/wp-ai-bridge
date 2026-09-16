@@ -32,10 +32,10 @@ final class Integration_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/integration-status',
+			'wp-ai-bridge/integration-status',
 			array(
-				'label'               => __( 'Integration Status', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Reports supported optional provider integration modes and observed public provider abilities without requiring those providers.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Integration Status', 'wp-ai-bridge' ),
+				'description'         => __( 'Reports supported optional provider integration modes and observed public provider abilities without requiring those providers.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',

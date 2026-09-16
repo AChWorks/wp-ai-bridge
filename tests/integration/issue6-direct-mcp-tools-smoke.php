@@ -11,17 +11,17 @@
 use WP_Native_Builder_Bridge\Auth\OAuth_Server;
 use WP_Native_Builder_Bridge\Auth\OAuth_Store;
 
-function wpnb_issue6_direct_tools_assert( $condition, $message ) {
+function wpai_issue6_direct_tools_assert( $condition, $message ) {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message );
 	}
 }
 
-function wpnb_issue6_direct_tools_data( $response ) {
+function wpai_issue6_direct_tools_data( $response ) {
 	return json_decode( wp_json_encode( $response->get_data() ), true );
 }
 
-function wpnb_issue6_direct_tools_structured_content( array $response_data ) {
+function wpai_issue6_direct_tools_structured_content( array $response_data ) {
 	if ( isset( $response_data['result']['structuredContent'] ) && is_array( $response_data['result']['structuredContent'] ) ) {
 		return $response_data['result']['structuredContent'];
 	}
@@ -35,7 +35,7 @@ function wpnb_issue6_direct_tools_structured_content( array $response_data ) {
 	return is_array( $decoded ) ? $decoded : array();
 }
 
-function wpnb_issue6_direct_tools_request( $method, $access_token, array $payload = array(), $session_id = '' ) {
+function wpai_issue6_direct_tools_request( $method, $access_token, array $payload = array(), $session_id = '' ) {
 	$request = new WP_REST_Request( $method, OAuth_Server::MCP_REQUEST_ROUTE );
 	$request->set_header( 'Authorization', 'Bearer ' . $access_token );
 	$request->set_header( 'Accept', 'application/json, text/event-stream' );
@@ -50,12 +50,12 @@ function wpnb_issue6_direct_tools_request( $method, $access_token, array $payloa
 }
 
 $user_id = get_current_user_id();
-wpnb_issue6_direct_tools_assert( $user_id > 0, 'Run this smoke as an authenticated WordPress user.' );
+wpai_issue6_direct_tools_assert( $user_id > 0, 'Run this smoke as an authenticated WordPress user.' );
 
-$bridge_ability = wp_get_ability( 'wp-native-builder/bridge-info' );
-wpnb_issue6_direct_tools_assert( $bridge_ability instanceof WP_Ability, 'bridge-info is missing from the live WordPress Ability registry before the direct MCP request.' );
+$bridge_ability = wp_get_ability( 'wp-ai-bridge/bridge-info' );
+wpai_issue6_direct_tools_assert( $bridge_ability instanceof WP_Ability, 'bridge-info is missing from the live WordPress Ability registry before the direct MCP request.' );
 $bridge_meta = $bridge_ability->get_meta();
-wpnb_issue6_direct_tools_assert( true === ( $bridge_meta['mcp']['public'] ?? false ), 'bridge-info is registered but is not mcp.public before the direct MCP request.' );
+wpai_issue6_direct_tools_assert( true === ( $bridge_meta['mcp']['public'] ?? false ), 'bridge-info is registered but is not mcp.public before the direct MCP request.' );
 
 $store = new OAuth_Store();
 $oauth = new OAuth_Server( $store );
@@ -75,7 +75,7 @@ $before_sessions = class_exists( '\WP\MCP\Transport\Infrastructure\SessionManage
 	: array();
 
 wp_set_current_user( 0 );
-$initialize = wpnb_issue6_direct_tools_request(
+$initialize = wpai_issue6_direct_tools_request(
 	'POST',
 	$token,
 	array(
@@ -92,9 +92,9 @@ $initialize = wpnb_issue6_direct_tools_request(
 		),
 	)
 );
-wpnb_issue6_direct_tools_assert( 200 === $initialize->get_status(), 'Direct OAuth MCP initialize failed.' );
-$initialize_data = wpnb_issue6_direct_tools_data( $initialize );
-wpnb_issue6_direct_tools_assert( '2025-11-25' === ( $initialize_data['result']['protocolVersion'] ?? '' ), 'Direct MCP protocol negotiation failed.' );
+wpai_issue6_direct_tools_assert( 200 === $initialize->get_status(), 'Direct OAuth MCP initialize failed.' );
+$initialize_data = wpai_issue6_direct_tools_data( $initialize );
+wpai_issue6_direct_tools_assert( '2025-11-25' === ( $initialize_data['result']['protocolVersion'] ?? '' ), 'Direct MCP protocol negotiation failed.' );
 
 $headers    = $initialize->get_headers();
 $session_id = isset( $headers['Mcp-Session-Id'] ) ? (string) $headers['Mcp-Session-Id'] : '';
@@ -103,9 +103,9 @@ if ( '' === $session_id && class_exists( '\WP\MCP\Transport\Infrastructure\Sessi
 	$new_sessions   = array_diff_key( $after_sessions, $before_sessions );
 	$session_id     = (string) array_key_first( $new_sessions );
 }
-wpnb_issue6_direct_tools_assert( '' !== $session_id, 'Direct OAuth MCP initialize did not create a session.' );
+wpai_issue6_direct_tools_assert( '' !== $session_id, 'Direct OAuth MCP initialize did not create a session.' );
 
-$notification = wpnb_issue6_direct_tools_request(
+$notification = wpai_issue6_direct_tools_request(
 	'POST',
 	$token,
 	array(
@@ -114,9 +114,9 @@ $notification = wpnb_issue6_direct_tools_request(
 	),
 	$session_id
 );
-wpnb_issue6_direct_tools_assert( 202 === $notification->get_status(), 'Direct MCP initialized notification failed.' );
+wpai_issue6_direct_tools_assert( 202 === $notification->get_status(), 'Direct MCP initialized notification failed.' );
 
-$tools = wpnb_issue6_direct_tools_request(
+$tools = wpai_issue6_direct_tools_request(
 	'POST',
 	$token,
 	array(
@@ -127,11 +127,11 @@ $tools = wpnb_issue6_direct_tools_request(
 	),
 	$session_id
 );
-wpnb_issue6_direct_tools_assert( 200 === $tools->get_status(), 'Direct OAuth MCP tools/list failed.' );
-$tools_data = wpnb_issue6_direct_tools_data( $tools );
+wpai_issue6_direct_tools_assert( 200 === $tools->get_status(), 'Direct OAuth MCP tools/list failed.' );
+$tools_data = wpai_issue6_direct_tools_data( $tools );
 $tool_names = array_column( $tools_data['result']['tools'] ?? array(), 'name' );
 sort( $tool_names );
-wpnb_issue6_direct_tools_assert(
+wpai_issue6_direct_tools_assert(
 	array(
 		'mcp-adapter-discover-abilities',
 		'mcp-adapter-execute-ability',
@@ -140,7 +140,7 @@ wpnb_issue6_direct_tools_assert(
 	'Direct ChatGPT MCP server did not expose exactly the three layered Adapter tools.'
 );
 
-$discover = wpnb_issue6_direct_tools_request(
+$discover = wpai_issue6_direct_tools_request(
 	'POST',
 	$token,
 	array(
@@ -154,22 +154,22 @@ $discover = wpnb_issue6_direct_tools_request(
 	),
 	$session_id
 );
-wpnb_issue6_direct_tools_assert( 200 === $discover->get_status(), 'Direct OAuth MCP ability discovery failed.' );
-$discover_data       = wpnb_issue6_direct_tools_data( $discover );
-$discover_structured = wpnb_issue6_direct_tools_structured_content( $discover_data );
+wpai_issue6_direct_tools_assert( 200 === $discover->get_status(), 'Direct OAuth MCP ability discovery failed.' );
+$discover_data       = wpai_issue6_direct_tools_data( $discover );
+$discover_structured = wpai_issue6_direct_tools_structured_content( $discover_data );
 $ability_names       = array_column( $discover_structured['abilities'] ?? array(), 'name' );
-wpnb_issue6_direct_tools_assert(
-	in_array( 'wp-native-builder/bridge-info', $ability_names, true ),
+wpai_issue6_direct_tools_assert(
+	in_array( 'wp-ai-bridge/bridge-info', $ability_names, true ),
 	'Direct OAuth MCP discovery did not expose bridge-info from the live mcp.public registry.'
 );
-foreach ( array( 'wp-native-builder/workspace-resume', 'wp-native-builder/workspace-document', 'wp-native-builder/workspace-task' ) as $workspace_ability ) {
-	wpnb_issue6_direct_tools_assert(
+foreach ( array( 'wp-ai-bridge/workspace-resume', 'wp-ai-bridge/workspace-document', 'wp-ai-bridge/workspace-task' ) as $workspace_ability ) {
+	wpai_issue6_direct_tools_assert(
 		in_array( $workspace_ability, $ability_names, true ),
 		'Direct OAuth MCP discovery did not expose Workspace ability: ' . $workspace_ability
 	);
 }
 
-$execute = wpnb_issue6_direct_tools_request(
+$execute = wpai_issue6_direct_tools_request(
 	'POST',
 	$token,
 	array(
@@ -179,19 +179,19 @@ $execute = wpnb_issue6_direct_tools_request(
 		'params'  => array(
 			'name'      => 'mcp-adapter-execute-ability',
 			'arguments' => array(
-				'ability_name' => 'wp-native-builder/bridge-info',
+				'ability_name' => 'wp-ai-bridge/bridge-info',
 				'parameters'   => (object) array(),
 			),
 		),
 	),
 	$session_id
 );
-wpnb_issue6_direct_tools_assert( 200 === $execute->get_status(), 'Direct OAuth MCP bridge-info execution failed.' );
-$execute_data       = wpnb_issue6_direct_tools_data( $execute );
-$execute_structured = wpnb_issue6_direct_tools_structured_content( $execute_data );
-wpnb_issue6_direct_tools_assert( true === ( $execute_structured['success'] ?? false ), 'Direct OAuth MCP bridge-info execution did not succeed.' );
+wpai_issue6_direct_tools_assert( 200 === $execute->get_status(), 'Direct OAuth MCP bridge-info execution failed.' );
+$execute_data       = wpai_issue6_direct_tools_data( $execute );
+$execute_structured = wpai_issue6_direct_tools_structured_content( $execute_data );
+wpai_issue6_direct_tools_assert( true === ( $execute_structured['success'] ?? false ), 'Direct OAuth MCP bridge-info execution did not succeed.' );
 
-$workspace_resume = wpnb_issue6_direct_tools_request(
+$workspace_resume = wpai_issue6_direct_tools_request(
 	'POST',
 	$token,
 	array(
@@ -201,22 +201,22 @@ $workspace_resume = wpnb_issue6_direct_tools_request(
 		'params'  => array(
 			'name'      => 'mcp-adapter-execute-ability',
 			'arguments' => array(
-				'ability_name' => 'wp-native-builder/workspace-resume',
+				'ability_name' => 'wp-ai-bridge/workspace-resume',
 				'parameters'   => (object) array(),
 			),
 		),
 	),
 	$session_id
 );
-wpnb_issue6_direct_tools_assert( 200 === $workspace_resume->get_status(), 'Direct OAuth MCP Workspace resume request failed.' );
-$workspace_data       = wpnb_issue6_direct_tools_data( $workspace_resume );
-$workspace_structured = wpnb_issue6_direct_tools_structured_content( $workspace_data );
-wpnb_issue6_direct_tools_assert( true === ( $workspace_structured['success'] ?? false ), 'Direct OAuth MCP Workspace resume execution did not succeed.' );
-wpnb_issue6_direct_tools_assert( isset( $workspace_structured['data']['counts'] ), 'Direct OAuth MCP Workspace resume did not return compact counts.' );
+wpai_issue6_direct_tools_assert( 200 === $workspace_resume->get_status(), 'Direct OAuth MCP Workspace resume request failed.' );
+$workspace_data       = wpai_issue6_direct_tools_data( $workspace_resume );
+$workspace_structured = wpai_issue6_direct_tools_structured_content( $workspace_data );
+wpai_issue6_direct_tools_assert( true === ( $workspace_structured['success'] ?? false ), 'Direct OAuth MCP Workspace resume execution did not succeed.' );
+wpai_issue6_direct_tools_assert( isset( $workspace_structured['data']['counts'] ), 'Direct OAuth MCP Workspace resume did not return compact counts.' );
 
-$delete = wpnb_issue6_direct_tools_request( 'DELETE', $token, array(), $session_id );
-wpnb_issue6_direct_tools_assert( in_array( $delete->get_status(), array( 200, 204 ), true ), 'Direct OAuth MCP session termination failed.' );
-wpnb_issue6_direct_tools_assert( $store->revoke( $token ), 'Direct OAuth MCP test access token could not be revoked.' );
+$delete = wpai_issue6_direct_tools_request( 'DELETE', $token, array(), $session_id );
+wpai_issue6_direct_tools_assert( in_array( $delete->get_status(), array( 200, 204 ), true ), 'Direct OAuth MCP session termination failed.' );
+wpai_issue6_direct_tools_assert( $store->revoke( $token ), 'Direct OAuth MCP test access token could not be revoked.' );
 
 wp_set_current_user( $user_id );
 echo "PASS: Issue #6 direct OAuth MCP tools/discovery/execute smoke.\n";

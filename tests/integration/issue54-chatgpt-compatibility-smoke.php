@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @param string $message   Failure message.
  * @return void
  */
-function wpnb_issue54_chatgpt_assert( $condition, $message ) {
+function wpai_issue54_chatgpt_assert( $condition, $message ) {
 	if ( ! $condition ) {
 		fwrite( STDERR, 'FAIL: ' . $message . "\n" );
 		exit( 1 );
@@ -39,8 +39,8 @@ $http_mock = static function ( $preempt, $args, $url ) use ( &$http_calls ) {
 		return $preempt;
 	}
 	++$http_calls;
-	wpnb_issue54_chatgpt_assert( 0 === (int) ( $args['redirection'] ?? -1 ), 'ChatGPT metadata fetch unexpectedly allows redirects.' );
-	wpnb_issue54_chatgpt_assert( (int) ( $args['limit_response_size'] ?? 0 ) <= Approved_OAuth_Clients::MAX_METADATA + 1, 'ChatGPT metadata fetch lost its response-size bound.' );
+	wpai_issue54_chatgpt_assert( 0 === (int) ( $args['redirection'] ?? -1 ), 'ChatGPT metadata fetch unexpectedly allows redirects.' );
+	wpai_issue54_chatgpt_assert( (int) ( $args['limit_response_size'] ?? 0 ) <= Approved_OAuth_Clients::MAX_METADATA + 1, 'ChatGPT metadata fetch lost its response-size bound.' );
 
 	return array(
 		'headers'  => array( 'content-type' => 'application/json' ),
@@ -69,17 +69,17 @@ $http_mock = static function ( $preempt, $args, $url ) use ( &$http_calls ) {
 add_filter( 'pre_http_request', $http_mock, 10, 3 );
 
 $authorization_profile = $registry->resolve( OAuth_Server::CHATGPT_CLIENT_ID );
-wpnb_issue54_chatgpt_assert( is_array( $authorization_profile ), 'Built-in ChatGPT metadata with an additional callback was rejected.' );
-wpnb_issue54_chatgpt_assert( 1 === $http_calls, 'Authorization-time ChatGPT metadata was not verified exactly once.' );
-wpnb_issue54_chatgpt_assert(
+wpai_issue54_chatgpt_assert( is_array( $authorization_profile ), 'Built-in ChatGPT metadata with an additional callback was rejected.' );
+wpai_issue54_chatgpt_assert( 1 === $http_calls, 'Authorization-time ChatGPT metadata was not verified exactly once.' );
+wpai_issue54_chatgpt_assert(
 	array( OAuth_Server::CHATGPT_REDIRECT_URI ) === ( $authorization_profile['redirect_uris'] ?? array() ),
 	'Additional ChatGPT metadata callbacks became trusted Bridge redirect URIs.'
 );
-wpnb_issue54_chatgpt_assert(
+wpai_issue54_chatgpt_assert(
 	$registry->redirect_allowed( $authorization_profile, OAuth_Server::CHATGPT_REDIRECT_URI ),
 	'The historical ChatGPT callback was not retained.'
 );
-wpnb_issue54_chatgpt_assert(
+wpai_issue54_chatgpt_assert(
 	! $registry->redirect_allowed( $authorization_profile, 'https://chatgpt.com/another-supported-callback' ),
 	'An unrelated ChatGPT metadata callback was widened into the Bridge callback contract.'
 );
@@ -89,13 +89,13 @@ wpnb_issue54_chatgpt_assert(
 delete_transient( Approved_OAuth_Clients::CHATGPT_METADATA_CACHE );
 $before_client_auth = $http_calls;
 $client_auth_profile = $registry->resolve_for_client_auth( OAuth_Server::CHATGPT_CLIENT_ID );
-wpnb_issue54_chatgpt_assert( is_array( $client_auth_profile ), 'Built-in ChatGPT client-auth profile became unavailable without metadata cache.' );
-wpnb_issue54_chatgpt_assert( $before_client_auth === $http_calls, 'ChatGPT token/revocation client authentication unexpectedly fetched client metadata.' );
-wpnb_issue54_chatgpt_assert(
+wpai_issue54_chatgpt_assert( is_array( $client_auth_profile ), 'Built-in ChatGPT client-auth profile became unavailable without metadata cache.' );
+wpai_issue54_chatgpt_assert( $before_client_auth === $http_calls, 'ChatGPT token/revocation client authentication unexpectedly fetched client metadata.' );
+wpai_issue54_chatgpt_assert(
 	OAuth_Server::CHATGPT_REDIRECT_URI === ( $client_auth_profile['redirect_uris'][0] ?? '' ),
 	'Built-in ChatGPT client-auth profile changed its historical callback identity.'
 );
-wpnb_issue54_chatgpt_assert(
+wpai_issue54_chatgpt_assert(
 	Client_Assertion_Validator::CHATGPT_JWKS_URI === ( $client_auth_profile['jwks_uri'] ?? '' ),
 	'Built-in ChatGPT client-auth profile changed its historical JWKS identity.'
 );

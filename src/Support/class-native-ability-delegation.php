@@ -19,7 +19,6 @@ final class Native_Ability_Delegation {
 	/** @var array<int,string> */
 	private $bridge_routes = array(
 		'/wp-ai-bridge/v1/mcp',
-		'/wp-native-builder/v1/mcp',
 	);
 
 	/** @var Settings */
@@ -97,7 +96,7 @@ final class Native_Ability_Delegation {
 			if ( ! $this->settings->is_enabled( Settings::GROUP_NATIVE_ABILITIES ) ) {
 				return new WP_Error(
 					'wp_ai_bridge_native_abilities_disabled',
-					__( 'Native Abilities access is disabled in WP AI Bridge settings.', 'wp-native-builder-bridge' )
+					__( 'Native Abilities access is disabled in WP AI Bridge settings.', 'wp-ai-bridge' )
 				);
 			}
 
@@ -108,7 +107,7 @@ final class Native_Ability_Delegation {
 	}
 
 	/**
-	 * Wraps only the exact canonical and legacy Bridge MCP callbacks. The request
+	 * Wraps only the exact canonical Bridge MCP callback. The request
 	 * context therefore encloses Adapter tool permission and execution without
 	 * changing transport authentication or unrelated REST requests.
 	 *

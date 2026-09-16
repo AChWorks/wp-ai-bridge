@@ -16,7 +16,7 @@
 
 The settings screen reports whether the WordPress Abilities API, MCP Adapter, and public HTTPS endpoint are available.
 
-The public artifact name changed, but the archive deliberately retains the existing `wp-native-builder-bridge/` plugin directory and entrypoint. Uploading `wp-ai-bridge.zip` therefore upgrades an existing installation in place instead of creating a second plugin installation.
+The archive installs under the canonical `wp-ai-bridge/` directory with entrypoint `wp-ai-bridge.php`.
 
 ## Connect a ChatGPT Workspace App
 
@@ -38,7 +38,7 @@ With Developer Mode enabled in the ChatGPT workspace:
 
 The OAuth connection acts as the WordPress user who approved it. Bridge access groups and WordPress capabilities are still checked for every operation.
 
-Existing connections created with the former `/wp-json/wp-native-builder/v1/mcp` resource remain available through a bounded legacy endpoint. Tokens remain bound to the exact resource for which they were issued: a legacy token is not accepted by the canonical WP AI Bridge endpoint, and a canonical token is not accepted by the legacy endpoint.
+Only the canonical `/wp-json/wp-ai-bridge/v1/mcp` resource is registered. A v0.3.0 → v0.4.0 identity migration intentionally retires old OAuth artifacts, so reconnect ChatGPT once after that cutover.
 
 ## OAuth discovery endpoints
 
@@ -48,13 +48,7 @@ New connections use canonical protected-resource metadata at:
 /.well-known/oauth-protected-resource
 ```
 
-The retained legacy MCP resource has its own migration metadata document:
-
-```text
-/.well-known/oauth-protected-resource/wp-native-builder/v1/mcp
-```
-
-Both resource documents use the same authorization server metadata:
+The canonical resource document uses authorization server metadata at:
 
 ```text
 /.well-known/oauth-authorization-server
@@ -78,11 +72,19 @@ A conservative starting point is:
 - Comments: leave disabled unless bounded comment discovery, replies, or moderation is needed. It is independent from Site Read/Builder Write and still relies on WordPress Core comment permissions; permanent deletion additionally requires Users & Destructive.
 - Users & Destructive: leave disabled unless the requested operation genuinely requires it.
 
-## Update from the former product name
+## Migrate from v0.3.0 / the former plugin directory
 
-Install the new `wp-ai-bridge.zip` through WordPress's replace-existing-plugin flow. The migration intentionally preserves the installed plugin directory/entrypoint, text domain, PHP namespace/constants, settings/OAuth/Workspace storage keys, and `wp-native-builder/*` Ability identifiers. Existing data and clients therefore do not need a second storage migration merely because the public product name changed.
+v0.4.0 is a one-time identity cutover, not an in-place folder replacement. The old plugin must remain installed but **deactivated** until the new plugin has imported and verified its data.
 
-The canonical admin slugs now start with `wp-ai-bridge`; old `wp-native-builder...` admin bookmarks are retained as hidden compatibility aliases.
+1. Back up the site/database using your normal WordPress hosting procedure.
+2. If v0.3.0 reports a pending Source Editing recovery, resolve it before changing plugin identity.
+3. Deactivate **WP AI Bridge v0.3.0** / the installation located at `wp-native-builder-bridge/`. **Do not delete it yet**; its uninstall routine removes legacy settings/OAuth state that the importer needs.
+4. Upload `wp-ai-bridge.zip`. WordPress installs it separately at `wp-ai-bridge/wp-ai-bridge.php`.
+5. Activate the new WP AI Bridge. Activation runs the bounded one-time importer before the normal Bridge runtime starts.
+6. Verify the expected access-group settings and Workspace documents/tasks. Existing Workspace record IDs and state are retained. Approved OAuth-client configuration and the OAuth installation identity are migrated; old OAuth sessions are retired, so reconnect ChatGPT to the canonical endpoint.
+7. After the new plugin is active and the migration is verified, delete the **deactivated** old plugin. At that point its old uninstall cleanup cannot remove the newly migrated `wp_ai_bridge` / `wpai` state.
+
+The migration renames Bridge-owned rows inside WordPress's normal `options`, `posts`, and `postmeta` storage; the plugin does not create custom database tables. Former admin slugs and MCP/OAuth routes are not registered after cutover.
 
 ## Deactivate and uninstall
 

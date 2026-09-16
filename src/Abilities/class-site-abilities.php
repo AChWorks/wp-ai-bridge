@@ -47,10 +47,10 @@ final class Site_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/site-context',
+			'wp-ai-bridge/site-context',
 			array(
-				'label'               => __( 'Site Context', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Returns site-building context not covered by the standard WordPress Core information abilities, plus reusable Ability discovery hints.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Site Context', 'wp-ai-bridge' ),
+				'description'         => __( 'Returns site-building context not covered by the standard WordPress Core information abilities, plus reusable Ability discovery hints.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',

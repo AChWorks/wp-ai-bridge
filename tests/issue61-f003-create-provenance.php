@@ -55,13 +55,13 @@ if ( ! function_exists( 'remove_filter' ) ) {
 
 if ( ! function_exists( 'remove_action' ) ) {
 	function remove_action( $hook, $callback, $priority = 10 ) {
-		if ( empty( $GLOBALS['wpnb_test']['actions'][ $hook ] ) ) {
+		if ( empty( $GLOBALS['wpai_test']['actions'][ $hook ] ) ) {
 			return false;
 		}
-		foreach ( $GLOBALS['wpnb_test']['actions'][ $hook ] as $index => $registered ) {
+		foreach ( $GLOBALS['wpai_test']['actions'][ $hook ] as $index => $registered ) {
 			if ( $registered === $callback ) {
-				unset( $GLOBALS['wpnb_test']['actions'][ $hook ][ $index ] );
-				$GLOBALS['wpnb_test']['actions'][ $hook ] = array_values( $GLOBALS['wpnb_test']['actions'][ $hook ] );
+				unset( $GLOBALS['wpai_test']['actions'][ $hook ][ $index ] );
+				$GLOBALS['wpai_test']['actions'][ $hook ] = array_values( $GLOBALS['wpai_test']['actions'][ $hook ] );
 				return true;
 			}
 		}
@@ -78,10 +78,10 @@ function wpnb61_f003_fire_filter( $hook, $value, ...$args ) {
 }
 
 function wpnb61_f003_fire_action( $hook, ...$args ) {
-	foreach ( array_values( $GLOBALS['wpnb_test']['actions']['all'] ?? array() ) as $callback ) {
+	foreach ( array_values( $GLOBALS['wpai_test']['actions']['all'] ?? array() ) as $callback ) {
 		call_user_func_array( $callback, array_merge( array( $hook ), $args ) );
 	}
-	foreach ( array_values( $GLOBALS['wpnb_test']['actions'][ $hook ] ?? array() ) as $callback ) {
+	foreach ( array_values( $GLOBALS['wpai_test']['actions'][ $hook ] ?? array() ) as $callback ) {
 		call_user_func_array( $callback, $args );
 	}
 }
@@ -292,10 +292,10 @@ function rest_do_request( $request ) {
 	return new WP_AI_Bridge_Issue61_F003_Response( array(), new WP_Error( 'unexpected_route', 'Unexpected route.' ) );
 }
 
-wpnb_test_reset_state();
+wpai_test_reset_state();
 $settings = new Settings();
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = $settings->defaults();
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_AUTHENTICATION ] = 1;
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = $settings->defaults();
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_AUTHENTICATION ] = 1;
 $provider = new Secure_Application_Password_Abilities( new Permissions( $settings ), new Mutation_Log() );
 
 $GLOBALS['wpnb61_f003_permission_allowed'] = false;

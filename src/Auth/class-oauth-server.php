@@ -11,18 +11,13 @@ namespace WP_Native_Builder_Bridge\Auth;
  * Provides a WordPress-native OAuth 2.1 compatibility layer for ChatGPT and explicitly approved clients.
  */
 final class OAuth_Server {
-	const MCP_SERVER_ID              = 'wp-ai-bridge-direct';
-	const LEGACY_MCP_SERVER_ID       = 'wp-native-builder-direct';
-	const MCP_ROUTE_NAMESPACE        = 'wp-ai-bridge/v1';
-	const LEGACY_MCP_ROUTE_NAMESPACE = 'wp-native-builder/v1';
-	const MCP_ROUTE                  = 'mcp';
-	const MCP_REQUEST_ROUTE          = '/wp-ai-bridge/v1/mcp';
-	const LEGACY_MCP_REQUEST_ROUTE   = '/wp-native-builder/v1/mcp';
-	const AUTHORIZATION_PATH         = '/wp-ai-bridge/oauth/authorize';
-	const LEGACY_AUTHORIZATION_PATH  = '/wp-native-builder/oauth/authorize';
-	const PROTECTED_META_PATH        = '/.well-known/oauth-protected-resource';
-	const LEGACY_PROTECTED_META_PATH = '/.well-known/oauth-protected-resource/wp-native-builder/v1/mcp';
-	const AUTH_SERVER_META_PATH      = '/.well-known/oauth-authorization-server';
+	const MCP_SERVER_ID         = 'wp-ai-bridge-direct';
+	const MCP_ROUTE_NAMESPACE   = 'wp-ai-bridge/v1';
+	const MCP_ROUTE             = 'mcp';
+	const MCP_REQUEST_ROUTE     = '/wp-ai-bridge/v1/mcp';
+	const AUTHORIZATION_PATH    = '/wp-ai-bridge/oauth/authorize';
+	const PROTECTED_META_PATH   = '/.well-known/oauth-protected-resource';
+	const AUTH_SERVER_META_PATH = '/.well-known/oauth-authorization-server';
 
 	const CHATGPT_CLIENT_ID    = 'https://chatgpt.com/oauth/client.json';
 	const CHATGPT_REDIRECT_URI = 'https://chatgpt.com/connector_platform_oauth_redirect';
@@ -36,7 +31,7 @@ final class OAuth_Server {
 	const REFRESH_TTL = 2592000;
 
 	// Retained for direct-ChatGPT test/runtime compatibility.
-	const CLIENT_METADATA_CACHE = 'wpnb_oauth_chatgpt_cimd_ok';
+	const CLIENT_METADATA_CACHE = 'wpai_oauth_chatgpt_cimd_ok';
 
 	/** @var OAuth_Store */
 	private $store;
@@ -72,12 +67,12 @@ final class OAuth_Server {
 		add_action( 'mcp_adapter_init', array( $this, 'register_mcp_server' ), 20, 1 );
 		add_action( 'rest_api_init', array( $this, 'register_oauth_routes' ), 20 );
 		add_action( 'parse_request', array( $this, 'maybe_handle_public_endpoint' ), 1 );
-		add_action( 'wpnb_oauth_cleanup_client_assertion', array( $this->store, 'cleanup_client_assertion' ), 10, 2 );
+		add_action( 'wpai_oauth_cleanup_client_assertion', array( $this->store, 'cleanup_client_assertion' ), 10, 2 );
 		add_filter( 'rest_post_dispatch', array( $this, 'add_mcp_authentication_challenge' ), 10, 3 );
 	}
 
 	/**
-	 * Registers canonical and migration-compatibility HTTP servers through MCP Adapter.
+	 * Registers the canonical HTTP server through MCP Adapter.
 	 *
 	 * @param object $adapter MCP Adapter instance.
 	 * @return void
@@ -93,69 +88,56 @@ final class OAuth_Server {
 			return;
 		}
 
-		$servers = array(
-			array( self::MCP_SERVER_ID, self::MCP_ROUTE_NAMESPACE, 'WP AI Bridge' ),
-			array( self::LEGACY_MCP_SERVER_ID, self::LEGACY_MCP_ROUTE_NAMESPACE, 'WP AI Bridge (legacy endpoint)' ),
+		$adapter->create_server(
+			self::MCP_SERVER_ID,
+			self::MCP_ROUTE_NAMESPACE,
+			self::MCP_ROUTE,
+			'WP AI Bridge',
+			'Authenticated MCP endpoint for WordPress-native administration.',
+			WP_NATIVE_BUILDER_BRIDGE_VERSION,
+			array( '\\WP\\MCP\\Transport\\HttpTransport' ),
+			'\\WP\\MCP\\Infrastructure\\ErrorHandling\\NullMcpErrorHandler',
+			'\\WP\\MCP\\Infrastructure\\Observability\\NullMcpObservabilityHandler',
+			array(
+				'mcp-adapter/discover-abilities',
+				'mcp-adapter/get-ability-info',
+				'mcp-adapter/execute-ability',
+			),
+			array(),
+			array(),
+			array( $this, 'authenticate_mcp_request' )
 		);
-		foreach ( $servers as $server ) {
-			$adapter->create_server(
-				$server[0],
-				$server[1],
-				self::MCP_ROUTE,
-				$server[2],
-				'Authenticated MCP endpoint for WordPress-native administration.',
-				WP_NATIVE_BUILDER_BRIDGE_VERSION,
-				array( '\\WP\\MCP\\Transport\\HttpTransport' ),
-				'\\WP\\MCP\\Infrastructure\\ErrorHandling\\NullMcpErrorHandler',
-				'\\WP\\MCP\\Infrastructure\\Observability\\NullMcpObservabilityHandler',
-				array(
-					'mcp-adapter/discover-abilities',
-					'mcp-adapter/get-ability-info',
-					'mcp-adapter/execute-ability',
-				),
-				array(),
-				array(),
-				array( $this, 'authenticate_mcp_request' )
-			);
-		}
 	}
 
 	/**
-	 * Registers OAuth token and revocation endpoints under canonical and legacy namespaces.
+	 * Registers OAuth token and revocation endpoints under the canonical namespace.
 	 *
 	 * @return void
 	 */
 	public function register_oauth_routes() {
-		foreach ( array( self::MCP_ROUTE_NAMESPACE, self::LEGACY_MCP_ROUTE_NAMESPACE ) as $namespace ) {
-			register_rest_route(
-				$namespace,
-				'/oauth/token',
-				array(
-					'methods'             => 'POST',
-					'callback'            => array( $this, 'handle_token_request' ),
-					'permission_callback' => '__return_true',
-				)
-			);
-			register_rest_route(
-				$namespace,
-				'/oauth/revoke',
-				array(
-					'methods'             => 'POST',
-					'callback'            => array( $this, 'handle_revoke_request' ),
-					'permission_callback' => '__return_true',
-				)
-			);
-		}
+		register_rest_route(
+			self::MCP_ROUTE_NAMESPACE,
+			'/oauth/token',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'handle_token_request' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+		register_rest_route(
+			self::MCP_ROUTE_NAMESPACE,
+			'/oauth/revoke',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'handle_revoke_request' ),
+				'permission_callback' => '__return_true',
+			)
+		);
 	}
 
 	/** @return string MCP endpoint URL. */
 	public function mcp_endpoint_url() {
 		return rest_url( self::MCP_ROUTE_NAMESPACE . '/' . self::MCP_ROUTE );
-	}
-
-	/** @return string Legacy MCP endpoint URL. */
-	public function legacy_mcp_endpoint_url() {
-		return rest_url( self::LEGACY_MCP_ROUTE_NAMESPACE . '/' . self::MCP_ROUTE );
 	}
 
 	/** @return string Issuer URL. */
@@ -168,11 +150,6 @@ final class OAuth_Server {
 		return home_url( self::PROTECTED_META_PATH );
 	}
 
-	/** @return string Legacy metadata URL. */
-	public function legacy_protected_resource_metadata_url() {
-		return home_url( self::LEGACY_PROTECTED_META_PATH );
-	}
-
 	/** @return string Metadata URL. */
 	public function authorization_server_metadata_url() {
 		return home_url( self::AUTH_SERVER_META_PATH );
@@ -183,29 +160,14 @@ final class OAuth_Server {
 		return home_url( self::AUTHORIZATION_PATH );
 	}
 
-	/** @return string Legacy authorization URL. */
-	public function legacy_authorization_endpoint_url() {
-		return home_url( self::LEGACY_AUTHORIZATION_PATH );
-	}
-
 	/** @return string Token URL. */
 	public function token_endpoint_url() {
 		return rest_url( self::MCP_ROUTE_NAMESPACE . '/oauth/token' );
 	}
 
-	/** @return string Legacy token URL. */
-	public function legacy_token_endpoint_url() {
-		return rest_url( self::LEGACY_MCP_ROUTE_NAMESPACE . '/oauth/token' );
-	}
-
 	/** @return string Revocation URL. */
 	public function revocation_endpoint_url() {
 		return rest_url( self::MCP_ROUTE_NAMESPACE . '/oauth/revoke' );
-	}
-
-	/** @return string Legacy revocation URL. */
-	public function legacy_revocation_endpoint_url() {
-		return rest_url( self::LEGACY_MCP_ROUTE_NAMESPACE . '/oauth/revoke' );
 	}
 
 	/** @return bool True for HTTPS deployment. */
@@ -216,11 +178,6 @@ final class OAuth_Server {
 	/** @return array<string,mixed> Metadata document. */
 	public function protected_resource_metadata() {
 		return $this->protected_resource_metadata_for( $this->mcp_endpoint_url(), 'WP AI Bridge' );
-	}
-
-	/** @return array<string,mixed> Metadata document. */
-	public function legacy_protected_resource_metadata() {
-		return $this->protected_resource_metadata_for( $this->legacy_mcp_endpoint_url(), 'WP AI Bridge (legacy endpoint)' );
 	}
 
 	/**
@@ -260,21 +217,16 @@ final class OAuth_Server {
 		if ( ! is_string( $request_path ) ) {
 			return;
 		}
-		$protected_path        = wp_parse_url( $this->protected_resource_metadata_url(), PHP_URL_PATH );
-		$legacy_protected_path = wp_parse_url( $this->legacy_protected_resource_metadata_url(), PHP_URL_PATH );
-		$server_path           = wp_parse_url( $this->authorization_server_metadata_url(), PHP_URL_PATH );
-		$authorize_path        = wp_parse_url( $this->authorization_endpoint_url(), PHP_URL_PATH );
-		$legacy_authorize_path = wp_parse_url( $this->legacy_authorization_endpoint_url(), PHP_URL_PATH );
+		$protected_path = wp_parse_url( $this->protected_resource_metadata_url(), PHP_URL_PATH );
+		$server_path    = wp_parse_url( $this->authorization_server_metadata_url(), PHP_URL_PATH );
+		$authorize_path = wp_parse_url( $this->authorization_endpoint_url(), PHP_URL_PATH );
 		if ( $request_path === $protected_path ) {
 			$this->serve_metadata_document( $this->protected_resource_metadata() );
-		}
-		if ( $request_path === $legacy_protected_path ) {
-			$this->serve_metadata_document( $this->legacy_protected_resource_metadata() );
 		}
 		if ( $request_path === $server_path ) {
 			$this->serve_metadata_document( $this->authorization_server_metadata() );
 		}
-		if ( $request_path === $authorize_path || $request_path === $legacy_authorize_path ) {
+		if ( $request_path === $authorize_path ) {
 			$this->handle_authorization_endpoint();
 		}
 	}
@@ -343,7 +295,7 @@ final class OAuth_Server {
 	 * @return mixed REST response.
 	 */
 	public function add_mcp_authentication_challenge( $response, $server, $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- WordPress filter signature.
-		if ( ! $request instanceof \WP_REST_Request || ! in_array( $request->get_route(), array( self::MCP_REQUEST_ROUTE, self::LEGACY_MCP_REQUEST_ROUTE ), true ) ) {
+		if ( ! $request instanceof \WP_REST_Request || self::MCP_REQUEST_ROUTE !== $request->get_route() ) {
 			return $response;
 		}
 		if ( ! in_array( $this->auth_state, array( 'missing', 'invalid' ), true ) ) {
@@ -368,7 +320,7 @@ final class OAuth_Server {
 		}
 		$profile = $this->authenticated_client_profile(
 			$request,
-			array( $this->token_endpoint_url(), $this->legacy_token_endpoint_url(), $this->issuer_url() )
+			array( $this->token_endpoint_url(), $this->issuer_url() )
 		);
 		if ( is_wp_error( $profile ) ) {
 			return $this->oauth_error( $profile->get_error_code(), $profile->get_error_message() );
@@ -397,9 +349,7 @@ final class OAuth_Server {
 			$request,
 			array(
 				$this->revocation_endpoint_url(),
-				$this->legacy_revocation_endpoint_url(),
 				$this->token_endpoint_url(),
-				$this->legacy_token_endpoint_url(),
 				$this->issuer_url(),
 			)
 		);
@@ -450,7 +400,7 @@ final class OAuth_Server {
 		if ( 'GET' !== $method ) {
 			status_header( 405 );
 			header( 'Allow: GET, POST' );
-			wp_die( esc_html__( 'Method not allowed.', 'wp-native-builder-bridge' ), '', array( 'response' => 405 ) );
+			wp_die( esc_html__( 'Method not allowed.', 'wp-ai-bridge' ), '', array( 'response' => 405 ) );
 		}
 		$params    = array_map( 'wp_unslash', $_GET ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- OAuth authorization requests are validated below and do not mutate state.
 		$validated = $this->validate_authorization_request( $params );
@@ -464,7 +414,7 @@ final class OAuth_Server {
 		}
 		if ( ! current_user_can( 'read' ) ) {
 			status_header( 403 );
-			wp_die( esc_html__( 'Your WordPress account is not allowed to connect this site.', 'wp-native-builder-bridge' ), '', array( 'response' => 403 ) );
+			wp_die( esc_html__( 'Your WordPress account is not allowed to connect this site.', 'wp-ai-bridge' ), '', array( 'response' => 403 ) );
 		}
 		$validated['user_id'] = get_current_user_id();
 		$consent_id           = $this->store->issue( OAuth_Store::TYPE_CONSENT, $validated, self::CONSENT_TTL );
@@ -539,14 +489,14 @@ final class OAuth_Server {
 		$consent_id = isset( $_POST['consent_id'] ) ? sanitize_text_field( wp_unslash( $_POST['consent_id'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce is verified below before state mutation.
 		$nonce      = isset( $_POST['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_POST['_wpnonce'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- This is the nonce being verified.
 		$decision   = isset( $_POST['decision'] ) ? sanitize_key( wp_unslash( $_POST['decision'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce is verified below before state mutation.
-		if ( '' === $consent_id || ! wp_verify_nonce( $nonce, 'wpnb_oauth_consent_' . $consent_id ) ) {
+		if ( '' === $consent_id || ! wp_verify_nonce( $nonce, 'wpai_oauth_consent_' . $consent_id ) ) {
 			status_header( 403 );
-			wp_die( esc_html__( 'The OAuth consent request is invalid or expired.', 'wp-native-builder-bridge' ), '', array( 'response' => 403 ) );
+			wp_die( esc_html__( 'The OAuth consent request is invalid or expired.', 'wp-ai-bridge' ), '', array( 'response' => 403 ) );
 		}
 		$claims = $this->store->read( OAuth_Store::TYPE_CONSENT, $consent_id, true );
 		if ( false === $claims || empty( $claims['user_id'] ) || get_current_user_id() !== (int) $claims['user_id'] ) {
 			status_header( 400 );
-			wp_die( esc_html__( 'The OAuth consent request is invalid or expired.', 'wp-native-builder-bridge' ), '', array( 'response' => 400 ) );
+			wp_die( esc_html__( 'The OAuth consent request is invalid or expired.', 'wp-ai-bridge' ), '', array( 'response' => 400 ) );
 		}
 		$client_id = isset( $claims['client_id'] ) ? (string) $claims['client_id'] : '';
 		$profile   = $this->clients->resolve( $client_id );
@@ -556,7 +506,7 @@ final class OAuth_Server {
 			! $this->clients->redirect_allowed( $profile, (string) ( $claims['redirect_uri'] ?? '' ) )
 		) {
 			status_header( 400 );
-			wp_die( esc_html__( 'The OAuth client approval changed before consent completed.', 'wp-native-builder-bridge' ), '', array( 'response' => 400 ) );
+			wp_die( esc_html__( 'The OAuth client approval changed before consent completed.', 'wp-ai-bridge' ), '', array( 'response' => 400 ) );
 		}
 		if ( 'approve' !== $decision ) {
 			$this->redirect_authorization_response(
@@ -762,12 +712,7 @@ final class OAuth_Server {
 	/** @param string $resource_url Candidate resource URL. @return bool Whether supported. */
 	private function is_supported_resource_url( $resource_url ) {
 		$resource_url = (string) $resource_url;
-		foreach ( array( $this->mcp_endpoint_url(), $this->legacy_mcp_endpoint_url() ) as $supported ) {
-			if ( hash_equals( $supported, $resource_url ) ) {
-				return true;
-			}
-		}
-		return false;
+		return hash_equals( $this->mcp_endpoint_url(), $resource_url );
 	}
 
 	/** @param \WP_REST_Request $request MCP request. @return string Exact resource or empty. */
@@ -778,9 +723,6 @@ final class OAuth_Server {
 		$route = $request->get_route();
 		if ( self::MCP_REQUEST_ROUTE === $route ) {
 			return $this->mcp_endpoint_url();
-		}
-		if ( self::LEGACY_MCP_REQUEST_ROUTE === $route ) {
-			return $this->legacy_mcp_endpoint_url();
 		}
 		return '';
 	}
@@ -831,9 +773,6 @@ final class OAuth_Server {
 	 */
 	private function www_authenticate_header( $request = null ) {
 		$metadata_url = $this->protected_resource_metadata_url();
-		if ( $request instanceof \WP_REST_Request && self::LEGACY_MCP_REQUEST_ROUTE === $request->get_route() ) {
-			$metadata_url = $this->legacy_protected_resource_metadata_url();
-		}
 		return sprintf( 'Bearer resource_metadata="%s", scope="%s"', $metadata_url, implode( ' ', $this->supported_scopes() ) );
 	}
 
@@ -899,7 +838,7 @@ final class OAuth_Server {
 			$this->redirect_authorization_response( $client_id, $redirect_uri, $values );
 		}
 		status_header( 400 );
-		wp_die( esc_html( $error->get_error_message() ), esc_html__( 'OAuth authorization error', 'wp-native-builder-bridge' ), array( 'response' => 400 ) );
+		wp_die( esc_html( $error->get_error_message() ), esc_html__( 'OAuth authorization error', 'wp-ai-bridge' ), array( 'response' => 400 ) );
 	}
 
 	/**
@@ -914,7 +853,7 @@ final class OAuth_Server {
 		$profile = $this->clients->resolve( $client_id );
 		if ( is_wp_error( $profile ) || ! $this->clients->redirect_allowed( $profile, $redirect_uri ) ) {
 			status_header( 400 );
-			wp_die( esc_html__( 'Invalid OAuth redirect URI.', 'wp-native-builder-bridge' ), '', array( 'response' => 400 ) );
+			wp_die( esc_html__( 'Invalid OAuth redirect URI.', 'wp-ai-bridge' ), '', array( 'response' => 400 ) );
 		}
 		$url = add_query_arg( $values, $redirect_uri );
 		wp_redirect( $url, 302, 'WP AI Bridge' ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Destination is an exact public HTTPS redirect URI from the currently approved client metadata profile.
@@ -936,7 +875,7 @@ final class OAuth_Server {
 		$callback_origin = $this->redirect_origin( (string) $request['redirect_uri'] );
 		if ( '' === $callback_origin ) {
 			status_header( 400 );
-			wp_die( esc_html__( 'Invalid OAuth redirect URI.', 'wp-native-builder-bridge' ), '', array( 'response' => 400 ) );
+			wp_die( esc_html__( 'Invalid OAuth redirect URI.', 'wp-ai-bridge' ), '', array( 'response' => 400 ) );
 		}
 		nocache_headers();
 		send_frame_options_header();
@@ -953,32 +892,32 @@ final class OAuth_Server {
 <head>
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title><?php echo esc_html( $is_chatgpt ? __( 'Authorize ChatGPT', 'wp-native-builder-bridge' ) : __( 'Authorize OAuth Client', 'wp-native-builder-bridge' ) ); ?></title>
-	<style>body{font-family:system-ui,sans-serif;background:#f0f0f1;margin:0;padding:32px}.wpnb-oauth{max-width:620px;margin:40px auto;background:#fff;border:1px solid #c3c4c7;border-radius:8px;padding:28px;box-shadow:0 1px 2px rgba(0,0,0,.04)}h1{margin-top:0;font-size:24px}code{word-break:break-all}.actions{display:flex;gap:12px;margin-top:24px}.button{border:1px solid #2271b1;border-radius:3px;padding:8px 14px;font:inherit;cursor:pointer}.primary{background:#2271b1;color:#fff}.secondary{background:#fff;color:#2271b1}</style>
+	<title><?php echo esc_html( $is_chatgpt ? __( 'Authorize ChatGPT', 'wp-ai-bridge' ) : __( 'Authorize OAuth Client', 'wp-ai-bridge' ) ); ?></title>
+	<style>body{font-family:system-ui,sans-serif;background:#f0f0f1;margin:0;padding:32px}.wpai-oauth{max-width:620px;margin:40px auto;background:#fff;border:1px solid #c3c4c7;border-radius:8px;padding:28px;box-shadow:0 1px 2px rgba(0,0,0,.04)}h1{margin-top:0;font-size:24px}code{word-break:break-all}.actions{display:flex;gap:12px;margin-top:24px}.button{border:1px solid #2271b1;border-radius:3px;padding:8px 14px;font:inherit;cursor:pointer}.primary{background:#2271b1;color:#fff}.secondary{background:#fff;color:#2271b1}</style>
 </head>
 <body>
-	<main class="wpnb-oauth">
-		<h1><?php echo esc_html( $is_chatgpt ? __( 'Authorize ChatGPT for this WordPress site', 'wp-native-builder-bridge' ) : __( 'Authorize this OAuth client for this WordPress site', 'wp-native-builder-bridge' ) ); ?></h1>
+	<main class="wpai-oauth">
+		<h1><?php echo esc_html( $is_chatgpt ? __( 'Authorize ChatGPT for this WordPress site', 'wp-ai-bridge' ) : __( 'Authorize this OAuth client for this WordPress site', 'wp-ai-bridge' ) ); ?></h1>
 		<?php if ( $is_chatgpt ) : ?>
-			<p><?php echo esc_html__( 'ChatGPT is requesting an OAuth connection to WP AI Bridge. The connection acts as your current WordPress account, and every Bridge ability still checks its access group and WordPress capabilities.', 'wp-native-builder-bridge' ); ?></p>
+			<p><?php echo esc_html__( 'ChatGPT is requesting an OAuth connection to WP AI Bridge. The connection acts as your current WordPress account, and every Bridge ability still checks its access group and WordPress capabilities.', 'wp-ai-bridge' ); ?></p>
 		<?php else : ?>
-			<p><?php echo esc_html__( 'An administrator-approved OAuth client is requesting a connection to WP AI Bridge. Connection approval does not enable any Bridge access group or add WordPress capabilities.', 'wp-native-builder-bridge' ); ?></p>
-			<p><strong><?php echo esc_html__( 'OAuth client:', 'wp-native-builder-bridge' ); ?></strong> <?php echo esc_html( $client_name ); ?><br><code><?php echo esc_html( $client_id ); ?></code></p>
+			<p><?php echo esc_html__( 'An administrator-approved OAuth client is requesting a connection to WP AI Bridge. Connection approval does not enable any Bridge access group or add WordPress capabilities.', 'wp-ai-bridge' ); ?></p>
+			<p><strong><?php echo esc_html__( 'OAuth client:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html( $client_name ); ?><br><code><?php echo esc_html( $client_id ); ?></code></p>
 		<?php endif; ?>
-		<p><strong><?php echo esc_html__( 'WordPress account:', 'wp-native-builder-bridge' ); ?></strong> <?php echo esc_html( $user->display_name ); ?></p>
-		<p><strong><?php echo esc_html__( 'Site:', 'wp-native-builder-bridge' ); ?></strong> <?php echo esc_html( get_bloginfo( 'name' ) ); ?></p>
-		<p><strong><?php echo esc_html__( 'MCP resource:', 'wp-native-builder-bridge' ); ?></strong><br><code><?php echo esc_html( $request['resource'] ); ?></code></p>
-		<p><strong><?php echo esc_html__( 'OAuth scopes:', 'wp-native-builder-bridge' ); ?></strong> <code><?php echo esc_html( $request['scope'] ); ?></code></p>
+		<p><strong><?php echo esc_html__( 'WordPress account:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html( $user->display_name ); ?></p>
+		<p><strong><?php echo esc_html__( 'Site:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html( get_bloginfo( 'name' ) ); ?></p>
+		<p><strong><?php echo esc_html__( 'MCP resource:', 'wp-ai-bridge' ); ?></strong><br><code><?php echo esc_html( $request['resource'] ); ?></code></p>
+		<p><strong><?php echo esc_html__( 'OAuth scopes:', 'wp-ai-bridge' ); ?></strong> <code><?php echo esc_html( $request['scope'] ); ?></code></p>
 		<?php if ( in_array( self::SCOPE_OFFLINE, $this->parse_scope( (string) $request['scope'] ), true ) ) : ?>
-			<p><?php echo esc_html( $is_chatgpt ? __( 'The offline_access scope lets ChatGPT refresh this OAuth connection without asking you to sign in again each time. It does not enable any Bridge access group or add WordPress capabilities.', 'wp-native-builder-bridge' ) : __( 'The offline_access scope lets this approved client refresh the OAuth connection without asking you to sign in again each time. It does not enable any Bridge access group or add WordPress capabilities.', 'wp-native-builder-bridge' ) ); ?></p>
+			<p><?php echo esc_html( $is_chatgpt ? __( 'The offline_access scope lets ChatGPT refresh this OAuth connection without asking you to sign in again each time. It does not enable any Bridge access group or add WordPress capabilities.', 'wp-ai-bridge' ) : __( 'The offline_access scope lets this approved client refresh the OAuth connection without asking you to sign in again each time. It does not enable any Bridge access group or add WordPress capabilities.', 'wp-ai-bridge' ) ); ?></p>
 		<?php endif; ?>
-		<p><?php echo esc_html__( 'Access remains limited by the enabled groups under WP AI Bridge → Settings. You can deny this request without changing those settings.', 'wp-native-builder-bridge' ); ?></p>
+		<p><?php echo esc_html__( 'Access remains limited by the enabled groups under WP AI Bridge → Settings. You can deny this request without changing those settings.', 'wp-ai-bridge' ); ?></p>
 		<form method="post" action="<?php echo esc_url( $this->authorization_endpoint_url() ); ?>">
 			<input type="hidden" name="consent_id" value="<?php echo esc_attr( $consent_id ); ?>">
-			<?php wp_nonce_field( 'wpnb_oauth_consent_' . $consent_id ); ?>
+			<?php wp_nonce_field( 'wpai_oauth_consent_' . $consent_id ); ?>
 			<div class="actions">
-				<button class="button primary" type="submit" name="decision" value="approve"><?php echo esc_html( $is_chatgpt ? __( 'Authorize ChatGPT', 'wp-native-builder-bridge' ) : __( 'Authorize Client', 'wp-native-builder-bridge' ) ); ?></button>
-				<button class="button secondary" type="submit" name="decision" value="deny"><?php echo esc_html__( 'Deny', 'wp-native-builder-bridge' ); ?></button>
+				<button class="button primary" type="submit" name="decision" value="approve"><?php echo esc_html( $is_chatgpt ? __( 'Authorize ChatGPT', 'wp-ai-bridge' ) : __( 'Authorize Client', 'wp-ai-bridge' ) ); ?></button>
+				<button class="button secondary" type="submit" name="decision" value="deny"><?php echo esc_html__( 'Deny', 'wp-ai-bridge' ); ?></button>
 			</div>
 		</form>
 	</main>

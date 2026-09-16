@@ -24,9 +24,9 @@ function wpnb39_assert( $condition, $message ) {
 }
 function wpnb39_reset() {
 	foreach ( $GLOBALS['wpnb39']['files'] ?? array() as $file ) { if ( is_file( $file ) ) { unlink( $file ); } }
-	wpnb_test_reset_state();
-	$GLOBALS['wpnb_test']['capabilities']['upload_files'] = true;
-	$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = array( 'builder_write' => 1, 'remote_media' => 1 );
+	wpai_test_reset_state();
+	$GLOBALS['wpai_test']['capabilities']['upload_files'] = true;
+	$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = array( 'builder_write' => 1, 'remote_media' => 1 );
 	$GLOBALS['wpnb39'] = array( 'files' => array(), 'staging' => array(), 'http_calls' => 0, 'payload' => 'media', 'max' => 32, 'status' => 200, 'length' => '', 'posts' => array(), 'meta' => array(), 'args' => array(), 'mode' => '', 'type' => true );
 }
 function sanitize_file_name( $name ) { return preg_replace( '/[^A-Za-z0-9._-]/', '-', $name ); }
@@ -40,7 +40,7 @@ function wp_tempnam( $name ) {
 	$file = tempnam( sys_get_temp_dir(), 'wpnb39-' );
 	$GLOBALS['wpnb39']['files'][] = $file;
 	$GLOBALS['wpnb39']['staging'][] = $file;
-	if ( 'revoke_temp' === $GLOBALS['wpnb39']['mode'] ) { $GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ]['remote_media'] = 0; }
+	if ( 'revoke_temp' === $GLOBALS['wpnb39']['mode'] ) { $GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ]['remote_media'] = 0; }
 	return $file;
 }
 function wp_delete_file( $file ) {
@@ -53,16 +53,16 @@ function wp_http_validate_url( $url ) {
 	return is_array( $parts ) && in_array( $parts['scheme'] ?? '', array( 'http', 'https' ), true ) && ! empty( $parts['host'] ) && ! isset( $parts['user'], $parts['pass'] ) && ! isset( $parts['user'] ) && ! in_array( $parts['host'], array( 'localhost', '127.0.0.1' ), true ) ? $url : false;
 }
 function remove_action( $hook, $callback, $priority = 10 ) {
-    $GLOBALS['wpnb_test']['actions'][ $hook ] = array_values( array_filter( $GLOBALS['wpnb_test']['actions'][ $hook ] ?? array(), static fn( $registered ) => $registered !== $callback ) );
+    $GLOBALS['wpai_test']['actions'][ $hook ] = array_values( array_filter( $GLOBALS['wpai_test']['actions'][ $hook ] ?? array(), static fn( $registered ) => $registered !== $callback ) );
     return true;
 }
 function wp_safe_remote_get( $url, $args ) {
 	++$GLOBALS['wpnb39']['http_calls'];
 	$GLOBALS['wpnb39']['args'] = $args;
 	if ( isset( $GLOBALS['wpnb39']['redirect'] ) ) {
-		if ( 'revoke_redirect' === $GLOBALS['wpnb39']['mode'] ) { $GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ]['remote_media'] = 0; }
+		if ( 'revoke_redirect' === $GLOBALS['wpnb39']['mode'] ) { $GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ]['remote_media'] = 0; }
 		try {
-			foreach ( $GLOBALS['wpnb_test']['actions']['requests-requests.before_redirect'] ?? array() as $callback ) {
+			foreach ( $GLOBALS['wpai_test']['actions']['requests-requests.before_redirect'] ?? array() as $callback ) {
 				$callback( $GLOBALS['wpnb39']['redirect'], array(), null, array( 'filename' => $args['filename'] ) );
 			}
 		} catch ( \WpOrg\Requests\Exception $error ) { return new WP_Error( 'http_request_failed', $error->getMessage() ); }
@@ -70,7 +70,7 @@ function wp_safe_remote_get( $url, $args ) {
 	}
 
 	file_put_contents( $args['filename'], substr( $GLOBALS['wpnb39']['payload'], 0, $args['limit_response_size'] ) );
-	if ( 'revoke_http' === $GLOBALS['wpnb39']['mode'] ) { $GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ]['remote_media'] = 0; }
+	if ( 'revoke_http' === $GLOBALS['wpnb39']['mode'] ) { $GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ]['remote_media'] = 0; }
 	if ( 'missing_staging' === $GLOBALS['wpnb39']['mode'] ) { wp_delete_file( $args['filename'] ); }
 	if ( 'http_throw' === $GLOBALS['wpnb39']['mode'] ) { throw new RuntimeException( 'private-token ' . $url . ' ' . $args['filename'] ); }
 	if ( 'http_error' === $GLOBALS['wpnb39']['mode'] ) { return new WP_Error( 'provider_url_private-token', 'private-token ' . $url . ' ' . $args['filename'] ); }
@@ -92,7 +92,7 @@ function wp_handle_sideload( &$file, $overrides = false, $time = null ) {
 	rename( $file['tmp_name'], $target );
 	$GLOBALS['wpnb39']['files'][] = $target;
 	if ( 'sideload_throw_after' === $GLOBALS['wpnb39']['mode'] ) { throw new RuntimeException( 'private-token ' . $target ); }
-	if ( 'revoke_sideload' === $GLOBALS['wpnb39']['mode'] ) { $GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ]['remote_media'] = 0; }
+	if ( 'revoke_sideload' === $GLOBALS['wpnb39']['mode'] ) { $GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ]['remote_media'] = 0; }
 	return array( 'file' => $target, 'type' => 'image/png', 'url' => 'https://site.test/media.png' );
 }
 function wp_insert_attachment( $data, $file, $parent, $wp_error ) {
@@ -135,7 +135,7 @@ set_error_handler( static function ( $severity, $message, $file, $line ) { throw
 try {
 	wpnb39_assert( 0 === $settings->defaults()['remote_media'], 'Remote Media must default off.' );
 	$media->register();
-	$definition = $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/media-import-url'];
+	$definition = $GLOBALS['wpai_test']['registered_abilities']['wp-ai-bridge/media-import-url'];
 	wpnb39_assert( ! isset( $definition['input_schema']['properties']['content_base64'] ), 'Import must not share the Base64 payload contract.' );
 	wpnb39_assert( array( 'url', 'filename' ) === $definition['input_schema']['required'], 'Import schema must require URL and filename.' );
 	wpnb39_assert( false === $definition['input_schema']['additionalProperties'], 'Import schema must reject arbitrary headers/paths.' );
@@ -146,7 +146,7 @@ try {
 		wpnb39_assert( 0 === $GLOBALS['wpnb39']['http_calls'], 'Disabled/upgrade state performed network activity.' );
 	}
 	wpnb39_reset();
-	$GLOBALS['wpnb_test']['capabilities']['upload_files'] = false;
+	$GLOBALS['wpai_test']['capabilities']['upload_files'] = false;
 	wpnb39_error( $media->import_url( $input ), 'media_import_permission_denied' );
 	wpnb39_reset();
 	wpnb39_error( $media->import_url( $input + array( 'post_id' => 42 ) ), 'media_import_permission_denied' );
@@ -167,7 +167,7 @@ try {
 		wpnb39_reset(); $GLOBALS['wpnb39']['redirect'] = $url;
 		wpnb39_error( $media->import_url( $input ), 'unsafe_media_import_url' );
 		wpnb39_assert( 1 === $GLOBALS['wpnb39']['http_calls'], 'Unsafe redirect reached a second transport.' );
-		wpnb39_assert( empty( $GLOBALS['wpnb_test']['actions']['requests-requests.before_redirect'] ), 'Redirect guard survived the request.' );
+		wpnb39_assert( empty( $GLOBALS['wpai_test']['actions']['requests-requests.before_redirect'] ), 'Redirect guard survived the request.' );
 	}
 	foreach ( array( array( 'resolved_ipv4' => array( '93.184.216.34', '169.254.1.1' ) ), array( 'dns_records' => array( array( 'ipv6' => 'fe80::1' ) ) ), array( 'dns_records' => false ) ) as $resolution ) {
 		wpnb39_reset(); $GLOBALS['wpnb39'] = array_replace( $GLOBALS['wpnb39'], $resolution );
@@ -244,7 +244,7 @@ try {
 	wpnb39_error( $media->import_url( $input ), 'media_import_type_denied' );
 	foreach ( array( 'https://one.example.test/media', 'https://another.example.test/media' ) as $url ) {
 		wpnb39_reset();
-		$GLOBALS['wpnb_test']['capabilities']['edit_post'] = true;
+		$GLOBALS['wpai_test']['capabilities']['edit_post'] = true;
 		$GLOBALS['wpnb39']['max'] = 30 * 1024 * 1024;
 		$GLOBALS['wpnb39']['length'] = '5';
 		$result = $media->import_url( array_replace( $input, array( 'url' => $url, 'post_id' => 42, 'title' => 'Imported title', 'caption' => 'Caption', 'description' => 'Description', 'alt_text' => '<b>Alternative</b>' ) ) );

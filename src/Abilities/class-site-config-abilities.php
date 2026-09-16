@@ -29,10 +29,10 @@ final class Site_Config_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/site-settings-read',
+			'wp-ai-bridge/site-settings-read',
 			array(
-				'label'               => __( 'Read Site Settings', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Reads the bounded Core WordPress settings used for site building without exposing arbitrary options.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Site Settings', 'wp-ai-bridge' ),
+				'description'         => __( 'Reads the bounded Core WordPress settings used for site building without exposing arbitrary options.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -46,10 +46,10 @@ final class Site_Config_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/site-settings-update',
+			'wp-ai-bridge/site-settings-update',
 			array(
-				'label'               => __( 'Update Site Settings', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Updates only the named builder-relevant Core WordPress settings and reports permalink/front-page impact.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Update Site Settings', 'wp-ai-bridge' ),
+				'description'         => __( 'Updates only the named builder-relevant Core WordPress settings and reports permalink/front-page impact.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->update_schema(),
 				'output_schema'       => array(
@@ -99,7 +99,7 @@ final class Site_Config_Abilities {
 	/** @param array<string,mixed> $input Input. @return array<string,mixed>|WP_Error */
 	public function update( $input ) {
 		if ( ! is_array( $input ) ) {
-			return new WP_Error( 'invalid_site_settings', __( 'Site settings input must be an object.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'invalid_site_settings', __( 'Site settings input must be an object.', 'wp-ai-bridge' ) );
 		}
 		$allowed = array( 'site_title', 'tagline', 'show_on_front', 'page_on_front', 'page_for_posts', 'posts_per_page', 'permalink_structure' );
 		$changed = array();
@@ -107,20 +107,20 @@ final class Site_Config_Abilities {
 		$front   = false;
 
 		if ( isset( $input['show_on_front'] ) && ! in_array( $input['show_on_front'], array( 'posts', 'page' ), true ) ) {
-			return new WP_Error( 'invalid_front_mode', __( 'show_on_front must be posts or page.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'invalid_front_mode', __( 'show_on_front must be posts or page.', 'wp-ai-bridge' ) );
 		}
 		foreach ( array( 'page_on_front', 'page_for_posts' ) as $key ) {
 			if ( array_key_exists( $key, $input ) && ! $this->valid_page_id( (int) $input[ $key ] ) ) {
-				return new WP_Error( 'invalid_front_page', __( 'Front-page and posts-page IDs must reference published or editable WordPress pages, or be zero.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'invalid_front_page', __( 'Front-page and posts-page IDs must reference published or editable WordPress pages, or be zero.', 'wp-ai-bridge' ) );
 			}
 		}
 		$future_front = array_key_exists( 'page_on_front', $input ) ? (int) $input['page_on_front'] : (int) get_option( 'page_on_front', 0 );
 		$future_posts = array_key_exists( 'page_for_posts', $input ) ? (int) $input['page_for_posts'] : (int) get_option( 'page_for_posts', 0 );
 		if ( $future_front > 0 && $future_front === $future_posts ) {
-			return new WP_Error( 'front_pages_must_differ', __( 'The front page and posts page must be different pages.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'front_pages_must_differ', __( 'The front page and posts page must be different pages.', 'wp-ai-bridge' ) );
 		}
 		if ( isset( $input['posts_per_page'] ) && ( (int) $input['posts_per_page'] < 1 || (int) $input['posts_per_page'] > 100 ) ) {
-			return new WP_Error( 'invalid_posts_per_page', __( 'posts_per_page must be between 1 and 100.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'invalid_posts_per_page', __( 'posts_per_page must be between 1 and 100.', 'wp-ai-bridge' ) );
 		}
 
 		foreach ( $allowed as $key ) {
@@ -143,7 +143,7 @@ final class Site_Config_Abilities {
 		if ( $rewrite && function_exists( 'flush_rewrite_rules' ) ) {
 			flush_rewrite_rules( false );
 		}
-		$this->log->record( 'wp-native-builder/site-settings-update', 'site', 0, true, '' );
+		$this->log->record( 'wp-ai-bridge/site-settings-update', 'site', 0, true, '' );
 		return array(
 			'settings'           => $this->read(),
 			'changed'            => $changed,

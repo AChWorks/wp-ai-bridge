@@ -50,7 +50,7 @@ Bridge-owned operations enforce their documented precise access groups and nativ
 
 `src/Support/class-native-ability-delegation.php` owns this boundary:
 
-- the public WordPress `rest_endpoints` filter wraps only the canonical and retained legacy Bridge MCP callbacks with balanced request context and unconditional cleanup;
+- the public WordPress `rest_endpoints` filter wraps only the canonical WP AI Bridge MCP callback with balanced request context and unconditional cleanup;
 - only the Adapter's `mcp-adapter/execute-ability` permission callback is layered with Bridge policy during Ability registration;
 - each Bridge provider returns only the exact successful Ability objects returned by its own Core `wp_register_ability()` calls; `Registrar` forwards those direct return values to the injected delegation instance's private object-identity provenance set, so re-entrant provider registrations and filter timing are not ownership signals;
 - the provenance set stores only those Bridge-owned live object identities. Namespaces, metadata, annotations, custom getters, custom `ability_class` implementations and later same-name replacements cannot grant or inherit Bridge-owned treatment. It is not a second Ability registry, contains no provider contracts/schemas/callbacks, performs no execution dispatch, and leaves WordPress as the sole operation registry;

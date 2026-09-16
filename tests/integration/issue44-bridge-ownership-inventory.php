@@ -5,15 +5,15 @@
  * @package WP_Native_Builder_Bridge
  */
 
-$catalog = wp_get_ability( 'wp-native-builder/abilities-read' );
+$catalog = wp_get_ability( 'wp-ai-bridge/abilities-read' );
 if ( ! $catalog instanceof WP_Ability ) {
 	throw new RuntimeException( 'Bridge Ability catalog was not registered.' );
 }
 
 $foreign = array(
-	'wp-native-builder/foreign-fixture'           => true,
-	'wp-native-builder/forged-class-fixture'     => true,
-	'wp-native-builder/reentrant-provider-fixture' => true,
+	'wp-ai-bridge/foreign-fixture'           => true,
+	'wp-ai-bridge/forged-class-fixture'     => true,
+	'wp-ai-bridge/reentrant-provider-fixture' => true,
 );
 $seen    = array();
 $checked = 0;
@@ -23,7 +23,7 @@ while ( true ) {
 	$result = $catalog->execute(
 		array(
 			'action'    => 'list',
-			'namespace' => 'wp-native-builder',
+			'namespace' => 'wp-ai-bridge',
 			'page'      => $page,
 			'per_page'  => 50,
 		)

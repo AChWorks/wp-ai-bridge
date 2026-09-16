@@ -47,10 +47,10 @@ final class Workspace_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/workspace-resume',
+			'wp-ai-bridge/workspace-resume',
 			array(
-				'label'               => __( 'Resume Workspace', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Returns a compact project orientation packet with active tasks and a document index, without dumping Workspace history.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Resume Workspace', 'wp-ai-bridge' ),
+				'description'         => __( 'Returns a compact project orientation packet with active tasks and a document index, without dumping Workspace history.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->empty_input_schema(),
 				'output_schema'       => $this->resume_schema(),
@@ -61,10 +61,10 @@ final class Workspace_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/workspace-document',
+			'wp-ai-bridge/workspace-document',
 			array(
-				'label'               => __( 'Workspace Document', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists, reads, creates, updates, or archives durable Markdown-oriented Workspace documents with stale-write protection.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Workspace Document', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists, reads, creates, updates, or archives durable Markdown-oriented Workspace documents with stale-write protection.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->document_input_schema(),
 				'output_schema'       => array(
@@ -85,10 +85,10 @@ final class Workspace_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/workspace-task',
+			'wp-ai-bridge/workspace-task',
 			array(
-				'label'               => __( 'Workspace Task', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists, reads, creates, updates, transitions, or archives lightweight Workspace tasks with independent progress, review, and delivery state.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Workspace Task', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists, reads, creates, updates, transitions, or archives lightweight Workspace tasks with independent progress, review, and delivery state.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->task_input_schema(),
 				'output_schema'       => array(
@@ -179,7 +179,7 @@ final class Workspace_Abilities {
 			if ( is_wp_error( $item ) ) {
 				return $item;
 			}
-			$this->log->record( 'wp-native-builder/workspace-document', 'workspace_document', $item['id'], true, '' );
+			$this->log->record( 'wp-ai-bridge/workspace-document', 'workspace_document', $item['id'], true, '' );
 			return array( 'items' => array( $item ) );
 		}
 		if ( 'update' === $action ) {
@@ -187,7 +187,7 @@ final class Workspace_Abilities {
 			if ( is_wp_error( $item ) ) {
 				return $item;
 			}
-			$this->log->record( 'wp-native-builder/workspace-document', 'workspace_document', $item['id'], true, '' );
+			$this->log->record( 'wp-ai-bridge/workspace-document', 'workspace_document', $item['id'], true, '' );
 			return array( 'items' => array( $item ) );
 		}
 		if ( 'archive' === $action ) {
@@ -195,11 +195,11 @@ final class Workspace_Abilities {
 			if ( is_wp_error( $item ) ) {
 				return $item;
 			}
-			$this->log->record( 'wp-native-builder/workspace-document', 'workspace_document', $item['id'], true, '' );
+			$this->log->record( 'wp-ai-bridge/workspace-document', 'workspace_document', $item['id'], true, '' );
 			return array( 'items' => array( $item ) );
 		}
 
-		return new WP_Error( 'workspace_invalid_action', __( 'The requested Workspace document action is not supported.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'workspace_invalid_action', __( 'The requested Workspace document action is not supported.', 'wp-ai-bridge' ) );
 	}
 
 	/**
@@ -231,7 +231,7 @@ final class Workspace_Abilities {
 			if ( is_wp_error( $item ) ) {
 				return $item;
 			}
-			$this->log->record( 'wp-native-builder/workspace-task', 'workspace_task', $item['id'], true, '' );
+			$this->log->record( 'wp-ai-bridge/workspace-task', 'workspace_task', $item['id'], true, '' );
 			return array( 'items' => array( $item ) );
 		}
 		if ( 'update' === $action ) {
@@ -239,7 +239,7 @@ final class Workspace_Abilities {
 			if ( is_wp_error( $item ) ) {
 				return $item;
 			}
-			$this->log->record( 'wp-native-builder/workspace-task', 'workspace_task', $item['id'], true, '' );
+			$this->log->record( 'wp-ai-bridge/workspace-task', 'workspace_task', $item['id'], true, '' );
 			return array( 'items' => array( $item ) );
 		}
 		if ( 'transition' === $action ) {
@@ -247,7 +247,7 @@ final class Workspace_Abilities {
 			if ( is_wp_error( $item ) ) {
 				return $item;
 			}
-			$this->log->record( 'wp-native-builder/workspace-task', 'workspace_task', $item['id'], true, '' );
+			$this->log->record( 'wp-ai-bridge/workspace-task', 'workspace_task', $item['id'], true, '' );
 			return array( 'items' => array( $item ) );
 		}
 		if ( 'archive' === $action ) {
@@ -255,11 +255,11 @@ final class Workspace_Abilities {
 			if ( is_wp_error( $item ) ) {
 				return $item;
 			}
-			$this->log->record( 'wp-native-builder/workspace-task', 'workspace_task', $item['id'], true, '' );
+			$this->log->record( 'wp-ai-bridge/workspace-task', 'workspace_task', $item['id'], true, '' );
 			return array( 'items' => array( $item ) );
 		}
 
-		return new WP_Error( 'workspace_invalid_action', __( 'The requested Workspace task action is not supported.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'workspace_invalid_action', __( 'The requested Workspace task action is not supported.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return array<string,mixed> */

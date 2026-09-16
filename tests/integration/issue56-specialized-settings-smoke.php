@@ -7,15 +7,15 @@
 
 use WP_Native_Builder_Bridge\Support\Settings;
 
-function wpnb_issue56_specialized_assert( $condition, $message ) {
+function wpai_issue56_specialized_assert( $condition, $message ) {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message );
 	}
 }
 
-function wpnb_issue56_specialized_execute( $name, array $input = array() ) {
+function wpai_issue56_specialized_execute( $name, array $input = array() ) {
 	$ability = wp_get_ability( $name );
-	wpnb_issue56_specialized_assert( $ability instanceof WP_Ability, 'Missing registered ability: ' . $name );
+	wpai_issue56_specialized_assert( $ability instanceof WP_Ability, 'Missing registered ability: ' . $name );
 	return $ability->execute( $input );
 }
 
@@ -60,34 +60,34 @@ try {
 		$rest_names[ $option_name ] = $rest_name;
 	}
 
-	wpnb_issue56_specialized_assert( isset( $rest_names['page_on_front'], $rest_names['page_for_posts'], $rest_names['posts_per_page'] ), 'Expected Core front-page settings were not REST registered.' );
+	wpai_issue56_specialized_assert( isset( $rest_names['page_on_front'], $rest_names['page_for_posts'], $rest_names['posts_per_page'] ), 'Expected Core front-page settings were not REST registered.' );
 
-	$list = wpnb_issue56_specialized_execute( 'wp-native-builder/registered-settings-list', array( 'per_page' => 100 ) );
-	wpnb_issue56_specialized_assert( ! is_wp_error( $list ), 'Registered settings discovery failed for specialized Core settings.' );
+	$list = wpai_issue56_specialized_execute( 'wp-ai-bridge/registered-settings-list', array( 'per_page' => 100 ) );
+	wpai_issue56_specialized_assert( ! is_wp_error( $list ), 'Registered settings discovery failed for specialized Core settings.' );
 	$listed_names = array();
 	foreach ( $list['items'] as $item ) {
 		$listed_names[] = $item['name'];
 	}
-	wpnb_issue56_specialized_assert( in_array( $rest_names['page_on_front'], $listed_names, true ), 'Specialized front-page setting disappeared from generic discovery.' );
+	wpai_issue56_specialized_assert( in_array( $rest_names['page_on_front'], $listed_names, true ), 'Specialized front-page setting disappeared from generic discovery.' );
 
-	$read = wpnb_issue56_specialized_execute(
-		'wp-native-builder/registered-setting-read',
+	$read = wpai_issue56_specialized_execute(
+		'wp-ai-bridge/registered-setting-read',
 		array( 'name' => $rest_names['page_on_front'] )
 	);
-	wpnb_issue56_specialized_assert( ! is_wp_error( $read ) && true === $read['value_available'], 'Specialized front-page setting was not generically readable.' );
-	wpnb_issue56_specialized_assert( wp_json_encode( (int) get_option( 'page_on_front', 0 ) ) === $read['value_json'], 'Generic read returned the wrong front-page value.' );
+	wpai_issue56_specialized_assert( ! is_wp_error( $read ) && true === $read['value_available'], 'Specialized front-page setting was not generically readable.' );
+	wpai_issue56_specialized_assert( wp_json_encode( (int) get_option( 'page_on_front', 0 ) ) === $read['value_json'], 'Generic read returned the wrong front-page value.' );
 
 	foreach ( $rest_names as $option_name => $rest_name ) {
 		$before = get_option( $option_name );
-		$blocked = wpnb_issue56_specialized_execute(
-			'wp-native-builder/registered-setting-update',
+		$blocked = wpai_issue56_specialized_execute(
+			'wp-ai-bridge/registered-setting-update',
 			array(
 				'name'       => $rest_name,
 				'value_json' => wp_json_encode( $before ),
 			)
 		);
-		wpnb_issue56_specialized_assert( is_wp_error( $blocked ) && 'registered_setting_specialized_update_required' === $blocked->get_error_code(), 'Generic update did not preserve specialized ownership for ' . $option_name . '.' );
-		wpnb_issue56_specialized_assert( $before === get_option( $option_name ), 'Blocked generic update mutated specialized option ' . $option_name . '.' );
+		wpai_issue56_specialized_assert( is_wp_error( $blocked ) && 'registered_setting_specialized_update_required' === $blocked->get_error_code(), 'Generic update did not preserve specialized ownership for ' . $option_name . '.' );
+		wpai_issue56_specialized_assert( $before === get_option( $option_name ), 'Blocked generic update mutated specialized option ' . $option_name . '.' );
 	}
 
 	$front_id = wp_insert_post(
@@ -111,60 +111,60 @@ try {
 			'post_status' => 'publish',
 		)
 	);
-	wpnb_issue56_specialized_assert( ! is_wp_error( $front_id ) && $front_id > 0 && ! is_wp_error( $posts_id ) && $posts_id > 0 && ! is_wp_error( $post_id ) && $post_id > 0, 'Could not create front-page regression fixtures.' );
+	wpai_issue56_specialized_assert( ! is_wp_error( $front_id ) && $front_id > 0 && ! is_wp_error( $posts_id ) && $posts_id > 0 && ! is_wp_error( $post_id ) && $post_id > 0, 'Could not create front-page regression fixtures.' );
 	$created_ids = array( (int) $front_id, (int) $posts_id, (int) $post_id );
 
-	$valid = wpnb_issue56_specialized_execute(
-		'wp-native-builder/site-settings-update',
+	$valid = wpai_issue56_specialized_execute(
+		'wp-ai-bridge/site-settings-update',
 		array(
 			'show_on_front'  => 'page',
 			'page_on_front'  => (int) $front_id,
 			'page_for_posts' => (int) $posts_id,
 		)
 	);
-	wpnb_issue56_specialized_assert( ! is_wp_error( $valid ), 'Specialized front-page update rejected a valid distinct transition.' );
-	wpnb_issue56_specialized_assert( (int) $front_id === (int) get_option( 'page_on_front' ) && (int) $posts_id === (int) get_option( 'page_for_posts' ), 'Specialized valid front-page transition was not persisted.' );
+	wpai_issue56_specialized_assert( ! is_wp_error( $valid ), 'Specialized front-page update rejected a valid distinct transition.' );
+	wpai_issue56_specialized_assert( (int) $front_id === (int) get_option( 'page_on_front' ) && (int) $posts_id === (int) get_option( 'page_for_posts' ), 'Specialized valid front-page transition was not persisted.' );
 
-	$blocked_equal = wpnb_issue56_specialized_execute(
-		'wp-native-builder/registered-setting-update',
+	$blocked_equal = wpai_issue56_specialized_execute(
+		'wp-ai-bridge/registered-setting-update',
 		array(
 			'name'       => $rest_names['page_on_front'],
 			'value_json' => wp_json_encode( (int) $posts_id ),
 		)
 	);
-	wpnb_issue56_specialized_assert( is_wp_error( $blocked_equal ) && 'registered_setting_specialized_update_required' === $blocked_equal->get_error_code(), 'Generic update bypassed specialized equal-page protection.' );
-	wpnb_issue56_specialized_assert( (int) $front_id === (int) get_option( 'page_on_front' ) && (int) $posts_id === (int) get_option( 'page_for_posts' ), 'Blocked equal-page generic update changed front-page state.' );
+	wpai_issue56_specialized_assert( is_wp_error( $blocked_equal ) && 'registered_setting_specialized_update_required' === $blocked_equal->get_error_code(), 'Generic update bypassed specialized equal-page protection.' );
+	wpai_issue56_specialized_assert( (int) $front_id === (int) get_option( 'page_on_front' ) && (int) $posts_id === (int) get_option( 'page_for_posts' ), 'Blocked equal-page generic update changed front-page state.' );
 
-	$blocked_non_page = wpnb_issue56_specialized_execute(
-		'wp-native-builder/registered-setting-update',
+	$blocked_non_page = wpai_issue56_specialized_execute(
+		'wp-ai-bridge/registered-setting-update',
 		array(
 			'name'       => $rest_names['page_for_posts'],
 			'value_json' => wp_json_encode( (int) $post_id ),
 		)
 	);
-	wpnb_issue56_specialized_assert( is_wp_error( $blocked_non_page ) && 'registered_setting_specialized_update_required' === $blocked_non_page->get_error_code(), 'Generic update bypassed specialized page-target validation.' );
-	wpnb_issue56_specialized_assert( (int) $posts_id === (int) get_option( 'page_for_posts' ), 'Blocked non-page generic update changed posts-page state.' );
+	wpai_issue56_specialized_assert( is_wp_error( $blocked_non_page ) && 'registered_setting_specialized_update_required' === $blocked_non_page->get_error_code(), 'Generic update bypassed specialized page-target validation.' );
+	wpai_issue56_specialized_assert( (int) $posts_id === (int) get_option( 'page_for_posts' ), 'Blocked non-page generic update changed posts-page state.' );
 
 	$posts_per_page_before = get_option( 'posts_per_page' );
-	$blocked_posts_per_page = wpnb_issue56_specialized_execute(
-		'wp-native-builder/registered-setting-update',
+	$blocked_posts_per_page = wpai_issue56_specialized_execute(
+		'wp-ai-bridge/registered-setting-update',
 		array(
 			'name'       => $rest_names['posts_per_page'],
 			'value_json' => '0',
 		)
 	);
-	wpnb_issue56_specialized_assert( is_wp_error( $blocked_posts_per_page ) && 'registered_setting_specialized_update_required' === $blocked_posts_per_page->get_error_code(), 'Generic update bypassed specialized posts_per_page bounds.' );
-	wpnb_issue56_specialized_assert( $posts_per_page_before === get_option( 'posts_per_page' ), 'Blocked posts_per_page generic update mutated the option.' );
+	wpai_issue56_specialized_assert( is_wp_error( $blocked_posts_per_page ) && 'registered_setting_specialized_update_required' === $blocked_posts_per_page->get_error_code(), 'Generic update bypassed specialized posts_per_page bounds.' );
+	wpai_issue56_specialized_assert( $posts_per_page_before === get_option( 'posts_per_page' ), 'Blocked posts_per_page generic update mutated the option.' );
 
-	$invalid_specialized = wpnb_issue56_specialized_execute(
-		'wp-native-builder/site-settings-update',
+	$invalid_specialized = wpai_issue56_specialized_execute(
+		'wp-ai-bridge/site-settings-update',
 		array(
 			'page_on_front'  => (int) $posts_id,
 			'page_for_posts' => (int) $posts_id,
 		)
 	);
-	wpnb_issue56_specialized_assert( is_wp_error( $invalid_specialized ) && 'front_pages_must_differ' === $invalid_specialized->get_error_code(), 'Specialized equal-page invariant regressed.' );
-	wpnb_issue56_specialized_assert( (int) $front_id === (int) get_option( 'page_on_front' ) && (int) $posts_id === (int) get_option( 'page_for_posts' ), 'Rejected specialized transition changed front-page state.' );
+	wpai_issue56_specialized_assert( is_wp_error( $invalid_specialized ) && 'front_pages_must_differ' === $invalid_specialized->get_error_code(), 'Specialized equal-page invariant regressed.' );
+	wpai_issue56_specialized_assert( (int) $front_id === (int) get_option( 'page_on_front' ) && (int) $posts_id === (int) get_option( 'page_for_posts' ), 'Rejected specialized transition changed front-page state.' );
 
 	echo "PASS: Issue #56 specialized site-setting ownership.\n";
 } finally {

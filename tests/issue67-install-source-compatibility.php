@@ -7,9 +7,9 @@ use WP_Native_Builder_Bridge\Support\Mutation_Log;
 use WP_Native_Builder_Bridge\Support\Permissions;
 use WP_Native_Builder_Bridge\Support\Settings;
 
-wpnb_test_reset_state();
-$GLOBALS['wpnb_test']['capabilities']['install_plugins'] = true;
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = array(
+wpai_test_reset_state();
+$GLOBALS['wpai_test']['capabilities']['install_plugins'] = true;
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = array(
 	'code_extensions'   => 1,
 	'external_packages' => 1,
 );

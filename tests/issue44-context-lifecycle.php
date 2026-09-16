@@ -9,8 +9,8 @@ error_reporting( E_ALL );
 
 define( 'ABSPATH', '/tmp/wp/' );
 
-$GLOBALS['wpnb_issue44_context_options']   = array();
-$GLOBALS['wpnb_issue44_context_abilities'] = array();
+$GLOBALS['wpai_issue44_context_options']   = array();
+$GLOBALS['wpai_issue44_context_abilities'] = array();
 
 class WP_Error {
 	private $code;
@@ -29,13 +29,13 @@ function __( $text, $domain = null ) {
 }
 
 function get_option( $name, $default = false ) {
-	return array_key_exists( $name, $GLOBALS['wpnb_issue44_context_options'] )
-		? $GLOBALS['wpnb_issue44_context_options'][ $name ]
+	return array_key_exists( $name, $GLOBALS['wpai_issue44_context_options'] )
+		? $GLOBALS['wpai_issue44_context_options'][ $name ]
 		: $default;
 }
 
 function wp_get_ability( $name ) {
-	return $GLOBALS['wpnb_issue44_context_abilities'][ $name ] ?? null;
+	return $GLOBALS['wpai_issue44_context_abilities'][ $name ] ?? null;
 }
 
 require dirname( __DIR__ ) . '/src/Support/class-settings.php';
@@ -47,7 +47,7 @@ use WP_Native_Builder_Bridge\Support\Settings;
 $failures = 0;
 $tests    = 0;
 
-function wpnb_issue44_context_assert( $condition, $message ) {
+function wpai_issue44_context_assert( $condition, $message ) {
 	global $failures, $tests;
 	++$tests;
 	if ( ! $condition ) {
@@ -64,10 +64,10 @@ final class WP_AI_Bridge_Issue44_Context_Ability {
 
 $settings   = new Settings();
 $delegation = new Native_Ability_Delegation( $settings );
-$GLOBALS['wpnb_issue44_context_options'][ Settings::OPTION_NAME ] = array(
+$GLOBALS['wpai_issue44_context_options'][ Settings::OPTION_NAME ] = array(
 	Settings::GROUP_NATIVE_ABILITIES => 0,
 );
-$GLOBALS['wpnb_issue44_context_abilities']['issue44/context-provider'] = new WP_AI_Bridge_Issue44_Context_Ability();
+$GLOBALS['wpai_issue44_context_abilities']['issue44/context-provider'] = new WP_AI_Bridge_Issue44_Context_Ability();
 
 $adapter_args = $delegation->filter_ability_args(
 	array(
@@ -83,7 +83,7 @@ $input      = array(
 	'parameters'   => array(),
 );
 
-wpnb_issue44_context_assert( true === $permission( $input ), 'Direct Adapter permission unexpectedly inherited Bridge context.' );
+wpai_issue44_context_assert( true === $permission( $input ), 'Direct Adapter permission unexpectedly inherited Bridge context.' );
 
 $batch = $delegation->filter_rest_endpoints(
 	array(
@@ -97,17 +97,17 @@ $batch = $delegation->filter_rest_endpoints(
 	)
 );
 $batch_results = $batch['/wp-ai-bridge/v1/mcp'][0]['callback']( null );
-wpnb_issue44_context_assert(
+wpai_issue44_context_assert(
 	2 === count( $batch_results )
 		&& $batch_results[0] instanceof WP_Error
 		&& $batch_results[1] instanceof WP_Error,
 	'Batch-style execution did not retain Bridge context for every item.'
 );
-wpnb_issue44_context_assert( true === $permission( $input ), 'Bridge context leaked after batch-style callback completion.' );
+wpai_issue44_context_assert( true === $permission( $input ), 'Bridge context leaked after batch-style callback completion.' );
 
 $inner = $delegation->filter_rest_endpoints(
 	array(
-		'/wp-native-builder/v1/mcp' => array(
+		'/wp-ai-bridge/v1/mcp' => array(
 			array(
 				'callback' => static function () use ( $permission, $input ) {
 					return $permission( $input );
@@ -116,7 +116,7 @@ $inner = $delegation->filter_rest_endpoints(
 		),
 	)
 );
-$inner_callback = $inner['/wp-native-builder/v1/mcp'][0]['callback'];
+$inner_callback = $inner['/wp-ai-bridge/v1/mcp'][0]['callback'];
 $outer          = $delegation->filter_rest_endpoints(
 	array(
 		'/wp-ai-bridge/v1/mcp' => array(
@@ -130,11 +130,11 @@ $outer          = $delegation->filter_rest_endpoints(
 	)
 );
 $nested_results = $outer['/wp-ai-bridge/v1/mcp'][0]['callback']( null );
-wpnb_issue44_context_assert(
+wpai_issue44_context_assert(
 	$nested_results[0] instanceof WP_Error && $nested_results[1] instanceof WP_Error,
 	'Nested Bridge callback lost the outer Bridge request context.'
 );
-wpnb_issue44_context_assert( true === $permission( $input ), 'Bridge context leaked after nested callback completion.' );
+wpai_issue44_context_assert( true === $permission( $input ), 'Bridge context leaked after nested callback completion.' );
 
 $throwing = $delegation->filter_rest_endpoints(
 	array(
@@ -150,12 +150,12 @@ $throwing = $delegation->filter_rest_endpoints(
 try {
 	$throwing['/wp-ai-bridge/v1/mcp'][0]['callback']( null );
 } catch ( RuntimeException $exception ) {
-	wpnb_issue44_context_assert(
+	wpai_issue44_context_assert(
 		'issue44-context-fixture' === $exception->getMessage(),
 		'Bridge wrapper changed an exception while unwinding context.'
 	);
 }
-wpnb_issue44_context_assert( true === $permission( $input ), 'Bridge context leaked after exception unwinding.' );
+wpai_issue44_context_assert( true === $permission( $input ), 'Bridge context leaked after exception unwinding.' );
 
 if ( $failures ) {
 	fwrite( STDERR, "{$failures} of {$tests} Issue #44 context-lifecycle assertions failed.\n" );

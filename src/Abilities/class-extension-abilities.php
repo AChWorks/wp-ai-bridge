@@ -37,10 +37,10 @@ final class Extension_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/extensions-read',
+			'wp-ai-bridge/extensions-read',
 			array(
-				'label'               => __( 'Read Plugins and Themes', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists installed WordPress plugins and themes with bounded lifecycle state.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Plugins and Themes', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists installed WordPress plugins and themes with bounded lifecycle state.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -59,10 +59,10 @@ final class Extension_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/extension-lifecycle',
+			'wp-ai-bridge/extension-lifecycle',
 			array(
-				'label'               => __( 'Manage Plugin or Theme Lifecycle', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Installs WordPress.org extensions by slug or explicitly authorized external HTTPS packages, and manages installed extensions through WordPress Core APIs. Deletion additionally requires destructive access.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Manage Plugin or Theme Lifecycle', 'wp-ai-bridge' ),
+				'description'         => __( 'Installs WordPress.org extensions by slug or explicitly authorized external HTTPS packages, and manages installed extensions through WordPress Core APIs. Deletion additionally requires destructive access.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->mutate_schema(),
 				'output_schema'       => array(
@@ -141,10 +141,10 @@ final class Extension_Abilities {
 		$slug   = isset( $input['slug'] ) ? sanitize_key( (string) $input['slug'] ) : '';
 
 		if ( ! in_array( $kind, array( 'plugin', 'theme' ), true ) ) {
-			return new WP_Error( 'invalid_extension_kind', __( 'Extension kind must be plugin or theme.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'invalid_extension_kind', __( 'Extension kind must be plugin or theme.', 'wp-ai-bridge' ) );
 		}
 		if ( ! in_array( $action, $this->actions_for( $kind ), true ) ) {
-			return new WP_Error( 'invalid_extension_action', __( 'That lifecycle action is not supported for the selected extension kind.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'invalid_extension_action', __( 'That lifecycle action is not supported for the selected extension kind.', 'wp-ai-bridge' ) );
 		}
 
 		if ( 'install' === $action ) {
@@ -152,10 +152,10 @@ final class Extension_Abilities {
 			$package_url = isset( $input['package_url'] ) && is_string( $input['package_url'] ) ? $input['package_url'] : '';
 			$has_package = '' !== $package_url;
 			if ( ! $has_slug && ! $has_package ) {
-				return new WP_Error( 'extension_slug_required', __( 'A WordPress.org slug or an external package URL is required for installation.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'extension_slug_required', __( 'A WordPress.org slug or an external package URL is required for installation.', 'wp-ai-bridge' ) );
 			}
 			if ( $has_slug && $has_package ) {
-				return new WP_Error( 'extension_install_source_required', __( 'Choose exactly one install source: a WordPress.org slug or an external package URL.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'extension_install_source_required', __( 'Choose exactly one install source: a WordPress.org slug or an external package URL.', 'wp-ai-bridge' ) );
 			}
 			if ( $has_package ) {
 				return $this->install_external_package( $kind, $input );
@@ -164,10 +164,10 @@ final class Extension_Abilities {
 		}
 
 		if ( isset( $input['slug'] ) || isset( $input['package_url'] ) ) {
-			return new WP_Error( 'extension_install_source_not_applicable', __( 'Install source fields are accepted only for the install action.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'extension_install_source_not_applicable', __( 'Install source fields are accepted only for the install action.', 'wp-ai-bridge' ) );
 		}
 		if ( '' === $target ) {
-			return new WP_Error( 'extension_target_required', __( 'An installed plugin file or theme stylesheet is required.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'extension_target_required', __( 'An installed plugin file or theme stylesheet is required.', 'wp-ai-bridge' ) );
 		}
 
 		$this->load_admin_files( true );
@@ -175,7 +175,7 @@ final class Extension_Abilities {
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
-		$this->log->record( 'wp-native-builder/extension-lifecycle', $kind, 0, true, '' );
+		$this->log->record( 'wp-ai-bridge/extension-lifecycle', $kind, 0, true, '' );
 		return array(
 			'kind'                              => $kind,
 			'action'                            => $action,
@@ -210,7 +210,7 @@ final class Extension_Abilities {
 				return $api;
 			}
 			if ( empty( $api->download_link ) ) {
-				return new WP_Error( 'plugin_package_missing', __( 'WordPress.org did not return an install package for that plugin slug.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'plugin_package_missing', __( 'WordPress.org did not return an install package for that plugin slug.', 'wp-ai-bridge' ) );
 			}
 			$skin     = new \Automatic_Upgrader_Skin();
 			$upgrader = new \Plugin_Upgrader( $skin );
@@ -231,7 +231,7 @@ final class Extension_Abilities {
 				return $api;
 			}
 			if ( empty( $api->download_link ) ) {
-				return new WP_Error( 'theme_package_missing', __( 'WordPress.org did not return an install package for that theme slug.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'theme_package_missing', __( 'WordPress.org did not return an install package for that theme slug.', 'wp-ai-bridge' ) );
 			}
 			$skin     = new \Automatic_Upgrader_Skin();
 			$upgrader = new \Theme_Upgrader( $skin );
@@ -244,7 +244,7 @@ final class Extension_Abilities {
 		if ( ! $ok ) {
 			return $this->filesystem_error( $wp_filesystem );
 		}
-		$this->log->record( 'wp-native-builder/extension-lifecycle', $kind, 0, true, '' );
+		$this->log->record( 'wp-ai-bridge/extension-lifecycle', $kind, 0, true, '' );
 		return array(
 			'kind'                              => $kind,
 			'action'                            => 'install',
@@ -288,7 +288,7 @@ final class Extension_Abilities {
 
 		if ( ! is_wp_error( $result ) ) {
 			try {
-				$this->log->record( 'wp-native-builder/extension-lifecycle', $kind, 0, true, '' );
+				$this->log->record( 'wp-ai-bridge/extension-lifecycle', $kind, 0, true, '' );
 			} catch ( \Throwable $error ) {
 				return $this->external_package_recovery_error( $kind, $state, $cleaned );
 			}
@@ -308,25 +308,25 @@ final class Extension_Abilities {
 	private function install_external_package_checked( $kind, $input, &$state ) {
 		$url = isset( $input['package_url'] ) && is_string( $input['package_url'] ) ? $input['package_url'] : '';
 		if ( ! $this->can_mutate( $input ) ) {
-			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-native-builder-bridge' ) );
+			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-ai-bridge' ) );
 		}
 		if ( '' === $url || strlen( $url ) > 8192 || preg_match( '/[\x00-\x20\x7f]/', $url ) || ! $this->is_safe_package_destination( $url ) ) {
-			return $this->external_package_error( $kind, 'unsafe_external_package_url', __( 'WordPress did not accept the external package URL as a safe public HTTPS destination.', 'wp-native-builder-bridge' ) );
+			return $this->external_package_error( $kind, 'unsafe_external_package_url', __( 'WordPress did not accept the external package URL as a safe public HTTPS destination.', 'wp-ai-bridge' ) );
 		}
 
 		$max_bytes = min( (int) wp_max_upload_size(), self::ABSOLUTE_MAX_PACKAGE_BYTES );
 		if ( $max_bytes < 1 ) {
-			return $this->external_package_error( $kind, 'external_package_limit_unavailable', __( 'WordPress must provide a finite positive upload limit before an external package can be installed.', 'wp-native-builder-bridge' ) );
+			return $this->external_package_error( $kind, 'external_package_limit_unavailable', __( 'WordPress must provide a finite positive upload limit before an external package can be installed.', 'wp-ai-bridge' ) );
 		}
 
 		$this->load_external_package_files();
 		$temp_file          = wp_tempnam( 'wp-ai-bridge-package.zip' );
 		$state['temp_file'] = $temp_file ? (string) $temp_file : '';
 		if ( ! $temp_file ) {
-			return $this->external_package_error( $kind, 'external_package_temp_failed', __( 'WordPress could not allocate a temporary upload file.', 'wp-native-builder-bridge' ) );
+			return $this->external_package_error( $kind, 'external_package_temp_failed', __( 'WordPress could not allocate a temporary upload file.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $this->can_mutate( $input ) ) {
-			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-native-builder-bridge' ) );
+			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-ai-bridge' ) );
 		}
 
 		$redirect_failure = '';
@@ -340,7 +340,7 @@ final class Extension_Abilities {
 				$redirect_failure = 'destination';
 			}
 			if ( '' !== $redirect_failure ) {
-				throw new \WpOrg\Requests\Exception( 'The external package redirect was refused.', 'wpnb_external_package_redirect_refused' );
+				throw new \WpOrg\Requests\Exception( 'The external package redirect was refused.', 'wpai_external_package_redirect_refused' );
 			}
 		};
 		add_action( 'requests-requests.before_redirect', $redirect_guard, PHP_INT_MAX, 4 );
@@ -364,26 +364,26 @@ final class Extension_Abilities {
 		}
 
 		if ( 'permission' === $redirect_failure ) {
-			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-native-builder-bridge' ) );
+			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-ai-bridge' ) );
 		}
 		if ( 'destination' === $redirect_failure ) {
-			return $this->external_package_error( $kind, 'unsafe_external_package_url', __( 'WordPress did not accept the external package URL as a safe public HTTPS destination.', 'wp-native-builder-bridge' ) );
+			return $this->external_package_error( $kind, 'unsafe_external_package_url', __( 'WordPress did not accept the external package URL as a safe public HTTPS destination.', 'wp-ai-bridge' ) );
 		}
 		if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
-			return $this->external_package_error( $kind, 'external_package_http_failed', __( 'WordPress could not download a complete external package response.', 'wp-native-builder-bridge' ) );
+			return $this->external_package_error( $kind, 'external_package_http_failed', __( 'WordPress could not download a complete external package response.', 'wp-ai-bridge' ) );
 		}
 
 		clearstatcache( true, $temp_file );
 		$bytes  = is_file( $temp_file ) ? filesize( $temp_file ) : false;
 		$length = wp_remote_retrieve_header( $response, 'content-length' );
 		if ( false === $bytes || $bytes < 1 || $bytes > $max_bytes ) {
-			return $this->external_package_error( $kind, 'external_package_size_invalid', __( 'The downloaded external package is empty or exceeds the permitted package size.', 'wp-native-builder-bridge' ) );
+			return $this->external_package_error( $kind, 'external_package_size_invalid', __( 'The downloaded external package is empty or exceeds the permitted package size.', 'wp-ai-bridge' ) );
 		}
 		if ( '' !== $length && ( ! is_scalar( $length ) || ! ctype_digit( (string) $length ) || ltrim( (string) $length, '0' ) !== (string) $bytes ) ) {
-			return $this->external_package_error( $kind, 'external_package_incomplete', __( 'The downloaded external package length does not match the complete response.', 'wp-native-builder-bridge' ) );
+			return $this->external_package_error( $kind, 'external_package_incomplete', __( 'The downloaded external package length does not match the complete response.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $this->can_mutate( $input ) ) {
-			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-native-builder-bridge' ) );
+			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-ai-bridge' ) );
 		}
 
 		$state['install_started'] = true;
@@ -491,7 +491,7 @@ final class Extension_Abilities {
 	 */
 	private function external_package_error( $kind, $code, $message ) {
 		try {
-			$this->log->record( 'wp-native-builder/extension-lifecycle', $kind, 0, false, $code );
+			$this->log->record( 'wp-ai-bridge/extension-lifecycle', $kind, 0, false, $code );
 		} catch ( \Throwable $error ) {
 			// Error reporting must never disclose downstream package diagnostics.
 		}
@@ -508,13 +508,13 @@ final class Extension_Abilities {
 	 */
 	private function external_package_recovery_error( $kind, $state, $cleaned ) {
 		try {
-			$this->log->record( 'wp-native-builder/extension-lifecycle', $kind, 0, false, 'external_package_recovery_required' );
+			$this->log->record( 'wp-ai-bridge/extension-lifecycle', $kind, 0, false, 'external_package_recovery_required' );
 		} catch ( \Throwable $error ) {
 			// Recovery reporting must remain independent of audit availability.
 		}
 		return new WP_Error(
 			'external_package_recovery_required',
-			__( 'The external package install could not finish safely. Inspect installed extensions and temporary storage before retrying.', 'wp-native-builder-bridge' ),
+			__( 'The external package install could not finish safely. Inspect installed extensions and temporary storage before retrying.', 'wp-ai-bridge' ),
 			array(
 				'kind'                   => $kind,
 				'install_state'          => ! empty( $state['installed_target'] ) ? 'installed' : ( ! empty( $state['install_started'] ) ? 'unconfirmed' : 'not_started' ),
@@ -547,7 +547,7 @@ final class Extension_Abilities {
 	private function mutate_plugin( $action, $plugin ) {
 		$plugins = get_plugins();
 		if ( ! isset( $plugins[ $plugin ] ) ) {
-			return new WP_Error( 'plugin_not_found', __( 'The installed plugin target was not found.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'plugin_not_found', __( 'The installed plugin target was not found.', 'wp-ai-bridge' ) );
 		}
 		if ( 'activate' === $action ) {
 			$result = activate_plugin( $plugin );
@@ -555,33 +555,33 @@ final class Extension_Abilities {
 		}
 		if ( 'deactivate' === $action ) {
 			deactivate_plugins( $plugin );
-			return is_plugin_active( $plugin ) ? new WP_Error( 'plugin_deactivate_failed', __( 'WordPress did not deactivate the plugin.', 'wp-native-builder-bridge' ) ) : $plugin;
+			return is_plugin_active( $plugin ) ? new WP_Error( 'plugin_deactivate_failed', __( 'WordPress did not deactivate the plugin.', 'wp-ai-bridge' ) ) : $plugin;
 		}
 		if ( 'update' === $action ) {
 			wp_update_plugins();
 			$skin     = new \Automatic_Upgrader_Skin();
 			$upgrader = new \Plugin_Upgrader( $skin );
 			$result   = $upgrader->upgrade( $plugin );
-			return is_wp_error( $result ) ? $result : ( $result ? $plugin : new WP_Error( 'plugin_update_unavailable', __( 'No applicable plugin update was installed.', 'wp-native-builder-bridge' ) ) );
+			return is_wp_error( $result ) ? $result : ( $result ? $plugin : new WP_Error( 'plugin_update_unavailable', __( 'No applicable plugin update was installed.', 'wp-ai-bridge' ) ) );
 		}
 		if ( is_plugin_active( $plugin ) ) {
-			return new WP_Error( 'plugin_must_be_inactive', __( 'Deactivate the plugin before deleting it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'plugin_must_be_inactive', __( 'Deactivate the plugin before deleting it.', 'wp-ai-bridge' ) );
 		}
 		$result = delete_plugins( array( $plugin ) );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
 		if ( null === $result ) {
-			return new WP_Error( 'filesystem_access_required', __( 'WordPress requires manual filesystem credentials or access for this plugin deletion.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'filesystem_access_required', __( 'WordPress requires manual filesystem credentials or access for this plugin deletion.', 'wp-ai-bridge' ) );
 		}
-		return true === $result ? $plugin : new WP_Error( 'plugin_delete_failed', __( 'WordPress did not delete the plugin.', 'wp-native-builder-bridge' ) );
+		return true === $result ? $plugin : new WP_Error( 'plugin_delete_failed', __( 'WordPress did not delete the plugin.', 'wp-ai-bridge' ) );
 	}
 
 	/** @param string $action Action. @param string $stylesheet Stylesheet. @return string|WP_Error */
 	private function mutate_theme( $action, $stylesheet ) {
 		$theme = wp_get_theme( $stylesheet );
 		if ( ! $theme->exists() ) {
-			return new WP_Error( 'theme_not_found', __( 'The installed theme target was not found.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'theme_not_found', __( 'The installed theme target was not found.', 'wp-ai-bridge' ) );
 		}
 		if ( 'activate' === $action ) {
 			$requirements = validate_theme_requirements( $stylesheet );
@@ -589,26 +589,26 @@ final class Extension_Abilities {
 				return $requirements;
 			}
 			switch_theme( $stylesheet );
-			return get_stylesheet() === $stylesheet ? $stylesheet : new WP_Error( 'theme_switch_failed', __( 'WordPress did not activate the theme.', 'wp-native-builder-bridge' ) );
+			return get_stylesheet() === $stylesheet ? $stylesheet : new WP_Error( 'theme_switch_failed', __( 'WordPress did not activate the theme.', 'wp-ai-bridge' ) );
 		}
 		if ( 'update' === $action ) {
 			wp_update_themes();
 			$skin     = new \Automatic_Upgrader_Skin();
 			$upgrader = new \Theme_Upgrader( $skin );
 			$result   = $upgrader->upgrade( $stylesheet );
-			return is_wp_error( $result ) ? $result : ( $result ? $stylesheet : new WP_Error( 'theme_update_unavailable', __( 'No applicable theme update was installed.', 'wp-native-builder-bridge' ) ) );
+			return is_wp_error( $result ) ? $result : ( $result ? $stylesheet : new WP_Error( 'theme_update_unavailable', __( 'No applicable theme update was installed.', 'wp-ai-bridge' ) ) );
 		}
 		if ( get_stylesheet() === $stylesheet || get_template() === $stylesheet ) {
-			return new WP_Error( 'active_theme_delete_denied', __( 'Activate another theme before deleting the current theme or its parent.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'active_theme_delete_denied', __( 'Activate another theme before deleting the current theme or its parent.', 'wp-ai-bridge' ) );
 		}
 		$result = delete_theme( $stylesheet );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
 		if ( null === $result ) {
-			return new WP_Error( 'filesystem_access_required', __( 'WordPress requires manual filesystem credentials or access for this theme deletion.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'filesystem_access_required', __( 'WordPress requires manual filesystem credentials or access for this theme deletion.', 'wp-ai-bridge' ) );
 		}
-		return true === $result ? $stylesheet : new WP_Error( 'theme_delete_failed', __( 'WordPress did not delete the theme.', 'wp-native-builder-bridge' ) );
+		return true === $result ? $stylesheet : new WP_Error( 'theme_delete_failed', __( 'WordPress did not delete the theme.', 'wp-ai-bridge' ) );
 	}
 
 	/** @param mixed $filesystem Filesystem. @return WP_Error */
@@ -616,7 +616,7 @@ final class Extension_Abilities {
 		if ( is_object( $filesystem ) && isset( $filesystem->errors ) && is_wp_error( $filesystem->errors ) && $filesystem->errors->has_errors() ) {
 			return new WP_Error( 'filesystem_access_required', $filesystem->errors->get_error_message() );
 		}
-		return new WP_Error( 'filesystem_access_required', __( 'WordPress could not obtain non-interactive filesystem access. Complete filesystem setup manually and retry.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'filesystem_access_required', __( 'WordPress could not obtain non-interactive filesystem access. Complete filesystem setup manually and retry.', 'wp-ai-bridge' ) );
 	}
 
 	/** @param bool $upgrader Include upgrader/install APIs. @return void */

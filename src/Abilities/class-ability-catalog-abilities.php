@@ -44,10 +44,10 @@ final class Ability_Catalog_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/abilities-read',
+			'wp-ai-bridge/abilities-read',
 			array(
-				'label'               => __( 'Read Ability Contracts', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists public native Ability contracts with pagination or reads one exact contract. Discovery does not execute operations or establish target permissions.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Ability Contracts', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists public native Ability contracts with pagination or reads one exact contract. Discovery does not execute operations or establish target permissions.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->input_schema(),
 				'output_schema'       => $this->output_schema(),
@@ -83,7 +83,7 @@ final class Ability_Catalog_Abilities {
 	 */
 	public function read( $input ) {
 		if ( ! $this->can_read() ) {
-			return new WP_Error( 'ability_catalog_permission_denied', __( 'Site Read access and the WordPress read capability are required to inspect Ability contracts.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'ability_catalog_permission_denied', __( 'Site Read access and the WordPress read capability are required to inspect Ability contracts.', 'wp-ai-bridge' ) );
 		}
 		if ( ! is_array( $input ) ) {
 			return $this->invalid_input();
@@ -93,7 +93,7 @@ final class Ability_Catalog_Abilities {
 			return $this->invalid_input();
 		}
 		if ( ! function_exists( 'wp_get_abilities' ) || ! function_exists( 'wp_get_ability' ) ) {
-			return new WP_Error( 'ability_registry_unavailable', __( 'The WordPress Abilities registry is not available.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'ability_registry_unavailable', __( 'The WordPress Abilities registry is not available.', 'wp-ai-bridge' ) );
 		}
 
 		if ( 'get' === $action ) {
@@ -102,7 +102,7 @@ final class Ability_Catalog_Abilities {
 			}
 			$ability = wp_get_ability( $input['name'] );
 			if ( ! $this->resolver->is_mcp_exposed( $ability ) || $ability->get_name() !== $input['name'] ) {
-				return new WP_Error( 'ability_contract_not_found', __( 'The requested public Ability contract is not available.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'ability_contract_not_found', __( 'The requested public Ability contract is not available.', 'wp-ai-bridge' ) );
 			}
 			if ( ! method_exists( $ability, 'get_output_schema' ) ) {
 				return $this->invalid_contract();
@@ -245,17 +245,17 @@ final class Ability_Catalog_Abilities {
 
 	/** @return WP_Error */
 	private function response_too_large() {
-		return new WP_Error( 'ability_catalog_response_too_large', __( 'The public Ability contract exceeds the bounded inspection response size. Reduce the list page size or use the provider native contract documentation.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'ability_catalog_response_too_large', __( 'The public Ability contract exceeds the bounded inspection response size. Reduce the list page size or use the provider native contract documentation.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function invalid_input() {
-		return new WP_Error( 'invalid_ability_catalog_input', __( 'Use list with valid pagination and filters, or get with an exact Ability name.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'invalid_ability_catalog_input', __( 'Use list with valid pagination and filters, or get with an exact Ability name.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function invalid_contract() {
-		return new WP_Error( 'ability_contract_unrepresentable', __( 'The public Ability contract cannot be represented safely. No partial schema was returned.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'ability_contract_unrepresentable', __( 'The public Ability contract cannot be represented safely. No partial schema was returned.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return array<string,mixed> */

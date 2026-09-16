@@ -38,10 +38,10 @@ final class Code_Snippets_Abilities {
 		}
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/snippets-read',
+			'wp-ai-bridge/snippets-read',
 			array(
-				'label'               => __( 'Read Managed Snippets', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists or retrieves site-local managed Code Snippets through the plugin public lifecycle API.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Managed Snippets', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists or retrieves site-local managed Code Snippets through the plugin public lifecycle API.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->read_schema(),
 				'output_schema'       => $this->list_schema(),
@@ -52,10 +52,10 @@ final class Code_Snippets_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/snippet-upsert',
+			'wp-ai-bridge/snippet-upsert',
 			array(
-				'label'               => __( 'Create or Update Managed Snippet', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Creates or updates a managed snippet using an installed Code Snippets scope; type is derived by the provider and supplied code is never directly evaluated by the Bridge.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Create or Update Managed Snippet', 'wp-ai-bridge' ),
+				'description'         => __( 'Creates or updates a managed snippet using an installed Code Snippets scope; type is derived by the provider and supplied code is never directly evaluated by the Bridge.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->upsert_schema(),
 				'output_schema'       => $this->result_schema(),
@@ -66,10 +66,10 @@ final class Code_Snippets_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/snippet-lifecycle',
+			'wp-ai-bridge/snippet-lifecycle',
 			array(
-				'label'               => __( 'Change Managed Snippet Lifecycle', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Activates, deactivates, trashes, or restores a managed Code Snippet through its supported lifecycle.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Change Managed Snippet Lifecycle', 'wp-ai-bridge' ),
+				'description'         => __( 'Activates, deactivates, trashes, or restores a managed Code Snippet through its supported lifecycle.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -94,10 +94,10 @@ final class Code_Snippets_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/snippet-delete',
+			'wp-ai-bridge/snippet-delete',
 			array(
-				'label'               => __( 'Permanently Delete Managed Snippet', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Permanently deletes an already-trashed site-local Code Snippet under destructive access.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Permanently Delete Managed Snippet', 'wp-ai-bridge' ),
+				'description'         => __( 'Permanently deletes an already-trashed site-local Code Snippet under destructive access.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -165,7 +165,7 @@ final class Code_Snippets_Abilities {
 		if ( 'get' === $input['action'] ) {
 			$snippet = \Code_Snippets\get_snippet( (int) $input['id'], false );
 			if ( ! $snippet || empty( $snippet->id ) ) {
-				return new WP_Error( 'snippet_not_found', __( 'The managed snippet was not found.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'snippet_not_found', __( 'The managed snippet was not found.', 'wp-ai-bridge' ) );
 			}
 
 			return array( 'items' => array( $this->format( $snippet ) ) );
@@ -192,7 +192,7 @@ final class Code_Snippets_Abilities {
 		$scopes = $class ? $class::get_all_scopes() : array();
 		$scope  = (string) $input['scope'];
 		if ( ! in_array( $scope, $scopes, true ) ) {
-			return new WP_Error( 'invalid_snippet_scope', __( 'The installed Code Snippets provider does not support that scope.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'invalid_snippet_scope', __( 'The installed Code Snippets provider does not support that scope.', 'wp-ai-bridge' ) );
 		}
 
 		if ( 'create' === $input['action'] ) {
@@ -210,10 +210,10 @@ final class Code_Snippets_Abilities {
 		} else {
 			$snippet = \Code_Snippets\get_snippet( (int) $input['id'], false );
 			if ( ! $snippet || empty( $snippet->id ) ) {
-				return new WP_Error( 'snippet_not_found', __( 'The managed snippet was not found.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'snippet_not_found', __( 'The managed snippet was not found.', 'wp-ai-bridge' ) );
 			}
 			if ( $this->snippet_locked( $snippet ) ) {
-				return new WP_Error( 'snippet_locked', __( 'The managed snippet is locked by Code Snippets and cannot be changed.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'snippet_locked', __( 'The managed snippet is locked by Code Snippets and cannot be changed.', 'wp-ai-bridge' ) );
 			}
 
 			$snippet->name  = sanitize_text_field( (string) $input['name'] );
@@ -228,10 +228,10 @@ final class Code_Snippets_Abilities {
 
 		$saved = \Code_Snippets\save_snippet( $snippet );
 		if ( ! $saved || empty( $saved->id ) ) {
-			return new WP_Error( 'snippet_save_failed', __( 'Code Snippets did not save the managed snippet.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'snippet_save_failed', __( 'Code Snippets did not save the managed snippet.', 'wp-ai-bridge' ) );
 		}
 
-		$this->log->record( 'wp-native-builder/snippet-upsert', 'snippet', (int) $saved->id, true, '' );
+		$this->log->record( 'wp-ai-bridge/snippet-upsert', 'snippet', (int) $saved->id, true, '' );
 		return array( 'snippet' => $this->format( $saved ) );
 	}
 
@@ -245,33 +245,33 @@ final class Code_Snippets_Abilities {
 		$id      = (int) $input['id'];
 		$snippet = \Code_Snippets\get_snippet( $id, false );
 		if ( ! $snippet || empty( $snippet->id ) ) {
-			return new WP_Error( 'snippet_not_found', __( 'The managed snippet was not found.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'snippet_not_found', __( 'The managed snippet was not found.', 'wp-ai-bridge' ) );
 		}
 		if ( $this->snippet_locked( $snippet ) ) {
-			return new WP_Error( 'snippet_locked', __( 'The managed snippet is locked by Code Snippets and cannot be changed.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'snippet_locked', __( 'The managed snippet is locked by Code Snippets and cannot be changed.', 'wp-ai-bridge' ) );
 		}
 
 		$action = (string) $input['action'];
 		if ( 'activate' === $action ) {
 			$result = \Code_Snippets\activate_snippet( $id, false );
 			if ( is_string( $result ) || ! $result ) {
-				return new WP_Error( 'snippet_activation_failed', is_string( $result ) ? $result : __( 'Code Snippets did not activate the snippet.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'snippet_activation_failed', is_string( $result ) ? $result : __( 'Code Snippets did not activate the snippet.', 'wp-ai-bridge' ) );
 			}
 		} elseif ( 'deactivate' === $action ) {
 			$result = \Code_Snippets\deactivate_snippet( $id, false );
 			if ( ! $result ) {
-				return new WP_Error( 'snippet_deactivation_failed', __( 'Code Snippets did not deactivate the snippet.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'snippet_deactivation_failed', __( 'Code Snippets did not deactivate the snippet.', 'wp-ai-bridge' ) );
 			}
 		} elseif ( 'trash' === $action ) {
 			if ( ! \Code_Snippets\trash_snippet( $id, false ) ) {
-				return new WP_Error( 'snippet_trash_failed', __( 'Code Snippets did not trash the snippet.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'snippet_trash_failed', __( 'Code Snippets did not trash the snippet.', 'wp-ai-bridge' ) );
 			}
 		} elseif ( ! \Code_Snippets\restore_snippet( $id, false ) ) {
-			return new WP_Error( 'snippet_restore_failed', __( 'Code Snippets did not restore the snippet.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'snippet_restore_failed', __( 'Code Snippets did not restore the snippet.', 'wp-ai-bridge' ) );
 		}
 
 		$fresh = \Code_Snippets\get_snippet( $id, false );
-		$this->log->record( 'wp-native-builder/snippet-lifecycle', 'snippet', $id, true, '' );
+		$this->log->record( 'wp-ai-bridge/snippet-lifecycle', 'snippet', $id, true, '' );
 		return array( 'snippet' => $this->format( $fresh ) );
 	}
 
@@ -285,19 +285,19 @@ final class Code_Snippets_Abilities {
 		$id      = (int) $input['id'];
 		$snippet = \Code_Snippets\get_snippet( $id, false );
 		if ( ! $snippet || empty( $snippet->id ) ) {
-			return new WP_Error( 'snippet_not_found', __( 'The managed snippet was not found.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'snippet_not_found', __( 'The managed snippet was not found.', 'wp-ai-bridge' ) );
 		}
 		if ( $this->snippet_locked( $snippet ) ) {
-			return new WP_Error( 'snippet_locked', __( 'The managed snippet is locked by Code Snippets and cannot be deleted.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'snippet_locked', __( 'The managed snippet is locked by Code Snippets and cannot be deleted.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $this->snippet_trashed( $snippet ) ) {
-			return new WP_Error( 'snippet_trash_required', __( 'Trash the managed snippet before permanent deletion.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'snippet_trash_required', __( 'Trash the managed snippet before permanent deletion.', 'wp-ai-bridge' ) );
 		}
 		if ( ! \Code_Snippets\delete_snippet( $id, false ) ) {
-			return new WP_Error( 'snippet_delete_failed', __( 'Code Snippets did not permanently delete the snippet.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'snippet_delete_failed', __( 'Code Snippets did not permanently delete the snippet.', 'wp-ai-bridge' ) );
 		}
 
-		$this->log->record( 'wp-native-builder/snippet-delete', 'snippet', $id, true, '' );
+		$this->log->record( 'wp-ai-bridge/snippet-delete', 'snippet', $id, true, '' );
 		return array(
 			'deleted' => true,
 			'id'      => $id,

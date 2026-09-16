@@ -65,13 +65,13 @@ function wpnb61_fire_filter( $hook, $value, ...$args ) {
 
 if ( ! function_exists( 'remove_action' ) ) {
 	function remove_action( $hook, $callback, $priority = 10 ) {
-		if ( empty( $GLOBALS['wpnb_test']['actions'][ $hook ] ) ) {
+		if ( empty( $GLOBALS['wpai_test']['actions'][ $hook ] ) ) {
 			return false;
 		}
-		foreach ( $GLOBALS['wpnb_test']['actions'][ $hook ] as $index => $registered ) {
+		foreach ( $GLOBALS['wpai_test']['actions'][ $hook ] as $index => $registered ) {
 			if ( $registered === $callback ) {
-				unset( $GLOBALS['wpnb_test']['actions'][ $hook ][ $index ] );
-				$GLOBALS['wpnb_test']['actions'][ $hook ] = array_values( $GLOBALS['wpnb_test']['actions'][ $hook ] );
+				unset( $GLOBALS['wpai_test']['actions'][ $hook ][ $index ] );
+				$GLOBALS['wpai_test']['actions'][ $hook ] = array_values( $GLOBALS['wpai_test']['actions'][ $hook ] );
 				return true;
 			}
 		}
@@ -80,7 +80,7 @@ if ( ! function_exists( 'remove_action' ) ) {
 }
 
 function wpnb61_fire_action( $hook, ...$args ) {
-	foreach ( array_values( $GLOBALS['wpnb_test']['actions'][ $hook ] ?? array() ) as $callback ) {
+	foreach ( array_values( $GLOBALS['wpai_test']['actions'][ $hook ] ?? array() ) as $callback ) {
 		call_user_func_array( $callback, $args );
 	}
 }
@@ -217,27 +217,27 @@ function rest_do_request( $request ) {
 	return new WP_AI_Bridge_Issue61_Test_Response( array(), new WP_Error( 'unexpected_route', 'Unexpected test REST request.' ) );
 }
 
-wpnb_test_reset_state();
+wpai_test_reset_state();
 $settings = new Settings();
 wpnb61_assert( 0 === $settings->defaults()[ Settings::GROUP_AUTHENTICATION ], 'Authentication & Credentials must default off.' );
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = array(
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = array(
 	Settings::GROUP_USERS_DESTRUCTIVE => 1,
 	Settings::GROUP_ADVANCED_METADATA => 1,
 );
 wpnb61_assert( 0 === $settings->all()[ Settings::GROUP_AUTHENTICATION ], 'Historical elevated grants must not silently enable Authentication & Credentials.' );
 
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = $settings->defaults();
-$GLOBALS['wpnb_test']['capabilities']['read']             = true;
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = $settings->defaults();
+$GLOBALS['wpai_test']['capabilities']['read']             = true;
 $provider   = new Application_Password_Abilities( new Permissions( $settings ), new Mutation_Log() );
 $registered = $provider->register();
 wpnb61_assert( 5 === count( $registered ), 'Exactly five bounded Application Password abilities are registered.' );
 foreach ( array( 'application-passwords-read', 'application-password-create', 'application-password-update', 'application-password-delete', 'application-passwords-delete-all' ) as $name ) {
-	wpnb61_assert( isset( $GLOBALS['wpnb_test']['registered_abilities'][ 'wp-native-builder/' . $name ] ), $name . ' is registered.' );
+	wpnb61_assert( isset( $GLOBALS['wpai_test']['registered_abilities'][ 'wp-ai-bridge/' . $name ] ), $name . ' is registered.' );
 }
 
 $read_args = array( 'action' => 'list', 'user_id' => 7 );
 wpnb61_assert( false === $provider->can_access( $read_args ), 'Default-off Authentication & Credentials denied coarse access.' );
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_AUTHENTICATION ] = 1;
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_AUTHENTICATION ] = 1;
 wpnb61_assert( true === $provider->can_access( $read_args ), 'Enabled Authentication & Credentials permits dispatch to Core authority checks.' );
 
 $request_count_before_invalid_action = count( $GLOBALS['wpnb61_rest_requests'] );

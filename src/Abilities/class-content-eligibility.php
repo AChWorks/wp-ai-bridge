@@ -53,7 +53,7 @@ final class Content_Eligibility {
 	 * @return bool
 	 */
 	public static function is_workspace_internal_type( $type ) {
-		return in_array( $type, array( 'wpnb_doc', 'wpnb_task' ), true );
+		return in_array( $type, array( 'wpai_doc', 'wpai_task' ), true );
 	}
 
 	/**

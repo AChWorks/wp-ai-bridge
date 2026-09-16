@@ -24,29 +24,30 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
  *
  * @return void
  */
-function wp_native_builder_bridge_uninstall_site_options() {
-	delete_option( 'wp_native_builder_bridge_settings' );
-	delete_option( 'wp_native_builder_bridge_recent_actions' );
-	delete_option( 'wp_native_builder_bridge_oauth_instance' );
-	delete_option( 'wp_native_builder_bridge_oauth_clients' );
-	delete_option( 'wp_native_builder_bridge_oauth_clients_revision' );
-	delete_transient( 'wpnb_oauth_chatgpt_cimd_ok' );
-	delete_transient( 'wpnb_oauth_chatgpt_jwks' );
-	delete_transient( 'wpnb_oauth_chatgpt_jwks_refresh' );
-	wp_unschedule_hook( 'wpnb_oauth_cleanup_client_assertion' );
+function wp_ai_bridge_uninstall_site_options() {
+	delete_option( 'wp_ai_bridge_settings' );
+	delete_option( 'wp_ai_bridge_recent_actions' );
+	delete_option( 'wp_ai_bridge_oauth_instance' );
+	delete_option( 'wp_ai_bridge_oauth_clients' );
+	delete_option( 'wp_ai_bridge_oauth_clients_revision' );
+	delete_option( 'wp_ai_bridge_identity_migration' );
+	delete_transient( 'wpai_oauth_chatgpt_cimd_ok' );
+	delete_transient( 'wpai_oauth_chatgpt_jwks' );
+	delete_transient( 'wpai_oauth_chatgpt_jwks_refresh' );
+	wp_unschedule_hook( 'wpai_oauth_cleanup_client_assertion' );
 
 	global $wpdb;
 	// Assertion claims contain only a hashed JWT ID and expiry. Dynamic metadata/JWKS
 	// transients contain only public client metadata/public signing keys. Remove every
 	// Bridge-owned bounded prefix so uninstall leaves no disposable OAuth state behind.
 	$prefixes = array(
-		'wpnb_oauth_assertion_',
-		'_transient_wpnb_oauth_client_meta_',
-		'_transient_timeout_wpnb_oauth_client_meta_',
-		'_transient_wpnb_oauth_jwks_',
-		'_transient_timeout_wpnb_oauth_jwks_',
-		'_transient_wpnb_oauth_jwks_refresh_',
-		'_transient_timeout_wpnb_oauth_jwks_refresh_',
+		'wpai_oauth_assertion_',
+		'_transient_wpai_oauth_client_meta_',
+		'_transient_timeout_wpai_oauth_client_meta_',
+		'_transient_wpai_oauth_jwks_',
+		'_transient_timeout_wpai_oauth_jwks_',
+		'_transient_wpai_oauth_jwks_refresh_',
+		'_transient_timeout_wpai_oauth_jwks_refresh_',
 	);
 	foreach ( $prefixes as $prefix ) {
 		$like = $wpdb->esc_like( $prefix ) . '%';
@@ -57,7 +58,7 @@ function wp_native_builder_bridge_uninstall_site_options() {
 }
 
 if ( is_multisite() ) {
-	delete_site_option( 'wp_native_builder_bridge_source_lock' );
+	delete_site_option( 'wp_ai_bridge_source_lock' );
 	$site_ids = get_sites(
 		array(
 			'fields' => 'ids',
@@ -66,10 +67,10 @@ if ( is_multisite() ) {
 	);
 	foreach ( $site_ids as $site_id ) {
 		switch_to_blog( (int) $site_id );
-		wp_native_builder_bridge_uninstall_site_options();
+		wp_ai_bridge_uninstall_site_options();
 		restore_current_blog();
 	}
 } else {
-	delete_option( 'wp_native_builder_bridge_source_lock' );
-	wp_native_builder_bridge_uninstall_site_options();
+	delete_option( 'wp_ai_bridge_source_lock' );
+	wp_ai_bridge_uninstall_site_options();
 }

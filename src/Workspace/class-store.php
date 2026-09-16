@@ -13,9 +13,9 @@ use WP_Error;
  * Stores compact Workspace documents and tasks in private WordPress objects.
  */
 final class Store {
-	const DOCUMENT_POST_TYPE = 'wpnb_doc';
-	const TASK_POST_TYPE     = 'wpnb_task';
-	const META_STATE         = '_wpnb_workspace_state';
+	const DOCUMENT_POST_TYPE = 'wpai_doc';
+	const TASK_POST_TYPE     = 'wpai_task';
+	const META_STATE         = '_wpai_workspace_state';
 	const MAX_RECORDS        = 200;
 	const MAX_DOCUMENT_BYTES = 100000;
 	const MAX_NOTES_BYTES    = 20000;
@@ -52,10 +52,10 @@ final class Store {
 			array_merge(
 				$common,
 				array(
-					'label'  => __( 'WP AI Bridge Documents', 'wp-native-builder-bridge' ),
+					'label'  => __( 'WP AI Bridge Documents', 'wp-ai-bridge' ),
 					'labels' => array(
-						'name'          => __( 'Workspace Documents', 'wp-native-builder-bridge' ),
-						'singular_name' => __( 'Workspace Document', 'wp-native-builder-bridge' ),
+						'name'          => __( 'Workspace Documents', 'wp-ai-bridge' ),
+						'singular_name' => __( 'Workspace Document', 'wp-ai-bridge' ),
 					),
 				)
 			)
@@ -66,10 +66,10 @@ final class Store {
 			array_merge(
 				$common,
 				array(
-					'label'  => __( 'WP AI Bridge Tasks', 'wp-native-builder-bridge' ),
+					'label'  => __( 'WP AI Bridge Tasks', 'wp-ai-bridge' ),
 					'labels' => array(
-						'name'          => __( 'Workspace Tasks', 'wp-native-builder-bridge' ),
-						'singular_name' => __( 'Workspace Task', 'wp-native-builder-bridge' ),
+						'name'          => __( 'Workspace Tasks', 'wp-ai-bridge' ),
+						'singular_name' => __( 'Workspace Task', 'wp-ai-bridge' ),
 					),
 				)
 			)
@@ -116,17 +116,17 @@ final class Store {
 	 */
 	public function create_document( $input ) {
 		if ( $this->record_count( self::DOCUMENT_POST_TYPE ) >= self::MAX_RECORDS ) {
-			return new WP_Error( 'workspace_document_limit', __( 'The Workspace document limit has been reached.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_document_limit', __( 'The Workspace document limit has been reached.', 'wp-ai-bridge' ) );
 		}
 
 		$title = $this->bounded_text( $input['title'] ?? '', 500, false );
 		if ( '' === $title ) {
-			return new WP_Error( 'workspace_invalid_document', __( 'A Workspace document title is required.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_invalid_document', __( 'A Workspace document title is required.', 'wp-ai-bridge' ) );
 		}
 
 		$key = isset( $input['key'] ) ? sanitize_key( (string) $input['key'] ) : '';
 		if ( isset( $input['key'] ) && '' === $key ) {
-			return new WP_Error( 'workspace_invalid_document', __( 'The Workspace document key must contain URL-safe letters, numbers, dashes, or underscores.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_invalid_document', __( 'The Workspace document key must contain URL-safe letters, numbers, dashes, or underscores.', 'wp-ai-bridge' ) );
 		}
 
 		$content = $this->bounded_markdown( $input['content'] ?? '', self::MAX_DOCUMENT_BYTES );
@@ -141,7 +141,7 @@ final class Store {
 		);
 
 		if ( is_wp_error( $post_id ) || ! $post_id ) {
-			return is_wp_error( $post_id ) ? $post_id : new WP_Error( 'workspace_write_failed', __( 'WordPress could not create the Workspace document.', 'wp-native-builder-bridge' ) );
+			return is_wp_error( $post_id ) ? $post_id : new WP_Error( 'workspace_write_failed', __( 'WordPress could not create the Workspace document.', 'wp-ai-bridge' ) );
 		}
 
 		$state = array(
@@ -181,7 +181,7 @@ final class Store {
 				if ( array_key_exists( 'title', $input ) ) {
 					$title = $this->bounded_text( $input['title'], 500, false );
 					if ( '' === $title ) {
-						return new WP_Error( 'workspace_invalid_document', __( 'A Workspace document title is required.', 'wp-native-builder-bridge' ) );
+						return new WP_Error( 'workspace_invalid_document', __( 'A Workspace document title is required.', 'wp-ai-bridge' ) );
 					}
 					$state['title'] = $title;
 				}
@@ -189,7 +189,7 @@ final class Store {
 				if ( array_key_exists( 'key', $input ) ) {
 					$key = sanitize_key( (string) $input['key'] );
 					if ( '' === $key ) {
-						return new WP_Error( 'workspace_invalid_document', __( 'The Workspace document key must contain URL-safe letters, numbers, dashes, or underscores.', 'wp-native-builder-bridge' ) );
+						return new WP_Error( 'workspace_invalid_document', __( 'The Workspace document key must contain URL-safe letters, numbers, dashes, or underscores.', 'wp-ai-bridge' ) );
 					}
 					$state['key'] = $key;
 				}
@@ -272,19 +272,19 @@ final class Store {
 	 */
 	public function create_task( $input ) {
 		if ( $this->record_count( self::TASK_POST_TYPE ) >= self::MAX_RECORDS ) {
-			return new WP_Error( 'workspace_task_limit', __( 'The Workspace task limit has been reached.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_task_limit', __( 'The Workspace task limit has been reached.', 'wp-ai-bridge' ) );
 		}
 
 		$title = $this->bounded_text( $input['title'] ?? '', 500, false );
 		if ( '' === $title ) {
-			return new WP_Error( 'workspace_invalid_task', __( 'A Workspace task title is required.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_invalid_task', __( 'A Workspace task title is required.', 'wp-ai-bridge' ) );
 		}
 
 		$progress = $this->enum_value( $input['progress'] ?? 'todo', array( 'todo', 'in_progress', 'blocked', 'done' ) );
 		$review   = $this->enum_value( $input['review'] ?? 'not_required', array( 'not_required', 'pending', 'changes_requested', 'approved' ) );
 		$delivery = $this->enum_value( $input['delivery'] ?? 'not_applicable', array( 'not_applicable', 'draft_preview', 'live' ) );
 		if ( null === $progress || null === $review || null === $delivery ) {
-			return new WP_Error( 'workspace_invalid_task', __( 'The Workspace task state is not valid.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_invalid_task', __( 'The Workspace task state is not valid.', 'wp-ai-bridge' ) );
 		}
 
 		$now     = gmdate( 'c' );
@@ -298,7 +298,7 @@ final class Store {
 		);
 
 		if ( is_wp_error( $post_id ) || ! $post_id ) {
-			return is_wp_error( $post_id ) ? $post_id : new WP_Error( 'workspace_write_failed', __( 'WordPress could not create the Workspace task.', 'wp-native-builder-bridge' ) );
+			return is_wp_error( $post_id ) ? $post_id : new WP_Error( 'workspace_write_failed', __( 'WordPress could not create the Workspace task.', 'wp-ai-bridge' ) );
 		}
 
 		$state = array(
@@ -344,7 +344,7 @@ final class Store {
 				if ( array_key_exists( 'title', $input ) ) {
 					$title = $this->bounded_text( $input['title'], 500, false );
 					if ( '' === $title ) {
-						return new WP_Error( 'workspace_invalid_task', __( 'A Workspace task title is required.', 'wp-native-builder-bridge' ) );
+						return new WP_Error( 'workspace_invalid_task', __( 'A Workspace task title is required.', 'wp-ai-bridge' ) );
 					}
 					$state['title'] = $title;
 				}
@@ -397,14 +397,14 @@ final class Store {
 					}
 					$value = $this->enum_value( $input[ $field ], $allowed );
 					if ( null === $value ) {
-						return new WP_Error( 'workspace_invalid_task', __( 'The Workspace task state is not valid.', 'wp-native-builder-bridge' ) );
+						return new WP_Error( 'workspace_invalid_task', __( 'The Workspace task state is not valid.', 'wp-ai-bridge' ) );
 					}
 					$state[ $field ] = $value;
 					$changed         = true;
 				}
 
 				if ( ! $changed ) {
-					return new WP_Error( 'workspace_invalid_task', __( 'At least one task progress, review, or delivery state is required for a transition.', 'wp-native-builder-bridge' ) );
+					return new WP_Error( 'workspace_invalid_task', __( 'At least one task progress, review, or delivery state is required for a transition.', 'wp-ai-bridge' ) );
 				}
 
 				return $state;
@@ -501,7 +501,7 @@ final class Store {
 	 */
 	public function export_snapshot() {
 		return array(
-			'format'       => 'wp-native-builder-workspace-v1',
+			'format'       => 'wp-ai-bridge-workspace-v1',
 			'generated_at' => gmdate( 'c' ),
 			'site'         => array(
 				'name' => (string) get_bloginfo( 'name' ),
@@ -541,7 +541,7 @@ final class Store {
 			);
 			foreach ( $ids as $id ) {
 				if ( ! wp_delete_post( (int) $id, true ) ) {
-					return new WP_Error( 'workspace_clear_failed', __( 'WordPress could not completely clear the Workspace.', 'wp-native-builder-bridge' ) );
+					return new WP_Error( 'workspace_clear_failed', __( 'WordPress could not completely clear the Workspace.', 'wp-ai-bridge' ) );
 				}
 				++$deleted[ $bucket ];
 			}
@@ -623,7 +623,7 @@ final class Store {
 	private function store_initial_state( $post_id, $state ) {
 		$json = $this->encode_state( $state );
 		if ( false === $json || ! add_post_meta( $post_id, self::META_STATE, wp_slash( $json ), true ) ) {
-			return new WP_Error( 'workspace_write_failed', __( 'WordPress could not save the Workspace state.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_write_failed', __( 'WordPress could not save the Workspace state.', 'wp-ai-bridge' ) );
 		}
 		return $this->decorate_state( $post_id, $state, $json );
 	}
@@ -639,13 +639,13 @@ final class Store {
 	private function read_record( $id, $expected_type, $not_found_code ) {
 		$post = get_post( $id );
 		if ( ! $post || $expected_type !== $post->post_type ) {
-			return new WP_Error( $not_found_code, __( 'The requested Workspace record was not found.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( $not_found_code, __( 'The requested Workspace record was not found.', 'wp-ai-bridge' ) );
 		}
 
 		$json  = (string) get_post_meta( $id, self::META_STATE, true );
 		$state = $this->decode_state( $json );
 		if ( null === $state ) {
-			return new WP_Error( 'workspace_state_invalid', __( 'The Workspace record state is invalid.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_state_invalid', __( 'The Workspace record state is invalid.', 'wp-ai-bridge' ) );
 		}
 
 		return $this->decorate_state( $id, $state, $json );
@@ -664,23 +664,23 @@ final class Store {
 	private function mutate_record( $id, $expected_type, $input, $not_found_code, $mutator ) {
 		$post = get_post( $id );
 		if ( ! $post || $expected_type !== $post->post_type ) {
-			return new WP_Error( $not_found_code, __( 'The requested Workspace record was not found.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( $not_found_code, __( 'The requested Workspace record was not found.', 'wp-ai-bridge' ) );
 		}
 
 		$current_json  = (string) get_post_meta( $id, self::META_STATE, true );
 		$current_state = $this->decode_state( $current_json );
 		if ( null === $current_state ) {
-			return new WP_Error( 'workspace_state_invalid', __( 'The Workspace record state is invalid.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_state_invalid', __( 'The Workspace record state is invalid.', 'wp-ai-bridge' ) );
 		}
 
 		$expected_version = isset( $input['expected_version'] ) ? (int) $input['expected_version'] : 0;
 		$expected_hash    = isset( $input['expected_state_hash'] ) ? strtolower( trim( (string) $input['expected_state_hash'] ) ) : '';
 		$current_hash     = $this->state_hash( $current_json );
 		if ( $expected_version < 1 || ! preg_match( '/^[a-f0-9]{64}$/', $expected_hash ) ) {
-			return new WP_Error( 'workspace_expected_identity_required', __( 'expected_version and expected_state_hash are required for Workspace updates.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_expected_identity_required', __( 'expected_version and expected_state_hash are required for Workspace updates.', 'wp-ai-bridge' ) );
 		}
 		if ( (int) $current_state['version'] !== $expected_version || ! hash_equals( $current_hash, $expected_hash ) ) {
-			return new WP_Error( 'workspace_stale', __( 'The Workspace record changed after it was inspected. Refresh it before applying this update.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_stale', __( 'The Workspace record changed after it was inspected. Refresh it before applying this update.', 'wp-ai-bridge' ) );
 		}
 
 		$next_state = call_user_func( $mutator, $current_state );
@@ -688,28 +688,28 @@ final class Store {
 			return $next_state;
 		}
 		if ( ! is_array( $next_state ) ) {
-			return new WP_Error( 'workspace_write_failed', __( 'The Workspace mutation did not produce a valid state.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_write_failed', __( 'The Workspace mutation did not produce a valid state.', 'wp-ai-bridge' ) );
 		}
 
 		$next_state['version']      = $expected_version + 1;
 		$next_state['modified_gmt'] = gmdate( 'c' );
 		$next_json                  = $this->encode_state( $next_state );
 		if ( false === $next_json ) {
-			return new WP_Error( 'workspace_write_failed', __( 'WordPress could not encode the Workspace state.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_write_failed', __( 'WordPress could not encode the Workspace state.', 'wp-ai-bridge' ) );
 		}
 
 		$updated = update_post_meta( $id, self::META_STATE, wp_slash( $next_json ), $current_json );
 		if ( false === $updated ) {
 			$latest_json = (string) get_post_meta( $id, self::META_STATE, true );
 			if ( $latest_json !== $current_json ) {
-				return new WP_Error( 'workspace_stale', __( 'The Workspace record changed after it was inspected. Refresh it before applying this update.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'workspace_stale', __( 'The Workspace record changed after it was inspected. Refresh it before applying this update.', 'wp-ai-bridge' ) );
 			}
-			return new WP_Error( 'workspace_write_failed', __( 'WordPress could not update the Workspace state.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_write_failed', __( 'WordPress could not update the Workspace state.', 'wp-ai-bridge' ) );
 		}
 
 		$verified_json = (string) get_post_meta( $id, self::META_STATE, true );
 		if ( $verified_json !== $next_json ) {
-			return new WP_Error( 'workspace_write_failed', __( 'The Workspace update could not be verified.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'workspace_write_failed', __( 'The Workspace update could not be verified.', 'wp-ai-bridge' ) );
 		}
 
 		return $this->decorate_state( $id, $next_state, $next_json );

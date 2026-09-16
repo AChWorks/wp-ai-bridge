@@ -80,8 +80,8 @@ final class Plugin {
 		add_action( 'init', array( $this->workspace, 'register_post_types' ), 5 );
 		add_action( 'admin_init', array( $this->settings, 'register' ) );
 		add_action( 'admin_menu', array( $this->settings_page, 'register_menu' ) );
-		add_action( 'admin_post_wpnb_workspace_export', array( $this->settings_page, 'handle_export' ) );
-		add_action( 'admin_post_wpnb_workspace_clear', array( $this->settings_page, 'handle_clear' ) );
+		add_action( 'admin_post_wpai_workspace_export', array( $this->settings_page, 'handle_export' ) );
+		add_action( 'admin_post_wpai_workspace_clear', array( $this->settings_page, 'handle_clear' ) );
 		add_action( 'admin_notices', array( $this, 'render_dependency_notices' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( WP_NATIVE_BUILDER_BRIDGE_FILE ), array( $this, 'plugin_action_links' ) );
 		add_action( 'wp_abilities_api_categories_init', array( $this->registrar, 'register_category' ) );
@@ -95,7 +95,7 @@ final class Plugin {
 	 */
 	public function load_textdomain() {
 		load_plugin_textdomain(
-			'wp-native-builder-bridge',
+			'wp-ai-bridge',
 			false,
 			dirname( plugin_basename( WP_NATIVE_BUILDER_BRIDGE_FILE ) ) . '/languages/'
 		);
@@ -117,7 +117,7 @@ final class Plugin {
 			sprintf(
 				'<a href="%1$s">%2$s</a>',
 				esc_url( admin_url( 'admin.php?page=' . Settings_Page::SETTINGS_SLUG ) ),
-				esc_html__( 'Settings', 'wp-native-builder-bridge' )
+				esc_html__( 'Settings', 'wp-ai-bridge' )
 			)
 		);
 
@@ -137,7 +137,7 @@ final class Plugin {
 		if ( ! $this->environment->abilities_api_available() ) {
 			printf(
 				'<div class="notice notice-error"><p>%s</p></div>',
-				esc_html__( 'WP AI Bridge requires WordPress 6.9 or newer with the Abilities API available.', 'wp-native-builder-bridge' )
+				esc_html__( 'WP AI Bridge requires WordPress 6.9 or newer with the Abilities API available.', 'wp-ai-bridge' )
 			);
 			return;
 		}
@@ -145,9 +145,9 @@ final class Plugin {
 		if ( ! $this->environment->mcp_adapter_available() ) {
 			printf(
 				'<div class="notice notice-warning"><p>%1$s <a href="%2$s" target="_blank" rel="noopener noreferrer">%3$s</a></p></div>',
-				esc_html__( 'WP AI Bridge is active, but the official WordPress MCP Adapter is not available.', 'wp-native-builder-bridge' ),
+				esc_html__( 'WP AI Bridge is active, but the official WordPress MCP Adapter is not available.', 'wp-ai-bridge' ),
 				esc_url( 'https://github.com/WordPress/mcp-adapter/releases/latest' ),
-				esc_html__( 'Install or activate MCP Adapter', 'wp-native-builder-bridge' )
+				esc_html__( 'Install or activate MCP Adapter', 'wp-ai-bridge' )
 			);
 			return;
 		}
@@ -155,7 +155,7 @@ final class Plugin {
 		if ( ! $this->oauth_server->is_https_ready() ) {
 			printf(
 				'<div class="notice notice-warning"><p>%s</p></div>',
-				esc_html__( 'Direct ChatGPT App connections require the public WP AI Bridge MCP endpoint to use HTTPS. Check the WordPress Site URL and reverse-proxy HTTPS configuration before creating the App.', 'wp-native-builder-bridge' )
+				esc_html__( 'Direct ChatGPT App connections require the public WP AI Bridge MCP endpoint to use HTTPS. Check the WordPress Site URL and reverse-proxy HTTPS configuration before creating the App.', 'wp-ai-bridge' )
 			);
 		}
 	}

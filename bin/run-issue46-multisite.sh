@@ -6,7 +6,7 @@ compose_file="$root/tests/integration/compose.yml"
 wordpress_tag="${1:-6.9-php8.4-apache}"
 safe_tag="$(printf '%s' "$wordpress_tag" | tr -c 'A-Za-z0-9' '-')"
 export WORDPRESS_TAG="$wordpress_tag"
-export COMPOSE_PROJECT_NAME="wpnb-issue46-ms-${safe_tag}-$$"
+export COMPOSE_PROJECT_NAME="wpai-issue46-ms-${safe_tag}-$$"
 
 compose=(docker compose -f "$compose_file")
 cleanup() {
@@ -44,24 +44,24 @@ mcp_adapter_url="${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/rel
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge.zip
 
 tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \
-    | "${compose[@]}" exec -T wordpress tar -xf - -C /var/www/html/wp-content/plugins/wp-native-builder-bridge
+    | "${compose[@]}" exec -T wordpress tar -xf - -C /var/www/html/wp-content/plugins/wp-ai-bridge
 
 "${compose[@]}" exec -T wordpress sh -lc '
 set -eu
-mkdir -p /var/www/html/wp-content/plugins/wpnb-network-source
-cat > /var/www/html/wp-content/plugins/wpnb-network-source/wpnb-network-source.php <<"PHP"
+mkdir -p /var/www/html/wp-content/plugins/wpai-network-source
+cat > /var/www/html/wp-content/plugins/wpai-network-source/wpai-network-source.php <<"PHP"
 <?php
 /*
 Plugin Name: WPNB Network Source
 */
-function wpnb_network_source_value() { return "network-original"; }
+function wpai_network_source_value() { return "network-original"; }
 PHP
-chown -R www-data:www-data /var/www/html/wp-content/plugins/wpnb-network-source
-chmod 0666 /var/www/html/wp-content/plugins/wpnb-network-source/wpnb-network-source.php
+chown -R www-data:www-data /var/www/html/wp-content/plugins/wpai-network-source
+chmod 0666 /var/www/html/wp-content/plugins/wpai-network-source/wpai-network-source.php
 '
-"${wp[@]}" plugin activate wpnb-network-source --network --allow-root >/dev/null
-"${wp[@]}" eval-file wp-content/plugins/wp-native-builder-bridge/tests/integration/issue46-network-active-smoke.php --user=1 --allow-root
-"${wp[@]}" plugin deactivate wpnb-network-source --network --allow-root >/dev/null
-"${compose[@]}" exec -T wordpress rm -rf /var/www/html/wp-content/plugins/wpnb-network-source
+"${wp[@]}" plugin activate wpai-network-source --network --allow-root >/dev/null
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue46-network-active-smoke.php --user=1 --allow-root
+"${wp[@]}" plugin deactivate wpai-network-source --network --allow-root >/dev/null
+"${compose[@]}" exec -T wordpress rm -rf /var/www/html/wp-content/plugins/wpai-network-source
 
 echo "PASS: Issue #46 multisite integration suite for ${wordpress_tag}."

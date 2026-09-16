@@ -11,8 +11,8 @@ namespace WP_Native_Builder_Bridge\Support;
  * Owns the small grouped access-control settings model.
  */
 final class Settings {
-	const OPTION_NAME  = 'wp_native_builder_bridge_settings';
-	const OPTION_GROUP = 'wp_native_builder_bridge';
+	const OPTION_NAME  = 'wp_ai_bridge_settings';
+	const OPTION_GROUP = 'wp_ai_bridge';
 
 	const GROUP_SITE_READ         = 'site_read';
 	const GROUP_BUILDER_WRITE     = 'builder_write';
@@ -54,80 +54,80 @@ final class Settings {
 	public function groups() {
 		return array(
 			self::GROUP_SITE_READ         => array(
-				'label'       => __( 'Site Read', 'wp-native-builder-bridge' ),
-				'description' => __( 'Inspect site, content, blocks, media, navigation, plugins, themes, and supported integrations.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'Site Read', 'wp-ai-bridge' ),
+				'description' => __( 'Inspect site, content, blocks, media, navigation, plugins, themes, and supported integrations.', 'wp-ai-bridge' ),
 				'default'     => true,
 				'warning'     => false,
 			),
 			self::GROUP_BUILDER_WRITE     => array(
-				'label'       => __( 'Builder Write', 'wp-native-builder-bridge' ),
-				'description' => __( 'Create and update drafts, content, blocks, media, taxonomies, navigation, and forms.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'Builder Write', 'wp-ai-bridge' ),
+				'description' => __( 'Create and update drafts, content, blocks, media, taxonomies, navigation, and forms.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
 			self::GROUP_REMOTE_MEDIA      => array(
-				'label'       => __( 'Remote Media', 'wp-native-builder-bridge' ),
-				'description' => __( 'Allow downloads from safe HTTP(S) URLs into the Media Library. Builder Write and WordPress upload capabilities are also required.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'Remote Media', 'wp-ai-bridge' ),
+				'description' => __( 'Allow downloads from safe HTTP(S) URLs into the Media Library. Builder Write and WordPress upload capabilities are also required.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
 			self::GROUP_LIVE_CONTENT      => array(
-				'label'       => __( 'Live Content', 'wp-native-builder-bridge' ),
-				'description' => __( 'Allow publishing and other live content status changes when WordPress capabilities also permit them.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'Live Content', 'wp-ai-bridge' ),
+				'description' => __( 'Allow publishing and other live content status changes when WordPress capabilities also permit them.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
 			self::GROUP_SITE_CONFIG       => array(
-				'label'       => __( 'Site Configuration', 'wp-native-builder-bridge' ),
-				'description' => __( 'Allow supported global WordPress, theme, and Astra configuration changes.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'Site Configuration', 'wp-ai-bridge' ),
+				'description' => __( 'Allow supported global WordPress, theme, and Astra configuration changes.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
 			self::GROUP_ADVANCED_METADATA => array(
-				'label'       => __( 'Advanced Metadata', 'wp-native-builder-bridge' ),
-				'description' => __( 'Allow authorized MCP clients to inspect and update protected/private post, term, user, and comment metadata for exact WordPress objects the connected user may edit. Options, Workspace internals, role/capability/session/application-password state, and credential-like keys remain outside this surface.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'Advanced Metadata', 'wp-ai-bridge' ),
+				'description' => __( 'Allow authorized MCP clients to inspect and update protected/private post, term, user, and comment metadata for exact WordPress objects the connected user may edit. Options, Workspace internals, role/capability/session/application-password state, and credential-like keys remain outside this surface.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
 			self::GROUP_AUTHENTICATION    => array(
-				'label'       => __( 'Authentication & Credentials', 'wp-native-builder-bridge' ),
-				'description' => __( 'Allow authorized MCP clients to list, create, rename, and revoke WordPress Application Passwords through Core. Generated credentials are returned only once at creation.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'Authentication & Credentials', 'wp-ai-bridge' ),
+				'description' => __( 'Allow authorized MCP clients to list, create, rename, and revoke WordPress Application Passwords through Core. Generated credentials are returned only once at creation.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
 			self::GROUP_CODE_EXTENSIONS   => array(
-				'label'       => __( 'Code & Extensions', 'wp-native-builder-bridge' ),
-				'description' => __( 'Allow supported managed snippets and plugin/theme lifecycle operations. This does not expose arbitrary code execution.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'Code & Extensions', 'wp-ai-bridge' ),
+				'description' => __( 'Allow supported managed snippets and plugin/theme lifecycle operations. This does not expose arbitrary code execution.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
 			self::GROUP_EXTERNAL_PACKAGES => array(
-				'label'       => __( 'External Packages', 'wp-native-builder-bridge' ),
-				'description' => __( 'Allow plugin/theme installation from explicit safe public HTTPS package URLs. Code & Extensions and native WordPress install authority are also required. Installed package code runs with normal WordPress runtime authority.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'External Packages', 'wp-ai-bridge' ),
+				'description' => __( 'Allow plugin/theme installation from explicit safe public HTTPS package URLs. Code & Extensions and native WordPress install authority are also required. Installed package code runs with normal WordPress runtime authority.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
 			self::GROUP_SOURCE_EDITING    => array(
-				'label'       => __( 'Source Editing', 'wp-native-builder-bridge' ),
-				'description' => __( 'Allow installed plugin/theme source read, preview, apply, and recovery. Code & Extensions and WordPress file-editor capabilities are also required. Executable PHP is administrator-level code trust, not a sandbox.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'Source Editing', 'wp-ai-bridge' ),
+				'description' => __( 'Allow installed plugin/theme source read, preview, apply, and recovery. Code & Extensions and WordPress file-editor capabilities are also required. Executable PHP is administrator-level code trust, not a sandbox.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
 			self::GROUP_NATIVE_ABILITIES  => array(
-				'label'       => __( 'Native Abilities', 'wp-native-builder-bridge' ),
-				'description' => __( 'Allow registered Core and provider Abilities to execute through WP AI Bridge when their own WordPress/provider permission checks also allow it. This is broad registered-operation trust, not a sandbox.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'Native Abilities', 'wp-ai-bridge' ),
+				'description' => __( 'Allow registered Core and provider Abilities to execute through WP AI Bridge when their own WordPress/provider permission checks also allow it. This is broad registered-operation trust, not a sandbox.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
 			self::GROUP_COMMENTS          => array(
-				'label'       => __( 'Comments', 'wp-native-builder-bridge' ),
-				'description' => __( 'Allow bounded comment discovery, replies, and moderation through WordPress Core. Permanent deletion also requires Users & Destructive.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'Comments', 'wp-ai-bridge' ),
+				'description' => __( 'Allow bounded comment discovery, replies, and moderation through WordPress Core. Permanent deletion also requires Users & Destructive.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
 			self::GROUP_USERS_DESTRUCTIVE => array(
-				'label'       => __( 'Users & Destructive', 'wp-native-builder-bridge' ),
-				'description' => __( 'Allow supported user/role administration and destructive operations when WordPress capabilities also permit them.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'Users & Destructive', 'wp-ai-bridge' ),
+				'description' => __( 'Allow supported user/role administration and destructive operations when WordPress capabilities also permit them.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),

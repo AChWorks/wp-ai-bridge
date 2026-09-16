@@ -11,16 +11,16 @@ namespace WP_Native_Builder_Bridge\Auth;
  * Keeps additional OAuth client trust explicit, bounded, and separate from Bridge access groups.
  */
 final class Approved_OAuth_Clients {
-	const OPTION_NAME      = 'wp_native_builder_bridge_oauth_clients';
-	const OPTION_GROUP     = 'wp_native_builder_bridge_oauth_clients';
-	const REVISION_OPTION  = 'wp_native_builder_bridge_oauth_clients_revision';
+	const OPTION_NAME      = 'wp_ai_bridge_oauth_clients';
+	const OPTION_GROUP     = 'wp_ai_bridge_oauth_clients';
+	const REVISION_OPTION  = 'wp_ai_bridge_oauth_clients_revision';
 	const ADMIN_PAGE_SLUG  = 'wp-ai-bridge-oauth-clients';
 	const MAX_CLIENTS      = 10;
 	const MAX_CLIENT_ID    = 256;
 	const MAX_REDIRECT_URI = 512;
 	const MAX_METADATA     = 65536;
 
-	const CHATGPT_METADATA_CACHE = 'wpnb_oauth_chatgpt_cimd_ok';
+	const CHATGPT_METADATA_CACHE = 'wpai_oauth_chatgpt_cimd_ok';
 
 	/**
 	 * Registers settings and the bounded administration screen.
@@ -58,8 +58,8 @@ final class Approved_OAuth_Clients {
 	public function register_menu() {
 		add_submenu_page(
 			'wp-ai-bridge',
-			__( 'OAuth Clients', 'wp-native-builder-bridge' ),
-			__( 'OAuth Clients', 'wp-native-builder-bridge' ),
+			__( 'OAuth Clients', 'wp-ai-bridge' ),
+			__( 'OAuth Clients', 'wp-ai-bridge' ),
 			'manage_options',
 			self::ADMIN_PAGE_SLUG,
 			array( $this, 'render_admin_page' )
@@ -73,26 +73,26 @@ final class Approved_OAuth_Clients {
 	 */
 	public function render_admin_page() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You are not allowed to manage WP AI Bridge settings.', 'wp-native-builder-bridge' ) );
+			wp_die( esc_html__( 'You are not allowed to manage WP AI Bridge settings.', 'wp-ai-bridge' ) );
 		}
 
 		$clients = $this->all();
 		?>
 		<div class="wrap">
-			<h1><?php echo esc_html__( 'OAuth Clients', 'wp-native-builder-bridge' ); ?></h1>
-			<p><?php echo esc_html__( 'ChatGPT remains a built-in OAuth client and needs no configuration. Add only HTTPS Client ID Metadata Document URLs for independently operated clients you explicitly trust to request a WordPress connection.', 'wp-native-builder-bridge' ); ?></p>
-			<p><strong><?php echo esc_html__( 'Built-in client:', 'wp-native-builder-bridge' ); ?></strong> <code><?php echo esc_html( OAuth_Server::CHATGPT_CLIENT_ID ); ?></code></p>
-			<p><?php echo esc_html__( 'Approving a client grants connection eligibility only. Every MCP operation still requires the enabled WP AI Bridge access group and the connected WordPress user capabilities. Changing this list immediately invalidates outstanding additional-client OAuth artifacts.', 'wp-native-builder-bridge' ); ?></p>
+			<h1><?php echo esc_html__( 'OAuth Clients', 'wp-ai-bridge' ); ?></h1>
+			<p><?php echo esc_html__( 'ChatGPT remains a built-in OAuth client and needs no configuration. Add only HTTPS Client ID Metadata Document URLs for independently operated clients you explicitly trust to request a WordPress connection.', 'wp-ai-bridge' ); ?></p>
+			<p><strong><?php echo esc_html__( 'Built-in client:', 'wp-ai-bridge' ); ?></strong> <code><?php echo esc_html( OAuth_Server::CHATGPT_CLIENT_ID ); ?></code></p>
+			<p><?php echo esc_html__( 'Approving a client grants connection eligibility only. Every MCP operation still requires the enabled WP AI Bridge access group and the connected WordPress user capabilities. Changing this list immediately invalidates outstanding additional-client OAuth artifacts.', 'wp-ai-bridge' ); ?></p>
 			<form action="options.php" method="post">
 				<?php settings_fields( self::OPTION_GROUP ); ?>
 				<table class="form-table" role="presentation"><tbody><tr>
-					<th scope="row"><label for="wpnb-oauth-client-ids"><?php echo esc_html__( 'Approved client metadata URLs', 'wp-native-builder-bridge' ); ?></label></th>
+					<th scope="row"><label for="wpai-oauth-client-ids"><?php echo esc_html__( 'Approved client metadata URLs', 'wp-ai-bridge' ); ?></label></th>
 					<td>
-						<textarea id="wpnb-oauth-client-ids" name="<?php echo esc_attr( self::OPTION_NAME ); ?>" rows="8" cols="90" class="large-text code" spellcheck="false"><?php echo esc_textarea( implode( "\n", $clients ) ); ?></textarea>
-						<p class="description"><?php echo esc_html__( 'One exact public HTTPS client_id URL per line. Wildcards, HTTP URLs, local/private network targets, redirects, and shared secrets are not accepted.', 'wp-native-builder-bridge' ); ?></p>
+						<textarea id="wpai-oauth-client-ids" name="<?php echo esc_attr( self::OPTION_NAME ); ?>" rows="8" cols="90" class="large-text code" spellcheck="false"><?php echo esc_textarea( implode( "\n", $clients ) ); ?></textarea>
+						<p class="description"><?php echo esc_html__( 'One exact public HTTPS client_id URL per line. Wildcards, HTTP URLs, local/private network targets, redirects, and shared secrets are not accepted.', 'wp-ai-bridge' ); ?></p>
 					</td>
 				</tr></tbody></table>
-				<?php submit_button( __( 'Save OAuth Clients', 'wp-native-builder-bridge' ) ); ?>
+				<?php submit_button( __( 'Save OAuth Clients', 'wp-ai-bridge' ) ); ?>
 			</form>
 		</div>
 		<?php
@@ -479,6 +479,6 @@ final class Approved_OAuth_Clients {
 		if ( OAuth_Server::CHATGPT_CLIENT_ID === (string) $client_id ) {
 			return self::CHATGPT_METADATA_CACHE;
 		}
-		return 'wpnb_oauth_client_meta_' . substr( hash( 'sha256', (string) $client_id ), 0, 24 );
+		return 'wpai_oauth_client_meta_' . substr( hash( 'sha256', (string) $client_id ), 0, 24 );
 	}
 }

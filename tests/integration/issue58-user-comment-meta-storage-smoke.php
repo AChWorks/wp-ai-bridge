@@ -8,27 +8,27 @@
 use WP_Native_Builder_Bridge\Support\Settings;
 use WP_Native_Builder_Bridge\Support\User_Comment_Meta_Store;
 
-function wpnb_issue58_storage_assert( $condition, $message ) {
+function wpai_issue58_storage_assert( $condition, $message ) {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message );
 	}
 }
 
-function wpnb_issue58_storage_execute( $name, array $input = array() ) {
+function wpai_issue58_storage_execute( $name, array $input = array() ) {
 	$ability = wp_get_ability( $name );
-	wpnb_issue58_storage_assert( $ability instanceof WP_Ability, 'Missing registered ability: ' . $name );
+	wpai_issue58_storage_assert( $ability instanceof WP_Ability, 'Missing registered ability: ' . $name );
 	return $ability->execute( $input );
 }
 
-function wpnb_issue58_storage_empty_hash( $user_id, $key ) {
-	$empty = wpnb_issue58_storage_execute(
-		'wp-native-builder/user-meta-read',
+function wpai_issue58_storage_empty_hash( $user_id, $key ) {
+	$empty = wpai_issue58_storage_execute(
+		'wp-ai-bridge/user-meta-read',
 		array(
 			'user_id' => (int) $user_id,
 			'key'     => (string) $key,
 		)
 	);
-	wpnb_issue58_storage_assert( ! is_wp_error( $empty ) && 1 === count( $empty['items'] ) && 0 === $empty['items'][0]['count'], 'Could not establish empty metadata state.' );
+	wpai_issue58_storage_assert( ! is_wp_error( $empty ) && 1 === count( $empty['items'] ) && 0 === $empty['items'][0]['count'], 'Could not establish empty metadata state.' );
 	return $empty['items'][0]['state_hash'];
 }
 
@@ -52,14 +52,14 @@ try {
 			'role'       => 'subscriber',
 		)
 	);
-	wpnb_issue58_storage_assert( ! is_wp_error( $user_id ) && $user_id > 0, 'Could not create Issue #58 storage user.' );
+	wpai_issue58_storage_assert( ! is_wp_error( $user_id ) && $user_id > 0, 'Could not create Issue #58 storage user.' );
 
 	$key_255 = 'issue58_' . str_repeat( 'k', 247 );
-	wpnb_issue58_storage_assert( 255 === strlen( $key_255 ), 'Issue #58 255-character metadata key fixture is invalid.' );
-	$empty_hash  = wpnb_issue58_storage_empty_hash( $user_id, $key_255 );
+	wpai_issue58_storage_assert( 255 === strlen( $key_255 ), 'Issue #58 255-character metadata key fixture is invalid.' );
+	$empty_hash  = wpai_issue58_storage_empty_hash( $user_id, $key_255 );
 	$slash_value = 'C:\\bridge\\path\\tail';
-	$created = wpnb_issue58_storage_execute(
-		'wp-native-builder/user-meta-update',
+	$created = wpai_issue58_storage_execute(
+		'wp-ai-bridge/user-meta-update',
 		array(
 			'user_id'             => (int) $user_id,
 			'key'                 => $key_255,
@@ -67,33 +67,33 @@ try {
 			'value_json'          => wp_json_encode( $slash_value ),
 		)
 	);
-	wpnb_issue58_storage_assert( ! is_wp_error( $created ), 'Issue #58 could not create a 255-character user metadata key.' );
-	wpnb_issue58_storage_assert( $slash_value === get_user_meta( $user_id, $key_255, true ), 'Create-path metadata slashing changed a canonical backslash value.' );
-	wpnb_issue58_storage_assert( wp_json_encode( $slash_value ) === $created['values'][0]['value_json'], 'Created backslash metadata value was not returned byte-equivalently through JSON.' );
+	wpai_issue58_storage_assert( ! is_wp_error( $created ), 'Issue #58 could not create a 255-character user metadata key.' );
+	wpai_issue58_storage_assert( $slash_value === get_user_meta( $user_id, $key_255, true ), 'Create-path metadata slashing changed a canonical backslash value.' );
+	wpai_issue58_storage_assert( wp_json_encode( $slash_value ) === $created['values'][0]['value_json'], 'Created backslash metadata value was not returned byte-equivalently through JSON.' );
 
-	$exact = wpnb_issue58_storage_execute(
-		'wp-native-builder/user-meta-read',
+	$exact = wpai_issue58_storage_execute(
+		'wp-ai-bridge/user-meta-read',
 		array(
 			'user_id'        => (int) $user_id,
 			'key'            => $key_255,
 			'include_values' => true,
 		)
 	);
-	wpnb_issue58_storage_assert( ! is_wp_error( $exact ), 'Exact read failed for the 255-character metadata key.' );
-	wpnb_issue58_storage_assert( wp_json_encode( $slash_value ) === $exact['items'][0]['values'][0]['value_json'], 'Exact read changed the canonical backslash value.' );
+	wpai_issue58_storage_assert( ! is_wp_error( $exact ), 'Exact read failed for the 255-character metadata key.' );
+	wpai_issue58_storage_assert( wp_json_encode( $slash_value ) === $exact['items'][0]['values'][0]['value_json'], 'Exact read changed the canonical backslash value.' );
 
 	$large_key   = 'issue58_oversized_physical_value';
 	$large_value = str_repeat( 'x', User_Comment_Meta_Store::MAX_VALUE_BYTES + 1 );
 	add_user_meta( $user_id, $large_key, $large_value, true );
-	$oversized = wpnb_issue58_storage_execute(
-		'wp-native-builder/user-meta-read',
+	$oversized = wpai_issue58_storage_execute(
+		'wp-ai-bridge/user-meta-read',
 		array(
 			'user_id'        => (int) $user_id,
 			'key'            => $large_key,
 			'include_values' => true,
 		)
 	);
-	wpnb_issue58_storage_assert( is_wp_error( $oversized ) && 'object_meta_value_too_large' === $oversized->get_error_code(), 'Oversized physical metadata value did not fail the bounded exact-read contract.' );
+	wpai_issue58_storage_assert( is_wp_error( $oversized ) && 'object_meta_value_too_large' === $oversized->get_error_code(), 'Oversized physical metadata value did not fail the bounded exact-read contract.' );
 
 	$registered = register_meta(
 		'user',
@@ -107,10 +107,10 @@ try {
 			'auth_callback'     => '__return_true',
 		)
 	);
-	wpnb_issue58_storage_assert( true === $registered, 'Could not register sanitizer-expansion metadata fixture.' );
-	$expanded_hash = wpnb_issue58_storage_empty_hash( $user_id, $expanded_key );
-	$expanded = wpnb_issue58_storage_execute(
-		'wp-native-builder/user-meta-update',
+	wpai_issue58_storage_assert( true === $registered, 'Could not register sanitizer-expansion metadata fixture.' );
+	$expanded_hash = wpai_issue58_storage_empty_hash( $user_id, $expanded_key );
+	$expanded = wpai_issue58_storage_execute(
+		'wp-ai-bridge/user-meta-update',
 		array(
 			'user_id'             => (int) $user_id,
 			'key'                 => $expanded_key,
@@ -118,8 +118,8 @@ try {
 			'value_json'          => '"small"',
 		)
 	);
-	wpnb_issue58_storage_assert( is_wp_error( $expanded ) && 'object_meta_value_too_large' === $expanded->get_error_code(), 'Sanitizer-expanded oversized create did not fail before persistence.' );
-	wpnb_issue58_storage_assert( ! metadata_exists( 'user', $user_id, $expanded_key ), 'Sanitizer-expanded oversized create left committed metadata behind.' );
+	wpai_issue58_storage_assert( is_wp_error( $expanded ) && 'object_meta_value_too_large' === $expanded->get_error_code(), 'Sanitizer-expanded oversized create did not fail before persistence.' );
+	wpai_issue58_storage_assert( ! metadata_exists( 'user', $user_id, $expanded_key ), 'Sanitizer-expanded oversized create left committed metadata behind.' );
 
 	echo "PASS: Issue #58 native key length, create slashing, and bounded physical value storage.\n";
 } finally {

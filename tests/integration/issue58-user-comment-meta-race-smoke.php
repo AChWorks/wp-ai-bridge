@@ -7,28 +7,28 @@
 
 use WP_Native_Builder_Bridge\Support\Settings;
 
-function wpnb_issue58_race_assert( $condition, $message ) {
+function wpai_issue58_race_assert( $condition, $message ) {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message );
 	}
 }
 
-function wpnb_issue58_race_execute( $name, array $input = array() ) {
+function wpai_issue58_race_execute( $name, array $input = array() ) {
 	$ability = wp_get_ability( $name );
-	wpnb_issue58_race_assert( $ability instanceof WP_Ability, 'Missing registered ability: ' . $name );
+	wpai_issue58_race_assert( $ability instanceof WP_Ability, 'Missing registered ability: ' . $name );
 	return $ability->execute( $input );
 }
 
-function wpnb_issue58_race_state( $type, $id, $key ) {
+function wpai_issue58_race_state( $type, $id, $key ) {
 	$field  = 'user' === $type ? 'user_id' : 'comment_id';
-	$result = wpnb_issue58_race_execute(
-		'wp-native-builder/' . $type . '-meta-read',
+	$result = wpai_issue58_race_execute(
+		'wp-ai-bridge/' . $type . '-meta-read',
 		array(
 			$field => (int) $id,
 			'key'  => (string) $key,
 		)
 	);
-	wpnb_issue58_race_assert( ! is_wp_error( $result ) && 1 === count( $result['items'] ), 'Could not read metadata race fixture.' );
+	wpai_issue58_race_assert( ! is_wp_error( $result ) && 1 === count( $result['items'] ), 'Could not read metadata race fixture.' );
 	return $result['items'][0];
 }
 
@@ -53,7 +53,7 @@ try {
 			'role'       => 'subscriber',
 		)
 	);
-	wpnb_issue58_race_assert( ! is_wp_error( $user_id ) && $user_id > 0, 'Could not create race user fixture.' );
+	wpai_issue58_race_assert( ! is_wp_error( $user_id ) && $user_id > 0, 'Could not create race user fixture.' );
 
 	$post_id = wp_insert_post(
 		array(
@@ -62,7 +62,7 @@ try {
 			'post_type'   => 'post',
 		)
 	);
-	wpnb_issue58_race_assert( ! is_wp_error( $post_id ) && $post_id > 0, 'Could not create race post fixture.' );
+	wpai_issue58_race_assert( ! is_wp_error( $post_id ) && $post_id > 0, 'Could not create race post fixture.' );
 	$comment_id = wp_insert_comment(
 		array(
 			'comment_post_ID'      => (int) $post_id,
@@ -72,11 +72,11 @@ try {
 			'comment_approved'     => 1,
 		)
 	);
-	wpnb_issue58_race_assert( $comment_id > 0, 'Could not create race comment fixture.' );
+	wpai_issue58_race_assert( $comment_id > 0, 'Could not create race comment fixture.' );
 
 	$user_key = 'issue58_update_race';
 	add_user_meta( $user_id, $user_key, 'before', true );
-	$user_state = wpnb_issue58_race_state( 'user', $user_id, $user_key );
+	$user_state = wpai_issue58_race_state( 'user', $user_id, $user_key );
 	$user_raced = false;
 	$user_hook  = static function ( $meta_id, $object_id, $meta_key, $meta_value ) use ( $user_id, $user_key, &$user_raced ) {
 		unset( $meta_id );
@@ -86,8 +86,8 @@ try {
 		}
 	};
 	add_action( 'updated_user_meta', $user_hook, 10, 4 );
-	$user_result = wpnb_issue58_race_execute(
-		'wp-native-builder/user-meta-update',
+	$user_result = wpai_issue58_race_execute(
+		'wp-ai-bridge/user-meta-update',
 		array(
 			'user_id'             => (int) $user_id,
 			'key'                 => $user_key,
@@ -96,14 +96,14 @@ try {
 		)
 	);
 	remove_action( 'updated_user_meta', $user_hook, 10 );
-	wpnb_issue58_race_assert( is_wp_error( $user_result ) && 'stale_object_meta_conflict' === $user_result->get_error_code(), 'Concurrent user metadata update did not fail stale.' );
+	wpai_issue58_race_assert( is_wp_error( $user_result ) && 'stale_object_meta_conflict' === $user_result->get_error_code(), 'Concurrent user metadata update did not fail stale.' );
 	$user_values = get_user_meta( $user_id, $user_key, false );
 	sort( $user_values );
-	wpnb_issue58_race_assert( array( 'before', 'concurrent' ) === $user_values, 'User metadata compensation overwrote or lost concurrent state.' );
+	wpai_issue58_race_assert( array( 'before', 'concurrent' ) === $user_values, 'User metadata compensation overwrote or lost concurrent state.' );
 
 	$comment_key = 'issue58_delete_race';
 	add_comment_meta( $comment_id, $comment_key, 'before', true );
-	$comment_state = wpnb_issue58_race_state( 'comment', $comment_id, $comment_key );
+	$comment_state = wpai_issue58_race_state( 'comment', $comment_id, $comment_key );
 	$comment_raced = false;
 	$comment_hook  = static function ( $meta_ids, $object_id, $meta_key, $meta_value ) use ( $comment_id, $comment_key, &$comment_raced ) {
 		unset( $meta_ids, $meta_value );
@@ -113,8 +113,8 @@ try {
 		}
 	};
 	add_action( 'deleted_comment_meta', $comment_hook, 10, 4 );
-	$comment_result = wpnb_issue58_race_execute(
-		'wp-native-builder/comment-meta-delete',
+	$comment_result = wpai_issue58_race_execute(
+		'wp-ai-bridge/comment-meta-delete',
 		array(
 			'comment_id'          => (int) $comment_id,
 			'key'                 => $comment_key,
@@ -122,10 +122,10 @@ try {
 		)
 	);
 	remove_action( 'deleted_comment_meta', $comment_hook, 10 );
-	wpnb_issue58_race_assert( is_wp_error( $comment_result ) && 'stale_object_meta_conflict' === $comment_result->get_error_code(), 'Concurrent comment metadata delete did not fail stale.' );
+	wpai_issue58_race_assert( is_wp_error( $comment_result ) && 'stale_object_meta_conflict' === $comment_result->get_error_code(), 'Concurrent comment metadata delete did not fail stale.' );
 	$comment_values = get_comment_meta( $comment_id, $comment_key, false );
 	sort( $comment_values );
-	wpnb_issue58_race_assert( array( 'before', 'concurrent' ) === $comment_values, 'Comment metadata compensation overwrote or lost concurrent state.' );
+	wpai_issue58_race_assert( array( 'before', 'concurrent' ) === $comment_values, 'Comment metadata compensation overwrote or lost concurrent state.' );
 
 	echo "PASS: Issue #58 metadata concurrency compensation.\n";
 } finally {

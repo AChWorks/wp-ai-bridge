@@ -41,10 +41,10 @@ final class Secure_Application_Password_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/application-passwords-read',
+			'wp-ai-bridge/application-passwords-read',
 			array(
-				'label'               => __( 'Read Application Passwords', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists or retrieves bounded WordPress Application Password metadata without exposing stored hashes or reusable credentials.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Application Passwords', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists or retrieves bounded WordPress Application Password metadata without exposing stored hashes or reusable credentials.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->read_input_schema(),
 				'output_schema'       => $this->read_output_schema(),
@@ -54,10 +54,10 @@ final class Secure_Application_Password_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/application-password-create',
+			'wp-ai-bridge/application-password-create',
 			array(
-				'label'               => __( 'Create Application Password', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Creates one WordPress Application Password through Core and returns the generated credential once in this response only.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Create Application Password', 'wp-ai-bridge' ),
+				'description'         => __( 'Creates one WordPress Application Password through Core and returns the generated credential once in this response only.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->create_input_schema(),
 				'output_schema'       => $this->create_output_schema(),
@@ -67,10 +67,10 @@ final class Secure_Application_Password_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/application-password-update',
+			'wp-ai-bridge/application-password-update',
 			array(
-				'label'               => __( 'Update Application Password', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Renames one exact WordPress Application Password through the fixed Core REST contract.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Update Application Password', 'wp-ai-bridge' ),
+				'description'         => __( 'Renames one exact WordPress Application Password through the fixed Core REST contract.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->update_input_schema(),
 				'output_schema'       => $this->item_schema(),
@@ -80,10 +80,10 @@ final class Secure_Application_Password_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/application-password-delete',
+			'wp-ai-bridge/application-password-delete',
 			array(
-				'label'               => __( 'Revoke Application Password', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Revokes one exact WordPress Application Password through Core.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Revoke Application Password', 'wp-ai-bridge' ),
+				'description'         => __( 'Revokes one exact WordPress Application Password through Core.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->item_target_schema(),
 				'output_schema'       => $this->delete_output_schema( false ),
@@ -93,10 +93,10 @@ final class Secure_Application_Password_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/application-passwords-delete-all',
+			'wp-ai-bridge/application-passwords-delete-all',
 			array(
-				'label'               => __( 'Revoke All Application Passwords', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Revokes every WordPress Application Password for one exact user only after an explicit revoke-all confirmation token.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Revoke All Application Passwords', 'wp-ai-bridge' ),
+				'description'         => __( 'Revokes every WordPress Application Password for one exact user only after an explicit revoke-all confirmation token.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->delete_all_input_schema(),
 				'output_schema'       => $this->delete_output_schema( true ),
@@ -176,7 +176,7 @@ final class Secure_Application_Password_Abilities {
 			return $this->resolve_invalid_success( $item, $user_id, $baseline, $capture );
 		}
 
-		$this->log->record( 'wp-native-builder/application-password-create', 'user', $user_id, true, '' );
+		$this->log->record( 'wp-ai-bridge/application-password-create', 'user', $user_id, true, '' );
 		return array(
 			'user_id'  => $user_id,
 			'password' => $data['password'],
@@ -201,7 +201,7 @@ final class Secure_Application_Password_Abilities {
 			return $request;
 		}
 		if ( ! class_exists( 'WP_REST_Application_Passwords_Controller' ) ) {
-			return new WP_Error( 'application_passwords_rest_unavailable', __( 'The WordPress Application Password REST contract is unavailable.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'application_passwords_rest_unavailable', __( 'The WordPress Application Password REST contract is unavailable.', 'wp-ai-bridge' ) );
 		}
 
 		$request->set_param( 'user_id', (int) $user_id );
@@ -211,7 +211,7 @@ final class Secure_Application_Password_Abilities {
 			return $permission;
 		}
 		if ( true !== $permission ) {
-			return new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-ai-bridge' ) );
 		}
 
 		return true;
@@ -295,7 +295,7 @@ final class Secure_Application_Password_Abilities {
 			try {
 				return $this->send_request( $request );
 			} catch ( \Throwable $throwable ) {
-				return new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-ai-bridge' ) );
 			}
 		} finally {
 			remove_filter( 'update_user_metadata', $write_observer, PHP_INT_MAX );
@@ -757,11 +757,11 @@ final class Secure_Application_Password_Abilities {
 	/** @return \WP_REST_Request|WP_Error */
 	private function build_request( $method, $route, array $params ) {
 		if ( ! class_exists( 'WP_REST_Request' ) || ! function_exists( 'rest_do_request' ) ) {
-			return new WP_Error( 'application_passwords_rest_unavailable', __( 'The WordPress Application Password REST contract is unavailable.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'application_passwords_rest_unavailable', __( 'The WordPress Application Password REST contract is unavailable.', 'wp-ai-bridge' ) );
 		}
 		if ( ! in_array( $method, array( 'GET', 'POST', 'DELETE' ), true )
 			|| 1 !== preg_match( '#^/wp/v2/users/[1-9][0-9]*/application-passwords(?:/[A-Za-z0-9_-]{1,64})?$#', $route ) ) {
-			return new WP_Error( 'application_passwords_rest_route_denied', __( 'The requested internal REST operation is outside the bounded Application Password contract.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'application_passwords_rest_route_denied', __( 'The requested internal REST operation is outside the bounded Application Password contract.', 'wp-ai-bridge' ) );
 		}
 		$request = new \WP_REST_Request( $method, $route );
 		foreach ( $params as $key => $value ) {
@@ -780,7 +780,7 @@ final class Secure_Application_Password_Abilities {
 		try {
 			$response = rest_do_request( $request );
 		} catch ( \Throwable $throwable ) {
-			return new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-ai-bridge' ) );
 		}
 		if ( is_wp_error( $response ) ) {
 			return $this->normalize_rest_error( $response );
@@ -831,7 +831,7 @@ final class Secure_Application_Password_Abilities {
 			}
 		}
 
-		$message = __( 'WordPress rejected the Application Password REST request.', 'wp-native-builder-bridge' );
+		$message = __( 'WordPress rejected the Application Password REST request.', 'wp-ai-bridge' );
 		if ( $status >= 400 && $status <= 599 ) {
 			return new WP_Error( 'application_passwords_rest_request_failed', $message, array( 'status' => $status ) );
 		}
@@ -840,22 +840,22 @@ final class Secure_Application_Password_Abilities {
 
 	/** @return WP_Error */
 	private function invalid_response_error() {
-		return new WP_Error( 'application_passwords_rest_invalid_response', __( 'WordPress returned an invalid Application Password response.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'application_passwords_rest_invalid_response', __( 'WordPress returned an invalid Application Password response.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function create_recovery_required_error() {
-		return new WP_Error( 'application_password_create_recovery_required', __( 'WordPress may have created an Application Password, but the Bridge could not verify its exact identity safely. Inspect the target user\'s Application Passwords before retrying.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'application_password_create_recovery_required', __( 'WordPress may have created an Application Password, but the Bridge could not verify its exact identity safely. Inspect the target user\'s Application Passwords before retrying.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function cleanup_failed_error() {
-		return new WP_Error( 'application_password_create_cleanup_failed', __( 'WordPress created an Application Password, but the Bridge could not safely revoke it after an invalid create response.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'application_password_create_cleanup_failed', __( 'WordPress created an Application Password, but the Bridge could not safely revoke it after an invalid create response.', 'wp-ai-bridge' ) );
 	}
 
 	/** @param WP_Error $error Error. @param int $user_id User. @return WP_Error */
 	private function logged_error( WP_Error $error, $user_id ) {
-		$this->log->record( 'wp-native-builder/application-password-create', 'user', (int) $user_id, false, $error->get_error_code() );
+		$this->log->record( 'wp-ai-bridge/application-password-create', 'user', (int) $user_id, false, $error->get_error_code() );
 		return $error;
 	}
 

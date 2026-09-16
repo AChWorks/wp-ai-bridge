@@ -3,8 +3,8 @@
  * Test-only public Ability registry fixtures. Never included in the release ZIP.
  * Installed only inside the isolated catalog integration test environment.
  */
-$GLOBALS['wpnb_catalog_permission_calls'] = 0;
-$GLOBALS['wpnb_catalog_execute_calls'] = 0;
+$GLOBALS['wpai_catalog_permission_calls'] = 0;
+$GLOBALS['wpai_catalog_execute_calls'] = 0;
 add_action( 'wp_abilities_api_categories_init', static function () {
 	wp_register_ability_category( 'catalog-fixture', array( 'label' => 'Catalog fixture', 'description' => 'Integration-only registry fixture.' ) );
 } );
@@ -15,8 +15,8 @@ add_action( 'wp_abilities_api_init', static function () {
 		'category' => 'catalog-fixture',
 		'input_schema' => array( 'type' => 'object', 'properties' => array( 'target' => array( 'type' => 'integer' ) ), 'additionalProperties' => false ),
 		'output_schema' => array( 'type' => 'string' ),
-		'permission_callback' => static function () { ++$GLOBALS['wpnb_catalog_permission_calls']; return false; },
-		'execute_callback' => static function () { ++$GLOBALS['wpnb_catalog_execute_calls']; return 'This operation must not execute during inspection.'; },
+		'permission_callback' => static function () { ++$GLOBALS['wpai_catalog_permission_calls']; return false; },
+		'execute_callback' => static function () { ++$GLOBALS['wpai_catalog_execute_calls']; return 'This operation must not execute during inspection.'; },
 		'meta' => array( 'mcp' => array( 'public' => true, 'type' => 'tool' ), 'private_configuration' => 'CATALOG_PRIVATE_METADATA_MUST_NOT_LEAK' ),
 	);
 	for ( $i = 136; $i >= 0; --$i ) {

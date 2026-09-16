@@ -19,7 +19,7 @@ $messages = array_merge(
 );
 
 return array(
-	'project-id-version' => 'WP AI Bridge 0.3.0',
+	'project-id-version' => 'WP AI Bridge 0.4.0',
 	'language'           => 'fa_IR',
 	'messages'           => $messages,
 );

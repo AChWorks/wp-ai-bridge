@@ -49,10 +49,10 @@ final class Taxonomy_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/terms-read',
+			'wp-ai-bridge/terms-read',
 			array(
-				'label'               => __( 'Read Taxonomy Terms', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists or retrieves terms from registered editable WordPress taxonomies.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Taxonomy Terms', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists or retrieves terms from registered editable WordPress taxonomies.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->read_input_schema(),
 				'output_schema'       => $this->read_output_schema(),
@@ -63,10 +63,10 @@ final class Taxonomy_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/term-upsert',
+			'wp-ai-bridge/term-upsert',
 			array(
-				'label'               => __( 'Create or Update Taxonomy Term', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Creates or updates one term in a registered editable taxonomy using WordPress APIs.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Create or Update Taxonomy Term', 'wp-ai-bridge' ),
+				'description'         => __( 'Creates or updates one term in a registered editable taxonomy using WordPress APIs.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->upsert_input_schema(),
 				'output_schema'       => $this->term_schema(),
@@ -77,10 +77,10 @@ final class Taxonomy_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/terms-assign',
+			'wp-ai-bridge/terms-assign',
 			array(
-				'label'               => __( 'Assign Taxonomy Terms', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Assigns an explicit list of existing term IDs to one content object through WordPress taxonomy APIs.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Assign Taxonomy Terms', 'wp-ai-bridge' ),
+				'description'         => __( 'Assigns an explicit list of existing term IDs to one content object through WordPress taxonomy APIs.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -128,10 +128,10 @@ final class Taxonomy_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/term-delete',
+			'wp-ai-bridge/term-delete',
 			array(
-				'label'               => __( 'Delete Taxonomy Term', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Deletes one taxonomy term when destructive access and WordPress taxonomy capabilities allow it.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Delete Taxonomy Term', 'wp-ai-bridge' ),
+				'description'         => __( 'Deletes one taxonomy term when destructive access and WordPress taxonomy capabilities allow it.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -264,14 +264,14 @@ final class Taxonomy_Abilities {
 	public function read( $input ) {
 		$taxonomy = $this->editable_taxonomy( (string) $input['taxonomy'] );
 		if ( ! $taxonomy ) {
-			return new WP_Error( 'unsupported_taxonomy', __( 'The requested taxonomy is not available for generic Bridge operations.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'unsupported_taxonomy', __( 'The requested taxonomy is not available for generic Bridge operations.', 'wp-ai-bridge' ) );
 		}
 
 		$action = isset( $input['action'] ) ? (string) $input['action'] : 'list';
 		if ( 'get' === $action ) {
 			$term = ! empty( $input['term_id'] ) ? get_term( (int) $input['term_id'], $taxonomy->name ) : null;
 			if ( ! $term || is_wp_error( $term ) ) {
-				return new WP_Error( 'term_not_found', __( 'The requested taxonomy term does not exist.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'term_not_found', __( 'The requested taxonomy term does not exist.', 'wp-ai-bridge' ) );
 			}
 			return array(
 				'items'       => array( $this->format_term( $term ) ),
@@ -339,10 +339,10 @@ final class Taxonomy_Abilities {
 	 * @return array<string,mixed>|WP_Error Term or error.
 	 */
 	public function upsert( $input ) {
-		$ability  = 'wp-native-builder/term-upsert';
+		$ability  = 'wp-ai-bridge/term-upsert';
 		$taxonomy = $this->editable_taxonomy( (string) $input['taxonomy'] );
 		if ( ! $taxonomy ) {
-			return $this->logged_error( $ability, 'unsupported_taxonomy', __( 'The requested taxonomy is not available for generic Bridge operations.', 'wp-native-builder-bridge' ) );
+			return $this->logged_error( $ability, 'unsupported_taxonomy', __( 'The requested taxonomy is not available for generic Bridge operations.', 'wp-ai-bridge' ) );
 		}
 
 		$args = array();
@@ -355,14 +355,14 @@ final class Taxonomy_Abilities {
 		$action = (string) $input['action'];
 		if ( 'create' === $action ) {
 			if ( empty( $input['name'] ) ) {
-				return $this->logged_error( $ability, 'term_name_required', __( 'name is required when creating a taxonomy term.', 'wp-native-builder-bridge' ) );
+				return $this->logged_error( $ability, 'term_name_required', __( 'name is required when creating a taxonomy term.', 'wp-ai-bridge' ) );
 			}
 			$result = wp_insert_term( (string) $input['name'], $taxonomy->name, $args );
 		} else {
 			$term_id = ! empty( $input['term_id'] ) ? (int) $input['term_id'] : 0;
 			$term    = $term_id ? get_term( $term_id, $taxonomy->name ) : null;
 			if ( ! $term || is_wp_error( $term ) ) {
-				return $this->logged_error( $ability, 'term_not_found', __( 'The taxonomy term to update does not exist.', 'wp-native-builder-bridge' ), $term_id );
+				return $this->logged_error( $ability, 'term_not_found', __( 'The taxonomy term to update does not exist.', 'wp-ai-bridge' ), $term_id );
 			}
 			if ( array_key_exists( 'name', $input ) ) {
 				$args['name'] = (string) $input['name'];
@@ -387,18 +387,18 @@ final class Taxonomy_Abilities {
 	 * @return array<string,mixed>|WP_Error Assignment result.
 	 */
 	public function assign( $input ) {
-		$ability  = 'wp-native-builder/terms-assign';
+		$ability  = 'wp-ai-bridge/terms-assign';
 		$post_id  = (int) $input['post_id'];
 		$taxonomy = $this->editable_taxonomy( (string) $input['taxonomy'] );
 		if ( ! $taxonomy ) {
-			return $this->logged_error( $ability, 'unsupported_taxonomy', __( 'The requested taxonomy is not available for generic Bridge operations.', 'wp-native-builder-bridge' ), $post_id );
+			return $this->logged_error( $ability, 'unsupported_taxonomy', __( 'The requested taxonomy is not available for generic Bridge operations.', 'wp-ai-bridge' ), $post_id );
 		}
 
 		$term_ids = array_values( array_unique( array_map( 'intval', $input['term_ids'] ) ) );
 		foreach ( $term_ids as $term_id ) {
 			$term = get_term( $term_id, $taxonomy->name );
 			if ( ! $term || is_wp_error( $term ) ) {
-				return $this->logged_error( $ability, 'term_not_found', __( 'Every assigned term_id must already exist in the requested taxonomy.', 'wp-native-builder-bridge' ), $post_id );
+				return $this->logged_error( $ability, 'term_not_found', __( 'Every assigned term_id must already exist in the requested taxonomy.', 'wp-ai-bridge' ), $post_id );
 			}
 		}
 
@@ -429,12 +429,12 @@ final class Taxonomy_Abilities {
 	 * @return array<string,mixed>|WP_Error Delete result.
 	 */
 	public function delete( $input ) {
-		$ability  = 'wp-native-builder/term-delete';
+		$ability  = 'wp-ai-bridge/term-delete';
 		$taxonomy = $this->editable_taxonomy( (string) $input['taxonomy'] );
 		$term_id  = (int) $input['term_id'];
 		$term     = $taxonomy ? get_term( $term_id, $taxonomy->name ) : null;
 		if ( ! $taxonomy || ! $term || is_wp_error( $term ) ) {
-			return $this->logged_error( $ability, 'term_not_found', __( 'The requested taxonomy term does not exist.', 'wp-native-builder-bridge' ), $term_id );
+			return $this->logged_error( $ability, 'term_not_found', __( 'The requested taxonomy term does not exist.', 'wp-ai-bridge' ), $term_id );
 		}
 
 		$result = wp_delete_term( $term_id, $taxonomy->name );
@@ -443,7 +443,7 @@ final class Taxonomy_Abilities {
 			return $result;
 		}
 		if ( false === $result ) {
-			return $this->logged_error( $ability, 'term_delete_failed', __( 'WordPress could not delete the requested taxonomy term.', 'wp-native-builder-bridge' ), $term_id );
+			return $this->logged_error( $ability, 'term_delete_failed', __( 'WordPress could not delete the requested taxonomy term.', 'wp-ai-bridge' ), $term_id );
 		}
 
 		$this->log->record( $ability, 'term', $term_id, true, '' );

@@ -10,7 +10,7 @@ $require = static function ( $value, $message ) { if ( is_wp_error( $value ) ) {
 $original_settings = get_option( Settings::OPTION_NAME, null );
 $original_log = get_option( Mutation_Log::OPTION_NAME, null );
 $original_user = get_current_user_id();
-$taxonomy = 'wpnb_meta_fixture'; $other_taxonomy = 'wpnb_meta_other';
+$taxonomy = 'wpai_meta_fixture'; $other_taxonomy = 'wpai_meta_other';
 $term_id = 0; $actor_id = 0; $extra_terms = array(); $registered = array(); $hooks = array();
 $hook = static function ( $name, $callback, $priority = 10, $args = 6 ) use ( &$hooks ) { add_filter( $name, $callback, $priority, $args ); $hooks[] = array( $name, $callback, $priority ); return $callback; };
 $unhook = static function ( $name, $callback, $priority = 10 ) { remove_filter( $name, $callback, $priority ); };
@@ -20,17 +20,17 @@ $insert_raw = static function ( $id, $key, $raw, $meta_id = null ) { global $wpd
 $register = static function ( $key, $args, $subtype = null ) use ( &$registered, $taxonomy ) { $subtype = null === $subtype ? $taxonomy : $subtype; register_term_meta( $subtype, $key, $args ); $registered[] = array( $subtype, $key ); };
 
 try {
-    $read = wp_get_ability( 'wp-native-builder/term-meta-read' );
-    $update = wp_get_ability( 'wp-native-builder/term-meta-update' );
-    $delete = wp_get_ability( 'wp-native-builder/term-meta-delete' );
+    $read = wp_get_ability( 'wp-ai-bridge/term-meta-read' );
+    $update = wp_get_ability( 'wp-ai-bridge/term-meta-update' );
+    $delete = wp_get_ability( 'wp-ai-bridge/term-meta-delete' );
     if ( ! $read || ! $update || ! $delete ) { throw new RuntimeException( 'Term metadata Abilities are unavailable.' ); }
-    register_taxonomy( $taxonomy, 'post', array( 'public' => false, 'show_ui' => false, 'show_in_rest' => false, 'capabilities' => array( 'manage_terms' => 'wpnb_manage_fixture', 'edit_terms' => 'wpnb_edit_fixture', 'delete_terms' => 'wpnb_delete_fixture', 'assign_terms' => 'wpnb_assign_fixture' ) ) );
+    register_taxonomy( $taxonomy, 'post', array( 'public' => false, 'show_ui' => false, 'show_in_rest' => false, 'capabilities' => array( 'manage_terms' => 'wpai_manage_fixture', 'edit_terms' => 'wpai_edit_fixture', 'delete_terms' => 'wpai_delete_fixture', 'assign_terms' => 'wpai_assign_fixture' ) ) );
     register_taxonomy( $other_taxonomy, 'post', array( 'public' => false ) );
     $created = $require( wp_insert_term( 'Term metadata fixture', $taxonomy ), 'Create fixture' );
     $term_id = (int) $created['term_id'];
     $target = array( 'term_id' => $term_id, 'taxonomy' => $taxonomy );
     $actor_id = $require( wp_insert_user( array( 'user_login' => 'wpnb36_' . wp_generate_password( 12, false ), 'user_pass' => wp_generate_password( 32 ), 'role' => 'subscriber' ) ), 'Create actor' );
-    $actor = get_user_by( 'id', $actor_id ); $actor->add_cap( 'wpnb_edit_fixture' ); wp_set_current_user( $actor_id );
+    $actor = get_user_by( 'id', $actor_id ); $actor->add_cap( 'wpai_edit_fixture' ); wp_set_current_user( $actor_id );
     // Use the actual current WP_User instance, not a separately cached instance.
     $actor = wp_get_current_user();
     $ok( ! current_user_can( 'manage_categories' ) && current_user_can( 'edit_term', $term_id ), 'Custom term authority fixture depends on a global capability.' );
@@ -53,9 +53,9 @@ try {
     $ok( array( 'layout' => 'grid' ) === get_term_meta( $term_id, '_private', true ), 'Protected metadata did not persist.' );
     $ok( ! current_user_can( 'edit_term_meta', $term_id, '_private' ) && false === has_filter( 'auth_term_meta__private' ), 'Temporary administrator opt-in leaked into ordinary WordPress authorization.' );
     foreach ( array( array( 'term_id' => $term_id ), array( 'term_id' => $term_id, 'taxonomy' => $other_taxonomy ), array( 'term_id' => 999999999, 'taxonomy' => $taxonomy ) ) as $bad ) { $ok( is_wp_error( $read->execute( $bad ) ), 'Unverified term/taxonomy identity was accepted.' ); }
-    $actor->remove_cap( 'wpnb_edit_fixture' );
+    $actor->remove_cap( 'wpai_edit_fixture' );
     $ok( is_wp_error( $inspect( 'ordinary' ) ), 'Missing exact term capability did not deny read.' );
-    $actor->add_cap( 'wpnb_edit_fixture' );
+    $actor->add_cap( 'wpai_edit_fixture' );
 
     // Explicit registered and priority-zero provider denials remain authoritative.
     foreach ( array( '_registered_deny', 'registered_public_deny' ) as $key ) {
@@ -69,7 +69,7 @@ try {
     $ok( is_wp_error( $inspect( '_priority_deny' ) ), 'Priority-zero auth denial was ignored.' );
     $register( '_registered_allow', array( 'auth_callback' => '__return_true', 'type' => 'string', 'single' => true ) );
     $require( $write( '_registered_allow', 'allowed' ), 'Authorized registered metadata' );
-    foreach ( array( 'wpnb_missing_cap', 'do_not_allow', 'edit_term_meta' ) as $required_cap ) {
+    foreach ( array( 'wpai_missing_cap', 'do_not_allow', 'edit_term_meta' ) as $required_cap ) {
         $mapped = $hook( 'map_meta_cap', static function ( $caps, $cap, $user, $args ) use ( $term_id, $required_cap ) { if ( 'edit_term_meta' === $cap && (int) ( $args[0] ?? 0 ) === $term_id && '_private' === ( $args[1] ?? '' ) ) { $caps[] = $required_cap; } return $caps; }, PHP_INT_MAX, 4 );
         $ok( is_wp_error( $inspect( '_private' ) ), 'Extra mapped requirement or explicit meta-cap denial was bypassed: ' . $required_cap );
         $unhook( 'map_meta_cap', $mapped, PHP_INT_MAX );
@@ -199,8 +199,8 @@ try {
 
     // Revocation/deletion during the pre-mutation hook is rechecked before physical CAS.
     $key = '_revoked'; add_term_meta( $term_id, $key, 'keep', true ); $hash = $state( $key );
-    $revoke = null; $revoke = $hook( 'update_term_meta', static function ( $mid, $id, $meta_key ) use ( &$revoke, $term_id, $key, $actor ) { if ( (int) $id === $term_id && $meta_key === $key ) { remove_filter( 'update_term_meta', $revoke, 1 ); $actor->remove_cap( 'wpnb_edit_fixture' ); } }, 1, 4 );
-    $result = $write( $key, 'x', $hash ); $actor->add_cap( 'wpnb_edit_fixture' );
+    $revoke = null; $revoke = $hook( 'update_term_meta', static function ( $mid, $id, $meta_key ) use ( &$revoke, $term_id, $key, $actor ) { if ( (int) $id === $term_id && $meta_key === $key ) { remove_filter( 'update_term_meta', $revoke, 1 ); $actor->remove_cap( 'wpai_edit_fixture' ); } }, 1, 4 );
+    $result = $write( $key, 'x', $hash ); $actor->add_cap( 'wpai_edit_fixture' );
     $ok( is_wp_error( $result ) && 'keep' === get_term_meta( $term_id, $key, true ), 'Authority revocation before physical mutation was ignored.' );
     $temp = $require( wp_insert_term( 'Deleted target fixture', $taxonomy ), 'Create disappearing term' ); $temp_id = (int) $temp['term_id']; $extra_terms[] = $temp_id;
     add_term_meta( $temp_id, '_target', 'keep', true ); $temp_target = array( 'term_id' => $temp_id, 'taxonomy' => $taxonomy );

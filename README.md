@@ -61,7 +61,7 @@ In a ChatGPT workspace with Developer Mode enabled:
 5. Sign in to WordPress when prompted.
 6. Review the WordPress consent page and authorize ChatGPT.
 
-Connections created with the former `wp-native-builder` MCP/OAuth routes remain supported as migration aliases. New connections and all UI/documentation use the WP AI Bridge routes.
+WP AI Bridge uses only the canonical `wp-ai-bridge` MCP/OAuth routes. Upgrading from v0.3.0 intentionally invalidates sessions bound to the retired resource, so ChatGPT must be reconnected once after the identity migration.
 
 No tunnel or separate proxy service is required for the direct HTTPS setup.
 
@@ -75,7 +75,7 @@ The plugin adds a top-level **WP AI Bridge** menu:
 - **Activity** — bounded mutation activity.
 - **Settings** — ChatGPT connection details and Bridge access groups.
 
-Existing bookmarks that use the former `wp-native-builder...` admin slugs are retained as compatibility aliases; new navigation uses `wp-ai-bridge...` slugs.
+Only `wp-ai-bridge...` admin slugs are registered. Former WP Native Builder admin bookmarks are retired by the v0.4.0 identity cutover.
 
 Workspace state is private to WordPress and is not exposed through ordinary post, Gutenberg, or generic metadata abilities.
 
@@ -103,17 +103,17 @@ Only **Site Read** is enabled by default.
 
 ## Uploads and extension installation
 
-`wp-native-builder/media-upload` accepts file bytes plus a filename and hands them to WordPress Media Library handling. The maximum payload is the smaller of the WordPress upload limit and **20 MiB**. The caller cannot choose a server filesystem path.
+`wp-ai-bridge/media-upload` accepts file bytes plus a filename and hands them to WordPress Media Library handling. The maximum payload is the smaller of the WordPress upload limit and **20 MiB**. The caller cannot choose a server filesystem path.
 
-`wp-native-builder/media-import-url` accepts a public HTTP(S) URL and a filename, streams it within the current WordPress upload limit, and creates a normal attachment. It requires explicit **Remote Media** plus **Builder Write** access; upgrades do not enable it automatically. See [URL media import](./docs/ABILITIES.md#url-media-import).
+`wp-ai-bridge/media-import-url` accepts a public HTTP(S) URL and a filename, streams it within the current WordPress upload limit, and creates a normal attachment. It requires explicit **Remote Media** plus **Builder Write** access; upgrades do not enable it automatically. See [URL media import](./docs/ABILITIES.md#url-media-import).
 
-`wp-native-builder/extension-lifecycle` keeps the existing WordPress.org slug installation path under **Code & Extensions**. For a non-WordPress.org source, an administrator must additionally enable **External Packages** and the connected WordPress user must have the native plugin/theme install capability. The caller supplies one exact public HTTPS package URL; the Bridge does not accept local package paths, HTTP/FTP sources, URL credentials, caller-supplied request headers/cookies, or generic transport configuration. The package is streamed into a Bridge-owned temporary file with TLS/redirect/SSRF checks and a maximum of the smaller of the current WordPress upload limit and **100 MiB**, then handed to the native WordPress Core Upgrader. The temporary package is retired and verified before success is returned. Installation does not activate the plugin/theme automatically, and package code has normal WordPress runtime authority once later activated. See [External package installation](./docs/EXTERNAL-PACKAGES.md).
+`wp-ai-bridge/extension-lifecycle` keeps the existing WordPress.org slug installation path under **Code & Extensions**. For a non-WordPress.org source, an administrator must additionally enable **External Packages** and the connected WordPress user must have the native plugin/theme install capability. The caller supplies one exact public HTTPS package URL; the Bridge does not accept local package paths, HTTP/FTP sources, URL credentials, caller-supplied request headers/cookies, or generic transport configuration. The package is streamed into a Bridge-owned temporary file with TLS/redirect/SSRF checks and a maximum of the smaller of the current WordPress upload limit and **100 MiB**, then handed to the native WordPress Core Upgrader. The temporary package is retired and verified before success is returned. Installation does not activate the plugin/theme automatically, and package code has normal WordPress runtime authority once later activated. See [External package installation](./docs/EXTERNAL-PACKAGES.md).
 
 Source Editing remains a separate administrator-level trust boundary and is not enabled by Code & Extensions or External Packages alone. The Bridge does **not** expose a generic HTTP client, arbitrary package request credentials, shell commands, generic SQL, unrestricted filesystem access, arbitrary WordPress options, or generic credential retrieval. WordPress Application Passwords are available only through the separate default-off purpose-specific lifecycle described above.
 
-## Compatibility identifiers
+## Canonical identity
 
-The public product is WP AI Bridge, but several established machine identifiers intentionally remain `wp-native-builder...` to preserve existing sites and clients. This includes the `wp-native-builder/*` Ability names, plugin installation directory/entrypoint, text domain, PHP namespace/constants, and persisted storage keys. These are compatibility contracts, not the current public brand.
+The canonical WordPress package installs as `wp-ai-bridge/wp-ai-bridge.php`. Public/admin routes, the text domain, Bridge-owned Ability IDs, Workspace post/meta identifiers, settings/OAuth options, and new runtime state use the `wp-ai-bridge`, `wp_ai_bridge`, or `wpai` identity as appropriate. v0.4.0 contains a bounded one-time importer for the former persisted identifiers; that compatibility importer is temporary migration code rather than a permanent second identity.
 
 ## Optional integrations
 

@@ -40,10 +40,10 @@ final class Application_Password_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/application-passwords-read',
+			'wp-ai-bridge/application-passwords-read',
 			array(
-				'label'               => __( 'Read Application Passwords', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists or retrieves bounded WordPress Application Password metadata without exposing stored hashes or reusable credentials.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Application Passwords', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists or retrieves bounded WordPress Application Password metadata without exposing stored hashes or reusable credentials.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->read_input_schema(),
 				'output_schema'       => $this->read_output_schema(),
@@ -53,10 +53,10 @@ final class Application_Password_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/application-password-create',
+			'wp-ai-bridge/application-password-create',
 			array(
-				'label'               => __( 'Create Application Password', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Creates one WordPress Application Password through Core and returns the generated credential once in this response only.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Create Application Password', 'wp-ai-bridge' ),
+				'description'         => __( 'Creates one WordPress Application Password through Core and returns the generated credential once in this response only.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->create_input_schema(),
 				'output_schema'       => $this->create_output_schema(),
@@ -66,10 +66,10 @@ final class Application_Password_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/application-password-update',
+			'wp-ai-bridge/application-password-update',
 			array(
-				'label'               => __( 'Update Application Password', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Renames one exact WordPress Application Password through the fixed Core REST contract.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Update Application Password', 'wp-ai-bridge' ),
+				'description'         => __( 'Renames one exact WordPress Application Password through the fixed Core REST contract.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->update_input_schema(),
 				'output_schema'       => $this->item_schema(),
@@ -79,10 +79,10 @@ final class Application_Password_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/application-password-delete',
+			'wp-ai-bridge/application-password-delete',
 			array(
-				'label'               => __( 'Revoke Application Password', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Revokes one exact WordPress Application Password through Core.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Revoke Application Password', 'wp-ai-bridge' ),
+				'description'         => __( 'Revokes one exact WordPress Application Password through Core.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->item_target_schema(),
 				'output_schema'       => $this->delete_output_schema( false ),
@@ -92,10 +92,10 @@ final class Application_Password_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/application-passwords-delete-all',
+			'wp-ai-bridge/application-passwords-delete-all',
 			array(
-				'label'               => __( 'Revoke All Application Passwords', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Revokes every WordPress Application Password for one exact user only after an explicit revoke-all confirmation token.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Revoke All Application Passwords', 'wp-ai-bridge' ),
+				'description'         => __( 'Revokes every WordPress Application Password for one exact user only after an explicit revoke-all confirmation token.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->delete_all_input_schema(),
 				'output_schema'       => $this->delete_output_schema( true ),
@@ -120,12 +120,12 @@ final class Application_Password_Abilities {
 		$user_id = (int) $input['user_id'];
 		$action  = isset( $input['action'] ) ? (string) $input['action'] : 'list';
 		if ( ! in_array( $action, array( 'list', 'get' ), true ) ) {
-			return new WP_Error( 'application_password_read_action_invalid', __( 'The Application Password read action is invalid.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'application_password_read_action_invalid', __( 'The Application Password read action is invalid.', 'wp-ai-bridge' ) );
 		}
 		$route = $this->collection_route( $user_id );
 		if ( 'get' === $action ) {
 			if ( empty( $input['uuid'] ) || ! $this->valid_uuid_token( (string) $input['uuid'] ) ) {
-				return new WP_Error( 'application_password_uuid_required', __( 'A valid Application Password UUID is required for an exact read.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'application_password_uuid_required', __( 'A valid Application Password UUID is required for an exact read.', 'wp-ai-bridge' ) );
 			}
 			$route .= '/' . (string) $input['uuid'];
 		}
@@ -186,21 +186,21 @@ final class Application_Password_Abilities {
 		$result  = $this->dispatch_create( $user_id, $params, $capture );
 
 		if ( ! empty( $capture['ambiguous'] ) ) {
-			return $this->logged_error( $this->create_recovery_required_error(), 'wp-native-builder/application-password-create', $user_id );
+			return $this->logged_error( $this->create_recovery_required_error(), 'wp-ai-bridge/application-password-create', $user_id );
 		}
 
 		if ( is_wp_error( $result ) ) {
 			if ( $this->valid_uuid_token( $capture['early_uuid'] ) ) {
 				$cleanup = $this->cleanup_invalid_created_response( $user_id, $capture['early_uuid'] );
 				if ( is_wp_error( $cleanup ) ) {
-					return $this->logged_error( $cleanup, 'wp-native-builder/application-password-create', $user_id );
+					return $this->logged_error( $cleanup, 'wp-ai-bridge/application-password-create', $user_id );
 				}
-				return $this->logged_error( $result, 'wp-native-builder/application-password-create', $user_id );
+				return $this->logged_error( $result, 'wp-ai-bridge/application-password-create', $user_id );
 			}
 			if ( ! empty( $capture['prepared_count'] ) || ! empty( $capture['early_count'] ) || ! empty( $capture['late_count'] ) ) {
-				return $this->logged_error( $this->create_recovery_required_error(), 'wp-native-builder/application-password-create', $user_id );
+				return $this->logged_error( $this->create_recovery_required_error(), 'wp-ai-bridge/application-password-create', $user_id );
 			}
-			return $this->logged_error( $result, 'wp-native-builder/application-password-create', $user_id );
+			return $this->logged_error( $result, 'wp-ai-bridge/application-password-create', $user_id );
 		}
 
 		$cleanup_uuid = $this->valid_uuid_token( $capture['early_uuid'] ) ? $capture['early_uuid'] : $capture['late_uuid'];
@@ -213,10 +213,10 @@ final class Application_Password_Abilities {
 			if ( $this->valid_uuid_token( $cleanup_uuid ) ) {
 				$cleanup = $this->cleanup_invalid_created_response( $user_id, $cleanup_uuid );
 				if ( is_wp_error( $cleanup ) ) {
-					return $this->logged_error( $cleanup, 'wp-native-builder/application-password-create', $user_id );
+					return $this->logged_error( $cleanup, 'wp-ai-bridge/application-password-create', $user_id );
 				}
 			}
-			return $this->logged_error( $this->create_recovery_required_error(), 'wp-native-builder/application-password-create', $user_id );
+			return $this->logged_error( $this->create_recovery_required_error(), 'wp-ai-bridge/application-password-create', $user_id );
 		}
 
 		$data = $result['data'];
@@ -229,20 +229,20 @@ final class Application_Password_Abilities {
 			|| $capture['early_uuid'] !== $data['uuid'] ) {
 			$cleanup = $this->cleanup_invalid_created_response( $user_id, $capture['early_uuid'] );
 			if ( is_wp_error( $cleanup ) ) {
-				return $this->logged_error( $cleanup, 'wp-native-builder/application-password-create', $user_id );
+				return $this->logged_error( $cleanup, 'wp-ai-bridge/application-password-create', $user_id );
 			}
-			return $this->logged_error( $this->invalid_response_error(), 'wp-native-builder/application-password-create', $user_id );
+			return $this->logged_error( $this->invalid_response_error(), 'wp-ai-bridge/application-password-create', $user_id );
 		}
 
 		$item = $this->normalize_item( $data );
 		if ( is_wp_error( $item ) ) {
 			$cleanup = $this->cleanup_invalid_created_response( $user_id, $capture['early_uuid'] );
 			if ( is_wp_error( $cleanup ) ) {
-				return $this->logged_error( $cleanup, 'wp-native-builder/application-password-create', $user_id );
+				return $this->logged_error( $cleanup, 'wp-ai-bridge/application-password-create', $user_id );
 			}
-			return $this->logged_error( $item, 'wp-native-builder/application-password-create', $user_id );
+			return $this->logged_error( $item, 'wp-ai-bridge/application-password-create', $user_id );
 		}
-		$this->log->record( 'wp-native-builder/application-password-create', 'user', $user_id, true, '' );
+		$this->log->record( 'wp-ai-bridge/application-password-create', 'user', $user_id, true, '' );
 		return array(
 			'user_id'  => $user_id,
 			'password' => $data['password'],
@@ -255,17 +255,17 @@ final class Application_Password_Abilities {
 		$user_id = (int) $input['user_id'];
 		$uuid    = (string) $input['uuid'];
 		if ( ! $this->valid_uuid_token( $uuid ) ) {
-			return $this->logged_error( new WP_Error( 'application_password_uuid_invalid', __( 'The Application Password UUID is invalid.', 'wp-native-builder-bridge' ) ), 'wp-native-builder/application-password-update', $user_id );
+			return $this->logged_error( new WP_Error( 'application_password_uuid_invalid', __( 'The Application Password UUID is invalid.', 'wp-ai-bridge' ) ), 'wp-ai-bridge/application-password-update', $user_id );
 		}
 		$result = $this->dispatch( 'POST', $this->collection_route( $user_id ) . '/' . $uuid, array( 'name' => (string) $input['name'] ) );
 		if ( is_wp_error( $result ) ) {
-			return $this->logged_error( $result, 'wp-native-builder/application-password-update', $user_id );
+			return $this->logged_error( $result, 'wp-ai-bridge/application-password-update', $user_id );
 		}
 		$item = $this->normalize_item( $result['data'] );
 		if ( is_wp_error( $item ) ) {
-			return $this->logged_error( $item, 'wp-native-builder/application-password-update', $user_id );
+			return $this->logged_error( $item, 'wp-ai-bridge/application-password-update', $user_id );
 		}
-		$this->log->record( 'wp-native-builder/application-password-update', 'user', $user_id, true, '' );
+		$this->log->record( 'wp-ai-bridge/application-password-update', 'user', $user_id, true, '' );
 		return $item;
 	}
 
@@ -274,18 +274,18 @@ final class Application_Password_Abilities {
 		$user_id = (int) $input['user_id'];
 		$uuid    = (string) $input['uuid'];
 		if ( ! $this->valid_uuid_token( $uuid ) ) {
-			return $this->logged_error( new WP_Error( 'application_password_uuid_invalid', __( 'The Application Password UUID is invalid.', 'wp-native-builder-bridge' ) ), 'wp-native-builder/application-password-delete', $user_id );
+			return $this->logged_error( new WP_Error( 'application_password_uuid_invalid', __( 'The Application Password UUID is invalid.', 'wp-ai-bridge' ) ), 'wp-ai-bridge/application-password-delete', $user_id );
 		}
 		$result = $this->dispatch( 'DELETE', $this->collection_route( $user_id ) . '/' . $uuid, array() );
 		if ( is_wp_error( $result ) ) {
-			return $this->logged_error( $result, 'wp-native-builder/application-password-delete', $user_id );
+			return $this->logged_error( $result, 'wp-ai-bridge/application-password-delete', $user_id );
 		}
 		$data = $result['data'];
 		if ( ! is_array( $data ) || empty( $data['deleted'] ) ) {
-			$error = new WP_Error( 'application_password_delete_unconfirmed', __( 'WordPress did not confirm Application Password revocation.', 'wp-native-builder-bridge' ) );
-			return $this->logged_error( $error, 'wp-native-builder/application-password-delete', $user_id );
+			$error = new WP_Error( 'application_password_delete_unconfirmed', __( 'WordPress did not confirm Application Password revocation.', 'wp-ai-bridge' ) );
+			return $this->logged_error( $error, 'wp-ai-bridge/application-password-delete', $user_id );
 		}
-		$this->log->record( 'wp-native-builder/application-password-delete', 'user', $user_id, true, '' );
+		$this->log->record( 'wp-ai-bridge/application-password-delete', 'user', $user_id, true, '' );
 		return array(
 			'user_id' => $user_id,
 			'deleted' => true,
@@ -296,18 +296,18 @@ final class Application_Password_Abilities {
 	public function delete_all( $input ) {
 		$user_id = (int) $input['user_id'];
 		if ( ! isset( $input['confirm'] ) || 'revoke_all' !== $input['confirm'] ) {
-			return $this->logged_error( new WP_Error( 'application_password_revoke_all_confirmation_required', __( 'Explicit revoke-all confirmation is required.', 'wp-native-builder-bridge' ) ), 'wp-native-builder/application-passwords-delete-all', $user_id );
+			return $this->logged_error( new WP_Error( 'application_password_revoke_all_confirmation_required', __( 'Explicit revoke-all confirmation is required.', 'wp-ai-bridge' ) ), 'wp-ai-bridge/application-passwords-delete-all', $user_id );
 		}
 		$result = $this->dispatch( 'DELETE', $this->collection_route( $user_id ), array() );
 		if ( is_wp_error( $result ) ) {
-			return $this->logged_error( $result, 'wp-native-builder/application-passwords-delete-all', $user_id );
+			return $this->logged_error( $result, 'wp-ai-bridge/application-passwords-delete-all', $user_id );
 		}
 		$data = $result['data'];
 		if ( ! is_array( $data ) || empty( $data['deleted'] ) || ! isset( $data['count'] ) ) {
-			$error = new WP_Error( 'application_password_delete_all_unconfirmed', __( 'WordPress did not confirm bulk Application Password revocation.', 'wp-native-builder-bridge' ) );
-			return $this->logged_error( $error, 'wp-native-builder/application-passwords-delete-all', $user_id );
+			$error = new WP_Error( 'application_password_delete_all_unconfirmed', __( 'WordPress did not confirm bulk Application Password revocation.', 'wp-ai-bridge' ) );
+			return $this->logged_error( $error, 'wp-ai-bridge/application-passwords-delete-all', $user_id );
 		}
-		$this->log->record( 'wp-native-builder/application-passwords-delete-all', 'user', $user_id, true, '' );
+		$this->log->record( 'wp-ai-bridge/application-passwords-delete-all', 'user', $user_id, true, '' );
 		return array(
 			'user_id' => $user_id,
 			'deleted' => true,
@@ -436,7 +436,7 @@ final class Application_Password_Abilities {
 			try {
 				return $this->send_request( $request );
 			} catch ( \Throwable $throwable ) {
-				return new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-ai-bridge' ) );
 			}
 		} finally {
 			remove_filter( 'rest_pre_insert_application_password', $correlate, PHP_INT_MAX );
@@ -448,11 +448,11 @@ final class Application_Password_Abilities {
 	/** @return \WP_REST_Request|WP_Error */
 	private function build_request( $method, $route, array $params ) {
 		if ( ! class_exists( 'WP_REST_Request' ) || ! function_exists( 'rest_do_request' ) ) {
-			return new WP_Error( 'application_passwords_rest_unavailable', __( 'The WordPress Application Password REST contract is unavailable.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'application_passwords_rest_unavailable', __( 'The WordPress Application Password REST contract is unavailable.', 'wp-ai-bridge' ) );
 		}
 		if ( ! in_array( $method, array( 'GET', 'POST', 'DELETE' ), true )
 			|| 1 !== preg_match( '#^/wp/v2/users/[1-9][0-9]*/application-passwords(?:/[A-Za-z0-9_-]{1,64})?$#', $route ) ) {
-			return new WP_Error( 'application_passwords_rest_route_denied', __( 'The requested internal REST operation is outside the bounded Application Password contract.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'application_passwords_rest_route_denied', __( 'The requested internal REST operation is outside the bounded Application Password contract.', 'wp-ai-bridge' ) );
 		}
 		$request = new \WP_REST_Request( $method, $route );
 		foreach ( $params as $key => $value ) {
@@ -471,7 +471,7 @@ final class Application_Password_Abilities {
 		try {
 			$response = rest_do_request( $request );
 		} catch ( \Throwable $throwable ) {
-			return new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'application_passwords_rest_request_failed', __( 'WordPress rejected the Application Password REST request.', 'wp-ai-bridge' ) );
 		}
 		if ( is_wp_error( $response ) ) {
 			return $this->normalize_rest_error( $response );
@@ -517,10 +517,10 @@ final class Application_Password_Abilities {
 		try {
 			$result = $this->dispatch( 'DELETE', $this->collection_route( $user_id ) . '/' . $created_uuid, array() );
 		} catch ( \Throwable $throwable ) {
-			return new WP_Error( 'application_password_create_cleanup_failed', __( 'WordPress created an Application Password, but the Bridge could not safely revoke it after an invalid create response.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'application_password_create_cleanup_failed', __( 'WordPress created an Application Password, but the Bridge could not safely revoke it after an invalid create response.', 'wp-ai-bridge' ) );
 		}
 		if ( is_wp_error( $result ) || ! is_array( $result['data'] ) || empty( $result['data']['deleted'] ) ) {
-			return new WP_Error( 'application_password_create_cleanup_failed', __( 'WordPress created an Application Password, but the Bridge could not safely revoke it after an invalid create response.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'application_password_create_cleanup_failed', __( 'WordPress created an Application Password, but the Bridge could not safely revoke it after an invalid create response.', 'wp-ai-bridge' ) );
 		}
 
 		return true;
@@ -544,7 +544,7 @@ final class Application_Password_Abilities {
 			}
 		}
 
-		$message = __( 'WordPress rejected the Application Password REST request.', 'wp-native-builder-bridge' );
+		$message = __( 'WordPress rejected the Application Password REST request.', 'wp-ai-bridge' );
 		if ( $status >= 400 && $status <= 599 ) {
 			return new WP_Error( 'application_passwords_rest_request_failed', $message, array( 'status' => $status ) );
 		}
@@ -553,12 +553,12 @@ final class Application_Password_Abilities {
 
 	/** @return WP_Error */
 	private function invalid_response_error() {
-		return new WP_Error( 'application_passwords_rest_invalid_response', __( 'WordPress returned an invalid Application Password response.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'application_passwords_rest_invalid_response', __( 'WordPress returned an invalid Application Password response.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function create_recovery_required_error() {
-		return new WP_Error( 'application_password_create_recovery_required', __( 'WordPress may have created an Application Password, but the Bridge could not verify its exact identity safely. Inspect the target user\'s Application Passwords before retrying.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'application_password_create_recovery_required', __( 'WordPress may have created an Application Password, but the Bridge could not verify its exact identity safely. Inspect the target user\'s Application Passwords before retrying.', 'wp-ai-bridge' ) );
 	}
 	/** @return WP_Error */
 	private function logged_error( WP_Error $error, $ability, $user_id ) {

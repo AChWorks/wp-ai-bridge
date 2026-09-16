@@ -2,6 +2,14 @@
 
 All notable public changes are documented here.
 
+## 0.4.0
+
+- Move the canonical WordPress install identity to `wp-ai-bridge/wp-ai-bridge.php` and retire the former plugin folder/entrypoint from new packages.
+- Migrate Bridge-owned settings, OAuth installation/client configuration, activity history, and Workspace post/meta identifiers once from the former WP Native Builder Bridge storage names to canonical WP AI Bridge identifiers.
+- Move Bridge-owned Ability IDs, text domain, admin actions, OAuth artifact prefixes, and runtime-facing identifiers to `wp-ai-bridge` / `wpai` names.
+- Remove runtime registration of the former admin and OAuth/MCP compatibility routes; existing OAuth sessions tied to the retired resource must reconnect after migration.
+- Fail closed when legacy Source Editing recovery ownership is still pending rather than rewriting path-bound recovery state across plugin directories.
+
 ## 0.3.0
 
 - Add admin-controlled generic term metadata read/update/delete for exact authorized taxonomy terms, including private/non-REST taxonomies, with physical-row identity, stale-state protection, secret-policy exclusions, and destructive gating.

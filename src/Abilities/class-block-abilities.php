@@ -49,10 +49,10 @@ final class Block_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/blocks-read',
+			'wp-ai-bridge/blocks-read',
 			array(
-				'label'               => __( 'Read Gutenberg Blocks', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Parses one content object into a structured Gutenberg block tree with stable change fingerprints.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Gutenberg Blocks', 'wp-ai-bridge' ),
+				'description'         => __( 'Parses one content object into a structured Gutenberg block tree with stable change fingerprints.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -73,10 +73,10 @@ final class Block_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/blocks-mutate',
+			'wp-ai-bridge/blocks-mutate',
 			array(
-				'label'               => __( 'Mutate Gutenberg Blocks', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Appends, inserts, replaces, or removes one Gutenberg block while preserving unrelated blocks and rejecting stale writes.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Mutate Gutenberg Blocks', 'wp-ai-bridge' ),
+				'description'         => __( 'Appends, inserts, replaces, or removes one Gutenberg block while preserving unrelated blocks and rejecting stale writes.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->mutate_input_schema(),
 				'output_schema'       => $this->tree_schema(),
@@ -141,7 +141,7 @@ final class Block_Abilities {
 	public function read( $input ) {
 		$post = get_post( (int) $input['post_id'] );
 		if ( ! $post || ! Content_Eligibility::supports_blocks( $post->post_type ) ) {
-			return new WP_Error( 'unsupported_block_target', __( 'The requested content type is not eligible for generic Gutenberg operations.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'unsupported_block_target', __( 'The requested content type is not eligible for generic Gutenberg operations.', 'wp-ai-bridge' ) );
 		}
 
 		return $this->format_tree( $post );
@@ -154,11 +154,11 @@ final class Block_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function mutate( $input ) {
-		$ability = 'wp-native-builder/blocks-mutate';
+		$ability = 'wp-ai-bridge/blocks-mutate';
 		$post_id = (int) $input['post_id'];
 		$post    = get_post( $post_id );
 		if ( ! $post || ! Content_Eligibility::supports_blocks( $post->post_type ) ) {
-			return $this->logged_error( 'unsupported_block_target', __( 'The requested content type is not eligible for generic Gutenberg operations.', 'wp-native-builder-bridge' ), $post_id );
+			return $this->logged_error( 'unsupported_block_target', __( 'The requested content type is not eligible for generic Gutenberg operations.', 'wp-ai-bridge' ), $post_id );
 		}
 
 		$current_hash = hash( 'sha256', (string) $post->post_content );
@@ -166,7 +166,7 @@ final class Block_Abilities {
 			$this->log->record( $ability, 'post', $post_id, false, 'stale_content_conflict' );
 			return new WP_Error(
 				'stale_content_conflict',
-				__( 'The content changed after it was inspected. Refresh the block tree before applying this mutation.', 'wp-native-builder-bridge' ),
+				__( 'The content changed after it was inspected. Refresh the block tree before applying this mutation.', 'wp-ai-bridge' ),
 				array(
 					'current_modified_gmt' => (string) $post->post_modified_gmt,
 					'current_content_hash' => $current_hash,
@@ -186,7 +186,7 @@ final class Block_Abilities {
 			$blocks[] = $new_block;
 		} else {
 			if ( ! isset( $input['path'] ) || ! is_string( $input['path'] ) || '' === $input['path'] ) {
-				return $this->logged_error( 'block_path_required', __( 'path is required for targeted block mutations.', 'wp-native-builder-bridge' ), $post_id );
+				return $this->logged_error( 'block_path_required', __( 'path is required for targeted block mutations.', 'wp-ai-bridge' ), $post_id );
 			}
 
 			$segments = $this->parse_path( $input['path'] );
@@ -203,7 +203,7 @@ final class Block_Abilities {
 
 			if ( empty( $input['expected_block_hash'] ) || hash( 'sha256', serialize_block( $target ) ) !== (string) $input['expected_block_hash'] ) {
 				$this->log->record( $ability, 'post', $post_id, false, 'stale_block_conflict' );
-				return new WP_Error( 'stale_block_conflict', __( 'The target block no longer matches the inspected block fingerprint.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'stale_block_conflict', __( 'The target block no longer matches the inspected block fingerprint.', 'wp-ai-bridge' ) );
 			}
 
 			$new_block = null;
@@ -291,11 +291,11 @@ final class Block_Abilities {
 	 */
 	private function parse_single_block( $markup ) {
 		if ( ! is_string( $markup ) || '' === trim( $markup ) ) {
-			return new WP_Error( 'block_markup_required', __( 'block_markup must contain exactly one serialized Gutenberg block.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'block_markup_required', __( 'block_markup must contain exactly one serialized Gutenberg block.', 'wp-ai-bridge' ) );
 		}
 		$blocks = parse_blocks( $markup );
 		if ( 1 !== count( $blocks ) || empty( $blocks[0]['blockName'] ) ) {
-			return new WP_Error( 'invalid_block_markup', __( 'block_markup must contain exactly one named Gutenberg block.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'invalid_block_markup', __( 'block_markup must contain exactly one named Gutenberg block.', 'wp-ai-bridge' ) );
 		}
 		return $blocks[0];
 	}
@@ -308,7 +308,7 @@ final class Block_Abilities {
 	 */
 	private function parse_path( $path ) {
 		if ( ! is_string( $path ) || ! preg_match( '/^(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*))*$/', $path ) ) {
-			return new WP_Error( 'invalid_block_path', __( 'path must be a dot-separated numeric block path such as 0 or 1.2.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'invalid_block_path', __( 'path must be a dot-separated numeric block path such as 0 or 1.2.', 'wp-ai-bridge' ) );
 		}
 		return array_map( 'intval', explode( '.', $path ) );
 	}
@@ -325,12 +325,12 @@ final class Block_Abilities {
 		$block   = null;
 		foreach ( $path as $index ) {
 			if ( ! array_key_exists( $index, $current ) ) {
-				return new WP_Error( 'block_not_found', __( 'The target block path does not exist.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'block_not_found', __( 'The target block path does not exist.', 'wp-ai-bridge' ) );
 			}
 			$block   = $current[ $index ];
 			$current = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
 		}
-		return is_array( $block ) ? $block : new WP_Error( 'block_not_found', __( 'The target block path does not exist.', 'wp-native-builder-bridge' ) );
+		return is_array( $block ) ? $block : new WP_Error( 'block_not_found', __( 'The target block path does not exist.', 'wp-ai-bridge' ) );
 	}
 
 	/**
@@ -345,7 +345,7 @@ final class Block_Abilities {
 	private function mutate_at_path( array &$blocks, array $path, $action, $new_block ) {
 		$index = array_shift( $path );
 		if ( ! array_key_exists( $index, $blocks ) ) {
-			return new WP_Error( 'block_not_found', __( 'The target block path does not exist.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'block_not_found', __( 'The target block path does not exist.', 'wp-ai-bridge' ) );
 		}
 
 		if ( empty( $path ) ) {
@@ -365,11 +365,11 @@ final class Block_Abilities {
 				array_splice( $blocks, $index + 1, 0, array( $new_block ) );
 				return true;
 			}
-			return new WP_Error( 'invalid_block_action', __( 'The requested block mutation action is not supported.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'invalid_block_action', __( 'The requested block mutation action is not supported.', 'wp-ai-bridge' ) );
 		}
 
 		if ( empty( $blocks[ $index ]['innerBlocks'] ) || ! is_array( $blocks[ $index ]['innerBlocks'] ) ) {
-			return new WP_Error( 'block_not_found', __( 'The target nested block path does not exist.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'block_not_found', __( 'The target nested block path does not exist.', 'wp-ai-bridge' ) );
 		}
 
 		$child_index           = $path[0];
@@ -399,7 +399,7 @@ final class Block_Abilities {
 	 */
 	private function adjust_inner_content( array &$parent_block, $child_index, $action ) {
 		if ( ! isset( $parent_block['innerContent'] ) || ! is_array( $parent_block['innerContent'] ) ) {
-			return new WP_Error( 'unsupported_nested_block_shape', __( 'WordPress did not provide a serializable nested block placeholder for this mutation.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'unsupported_nested_block_shape', __( 'WordPress did not provide a serializable nested block placeholder for this mutation.', 'wp-ai-bridge' ) );
 		}
 
 		$null_positions = array();
@@ -409,7 +409,7 @@ final class Block_Abilities {
 			}
 		}
 		if ( ! array_key_exists( $child_index, $null_positions ) ) {
-			return new WP_Error( 'unsupported_nested_block_shape', __( 'The nested block placeholder layout does not match the parsed child tree.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'unsupported_nested_block_shape', __( 'The nested block placeholder layout does not match the parsed child tree.', 'wp-ai-bridge' ) );
 		}
 
 		$position = $null_positions[ $child_index ];
@@ -551,7 +551,7 @@ final class Block_Abilities {
 	 * @return WP_Error Error object.
 	 */
 	private function logged_error( $code, $message, $post_id ) {
-		$this->log->record( 'wp-native-builder/blocks-mutate', 'post', (int) $post_id, false, $code );
+		$this->log->record( 'wp-ai-bridge/blocks-mutate', 'post', (int) $post_id, false, $code );
 		return new WP_Error( $code, $message );
 	}
 }

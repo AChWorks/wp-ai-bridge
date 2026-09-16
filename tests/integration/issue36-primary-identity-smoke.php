@@ -38,9 +38,9 @@ try {
     $settings[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
     update_option( Settings::OPTION_NAME, $settings, false );
     wp_set_current_user( $actor_id );
-    $read = wp_get_ability( 'wp-native-builder/term-meta-read' );
-    $update = wp_get_ability( 'wp-native-builder/term-meta-update' );
-    $delete = wp_get_ability( 'wp-native-builder/term-meta-delete' );
+    $read = wp_get_ability( 'wp-ai-bridge/term-meta-read' );
+    $update = wp_get_ability( 'wp-ai-bridge/term-meta-update' );
+    $delete = wp_get_ability( 'wp-ai-bridge/term-meta-delete' );
     // Preserve both conditional-insert storage branches and the native key column bound.
     $fixture = $require( wp_insert_term( 'Primary identity positive controls', $taxonomy ), 'Create positive term' );
     $term_id = (int) $fixture['term_id'];

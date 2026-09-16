@@ -44,10 +44,10 @@ final class Comment_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/comments-read',
+			'wp-ai-bridge/comments-read',
 			array(
-				'label'               => __( 'Read Comments', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists or retrieves bounded WordPress comment data through the fixed Core comments REST contract.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Comments', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists or retrieves bounded WordPress comment data through the fixed Core comments REST contract.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->read_input_schema(),
 				'output_schema'       => $this->read_output_schema(),
@@ -57,10 +57,10 @@ final class Comment_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/comment-reply',
+			'wp-ai-bridge/comment-reply',
 			array(
-				'label'               => __( 'Reply to Comment', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Creates one reply through the fixed Core comments REST contract without exposing author, IP, status, or metadata overrides.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Reply to Comment', 'wp-ai-bridge' ),
+				'description'         => __( 'Creates one reply through the fixed Core comments REST contract without exposing author, IP, status, or metadata overrides.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -89,10 +89,10 @@ final class Comment_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/comment-status',
+			'wp-ai-bridge/comment-status',
 			array(
-				'label'               => __( 'Moderate Comment', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Changes one comment moderation status through WordPress Core comment lifecycle APIs.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Moderate Comment', 'wp-ai-bridge' ),
+				'description'         => __( 'Changes one comment moderation status through WordPress Core comment lifecycle APIs.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -116,10 +116,10 @@ final class Comment_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/comment-delete',
+			'wp-ai-bridge/comment-delete',
 			array(
-				'label'               => __( 'Trash or Delete Comment', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Moves one comment to Trash or permanently deletes it when both Comments and Users & Destructive access are enabled.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Trash or Delete Comment', 'wp-ai-bridge' ),
+				'description'         => __( 'Moves one comment to Trash or permanently deletes it when both Comments and Users & Destructive access are enabled.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -210,7 +210,7 @@ final class Comment_Abilities {
 	 */
 	public function read( $input ) {
 		if ( ! $this->can_read( $input ) ) {
-			return new WP_Error( 'comment_read_denied', __( 'Comments access and the required WordPress permission are required to read comments.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comment_read_denied', __( 'Comments access and the required WordPress permission are required to read comments.', 'wp-ai-bridge' ) );
 		}
 
 		$action = isset( $input['action'] ) ? (string) $input['action'] : 'list';
@@ -219,7 +219,7 @@ final class Comment_Abilities {
 			return $this->invalid_input();
 		}
 		if ( 'moderation' === $scope && ! current_user_can( 'moderate_comments' ) ) {
-			return new WP_Error( 'comment_moderation_denied', __( 'WordPress moderation permission is required to inspect non-public comment queues.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comment_moderation_denied', __( 'WordPress moderation permission is required to inspect non-public comment queues.', 'wp-ai-bridge' ) );
 		}
 
 		$context = 'moderation' === $scope ? 'edit' : 'view';
@@ -236,7 +236,7 @@ final class Comment_Abilities {
 				return $item;
 			}
 			if ( 'public' === $scope && 'approved' !== $item['status'] ) {
-				return new WP_Error( 'comment_scope_requires_moderation', __( 'Non-public comment statuses require moderation scope.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'comment_scope_requires_moderation', __( 'Non-public comment statuses require moderation scope.', 'wp-ai-bridge' ) );
 			}
 
 			return array(
@@ -250,7 +250,7 @@ final class Comment_Abilities {
 
 		$status = isset( $input['status'] ) ? (string) $input['status'] : 'approved';
 		if ( 'public' === $scope && 'approved' !== $status ) {
-			return new WP_Error( 'comment_scope_requires_moderation', __( 'Non-public comment statuses require moderation scope.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comment_scope_requires_moderation', __( 'Non-public comment statuses require moderation scope.', 'wp-ai-bridge' ) );
 		}
 		if ( 'public' === $scope && empty( $input['post'] ) ) {
 			return $this->invalid_input();
@@ -320,7 +320,7 @@ final class Comment_Abilities {
 	 */
 	public function reply( $input ) {
 		if ( ! $this->can_reply() ) {
-			return new WP_Error( 'comment_reply_denied', __( 'Comments access is required to reply to comments.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comment_reply_denied', __( 'Comments access is required to reply to comments.', 'wp-ai-bridge' ) );
 		}
 
 		$params = array(
@@ -333,15 +333,15 @@ final class Comment_Abilities {
 
 		$result = $this->dispatch( 'POST', '/wp/v2/comments', $params );
 		if ( is_wp_error( $result ) ) {
-			$this->log->record( 'wp-native-builder/comment-reply', 'comment', 0, false, $result->get_error_code() );
+			$this->log->record( 'wp-ai-bridge/comment-reply', 'comment', 0, false, $result->get_error_code() );
 			return $result;
 		}
 		$item = $this->normalize_item( $result['data'] );
 		if ( is_wp_error( $item ) ) {
-			$this->log->record( 'wp-native-builder/comment-reply', 'comment', 0, false, $item->get_error_code() );
+			$this->log->record( 'wp-ai-bridge/comment-reply', 'comment', 0, false, $item->get_error_code() );
 			return $item;
 		}
-		$this->log->record( 'wp-native-builder/comment-reply', 'comment', $item['id'], true, '' );
+		$this->log->record( 'wp-ai-bridge/comment-reply', 'comment', $item['id'], true, '' );
 
 		return $item;
 	}
@@ -354,12 +354,12 @@ final class Comment_Abilities {
 	 */
 	public function status( $input ) {
 		if ( ! $this->can_status() ) {
-			return new WP_Error( 'comment_status_denied', __( 'Comments access and WordPress moderation permission are required to change comment status.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comment_status_denied', __( 'Comments access and WordPress moderation permission are required to change comment status.', 'wp-ai-bridge' ) );
 		}
 
 		$id = (int) $input['id'];
 		if ( ! $this->is_comment_type( $id ) ) {
-			return new WP_Error( 'comment_type_not_supported', __( 'The requested object is not a standard WordPress comment.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comment_type_not_supported', __( 'The requested object is not a standard WordPress comment.', 'wp-ai-bridge' ) );
 		}
 		$result = $this->dispatch(
 			'POST',
@@ -370,15 +370,15 @@ final class Comment_Abilities {
 			)
 		);
 		if ( is_wp_error( $result ) ) {
-			$this->log->record( 'wp-native-builder/comment-status', 'comment', $id, false, $result->get_error_code() );
+			$this->log->record( 'wp-ai-bridge/comment-status', 'comment', $id, false, $result->get_error_code() );
 			return $result;
 		}
 		$item = $this->normalize_item( $result['data'] );
 		if ( is_wp_error( $item ) ) {
-			$this->log->record( 'wp-native-builder/comment-status', 'comment', $id, false, $item->get_error_code() );
+			$this->log->record( 'wp-ai-bridge/comment-status', 'comment', $id, false, $item->get_error_code() );
 			return $item;
 		}
-		$this->log->record( 'wp-native-builder/comment-status', 'comment', $id, true, '' );
+		$this->log->record( 'wp-ai-bridge/comment-status', 'comment', $id, true, '' );
 
 		return $item;
 	}
@@ -391,16 +391,16 @@ final class Comment_Abilities {
 	 */
 	public function delete( $input ) {
 		if ( ! $this->can_delete( $input ) ) {
-			return new WP_Error( 'comment_delete_denied', __( 'Comments access and the required WordPress permission are required to trash or delete this comment.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comment_delete_denied', __( 'Comments access and the required WordPress permission are required to trash or delete this comment.', 'wp-ai-bridge' ) );
 		}
 
 		$id    = (int) $input['id'];
 		$force = ! empty( $input['force'] );
 		if ( ! $this->is_comment_type( $id ) ) {
-			return new WP_Error( 'comment_type_not_supported', __( 'The requested object is not a standard WordPress comment.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comment_type_not_supported', __( 'The requested object is not a standard WordPress comment.', 'wp-ai-bridge' ) );
 		}
 		if ( $force && ! $this->permissions->allowed( Settings::GROUP_USERS_DESTRUCTIVE, 'read' ) ) {
-			return new WP_Error( 'comment_force_delete_denied', __( 'Permanent comment deletion also requires Users & Destructive access.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comment_force_delete_denied', __( 'Permanent comment deletion also requires Users & Destructive access.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $force ) {
 			if ( function_exists( 'wp_get_comment_status' ) && 'trash' === wp_get_comment_status( $id ) ) {
@@ -421,16 +421,16 @@ final class Comment_Abilities {
 				)
 			);
 			if ( is_wp_error( $result ) ) {
-				$this->log->record( 'wp-native-builder/comment-delete', 'comment', $id, false, $result->get_error_code() );
+				$this->log->record( 'wp-ai-bridge/comment-delete', 'comment', $id, false, $result->get_error_code() );
 				return $result;
 			}
 			$item = $this->normalize_item( is_array( $result['data'] ) ? $result['data'] : array() );
 			if ( is_wp_error( $item ) || 'trash' !== $item['status'] ) {
-				$error = is_wp_error( $item ) ? $item : new WP_Error( 'comment_trash_failed', __( 'WordPress did not confirm that the comment moved to Trash.', 'wp-native-builder-bridge' ) );
-				$this->log->record( 'wp-native-builder/comment-delete', 'comment', $id, false, $error->get_error_code() );
+				$error = is_wp_error( $item ) ? $item : new WP_Error( 'comment_trash_failed', __( 'WordPress did not confirm that the comment moved to Trash.', 'wp-ai-bridge' ) );
+				$this->log->record( 'wp-ai-bridge/comment-delete', 'comment', $id, false, $error->get_error_code() );
 				return $error;
 			}
-			$this->log->record( 'wp-native-builder/comment-delete', 'comment', $id, true, '' );
+			$this->log->record( 'wp-ai-bridge/comment-delete', 'comment', $id, true, '' );
 
 			return array(
 				'id'      => $id,
@@ -442,17 +442,17 @@ final class Comment_Abilities {
 
 		$result = $this->dispatch( 'DELETE', '/wp/v2/comments/' . $id, array( 'force' => true ) );
 		if ( is_wp_error( $result ) ) {
-			$this->log->record( 'wp-native-builder/comment-delete', 'comment', $id, false, $result->get_error_code() );
+			$this->log->record( 'wp-ai-bridge/comment-delete', 'comment', $id, false, $result->get_error_code() );
 			return $result;
 		}
 		$data    = is_array( $result['data'] ) ? $result['data'] : array();
 		$deleted = ! empty( $data['deleted'] );
 		if ( ! $deleted ) {
-			$error = new WP_Error( 'comment_delete_failed', __( 'WordPress did not confirm permanent comment deletion.', 'wp-native-builder-bridge' ) );
-			$this->log->record( 'wp-native-builder/comment-delete', 'comment', $id, false, $error->get_error_code() );
+			$error = new WP_Error( 'comment_delete_failed', __( 'WordPress did not confirm permanent comment deletion.', 'wp-ai-bridge' ) );
+			$this->log->record( 'wp-ai-bridge/comment-delete', 'comment', $id, false, $error->get_error_code() );
 			return $error;
 		}
-		$this->log->record( 'wp-native-builder/comment-delete', 'comment', $id, true, '' );
+		$this->log->record( 'wp-ai-bridge/comment-delete', 'comment', $id, true, '' );
 
 		return array(
 			'id'      => $id,
@@ -472,10 +472,10 @@ final class Comment_Abilities {
 	 */
 	private function dispatch( $method, $route, array $params ) {
 		if ( ! class_exists( 'WP_REST_Request' ) || ! function_exists( 'rest_do_request' ) ) {
-			return new WP_Error( 'comments_rest_unavailable', __( 'The WordPress comments REST contract is unavailable.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comments_rest_unavailable', __( 'The WordPress comments REST contract is unavailable.', 'wp-ai-bridge' ) );
 		}
 		if ( ! in_array( $route, array( '/wp/v2/comments' ), true ) && ! preg_match( '#^/wp/v2/comments/[1-9][0-9]*$#', $route ) ) {
-			return new WP_Error( 'comments_rest_route_denied', __( 'The requested internal REST route is not part of the bounded Comments contract.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comments_rest_route_denied', __( 'The requested internal REST route is not part of the bounded Comments contract.', 'wp-ai-bridge' ) );
 		}
 
 		$request = new \WP_REST_Request( $method, $route );
@@ -487,10 +487,10 @@ final class Comment_Abilities {
 			return $response;
 		}
 		if ( ! is_object( $response ) || ! method_exists( $response, 'get_data' ) ) {
-			return new WP_Error( 'comments_rest_invalid_response', __( 'WordPress returned an invalid comments REST response.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comments_rest_invalid_response', __( 'WordPress returned an invalid comments REST response.', 'wp-ai-bridge' ) );
 		}
 		if ( method_exists( $response, 'is_error' ) && $response->is_error() ) {
-			return method_exists( $response, 'as_error' ) ? $response->as_error() : new WP_Error( 'comments_rest_request_failed', __( 'WordPress rejected the comments REST request.', 'wp-native-builder-bridge' ) );
+			return method_exists( $response, 'as_error' ) ? $response->as_error() : new WP_Error( 'comments_rest_request_failed', __( 'WordPress rejected the comments REST request.', 'wp-ai-bridge' ) );
 		}
 
 		return array(
@@ -508,7 +508,7 @@ final class Comment_Abilities {
 	 */
 	private function normalize_item( $raw, $content_max_bytes = self::ITEM_CONTENT_MAX_BYTES ) {
 		if ( ! is_array( $raw ) || empty( $raw['id'] ) || ( isset( $raw['type'] ) && 'comment' !== $raw['type'] ) ) {
-			return new WP_Error( 'comment_contract_invalid', __( 'WordPress returned an unsupported comment representation.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'comment_contract_invalid', __( 'WordPress returned an unsupported comment representation.', 'wp-ai-bridge' ) );
 		}
 		$content = '';
 		if ( isset( $raw['content'] ) && is_array( $raw['content'] ) ) {
@@ -571,7 +571,7 @@ final class Comment_Abilities {
 
 	/** @return WP_Error */
 	private function invalid_input() {
-		return new WP_Error( 'invalid_comment_input', __( 'Use a supported bounded Comments action and input contract.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'invalid_comment_input', __( 'Use a supported bounded Comments action and input contract.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return array<string,mixed> */

@@ -20,15 +20,15 @@ $unexpected_calls = 0;
 $redirect_target = null;
 $redirect_forwarded = 0;
 $mode = 'success';
-$source = 'https://s.w.org/wpnb-media-import-fixture?signature=PRIVATE_MEDIA_MARKER';
-$input = array( 'url' => $source, 'filename' => 'wpnb-import.png' );
+$source = 'https://s.w.org/wpai-media-import-fixture?signature=PRIVATE_MEDIA_MARKER';
+$input = array( 'url' => $source, 'filename' => 'wpai-import.png' );
 $png = base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1kAAAAASUVORK5CYII=' );
 $enabled = $settings->defaults();
 $enabled[ Settings::GROUP_BUILDER_WRITE ] = 1;
 $enabled[ Settings::GROUP_REMOTE_MEDIA ] = 1;
 $mock = static function ( $pre, $args, $url ) use ( &$calls, &$mode, &$staging, &$unexpected_calls, &$redirect_target, &$redirect_forwarded, $source, $png ) {
     ++$calls;
-    if ( ! in_array( $url, array( $source, 'https://wordpress.org/wpnb-media-import-fixture' ), true ) ) {
+    if ( ! in_array( $url, array( $source, 'https://wordpress.org/wpai-media-import-fixture' ), true ) ) {
         ++$unexpected_calls;
         return new WP_Error( 'unexpected_fixture_http', 'Unexpected fixture HTTP request was blocked.' );
     }
@@ -136,7 +136,7 @@ $audit_fault = static function ( $value ) use ( &$mode ) {
     return $value;
 };
 $translation_fault = static function ( $translated, $text, $domain ) use ( &$mode ) {
-    if ( 'translation_throw' === $mode && 'wp-native-builder-bridge' === $domain && 0 === strpos( $text, 'The media import' ) ) { throw new RuntimeException( 'PRIVATE_MEDIA_MARKER translation' ); }
+    if ( 'translation_throw' === $mode && 'wp-ai-bridge' === $domain && 0 === strpos( $text, 'The media import' ) ) { throw new RuntimeException( 'PRIVATE_MEDIA_MARKER translation' ); }
     return $translated;
 };
 $permission_fault = static function ( $caps, $cap ) use ( &$mode ) {
@@ -148,7 +148,7 @@ set_error_handler( static function ( $severity, $message, $file, $line ) {
     throw new ErrorException( $message, 0, $severity, $file, $line );
 } );
 try {
-    $ability = wp_get_ability( 'wp-native-builder/media-import-url' );
+    $ability = wp_get_ability( 'wp-ai-bridge/media-import-url' );
     wpnb39_integration_assert( $ability instanceof WP_Ability, 'Import Ability is not registered.' );
     add_filter( 'pre_http_request', $mock, 10, 3 );
     add_filter( 'wp_handle_sideload_prefilter', $reject_sideload );
@@ -194,7 +194,7 @@ try {
         wpnb39_integration_assert( $before_hooks === has_action( 'requests-requests.before_redirect' ), 'Import redirect guard was not removed after refusal.' );
         foreach ( $staging as $file ) { wpnb39_integration_assert( ! is_file( $file ), 'Rejected redirect retained staging.' ); }
     }
-    $redirect_target = 'https://wordpress.org/wpnb-media-import-fixture';
+    $redirect_target = 'https://wordpress.org/wpai-media-import-fixture';
     $redirect_forwarded = 0;
     $result = $ability->execute( $input );
     wpnb39_integration_assert( ! is_wp_error( $result ) && 1 === $redirect_forwarded, 'A public redirect failed the native hook validation.' );
@@ -217,7 +217,7 @@ try {
     update_option( Settings::OPTION_NAME, $enabled, false );
     $parent = wp_insert_post( array( 'post_type' => 'post', 'post_status' => 'draft', 'post_title' => 'URL import test parent' ), true );
     wpnb39_integration_assert( ! is_wp_error( $parent ) && $parent > 0, 'Could not create parent fixture.' );
-    foreach ( array( $source, 'https://wordpress.org/wpnb-media-import-fixture' ) as $url ) {
+    foreach ( array( $source, 'https://wordpress.org/wpai-media-import-fixture' ) as $url ) {
         $staging = array(); $destinations = array();
         $result = $ability->execute( array_replace( $input, array( 'url' => $url, 'post_id' => (int) $parent, 'title' => 'Imported title', 'description' => 'Description', 'caption' => 'Caption', 'alt_text' => '<b>Alternative</b>' ) ) );
         wpnb39_integration_assert( ! is_wp_error( $result ), 'Valid import failed native execution/schema/lifecycle.' );
@@ -230,7 +230,7 @@ try {
     }
     // The fixture never relaxes URL/TLS policy; the real transfer uses an official public origin.
     remove_filter( 'pre_http_request', $mock, 10 );
-    $result = $ability->execute( array( 'url' => 'https://s.w.org/images/wmark.png', 'filename' => 'wpnb-public-download.png' ) );
+    $result = $ability->execute( array( 'url' => 'https://s.w.org/images/wmark.png', 'filename' => 'wpai-public-download.png' ) );
     wpnb39_integration_assert( ! is_wp_error( $result ), 'Actual public HTTPS media transfer failed.' );
     $created[] = $result['id'];
     wpnb39_integration_assert( is_file( get_attached_file( $result['id'] ) ) && $result['width'] > 0, 'Actual transfer did not persist usable media.' );
@@ -239,7 +239,7 @@ try {
     $adapter = wp_get_ability( 'mcp-adapter/execute-ability' );
     $disabled = $enabled; $disabled[ Settings::GROUP_REMOTE_MEDIA ] = 0;
     update_option( Settings::OPTION_NAME, $disabled, false );
-    wpnb39_integration_assert( is_wp_error( $adapter->execute( array( 'ability_name' => 'wp-native-builder/media-import-url', 'parameters' => $input ) ) ), 'Adapter bypassed revoked import access.' );
+    wpnb39_integration_assert( is_wp_error( $adapter->execute( array( 'ability_name' => 'wp-ai-bridge/media-import-url', 'parameters' => $input ) ) ), 'Adapter bypassed revoked import access.' );
     // Exercise actual native callbacks and the pinned Adapter, not a fake transport result wrapper.
     add_filter( 'pre_http_request', $mock, 10, 3 );
     add_action( 'add_attachment', $observe_insert );
@@ -254,7 +254,7 @@ try {
             $mode = $failure;
             $staging = array(); $destinations = array(); $last_created = 0;
             update_option( Settings::OPTION_NAME, $enabled, false );
-            $result = 'direct' === $route ? $ability->execute( $input ) : $adapter->execute( array( 'ability_name' => 'wp-native-builder/media-import-url', 'parameters' => $input ) );
+            $result = 'direct' === $route ? $ability->execute( $input ) : $adapter->execute( array( 'ability_name' => 'wp-ai-bridge/media-import-url', 'parameters' => $input ) );
             if ( 'direct' === $route ) {
                 wpnb39_integration_assert( is_wp_error( $result ) && 'media_import_recovery_required' === $result->get_error_code(), 'Native exception did not become a recovery error: ' . $failure );
                 $message = $result->get_error_message();
@@ -295,7 +295,7 @@ try {
         }
         $mode = 'permission_throw';
         $before_calls = $calls;
-        $result = 'direct' === $route ? $ability->execute( $input ) : $adapter->execute( array( 'ability_name' => 'wp-native-builder/media-import-url', 'parameters' => $input ) );
+        $result = 'direct' === $route ? $ability->execute( $input ) : $adapter->execute( array( 'ability_name' => 'wp-ai-bridge/media-import-url', 'parameters' => $input ) );
         wpnb39_integration_assert( is_wp_error( $result ) && false === strpos( $result->get_error_message(), 'PRIVATE_MEDIA_MARKER' ), 'Permission exception escaped or became authority.' );
         wpnb39_integration_assert( $before_calls === $calls, 'Permission exception reached HTTP.' );
         $mode = 'success';
@@ -304,7 +304,7 @@ try {
     $mode = 'large_file'; $staging = array(); $destinations = array();
     update_option( Settings::OPTION_NAME, $enabled, false );
     add_filter( 'upload_size_limit', $large_limit );
-    $result = $ability->execute( array_replace( $input, array( 'filename' => 'wpnb-large-import.txt' ) ) );
+    $result = $ability->execute( array_replace( $input, array( 'filename' => 'wpai-large-import.txt' ) ) );
     remove_filter( 'upload_size_limit', $large_limit );
     wpnb39_integration_assert( ! is_wp_error( $result ), 'Native streamed import above 20 MiB failed.' );
     $created[] = $result['id'];

@@ -349,7 +349,7 @@ if [[ "$(grep -cF 'wp_remote_get(' "$source_editor" || true)" != "1" ]]; then
     echo "ERROR: source editing runtime validation must retain one bounded Core-compatible loopback request call site." >&2
     exit 1
 fi
-if [[ "$(grep -cF "wp_is_file_mod_allowed( 'wp_native_builder_bridge_source_editing' )" "$source_editor" || true)" != "2" ]]; then
+if [[ "$(grep -cF "wp_is_file_mod_allowed( 'wp_ai_bridge_source_editing' )" "$source_editor" || true)" != "2" ]]; then
     echo "ERROR: source editing must recheck WordPress file-modification policy for normal execution and recovery." >&2
     exit 1
 fi
@@ -389,22 +389,52 @@ if [[ "$(grep -cF '@chmod(' "$source_editor" || true)" != "2" || "$(grep -cF '@c
     exit 1
 fi
 
-# Issues #34/#36/#58 need exact-row compare-and-swap against fixed metadata tables. Direct database
-# use remains forbidden outside the three explicitly confined metadata stores below. Those stores
-# accept no SQL text, table name, column name, row selector, or query fragment from Ability input.
+# Issues #34/#36/#58 need exact-row compare-and-swap against fixed metadata tables. Issue #72
+# additionally needs one temporary, fixed-purpose identity-migration store over Core options/posts/postmeta.
+# Direct database use remains forbidden outside these explicitly confined persistence surfaces.
 metadata_store='src/Support/class-post-meta-store.php'
 term_metadata_store='src/Support/class-term-meta-store.php'
 user_comment_metadata_store='src/Support/class-user-comment-meta-store.php'
-if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comment_metadata_store" ]]; then
-    echo "ERROR: one or more bounded metadata stores are missing." >&2
+identity_migration_store='src/Support/class-identity-migration.php'
+if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comment_metadata_store" || ! -f "$identity_migration_store" ]]; then
+    echo "ERROR: one or more bounded database persistence surfaces are missing." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$identity_migration_store" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
-    echo "ERROR: direct database access found outside the bounded metadata stores." >&2
+    echo "ERROR: direct database access found outside the bounded metadata/migration stores." >&2
     exit 1
 fi
+
+# Issue #72 migration SQL is temporary and fixed-purpose. It may touch only the Core options,
+# posts, and postmeta tables, may not consume request-selected SQL/table/column/query material,
+# and may use only the enumerated database primitives required for exact identity migration.
+if grep -nE '\$_(GET|POST|REQUEST|COOKIE|FILES|SERVER)' "$identity_migration_store"; then
+    echo "ERROR: identity migration must not consume request-selected input." >&2
+    exit 1
+fi
+if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$identity_migration_store" | grep -vE '\$wpdb->(options|posts|postmeta|get_row|get_results|get_col|get_var|insert|update|delete|query|prepare|esc_like)([^A-Za-z0-9_]|$)'; then
+    echo "ERROR: identity migration uses a database member outside its fixed Core identity-migration surface." >&2
+    exit 1
+fi
+if grep -nE 'function[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\([^)]*\$(sql|table|column|query|where)([^A-Za-z0-9_]|$)' "$identity_migration_store"; then
+    echo "ERROR: identity migration must not accept SQL/table/column/query inputs." >&2
+    exit 1
+fi
+if grep -nE '\$wpdb->(users|usermeta|comments|commentmeta|terms|termmeta|term_taxonomy|term_relationships|links)([^A-Za-z0-9_]|$)' "$identity_migration_store"; then
+    echo "ERROR: identity migration escaped its options/posts/postmeta table boundary." >&2
+    exit 1
+fi
+if grep -nE '(CREATE|ALTER|DROP|TRUNCATE)[[:space:]]+(TABLE|DATABASE)|RENAME[[:space:]]+TABLE' "$identity_migration_store"; then
+    echo "ERROR: identity migration must never mutate database schema or physical table identity." >&2
+    exit 1
+fi
+if [[ "$(grep -cF "'wp_native_builder_bridge_settings'" "$identity_migration_store" || true)" -lt "1" || "$(grep -cF "'wp_ai_bridge_settings'" "$identity_migration_store" || true)" -lt "1" || "$(grep -cF "'wpnb_doc'" "$identity_migration_store" || true)" -lt "1" || "$(grep -cF "'wpai_doc'" "$identity_migration_store" || true)" -lt "1" ]]; then
+    echo "ERROR: identity migration lost its explicit old-to-new storage boundary." >&2
+    exit 1
+fi
+
 if [[ -f "$metadata_store" ]]; then
     if grep -nE '\$wpdb->(get_[A-Za-z0-9_]*|replace|esc_like)([^A-Za-z0-9_]|$)' "$metadata_store"; then
         echo "ERROR: post-meta store grew a database read/generic primitive outside its fixed physical-row/CAS design." >&2

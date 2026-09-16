@@ -24,7 +24,7 @@ final class Ability_Resolver {
 		}
 
 		foreach ( $candidates as $name ) {
-			if ( ! is_string( $name ) || '' === $name || 0 === strpos( $name, 'wp-native-builder/' ) ) {
+			if ( ! is_string( $name ) || '' === $name || 0 === strpos( $name, 'wp-ai-bridge/' ) ) {
 				continue;
 			}
 
@@ -69,7 +69,7 @@ final class Ability_Resolver {
 			}
 
 			$name = $ability->get_name();
-			if ( 0 === strpos( $name, 'wp-native-builder/' ) || 0 === strpos( $name, 'mcp-adapter/' ) ) {
+			if ( 0 === strpos( $name, 'wp-ai-bridge/' ) || 0 === strpos( $name, 'mcp-adapter/' ) ) {
 				continue;
 			}
 

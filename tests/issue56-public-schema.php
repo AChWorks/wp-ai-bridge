@@ -9,7 +9,7 @@ require_once __DIR__ . '/../src/Abilities/class-registered-settings-abilities.ph
 
 use WP_Native_Builder_Bridge\Abilities\Registered_Settings_Abilities;
 
-function wpnb_issue56_public_schema_assert( $condition, $message ) {
+function wpai_issue56_public_schema_assert( $condition, $message ) {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message );
 	}
@@ -41,12 +41,12 @@ $schema = array(
 
 $public = $method->invoke( $provider, $schema );
 
-wpnb_issue56_public_schema_assert( ! array_key_exists( 'default', $public ), 'Top-level runtime default leaked through public schema.' );
-wpnb_issue56_public_schema_assert( ! array_key_exists( 'example', $public ), 'Top-level runtime example leaked through public schema.' );
-wpnb_issue56_public_schema_assert( isset( $public['properties']['default'] ), 'Legitimate property named default was removed from public schema.' );
-wpnb_issue56_public_schema_assert( isset( $public['properties']['example'] ), 'Legitimate property named example was removed from public schema.' );
-wpnb_issue56_public_schema_assert( ! array_key_exists( 'default', $public['properties']['default'] ), 'Nested schema-level default leaked through public schema.' );
-wpnb_issue56_public_schema_assert( ! array_key_exists( 'example', $public['properties']['example'] ), 'Nested schema-level example leaked through public schema.' );
-wpnb_issue56_public_schema_assert( array( 'default', 'example', 'custom' ) === $public['properties']['mode']['enum'], 'Ordinary enum values were rewritten during schema redaction.' );
+wpai_issue56_public_schema_assert( ! array_key_exists( 'default', $public ), 'Top-level runtime default leaked through public schema.' );
+wpai_issue56_public_schema_assert( ! array_key_exists( 'example', $public ), 'Top-level runtime example leaked through public schema.' );
+wpai_issue56_public_schema_assert( isset( $public['properties']['default'] ), 'Legitimate property named default was removed from public schema.' );
+wpai_issue56_public_schema_assert( isset( $public['properties']['example'] ), 'Legitimate property named example was removed from public schema.' );
+wpai_issue56_public_schema_assert( ! array_key_exists( 'default', $public['properties']['default'] ), 'Nested schema-level default leaked through public schema.' );
+wpai_issue56_public_schema_assert( ! array_key_exists( 'example', $public['properties']['example'] ), 'Nested schema-level example leaked through public schema.' );
+wpai_issue56_public_schema_assert( array( 'default', 'example', 'custom' ) === $public['properties']['mode']['enum'], 'Ordinary enum values were rewritten during schema redaction.' );
 
 echo "PASS: Issue #56 public schema redaction.\n";

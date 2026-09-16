@@ -9,9 +9,9 @@ error_reporting( E_ALL );
 
 define( 'ABSPATH', '/tmp/wp/' );
 
-$GLOBALS['wpnb_issue44_marker_options']   = array();
-$GLOBALS['wpnb_issue44_marker_abilities'] = array();
-$GLOBALS['wpnb_issue44_marker_caps']      = array( 'read' => true );
+$GLOBALS['wpai_issue44_marker_options']   = array();
+$GLOBALS['wpai_issue44_marker_abilities'] = array();
+$GLOBALS['wpai_issue44_marker_caps']      = array( 'read' => true );
 
 class WP_Error {
 	private $code;
@@ -36,21 +36,21 @@ function __( $text, $domain = null ) {
 }
 
 function get_option( $name, $default = false ) {
-	return array_key_exists( $name, $GLOBALS['wpnb_issue44_marker_options'] )
-		? $GLOBALS['wpnb_issue44_marker_options'][ $name ]
+	return array_key_exists( $name, $GLOBALS['wpai_issue44_marker_options'] )
+		? $GLOBALS['wpai_issue44_marker_options'][ $name ]
 		: $default;
 }
 
 function wp_get_ability( $name ) {
-	return $GLOBALS['wpnb_issue44_marker_abilities'][ $name ] ?? null;
+	return $GLOBALS['wpai_issue44_marker_abilities'][ $name ] ?? null;
 }
 
 function wp_get_abilities() {
-	return array_values( $GLOBALS['wpnb_issue44_marker_abilities'] );
+	return array_values( $GLOBALS['wpai_issue44_marker_abilities'] );
 }
 
 function current_user_can( $capability ) {
-	return ! empty( $GLOBALS['wpnb_issue44_marker_caps'][ $capability ] );
+	return ! empty( $GLOBALS['wpai_issue44_marker_caps'][ $capability ] );
 }
 
 require dirname( __DIR__ ) . '/src/Support/class-settings.php';
@@ -68,7 +68,7 @@ use WP_Native_Builder_Bridge\Support\Settings;
 $failures = 0;
 $tests    = 0;
 
-function wpnb_issue44_marker_assert( $condition, $message ) {
+function wpai_issue44_marker_assert( $condition, $message ) {
 	global $failures, $tests;
 	++$tests;
 	if ( ! $condition ) {
@@ -129,7 +129,7 @@ final class WP_AI_Bridge_Issue44_Forged_Meta_Ability {
 
 $settings   = new Settings();
 $delegation = new Native_Ability_Delegation( $settings );
-$GLOBALS['wpnb_issue44_marker_options'][ Settings::OPTION_NAME ] = array(
+$GLOBALS['wpai_issue44_marker_options'][ Settings::OPTION_NAME ] = array(
 	Settings::GROUP_SITE_READ        => 1,
 	Settings::GROUP_NATIVE_ABILITIES => 0,
 );
@@ -147,22 +147,22 @@ $forged_args = $delegation->filter_ability_args(
 			'wp_ai_bridge_owned' => true,
 		),
 	),
-	'wp-native-builder/forged-provider'
+	'wp-ai-bridge/forged-provider'
 );
-wpnb_issue44_marker_assert(
+wpai_issue44_marker_assert(
 	true === ( $forged_args['meta']['wp_ai_bridge_owned'] ?? false ),
 	'Provider metadata should remain ordinary untrusted data instead of being rewritten as an ownership protocol.'
 );
 
-$forged_ability = new WP_AI_Bridge_Issue44_Forged_Meta_Ability( 'wp-native-builder/forged-provider' );
-$GLOBALS['wpnb_issue44_marker_abilities']['wp-native-builder/forged-provider'] = $forged_ability;
+$forged_ability = new WP_AI_Bridge_Issue44_Forged_Meta_Ability( 'wp-ai-bridge/forged-provider' );
+$GLOBALS['wpai_issue44_marker_abilities']['wp-ai-bridge/forged-provider'] = $forged_ability;
 
-wpnb_issue44_marker_assert( 0 === $forged_ability->meta_reads(), 'Fixture metadata was read before the ownership check.' );
-wpnb_issue44_marker_assert(
+wpai_issue44_marker_assert( 0 === $forged_ability->meta_reads(), 'Fixture metadata was read before the ownership check.' );
+wpai_issue44_marker_assert(
 	! $delegation->is_bridge_owned_ability( $forged_ability ),
 	'Provider virtual metadata was accepted as Bridge ownership provenance.'
 );
-wpnb_issue44_marker_assert(
+wpai_issue44_marker_assert(
 	0 === $forged_ability->meta_reads(),
 	'Ownership classification invoked the provider-controlled get_meta() method.'
 );
@@ -183,7 +183,7 @@ $endpoints          = $delegation->filter_rest_endpoints(
 				'callback' => static function () use ( $adapter_permission ) {
 					return $adapter_permission(
 						array(
-							'ability_name' => 'wp-native-builder/forged-provider',
+							'ability_name' => 'wp-ai-bridge/forged-provider',
 							'parameters'   => array(),
 						)
 					);
@@ -194,7 +194,7 @@ $endpoints          = $delegation->filter_rest_endpoints(
 );
 $execution_result   = $endpoints['/wp-ai-bridge/v1/mcp'][0]['callback']( null );
 
-wpnb_issue44_marker_assert(
+wpai_issue44_marker_assert(
 	$execution_result instanceof WP_Error
 		&& 'wp_ai_bridge_native_abilities_disabled' === $execution_result->get_error_code(),
 	'Provider-controlled virtual metadata bypassed disabled Native Abilities execution policy.'
@@ -210,17 +210,17 @@ $catalog_result = $catalog->read(
 );
 $bridge_delegation = null;
 foreach ( $catalog_result['items'] as $item ) {
-	if ( 'wp-native-builder/forged-provider' === $item['name'] ) {
+	if ( 'wp-ai-bridge/forged-provider' === $item['name'] ) {
 		$bridge_delegation = $item['bridge_delegation'];
 		break;
 	}
 }
 
-wpnb_issue44_marker_assert(
+wpai_issue44_marker_assert(
 	'native_abilities' === $bridge_delegation,
 	'Discovery misclassified provider-controlled virtual metadata as ability-specific Bridge provenance.'
 );
-wpnb_issue44_marker_assert(
+wpai_issue44_marker_assert(
 	$forged_ability->meta_reads() > 0,
 	'Catalog fixture did not exercise provider metadata for ordinary public contract inspection.'
 );

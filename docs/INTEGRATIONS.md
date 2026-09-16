@@ -43,4 +43,4 @@ The Bridge does not automatically create broad fallbacks for orders, customers, 
 
 ## Provider visibility
 
-`wp-native-builder/integration-status` reports observed provider mode and Ability names. An installed provider may legitimately report `unavailable` when the supported API/Ability contract required by the Bridge is not available in the current environment.
+`wp-ai-bridge/integration-status` reports observed provider mode and Ability names. An installed provider may legitimately report `unavailable` when the supported API/Ability contract required by the Bridge is not available in the current environment.

@@ -43,10 +43,10 @@ final class Term_Meta_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/term-meta-read',
+			'wp-ai-bridge/term-meta-read',
 			array(
-				'label'               => __( 'Read Term Metadata', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists metadata keys or reads one exact metadata key for a WordPress taxonomy term when Advanced Metadata access is enabled.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Term Metadata', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists metadata keys or reads one exact metadata key for a WordPress taxonomy term when Advanced Metadata access is enabled.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->read_input_schema(),
 				'output_schema'       => $this->read_output_schema(),
@@ -57,10 +57,10 @@ final class Term_Meta_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/term-meta-update',
+			'wp-ai-bridge/term-meta-update',
 			array(
-				'label'               => __( 'Update Term Metadata', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Creates or replaces one single-value metadata key after checking Advanced Metadata access, WordPress authority, and the expected metadata state.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Update Term Metadata', 'wp-ai-bridge' ),
+				'description'         => __( 'Creates or replaces one single-value metadata key after checking Advanced Metadata access, WordPress authority, and the expected metadata state.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->update_input_schema(),
 				'output_schema'       => $this->item_schema(),
@@ -71,10 +71,10 @@ final class Term_Meta_Abilities {
 		);
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/term-meta-delete',
+			'wp-ai-bridge/term-meta-delete',
 			array(
-				'label'               => __( 'Delete Term Metadata', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Deletes one single-value metadata key after checking Advanced Metadata, destructive access, WordPress authority, and the expected metadata state.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Delete Term Metadata', 'wp-ai-bridge' ),
+				'description'         => __( 'Deletes one single-value metadata key after checking Advanced Metadata, destructive access, WordPress authority, and the expected metadata state.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->delete_input_schema(),
 				'output_schema'       => $this->delete_output_schema(),
@@ -181,7 +181,7 @@ final class Term_Meta_Abilities {
 		$key            = isset( $input['key'] ) ? (string) $input['key'] : '';
 		$include_values = ! empty( $input['include_values'] );
 		if ( $include_values && '' === $key ) {
-			return new WP_Error( 'term_meta_key_required_for_values', __( 'Specify one exact metadata key before requesting metadata values.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_key_required_for_values', __( 'Specify one exact metadata key before requesting metadata values.', 'wp-ai-bridge' ) );
 		}
 
 		if ( '' !== $key ) {
@@ -197,7 +197,7 @@ final class Term_Meta_Abilities {
 				return $key_error;
 			}
 			if ( count( $rows ) > 1 ) {
-				return new WP_Error( 'term_meta_multiple_values_unsupported', __( 'This term metadata key has multiple physical rows. The generic Bridge refuses ambiguous metadata.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'term_meta_multiple_values_unsupported', __( 'This term metadata key has multiple physical rows. The generic Bridge refuses ambiguous metadata.', 'wp-ai-bridge' ) );
 			}
 			$item = $this->item_from_rows( $key, $rows, $include_values );
 			if ( is_wp_error( $item ) ) {
@@ -249,47 +249,47 @@ final class Term_Meta_Abilities {
 	public function update( $input ) {
 		$term = $this->validated_term( $input );
 		if ( is_wp_error( $term ) ) {
-			return $this->logged_error( $term, $this->input_term_id( $input ), 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $term, $this->input_term_id( $input ), 'wp-ai-bridge/term-meta-update' );
 		}
 
 		$key = isset( $input['key'] ) ? (string) $input['key'] : '';
 		if ( '' === $key ) {
-			return $this->logged_error( new WP_Error( 'term_meta_key_required', __( 'A metadata key is required.', 'wp-native-builder-bridge' ) ), $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( new WP_Error( 'term_meta_key_required', __( 'A metadata key is required.', 'wp-ai-bridge' ) ), $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 		if ( $this->is_sensitive_key( $key ) ) {
-			return $this->logged_error( $this->sensitive_key_error(), $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $this->sensitive_key_error(), $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 
 		$rows = $this->store->rows( $term->term_id, $key );
 		if ( is_wp_error( $rows ) ) {
-			return $this->logged_error( $rows, $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $rows, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 		$key_error = $this->validate_key_access( $term, $key, empty( $rows ) ? 'add' : 'edit' );
 		if ( is_wp_error( $key_error ) ) {
-			return $this->logged_error( $key_error, $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $key_error, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 		if ( count( $rows ) > 1 ) {
-			return $this->logged_error( new WP_Error( 'term_meta_multiple_values_unsupported', __( 'This metadata key has multiple rows. The generic updater refuses to guess which row should be replaced.', 'wp-native-builder-bridge' ) ), $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( new WP_Error( 'term_meta_multiple_values_unsupported', __( 'This metadata key has multiple rows. The generic updater refuses to guess which row should be replaced.', 'wp-ai-bridge' ) ), $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 		if ( $rows ) {
 			$value_error = $this->unsupported_row_error( $rows[0] );
 			if ( is_wp_error( $value_error ) ) {
-				return $this->logged_error( $value_error, $term->term_id, 'wp-native-builder/term-meta-update' );
+				return $this->logged_error( $value_error, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 			}
 		}
 
 		$current_hash = $this->state_hash( $rows );
 		$expected     = isset( $input['expected_state_hash'] ) ? (string) $input['expected_state_hash'] : '';
 		if ( '' === $expected || ! hash_equals( $current_hash, $expected ) ) {
-			return $this->logged_error( $this->stale_error( 'update' ), $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $this->stale_error( 'update' ), $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 
 		$value = $this->decode_value( isset( $input['value_json'] ) ? (string) $input['value_json'] : '' );
 		if ( is_wp_error( $value ) ) {
-			return $this->logged_error( $value, $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $value, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 		if ( ! $this->is_losslessly_json_compatible( $value ) ) {
-			return $this->logged_error( new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) ), $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-ai-bridge' ) ), $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 
 		if ( empty( $rows ) ) {
@@ -305,18 +305,18 @@ final class Term_Meta_Abilities {
 			}
 		);
 		if ( is_wp_error( $prepared_value ) ) {
-			return $this->logged_error( $prepared_value, $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $prepared_value, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 		$prepared_error = $this->unsupported_stored_value_error( $prepared_value['value'] );
 		if ( strlen( (string) $prepared_value['raw_value'] ) > Term_Meta_Store::MAX_VALUE_BYTES ) {
-			$prepared_error = new WP_Error( 'term_meta_value_too_large', __( 'Term metadata values are limited to 1 MiB per key.', 'wp-native-builder-bridge' ) );
+			$prepared_error = new WP_Error( 'term_meta_value_too_large', __( 'Term metadata values are limited to 1 MiB per key.', 'wp-ai-bridge' ) );
 		}
 		if ( is_wp_error( $prepared_error ) ) {
-			return $this->logged_error( $prepared_error, $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $prepared_error, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 
 		if ( ! $this->can_access_meta_key( $term, $key, 'edit' ) ) {
-			return $this->logged_error( new WP_Error( 'term_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-native-builder-bridge' ) ), $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( new WP_Error( 'term_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-ai-bridge' ) ), $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 
 		$verified_row = $this->store->replace_row(
@@ -329,10 +329,10 @@ final class Term_Meta_Abilities {
 			}
 		);
 		if ( is_wp_error( $verified_row ) ) {
-			return $this->logged_error( $verified_row, $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $verified_row, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 
-		$this->log->record( 'wp-native-builder/term-meta-update', 'term_meta', (int) $term->term_id, true, '' );
+		$this->log->record( 'wp-ai-bridge/term-meta-update', 'term_meta', (int) $term->term_id, true, '' );
 		return $this->item_from_rows( $key, array( $verified_row ), true );
 	}
 
@@ -345,38 +345,38 @@ final class Term_Meta_Abilities {
 	public function delete( $input ) {
 		$term_id = $this->input_term_id( $input );
 		if ( ! $this->permissions->allowed( Settings::GROUP_USERS_DESTRUCTIVE, 'read' ) ) {
-			return $this->logged_error( new WP_Error( 'destructive_access_disabled', __( 'Users & Destructive access is required before deleting term metadata.', 'wp-native-builder-bridge' ) ), $term_id, 'wp-native-builder/term-meta-delete' );
+			return $this->logged_error( new WP_Error( 'destructive_access_disabled', __( 'Users & Destructive access is required before deleting term metadata.', 'wp-ai-bridge' ) ), $term_id, 'wp-ai-bridge/term-meta-delete' );
 		}
 
 		$term = $this->validated_term( $input );
 		if ( is_wp_error( $term ) ) {
-			return $this->logged_error( $term, $term_id, 'wp-native-builder/term-meta-delete' );
+			return $this->logged_error( $term, $term_id, 'wp-ai-bridge/term-meta-delete' );
 		}
 		$key = isset( $input['key'] ) ? (string) $input['key'] : '';
 		if ( '' === $key ) {
-			return $this->logged_error( new WP_Error( 'term_meta_key_required', __( 'A metadata key is required.', 'wp-native-builder-bridge' ) ), $term->term_id, 'wp-native-builder/term-meta-delete' );
+			return $this->logged_error( new WP_Error( 'term_meta_key_required', __( 'A metadata key is required.', 'wp-ai-bridge' ) ), $term->term_id, 'wp-ai-bridge/term-meta-delete' );
 		}
 		if ( $this->is_sensitive_key( $key ) ) {
-			return $this->logged_error( $this->sensitive_key_error(), $term->term_id, 'wp-native-builder/term-meta-delete' );
+			return $this->logged_error( $this->sensitive_key_error(), $term->term_id, 'wp-ai-bridge/term-meta-delete' );
 		}
 
 		$key_error = $this->validate_key_access( $term, $key, 'delete' );
 		if ( is_wp_error( $key_error ) ) {
-			return $this->logged_error( $key_error, $term->term_id, 'wp-native-builder/term-meta-delete' );
+			return $this->logged_error( $key_error, $term->term_id, 'wp-ai-bridge/term-meta-delete' );
 		}
 
 		$rows = $this->store->rows( $term->term_id, $key );
 		if ( is_wp_error( $rows ) ) {
-			return $this->logged_error( $rows, $term->term_id, 'wp-native-builder/term-meta-delete' );
+			return $this->logged_error( $rows, $term->term_id, 'wp-ai-bridge/term-meta-delete' );
 		}
 		if ( count( $rows ) > 1 ) {
-			return $this->logged_error( new WP_Error( 'term_meta_multiple_values_unsupported', __( 'This metadata key has multiple rows. The generic deleter refuses to remove an ambiguous multi-row value set.', 'wp-native-builder-bridge' ) ), $term->term_id, 'wp-native-builder/term-meta-delete' );
+			return $this->logged_error( new WP_Error( 'term_meta_multiple_values_unsupported', __( 'This metadata key has multiple rows. The generic deleter refuses to remove an ambiguous multi-row value set.', 'wp-ai-bridge' ) ), $term->term_id, 'wp-ai-bridge/term-meta-delete' );
 		}
 
 		$current_hash = $this->state_hash( $rows );
 		$expected     = isset( $input['expected_state_hash'] ) ? (string) $input['expected_state_hash'] : '';
 		if ( '' === $expected || ! hash_equals( $current_hash, $expected ) ) {
-			return $this->logged_error( $this->stale_error( 'delete' ), $term->term_id, 'wp-native-builder/term-meta-delete' );
+			return $this->logged_error( $this->stale_error( 'delete' ), $term->term_id, 'wp-ai-bridge/term-meta-delete' );
 		}
 		if ( empty( $rows ) ) {
 			return array(
@@ -389,7 +389,7 @@ final class Term_Meta_Abilities {
 
 		$value_error = $this->unsupported_row_error( $rows[0] );
 		if ( is_wp_error( $value_error ) ) {
-			return $this->logged_error( $value_error, $term->term_id, 'wp-native-builder/term-meta-delete' );
+			return $this->logged_error( $value_error, $term->term_id, 'wp-ai-bridge/term-meta-delete' );
 		}
 
 		$result = $this->store->delete_row(
@@ -401,10 +401,10 @@ final class Term_Meta_Abilities {
 			}
 		);
 		if ( is_wp_error( $result ) ) {
-			return $this->logged_error( $result, $term->term_id, 'wp-native-builder/term-meta-delete' );
+			return $this->logged_error( $result, $term->term_id, 'wp-ai-bridge/term-meta-delete' );
 		}
 
-		$this->log->record( 'wp-native-builder/term-meta-delete', 'term_meta', (int) $term->term_id, true, '' );
+		$this->log->record( 'wp-ai-bridge/term-meta-delete', 'term_meta', (int) $term->term_id, true, '' );
 		return array(
 			'term_id'    => (int) $term->term_id,
 			'key'        => $key,
@@ -434,7 +434,7 @@ final class Term_Meta_Abilities {
 			$target_identity
 		);
 		if ( is_wp_error( $creation ) ) {
-			return $this->logged_error( $creation, $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $creation, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 
 		$result       = $creation['result'];
@@ -444,44 +444,44 @@ final class Term_Meta_Abilities {
 			if ( is_int( $result ) && $result > 0 && ! empty( $creation['owned'] ) ) {
 				$cleanup = $this->store->cleanup_created_row( $expected_row );
 				if ( is_wp_error( $cleanup ) ) {
-					return $this->logged_error( $cleanup, $term->term_id, 'wp-native-builder/term-meta-update' );
+					return $this->logged_error( $cleanup, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 				}
 			}
-			return $this->logged_error( $after, $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $after, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 
 		if ( ! is_int( $result ) || $result < 1 ) {
 			if ( $this->state_hash( $after ) !== $current_hash ) {
-				return $this->logged_error( $this->stale_error( 'update' ), $term->term_id, 'wp-native-builder/term-meta-update' );
+				return $this->logged_error( $this->stale_error( 'update' ), $term->term_id, 'wp-ai-bridge/term-meta-update' );
 			}
-			return $this->logged_error( new WP_Error( 'term_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-native-builder-bridge' ) ), $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( new WP_Error( 'term_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-ai-bridge' ) ), $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 
 		if ( empty( $creation['owned'] ) ) {
-			return $this->logged_error( $this->stale_error( 'update' ), $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $this->stale_error( 'update' ), $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 		if ( 1 !== count( $after ) || ! $this->can_access_meta_key( $term, $key, 'edit' ) ) {
 			$cleanup = $this->store->cleanup_created_row( $expected_row );
 			if ( is_wp_error( $cleanup ) ) {
-				return $this->logged_error( $cleanup, $term->term_id, 'wp-native-builder/term-meta-update' );
+				return $this->logged_error( $cleanup, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 			}
-			return $this->logged_error( $this->stale_error( 'update' ), $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $this->stale_error( 'update' ), $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 		$created_row = $after[0];
 		if ( ! $this->store->row_matches( $created_row, $expected_row ) ) {
-			return $this->logged_error( $this->stale_error( 'update' ), $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $this->stale_error( 'update' ), $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 
 		$created_value_error = $this->unsupported_row_error( $created_row );
 		if ( is_wp_error( $created_value_error ) ) {
 			$cleanup = $this->store->cleanup_created_row( $expected_row );
 			if ( is_wp_error( $cleanup ) ) {
-				return $this->logged_error( $cleanup, $term->term_id, 'wp-native-builder/term-meta-update' );
+				return $this->logged_error( $cleanup, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 			}
-			return $this->logged_error( $created_value_error, $term->term_id, 'wp-native-builder/term-meta-update' );
+			return $this->logged_error( $created_value_error, $term->term_id, 'wp-ai-bridge/term-meta-update' );
 		}
 
-		$this->log->record( 'wp-native-builder/term-meta-update', 'term_meta', (int) $term->term_id, true, '' );
+		$this->log->record( 'wp-ai-bridge/term-meta-update', 'term_meta', (int) $term->term_id, true, '' );
 		return $this->item_from_rows( $key, $after, true );
 	}
 
@@ -530,11 +530,11 @@ final class Term_Meta_Abilities {
 	 */
 	private function validated_term( $input ) {
 		if ( ! $this->permissions->allowed( Settings::GROUP_ADVANCED_METADATA, 'read' ) ) {
-			return new WP_Error( 'advanced_metadata_access_disabled', __( 'Advanced Metadata access is disabled in WP AI Bridge settings.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'advanced_metadata_access_disabled', __( 'Advanced Metadata access is disabled in WP AI Bridge settings.', 'wp-ai-bridge' ) );
 		}
 		$term = $this->authorized_term( $input );
 		if ( ! $term ) {
-			return new WP_Error( 'term_meta_target_not_allowed', __( 'The requested term and taxonomy do not identify one unambiguous WordPress term that the current user may edit.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_target_not_allowed', __( 'The requested term and taxonomy do not identify one unambiguous WordPress term that the current user may edit.', 'wp-ai-bridge' ) );
 		}
 		return $term;
 	}
@@ -550,7 +550,7 @@ final class Term_Meta_Abilities {
 			return $this->sensitive_key_error();
 		}
 		if ( ! $this->can_access_meta_key( $term, $key, $operation ) ) {
-			return new WP_Error( 'term_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_permission_denied', __( 'The current WordPress user is not allowed to perform this metadata operation.', 'wp-ai-bridge' ) );
 		}
 		return true;
 	}
@@ -709,7 +709,7 @@ final class Term_Meta_Abilities {
 	 */
 	private function unsupported_row_error( array $row ) {
 		if ( ! empty( $row['serialization_loss'] ) ) {
-			return new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-ai-bridge' ) );
 		}
 		return $this->unsupported_stored_value_error( $row['value'] );
 	}
@@ -720,17 +720,17 @@ final class Term_Meta_Abilities {
 	 */
 	private function unsupported_stored_value_error( $value ) {
 		if ( $this->contains_object_or_resource( $value ) ) {
-			return new WP_Error( 'term_meta_object_value_unsupported', __( 'This metadata key contains a PHP object and cannot be losslessly replaced through the generic JSON metadata contract.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_object_value_unsupported', __( 'This metadata key contains a PHP object and cannot be losslessly replaced through the generic JSON metadata contract.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $this->is_losslessly_json_compatible( $value ) ) {
-			return new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-ai-bridge' ) );
 		}
 		return true;
 	}
 
 	/** @return WP_Error */
 	private function sensitive_key_error() {
-		return new WP_Error( 'sensitive_term_meta_key', __( 'Credential-like metadata keys are outside the generic Bridge metadata surface.', 'wp-native-builder-bridge' ) );
+		return new WP_Error( 'sensitive_term_meta_key', __( 'Credential-like metadata keys are outside the generic Bridge metadata surface.', 'wp-ai-bridge' ) );
 	}
 
 	/**
@@ -739,8 +739,8 @@ final class Term_Meta_Abilities {
 	 */
 	private function stale_error( $operation ) {
 		$message = 'delete' === $operation
-			? __( 'Term metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-native-builder-bridge' )
-			: __( 'Term metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-native-builder-bridge' );
+			? __( 'Term metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-ai-bridge' )
+			: __( 'Term metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-ai-bridge' );
 		return new WP_Error( 'stale_term_meta_conflict', $message );
 	}
 
@@ -750,12 +750,12 @@ final class Term_Meta_Abilities {
 	 */
 	private function encode_lossless_value( $value ) {
 		if ( ! $this->is_losslessly_json_compatible( $value ) ) {
-			return new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-ai-bridge' ) );
 		}
 		try {
 			return json_encode( $value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR );
 		} catch ( \JsonException $exception ) {
-			return new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-ai-bridge' ) );
 		}
 	}
 
@@ -802,7 +802,7 @@ final class Term_Meta_Abilities {
 	 */
 	private function decode_value( $value_json ) {
 		if ( strlen( $value_json ) > Term_Meta_Store::MAX_VALUE_BYTES ) {
-			return new WP_Error( 'term_meta_value_too_large', __( 'Term metadata values are limited to 1 MiB per key.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'term_meta_value_too_large', __( 'Term metadata values are limited to 1 MiB per key.', 'wp-ai-bridge' ) );
 		}
 		try {
 			$value    = json_decode( $value_json, true, 64, JSON_THROW_ON_ERROR );
@@ -810,11 +810,11 @@ final class Term_Meta_Abilities {
 			$original = json_decode( $value_json, false, 64, JSON_THROW_ON_ERROR );
 			$flags    = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR;
 			if ( $value !== $bigints || json_encode( $original, $flags ) !== json_encode( $value, $flags ) ) {
-				return new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'term_meta_value_not_json_compatible', __( 'This metadata value cannot be represented safely through the JSON Ability contract.', 'wp-ai-bridge' ) );
 			}
 			return $value;
 		} catch ( \JsonException $exception ) {
-			return new WP_Error( 'invalid_term_meta_value_json', __( 'value_json must contain one valid JSON value.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'invalid_term_meta_value_json', __( 'value_json must contain one valid JSON value.', 'wp-ai-bridge' ) );
 		}
 	}
 
