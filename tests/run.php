@@ -102,7 +102,7 @@ wpnb_assert( true === $ability['meta']['mcp']['public'], 'Bridge discovery abili
 wpnb_assert( true === $ability['meta']['annotations']['readonly'], 'Bridge discovery ability is marked read-only.' );
 wpnb_assert( true === call_user_func( $ability['permission_callback'] ), 'Bridge discovery ability permission callback honors Site Read.' );
 $bridge_info = call_user_func( $ability['execute_callback'] );
-wpnb_assert( '0.2.0' === $bridge_info['plugin_version'], 'Bridge discovery ability returns plugin version.' );
+wpnb_assert( '0.3.0' === $bridge_info['plugin_version'], 'Bridge discovery ability returns plugin version.' );
 wpnb_assert( true === $bridge_info['mcp_adapter']['available'], 'Bridge discovery ability reports adapter availability.' );
 
 wpnb_test_reset_state();

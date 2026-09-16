@@ -2,7 +2,8 @@
 
 All notable public changes are documented here.
 
-## Unreleased
+## 0.3.0
+
 - Add a separate default-off External Packages boundary for administrator-authorized plugin/theme installation from bounded public HTTPS package URLs, preserving native WordPress install authority, Core Upgrader validation, redirect/SSRF protections, temporary-package cleanup, and secret-safe errors/logging.
 - Add a default-off Authentication & Credentials boundary for Core-native WordPress Application Password list/get/create/rename/revoke lifecycle, with one-time plaintext return on create and strict hash/secret/log redaction.
 - Add admin-controlled provider-neutral user/comment metadata read, update, and delete with exact WordPress target authority, role/session/credential exclusions, byte-exact stale-state protection, and destructive gating for delete.
