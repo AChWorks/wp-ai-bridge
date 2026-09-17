@@ -133,13 +133,13 @@ final class Migrator {
 	private static function workspace_migration_inventory() {
 		global $wpdb;
 
-		$post_counts = $wpdb->get_var(
+		$post_counts    = $wpdb->get_var(
 			"SELECT CONCAT(COALESCE(SUM(post_type = 'wpnb_doc'), 0), ':', COALESCE(SUM(post_type = 'wpnb_task'), 0), ':', COALESCE(SUM(post_type = 'wpai_doc'), 0), ':', COALESCE(SUM(post_type = 'wpai_task'), 0)) FROM {$wpdb->posts} WHERE post_type IN ('wpnb_doc','wpnb_task','wpai_doc','wpai_task')"
 		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact bounded migration identity inventory.
-		$meta_counts = $wpdb->get_var(
+		$meta_counts    = $wpdb->get_var(
 			"SELECT CONCAT(COALESCE(SUM(meta_key = '_wpnb_workspace_state'), 0), ':', COALESCE(SUM(meta_key = '_wpai_workspace_state'), 0)) FROM {$wpdb->postmeta} WHERE meta_key IN ('_wpnb_workspace_state','_wpai_workspace_state')"
 		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact bounded migration identity inventory.
-		$schema_value = $wpdb->get_var(
+		$schema_value   = $wpdb->get_var(
 			"SELECT COALESCE(MAX(option_value), '__wpai_absent__') FROM {$wpdb->options} WHERE option_name = 'wp_ai_bridge_schema_version'"
 		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Direct schema-marker inventory avoids stale option-cache state after rollback.
 		$meta_conflicts = $wpdb->get_var(
