@@ -40,7 +40,7 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 4. Install and activate the official WordPress MCP Adapter if it is not already active.
 5. Open **WP AI Bridge → Settings**.
 
-Version 0.4.0 establishes the canonical plugin installation identity `wp-ai-bridge/wp-ai-bridge.php`. If migrating from the published 0.3.0 package, follow the one-time Workspace migration procedure in the installation guide instead of using WordPress's replace-existing-plugin flow.
+Version 0.4.1 is the native canonical baseline and installs as `wp-ai-bridge/wp-ai-bridge.php` with no pre-0.4.0 migration runtime. Existing 0.4.0 installations can use the normal WordPress replace/update flow. A site still on the published 0.3.0 package that must preserve its old Workspace data should first perform the one-time migration using the immutable v0.4.0 release, verify the migrated Workspace, and then update to the latest release.
 
 See [Installation and connection](./docs/INSTALLATION.md) for the complete setup.
 
@@ -61,7 +61,7 @@ In a ChatGPT workspace with Developer Mode enabled:
 5. Sign in to WordPress when prompted.
 6. Review the WordPress consent page and authorize ChatGPT.
 
-Version 0.4.0 serves only the canonical `wp-ai-bridge` MCP/OAuth routes. Connections created by the former plugin are intentionally not migrated; reconnect ChatGPT after installing 0.4.0 using the canonical endpoint shown by WordPress.
+Current releases serve only the canonical `wp-ai-bridge` MCP/OAuth routes. Updating an already-canonical 0.4.0 installation to 0.4.1 keeps the canonical installation/storage identity; a normal reconnect is not required merely because of the 0.4.1 cleanup release.
 
 No tunnel or separate proxy service is required for the direct HTTPS setup.
 
@@ -75,7 +75,7 @@ The plugin adds a top-level **WP AI Bridge** menu:
 - **Activity** — bounded mutation activity.
 - **Settings** — ChatGPT connection details and Bridge access groups.
 
-Administration uses only the canonical `wp-ai-bridge...` slugs. Former `wp-native-builder...` admin aliases are not registered by version 0.4.0.
+Administration uses only the canonical `wp-ai-bridge...` slugs. Former product admin aliases are not registered by current releases.
 
 Workspace state is private to WordPress and is not exposed through ordinary post, Gutenberg, or generic metadata abilities.
 
@@ -91,12 +91,12 @@ Bridge permissions are additive to normal WordPress capabilities. Enabling a Bri
 | **Live Content** | Permit publishing and other live-content status changes when WordPress also permits them. |
 | **Site Configuration** | Permit bounded global WordPress/theme configuration changes. |
 | **Advanced Metadata** | Permit generic bounded metadata read/update for exact authorized post, term, user, and comment targets; role/capability/session/application-password/credential-like state, options, and Workspace internals remain excluded. |
-| **Authentication & Credentials** | Permit Core-native WordPress Application Password list/get/create/rename/revoke operations. Disabled by default including upgrades; generated plaintext credentials are returned only once on successful create and are never persisted by the Bridge. |
+| **Authentication & Credentials** | Permit Core-native WordPress Application Password list/get/create/rename/revoke operations. Disabled by default including upgrades; generated plaintext credentials are returned only once at creation and are never persisted by the Bridge. |
 | **Code & Extensions** | Permit supported managed-snippet and plugin/theme lifecycle operations. |
 | **External Packages** | Permit plugin/theme installation from an explicit safe public HTTPS package URL. Disabled by default including upgrades; Code & Extensions plus native WordPress install authority are also required. |
 | **Source Editing** | Separately permit installed plugin/theme source read/preview/apply/recovery. Code & Extensions and native WordPress source-edit authority are still required. Disabled by default, including upgrades. |
 | **Native Abilities** | Permit registered Core/provider Abilities to execute through the WP AI Bridge MCP routes when their own WordPress/provider permission checks also allow it. This is broad registered-operation trust, not a sandbox, and is disabled by default including upgrades. |
-| **Comments** | Permit bounded standard-comment discovery, replies, and moderation through the fixed WordPress Core comments REST contract. Disabled by default including upgrades; permanent comment deletion additionally requires Users & Destructive. |
+| **Comments** | Permit bounded standard-comment discovery, replies, and moderation through the fixed WordPress Core comments REST contract. Disabled by default including upgrades; permanent deletion additionally requires Users & Destructive. |
 | **Users & Destructive** | Permit user/role administration and destructive operations when WordPress also permits them. Metadata deletion requires this group in addition to Advanced Metadata. |
 
 Only **Site Read** is enabled by default.
@@ -111,11 +111,11 @@ Only **Site Read** is enabled by default.
 
 Source Editing remains a separate administrator-level trust boundary and is not enabled by Code & Extensions or External Packages alone. The Bridge does **not** expose a generic HTTP client, arbitrary package request credentials, shell commands, generic SQL, unrestricted filesystem access, arbitrary WordPress options, or generic credential retrieval. WordPress Application Passwords are available only through the separate default-off purpose-specific lifecycle described above.
 
-## Canonical identity and one-time migration
+## Canonical identity
 
-Version 0.4.0 uses WP AI Bridge identity throughout the maintained runtime: the plugin directory/entrypoint is `wp-ai-bridge/wp-ai-bridge.php`, the PHP namespace is `WP_AI_Bridge`, the text domain is `wp-ai-bridge`, Bridge Ability identifiers use `wp-ai-bridge/*`, and admin/OAuth/MCP routes use the `wp-ai-bridge` slug.
+WP AI Bridge uses one native product identity throughout the maintained runtime: the plugin directory/entrypoint is `wp-ai-bridge/wp-ai-bridge.php`, the PHP namespace is `WP_AI_Bridge`, the text domain is `wp-ai-bridge`, Bridge Ability identifiers use `wp-ai-bridge/*`, and admin/OAuth/MCP routes use the `wp-ai-bridge` slug.
 
-For the one published 0.3.0 transition package, uninstalling the former plugin intentionally leaves its private Workspace Documents and Tasks in WordPress. Activating 0.4.0 migrates only those Workspace records to the canonical identifiers while preserving their IDs, content, state hashes, and versions. When legacy Workspace records exist, the migration first verifies that the site's exact WordPress `posts`, `postmeta`, and `options` tables use InnoDB; activation stops before identity changes if rollback-capable storage cannot be established. Clean installs with no legacy Workspace state are not subject to this migration-only engine guard. Former access-group settings, activity data, OAuth clients/tokens, and other connection/runtime state are not imported. Reconfigure the desired access groups and reconnect ChatGPT against the new canonical MCP endpoint after migration.
+Version 0.4.0 was the bounded one-time migration release for the sole pre-canonical Workspace transition. Version 0.4.1 retires that migration implementation after successful real-site verification. The maintained runtime no longer reads or depends on pre-0.4.0 product/storage identifiers. Historical release notes remain available in the changelog and immutable v0.4.0 release for recovery/audit purposes.
 
 ## Optional integrations
 

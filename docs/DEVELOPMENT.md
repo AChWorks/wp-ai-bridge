@@ -53,7 +53,7 @@ Full assurance includes:
 - the normal WordPress 6.9 and current integration lanes;
 - consolidated single-site regressions for previously integrated security/administration slices;
 - dedicated multisite source-editing and user-metadata authority suites;
-- exact-base identity migration coverage.
+- canonical identity/activation coverage on both supported WordPress lanes.
 
 If a ready PR needs remediation, return it to Draft, batch all related fixes that are reasonably discoverable from the finding, use targeted validation while the candidate is changing, then mark it Ready once to generate the next meaningful full-assurance candidate. Do not request a fresh full run or independent review for every intermediate remediation commit.
 
@@ -159,7 +159,14 @@ bash bin/run-single-site-regressions.sh 6.9-php8.4-apache
 bash bin/run-single-site-regressions.sh php8.4-apache
 ```
 
-Coverage includes WordPress 6.9/current, direct OAuth/MCP transport, raw MCP discovery/execution, content/block safety, Persian runtime localization, Workspace concurrency/lifecycle, Astra native Ability reuse, Code Snippets provider generations, and the consolidated regressions for integrated administrator-capability slices.
+For the native canonical identity/activation layer:
+
+```bash
+bash bin/run-canonical-identity.sh 6.9-php8.4-apache
+bash bin/run-canonical-identity.sh php8.4-apache
+```
+
+Coverage includes WordPress 6.9/current, direct OAuth/MCP transport, raw MCP discovery/execution, content/block safety, Persian runtime localization, Workspace concurrency/lifecycle, Astra native Ability reuse, Code Snippets provider generations, consolidated regressions for integrated administrator-capability slices, and clean canonical activation without retired migration code.
 
 Gravity Forms automated coverage uses a test-only GFAPI contract fixture; it is not evidence that a commercial Gravity Forms binary was executed in CI.
 

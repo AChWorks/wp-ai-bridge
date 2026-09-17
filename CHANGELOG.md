@@ -2,6 +2,14 @@
 
 All notable public changes are documented here.
 
+## 0.4.1
+
+- Retire the one-time pre-0.4.0 Workspace migration runtime after the sole real installation was verified on canonical v0.4.0 with its existing Workspace Documents/Tasks intact.
+- Remove the migration activation hook, migration-only PHP/localization files, storage-engine/transaction migration fixtures, and migration-specific CI lanes from maintained runtime/development source.
+- Replace the temporary migration exception with a permanent canonical-identity invariant: current runtime/localization must not depend on former WP Native Builder Bridge identifiers.
+- Keep equivalent real-WordPress canonical activation/identity coverage on both supported WordPress lanes and verify canonical Workspace create/read behavior without a migration schema marker.
+- Preserve immutable v0.4.0 as the historical migration release for any installation that never completed the pre-canonical transition; v0.4.1 is the native canonical baseline for fresh installs and normal upgrades from v0.4.0.
+
 ## 0.4.0
 
 - Establish the canonical WordPress plugin installation identity as `wp-ai-bridge/wp-ai-bridge.php`, with `WP_AI_Bridge` PHP namespace/constants, `wp-ai-bridge` text domain, `wp-ai-bridge/*` Ability identifiers, and canonical Bridge-owned storage/runtime identifiers.
@@ -35,7 +43,7 @@ All notable public changes are documented here.
 ## 0.2.0
 
 - Added an administrator-controlled Advanced Metadata access group, disabled by default, for provider-neutral WordPress post metadata workflows.
-- Added generic typed post-meta read, update, and delete abilities for authorized WordPress post objects, including private and non-REST CPTs, while excluding Workspace internals and credential/session/security-like keys.
+- Added generic typed post-meta read, update, and delete abilities for authorized WordPress post objects, including private and non-REST CPTs, while excluding Workspace internals and credential/session/security-like metadata keys.
 - Added physical-row metadata identity, byte-exact optimistic concurrency, SQL NULL handling, ambiguity refusal, and row-scoped compensation so stale or concurrent writes fail closed instead of silently corrupting metadata.
 - Preserved registered Core/provider metadata authorization, required Users & Destructive permission for generic metadata deletion, and kept generic SQL, options, user meta, filesystem, shell, and credential access out of scope.
 

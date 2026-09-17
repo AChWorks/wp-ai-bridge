@@ -89,7 +89,7 @@ final class Plugin {
 	}
 
 	/**
-	 * Loads the stable legacy text domain so existing translation files continue to work.
+	 * Loads the WP AI Bridge text domain.
 	 *
 	 * @return void
 	 */

@@ -15,12 +15,11 @@ $messages = array_merge(
 	require __DIR__ . '/fa_IR-parts/oauth-clients.php',
 	require __DIR__ . '/fa_IR-parts/registered-settings.php',
 	require __DIR__ . '/fa_IR-parts/user-comment-meta.php',
-	require __DIR__ . '/fa_IR-parts/migration.php',
 	require __DIR__ . '/fa_IR-parts/application-passwords.php'
 );
 
 return array(
-	'project-id-version' => 'WP AI Bridge 0.4.0',
+	'project-id-version' => 'WP AI Bridge 0.4.1',
 	'language'           => 'fa_IR',
 	'messages'           => $messages,
 );
