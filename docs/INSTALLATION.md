@@ -16,7 +16,19 @@
 
 The settings screen reports whether the WordPress Abilities API, MCP Adapter, and public HTTPS endpoint are available.
 
-The 0.4.0 package installs with the canonical `wp-ai-bridge/` directory and `wp-ai-bridge.php` entrypoint. See the migration section below before replacing a published 0.3.0 installation.
+Current releases install with the canonical `wp-ai-bridge/` directory and `wp-ai-bridge.php` entrypoint. Version 0.4.1 is the native canonical baseline and contains no pre-0.4.0 migration runtime.
+
+### Updating from 0.4.0
+
+An existing canonical 0.4.0 installation can be updated normally with WordPress's replace/update flow. The plugin directory, Workspace identifiers, settings identity, OAuth identity, MCP routes, and Ability namespace remain canonical, so the 0.4.1 cleanup itself does not require another migration or a new ChatGPT connection.
+
+Before any production plugin update, keep a normal WordPress/database backup appropriate to the site.
+
+### Sites still on the published 0.3.0 package
+
+Version 0.4.1 deliberately does not contain the retired pre-0.4.0 importer. If a site is still on 0.3.0 and must preserve its old Workspace Documents/Tasks, first use the immutable **v0.4.0** release and its documented one-time migration procedure. Verify the canonical Workspace after that migration, then update the resulting 0.4.0 installation to the current release.
+
+Do not install 0.4.1 directly over a 0.3.0 installation when preservation of the pre-canonical Workspace is required. The historical migration implementation remains available only through the immutable v0.4.0 release; it is not part of current maintained runtime code.
 
 ## Connect a ChatGPT Workspace App
 
@@ -38,7 +50,7 @@ With Developer Mode enabled in the ChatGPT workspace:
 
 The OAuth connection acts as the WordPress user who approved it. Bridge access groups and WordPress capabilities are still checked for every operation.
 
-Connections from the former plugin are intentionally not migrated. Version 0.4.0 serves only the canonical MCP/OAuth routes, so create a fresh ChatGPT connection after migration.
+Current releases serve only the canonical MCP/OAuth routes. A fresh installation needs a fresh OAuth connection. Updating an already-connected canonical 0.4.0 installation to 0.4.1 does not by itself invalidate that canonical connection.
 
 ## OAuth discovery endpoints
 
@@ -72,25 +84,13 @@ A conservative starting point is:
 - Comments: leave disabled unless bounded comment discovery, replies, or moderation is needed. It is independent from Site Read/Builder Write and still relies on WordPress Core comment permissions; permanent deletion additionally requires Users & Destructive.
 - Users & Destructive: leave disabled unless the requested operation genuinely requires it.
 
-## Migrate from the published 0.3.0 package
+## Canonical runtime baseline
 
-Version 0.4.0 intentionally changes the actual WordPress plugin installation identity to `wp-ai-bridge/wp-ai-bridge.php`. Do **not** use the replace-existing-plugin flow for this migration.
+The maintained plugin uses only the WP AI Bridge runtime identity: `wp-ai-bridge/wp-ai-bridge.php`, `WP_AI_Bridge`, `wp-ai-bridge`, canonical `wp-ai-bridge/*` Abilities, and canonical Bridge-owned storage identifiers.
 
-When legacy Workspace Documents or Tasks are present, the site's actual WordPress `posts`, `postmeta`, and `options` tables must use InnoDB. Version 0.4.0 verifies all three table engines before changing any legacy Workspace identity and stops activation safely if an engine cannot be verified or is not InnoDB. This requirement applies only to the one-time legacy Workspace migration; a clean installation with no legacy Workspace state is not rejected by this migration guard. If activation reports a non-InnoDB affected table, keep the database backup, convert that exact WordPress core table to InnoDB with your database/hosting tooling, verify the conversion, and retry activation. Do not bypass the guard.
+The one-time 0.3.0 -> 0.4.0 Workspace importer, its migration schema marker, engine preflight, migration-only localization, and migration-only CI fixtures were retired after the sole real installation was verified on canonical v0.4.0 with its Workspace intact. They are not loaded or shipped by v0.4.1.
 
-The supported one-time sequence is:
-
-1. Take a normal WordPress/database backup before the migration.
-2. Deactivate the former plugin.
-3. Delete it from **Plugins → Installed Plugins**. WordPress runs the former plugin's uninstall routine; that routine removes its disposable settings/OAuth state while intentionally preserving private Workspace Documents and Tasks.
-4. Upload and activate the 0.4.0 `wp-ai-bridge.zip` package. It installs under `wp-ai-bridge/`.
-5. Activation verifies transaction-capable InnoDB storage when legacy Workspace state exists, then migrates only the preserved Workspace Documents and Tasks to the canonical Workspace identifiers, preserving their WordPress IDs, content/state, state hashes, and versions.
-6. Open **WP AI Bridge → Settings** and enable the access groups you now want. Former access-group settings, mutation/activity state, OAuth clients/tokens, and other connection/runtime state are intentionally not imported.
-7. Reconnect ChatGPT using the canonical MCP endpoint shown on the Settings page.
-
-For WP-CLI automation, use `wp plugin uninstall wp-native-builder-bridge` for step 3; `wp plugin delete` only removes plugin files and does not run the uninstall routine.
-
-After 0.4.0 is active, the maintained runtime serves only canonical `wp-ai-bridge` admin/OAuth/MCP routes and `wp-ai-bridge/*` Ability identifiers. Former admin bookmarks and OAuth/MCP endpoints are not aliases in the new plugin.
+Published tags/releases remain immutable and preserve the historical v0.4.0 migration implementation for audit or recovery of an installation that never performed that transition.
 
 ## Deactivate and uninstall
 
