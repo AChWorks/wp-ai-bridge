@@ -18,7 +18,7 @@ Historical documents under `docs/maintainer/reference/` are design evidence only
 
 ## 1. Purpose
 
-WP AI Bridge is a small, free, self-hosted WordPress plugin whose goal is to make the full range of administration available to a real WordPress administrator discoverable and delegable to an AI through the Bridge. The canonical WordPress plugin installation identity is `wp-ai-bridge/wp-ai-bridge.php`; maintained PHP, localization, Ability, admin, OAuth/MCP, and Bridge-owned storage identifiers use the WP AI Bridge identity. A bounded one-time migration may read pre-0.4.0 Workspace identifiers solely to preserve durable Workspace Documents and Tasks.
+WP AI Bridge is a small, free, self-hosted WordPress plugin whose goal is to make the full range of administration available to a real WordPress administrator discoverable and delegable to an AI through the Bridge. The canonical WordPress plugin installation identity is `wp-ai-bridge/wp-ai-bridge.php`; maintained PHP, localization, Ability, admin, OAuth/MCP, and Bridge-owned storage identifiers use the WP AI Bridge identity. The bounded pre-canonical Workspace migration is preserved only in the immutable v0.4.0 release; current maintained runtime beginning with v0.4.1 does not read or depend on pre-0.4.0 product or storage identifiers.
 
 The intended experience is an additional WordPress administrator whose effective access the principal site administrator can increase, reduce, or revoke in WordPress settings. The AI must be able to discover the operations available on the actual installation, understand their inputs and required permissions, and perform the operations the administrator has delegated. Broad administrator-equivalent access and narrower grants must use the same simple access model.
 
