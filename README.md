@@ -91,7 +91,7 @@ Bridge permissions are additive to normal WordPress capabilities. Enabling a Bri
 | **Live Content** | Permit publishing and other live-content status changes when WordPress also permits them. |
 | **Site Configuration** | Permit bounded global WordPress/theme configuration changes. |
 | **Advanced Metadata** | Permit generic bounded metadata read/update for exact authorized post, term, user, and comment targets; role/capability/session/application-password/credential-like state, options, and Workspace internals remain excluded. |
-| **Authentication & Credentials** | Permit Core-native WordPress Application Password list/get/create/rename/revoke operations. Disabled by default including upgrades; generated plaintext credentials are returned only once on successful create and are never persisted by the Bridge. |
+| **Authentication & Credentials** | Permit Core-native WordPress Application Password list/get/create/rename/revoke operations. Disabled by default including upgrades; generated plaintext credentials are returned only once at creation and are never persisted by the Bridge. |
 | **Code & Extensions** | Permit supported managed-snippet and plugin/theme lifecycle operations. |
 | **External Packages** | Permit plugin/theme installation from an explicit safe public HTTPS package URL. Disabled by default including upgrades; Code & Extensions plus native WordPress install authority are also required. |
 | **Source Editing** | Separately permit installed plugin/theme source read/preview/apply/recovery. Code & Extensions and native WordPress source-edit authority are still required. Disabled by default, including upgrades. |
