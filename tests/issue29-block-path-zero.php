@@ -5,15 +5,15 @@
 
 require __DIR__ . '/bootstrap.php';
 
-use WP_Native_Builder_Bridge\Abilities\Block_Abilities;
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Abilities\Block_Abilities;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
 
 $failures = 0;
 $tests    = 0;
 
-function wpnb_issue29_assert( $condition, $message ) {
+function wpai_issue29_assert( $condition, $message ) {
 	global $failures, $tests;
 	++$tests;
 	if ( ! $condition ) {
@@ -23,8 +23,8 @@ function wpnb_issue29_assert( $condition, $message ) {
 }
 
 function get_post( $post_id ) {
-	return isset( $GLOBALS['wpnb_issue29_post'] ) && (int) $GLOBALS['wpnb_issue29_post']->ID === (int) $post_id
-		? $GLOBALS['wpnb_issue29_post']
+	return isset( $GLOBALS['wpai_issue29_post'] ) && (int) $GLOBALS['wpai_issue29_post']->ID === (int) $post_id
+		? $GLOBALS['wpai_issue29_post']
 		: null;
 }
 
@@ -58,7 +58,7 @@ function wp_update_post( $postarr, $wp_error = false ) {
 	return (int) $post->ID;
 }
 
-function wpnb_issue29_fixture_blocks() {
+function wpai_issue29_fixture_blocks() {
 	return array(
 		array(
 			'blockName'    => 'core/group',
@@ -88,17 +88,17 @@ function wpnb_issue29_fixture_blocks() {
 	);
 }
 
-function wpnb_issue29_reset_post() {
-	$GLOBALS['wpnb_issue29_post'] = (object) array(
+function wpai_issue29_reset_post() {
+	$GLOBALS['wpai_issue29_post'] = (object) array(
 		'ID'                => 29,
 		'post_type'         => 'page',
 		'post_status'       => 'draft',
 		'post_modified_gmt' => '2026-09-11 08:00:00',
-		'post_content'      => serialize_blocks( wpnb_issue29_fixture_blocks() ),
+		'post_content'      => serialize_blocks( wpai_issue29_fixture_blocks() ),
 	);
 }
 
-function wpnb_issue29_new_block_markup() {
+function wpai_issue29_new_block_markup() {
 	return serialize_blocks(
 		array(
 			array(
@@ -111,29 +111,29 @@ function wpnb_issue29_new_block_markup() {
 	);
 }
 
-wpnb_test_reset_state();
-$GLOBALS['wpnb_test']['post_types']['page'] = (object) array(
+wpai_test_reset_state();
+$GLOBALS['wpai_test']['post_types']['page'] = (object) array(
 	'name'               => 'page',
 	'cap'                => (object) array( 'publish_posts' => 'publish_pages' ),
 	'public'             => true,
 	'publicly_queryable' => true,
 	'show_in_rest'       => true,
 );
-$GLOBALS['wpnb_test']['post_type_supports']['page'] = array( 'editor' => true );
+$GLOBALS['wpai_test']['post_type_supports']['page'] = array( 'editor' => true );
 
 $settings    = new Settings();
 $permissions = new Permissions( $settings );
 $blocks      = new Block_Abilities( $permissions, new Mutation_Log() );
 
-wpnb_issue29_reset_post();
+wpai_issue29_reset_post();
 $tree = $blocks->read( array( 'post_id' => 29 ) );
-wpnb_issue29_assert( ! is_wp_error( $tree ), 'Fixture block tree could not be read.' );
-wpnb_issue29_assert( '0' === $tree['blocks'][0]['path'], 'The canonical first top-level block path must be 0.' );
-wpnb_issue29_assert( '0.0' === $tree['blocks'][0]['inner_blocks'][0]['path'], 'The canonical first nested block path must be 0.0.' );
-wpnb_issue29_assert( '1' === $tree['blocks'][1]['path'], 'The canonical second top-level block path must be 1.' );
+wpai_issue29_assert( ! is_wp_error( $tree ), 'Fixture block tree could not be read.' );
+wpai_issue29_assert( '0' === $tree['blocks'][0]['path'], 'The canonical first top-level block path must be 0.' );
+wpai_issue29_assert( '0.0' === $tree['blocks'][0]['inner_blocks'][0]['path'], 'The canonical first nested block path must be 0.0.' );
+wpai_issue29_assert( '1' === $tree['blocks'][1]['path'], 'The canonical second top-level block path must be 1.' );
 
 foreach ( array( '00', '01', '0.00' ) as $alias ) {
-	wpnb_issue29_reset_post();
+	wpai_issue29_reset_post();
 	$tree   = $blocks->read( array( 'post_id' => 29 ) );
 	$before = get_post( 29 )->post_content;
 	$result = $blocks->mutate(
@@ -141,17 +141,17 @@ foreach ( array( '00', '01', '0.00' ) as $alias ) {
 			'post_id'               => 29,
 			'action'                => 'replace',
 			'path'                  => $alias,
-			'block_markup'          => wpnb_issue29_new_block_markup(),
+			'block_markup'          => wpai_issue29_new_block_markup(),
 			'expected_modified_gmt' => $tree['modified_gmt'],
 			'expected_content_hash' => $tree['content_hash'],
 			'expected_block_hash'   => $tree['blocks'][0]['block_hash'],
 		)
 	);
-	wpnb_issue29_assert( is_wp_error( $result ) && 'invalid_block_path' === $result->get_error_code(), 'Non-canonical path ' . $alias . ' must be rejected as invalid.' );
-	wpnb_issue29_assert( $before === get_post( 29 )->post_content, 'Rejected non-canonical path ' . $alias . ' changed content.' );
+	wpai_issue29_assert( is_wp_error( $result ) && 'invalid_block_path' === $result->get_error_code(), 'Non-canonical path ' . $alias . ' must be rejected as invalid.' );
+	wpai_issue29_assert( $before === get_post( 29 )->post_content, 'Rejected non-canonical path ' . $alias . ' changed content.' );
 }
 
-wpnb_issue29_reset_post();
+wpai_issue29_reset_post();
 $tree   = $blocks->read( array( 'post_id' => 29 ) );
 $before = get_post( 29 )->post_content;
 $missing = $blocks->mutate(
@@ -159,16 +159,16 @@ $missing = $blocks->mutate(
 		'post_id'               => 29,
 		'action'                => 'replace',
 		'path'                  => '',
-		'block_markup'          => wpnb_issue29_new_block_markup(),
+		'block_markup'          => wpai_issue29_new_block_markup(),
 		'expected_modified_gmt' => $tree['modified_gmt'],
 		'expected_content_hash' => $tree['content_hash'],
 		'expected_block_hash'   => $tree['blocks'][0]['block_hash'],
 	)
 );
-wpnb_issue29_assert( is_wp_error( $missing ) && 'block_path_required' === $missing->get_error_code(), 'An empty targeted path must remain a missing-path error.' );
-wpnb_issue29_assert( $before === get_post( 29 )->post_content, 'Rejected empty path changed content.' );
+wpai_issue29_assert( is_wp_error( $missing ) && 'block_path_required' === $missing->get_error_code(), 'An empty targeted path must remain a missing-path error.' );
+wpai_issue29_assert( $before === get_post( 29 )->post_content, 'Rejected empty path changed content.' );
 
-wpnb_issue29_reset_post();
+wpai_issue29_reset_post();
 $tree   = $blocks->read( array( 'post_id' => 29 ) );
 $before = get_post( 29 )->post_content;
 $stale_block = $blocks->mutate(
@@ -176,17 +176,17 @@ $stale_block = $blocks->mutate(
 		'post_id'               => 29,
 		'action'                => 'replace',
 		'path'                  => '0',
-		'block_markup'          => wpnb_issue29_new_block_markup(),
+		'block_markup'          => wpai_issue29_new_block_markup(),
 		'expected_modified_gmt' => $tree['modified_gmt'],
 		'expected_content_hash' => $tree['content_hash'],
 		'expected_block_hash'   => str_repeat( '0', 64 ),
 	)
 );
-wpnb_issue29_assert( is_wp_error( $stale_block ) && 'stale_block_conflict' === $stale_block->get_error_code(), 'A stale fingerprint for canonical path 0 must remain rejected.' );
-wpnb_issue29_assert( $before === get_post( 29 )->post_content, 'Stale block fingerprint changed content.' );
+wpai_issue29_assert( is_wp_error( $stale_block ) && 'stale_block_conflict' === $stale_block->get_error_code(), 'A stale fingerprint for canonical path 0 must remain rejected.' );
+wpai_issue29_assert( $before === get_post( 29 )->post_content, 'Stale block fingerprint changed content.' );
 
 foreach ( array( 'replace', 'insert_before', 'insert_after', 'remove' ) as $action ) {
-	wpnb_issue29_reset_post();
+	wpai_issue29_reset_post();
 	$tree  = $blocks->read( array( 'post_id' => 29 ) );
 	$input = array(
 		'post_id'               => 29,
@@ -197,39 +197,39 @@ foreach ( array( 'replace', 'insert_before', 'insert_after', 'remove' ) as $acti
 		'expected_block_hash'   => $tree['blocks'][0]['block_hash'],
 	);
 	if ( 'remove' !== $action ) {
-		$input['block_markup'] = wpnb_issue29_new_block_markup();
+		$input['block_markup'] = wpai_issue29_new_block_markup();
 	}
 	$result = $blocks->mutate( $input );
-	wpnb_issue29_assert( ! is_wp_error( $result ), 'Canonical top-level path 0 failed for ' . $action . '.' );
+	wpai_issue29_assert( ! is_wp_error( $result ), 'Canonical top-level path 0 failed for ' . $action . '.' );
 	if ( ! is_wp_error( $result ) ) {
-		wpnb_issue29_assert( '0' === $result['blocks'][0]['path'], 'Top-level mutation did not preserve canonical path formatting.' );
+		wpai_issue29_assert( '0' === $result['blocks'][0]['path'], 'Top-level mutation did not preserve canonical path formatting.' );
 	}
 }
 
-wpnb_issue29_reset_post();
+wpai_issue29_reset_post();
 $tree = $blocks->read( array( 'post_id' => 29 ) );
 $nested = $blocks->mutate(
 	array(
 		'post_id'               => 29,
 		'action'                => 'replace',
 		'path'                  => '0.0',
-		'block_markup'          => wpnb_issue29_new_block_markup(),
+		'block_markup'          => wpai_issue29_new_block_markup(),
 		'expected_modified_gmt' => $tree['modified_gmt'],
 		'expected_content_hash' => $tree['content_hash'],
 		'expected_block_hash'   => $tree['blocks'][0]['inner_blocks'][0]['block_hash'],
 	)
 );
-wpnb_issue29_assert( ! is_wp_error( $nested ), 'Canonical nested path 0.0 must continue to work.' );
+wpai_issue29_assert( ! is_wp_error( $nested ), 'Canonical nested path 0.0 must continue to work.' );
 if ( ! is_wp_error( $nested ) ) {
-	wpnb_issue29_assert( 'core/heading' === $nested['blocks'][0]['inner_blocks'][0]['name'], 'Nested replacement targeted the wrong block.' );
-	wpnb_issue29_assert( 'core/paragraph' === $nested['blocks'][1]['name'], 'Nested replacement changed an unrelated root block.' );
+	wpai_issue29_assert( 'core/heading' === $nested['blocks'][0]['inner_blocks'][0]['name'], 'Nested replacement targeted the wrong block.' );
+	wpai_issue29_assert( 'core/paragraph' === $nested['blocks'][1]['name'], 'Nested replacement changed an unrelated root block.' );
 }
 
-wpnb_issue29_reset_post();
+wpai_issue29_reset_post();
 $stale_tree = $blocks->read( array( 'post_id' => 29 ) );
 get_post( 29 )->post_content = serialize_blocks(
 	array_merge(
-		wpnb_issue29_fixture_blocks(),
+		wpai_issue29_fixture_blocks(),
 		array(
 			array(
 				'blockName'    => 'core/paragraph',
@@ -246,13 +246,13 @@ $stale_content = $blocks->mutate(
 		'post_id'               => 29,
 		'action'                => 'replace',
 		'path'                  => '0',
-		'block_markup'          => wpnb_issue29_new_block_markup(),
+		'block_markup'          => wpai_issue29_new_block_markup(),
 		'expected_modified_gmt' => $stale_tree['modified_gmt'],
 		'expected_content_hash' => $stale_tree['content_hash'],
 		'expected_block_hash'   => $stale_tree['blocks'][0]['block_hash'],
 	)
 );
-wpnb_issue29_assert( is_wp_error( $stale_content ) && 'stale_content_conflict' === $stale_content->get_error_code(), 'Object-level stale-write protection must remain intact.' );
+wpai_issue29_assert( is_wp_error( $stale_content ) && 'stale_content_conflict' === $stale_content->get_error_code(), 'Object-level stale-write protection must remain intact.' );
 
 if ( 0 !== $failures ) {
 	fwrite( STDERR, sprintf( "FAIL: %d of %d Issue #29 assertions failed.\n", $failures, $tests ) );

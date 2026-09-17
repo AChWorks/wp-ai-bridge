@@ -2,23 +2,23 @@
 /**
  * Ability registration.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Abilities;
+namespace WP_AI_Bridge\Abilities;
 
-use WP_Native_Builder_Bridge\Support\Environment;
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Native_Ability_Delegation;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
-use WP_Native_Builder_Bridge\Workspace\Store;
+use WP_AI_Bridge\Support\Environment;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Native_Ability_Delegation;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Workspace\Store;
 
 /**
  * Registers bridge ability categories and providers.
  */
 final class Registrar {
-	const CATEGORY = 'wp-native-builder';
+	const CATEGORY = 'wp-ai-bridge';
 
 	/** @var Environment */
 	private $environment;
@@ -123,8 +123,8 @@ final class Registrar {
 		wp_register_ability_category(
 			self::CATEGORY,
 			array(
-				'label'       => __( 'WP AI Bridge', 'wp-native-builder-bridge' ),
-				'description' => __( 'Typed WordPress administration abilities exposed by WP AI Bridge.', 'wp-native-builder-bridge' ),
+				'label'       => __( 'WP AI Bridge', 'wp-ai-bridge' ),
+				'description' => __( 'Typed WordPress administration abilities exposed by WP AI Bridge.', 'wp-ai-bridge' ),
 			)
 		);
 	}
@@ -142,10 +142,10 @@ final class Registrar {
 		$registered = array();
 
 		$registered[] = wp_register_ability(
-			'wp-native-builder/bridge-info',
+			'wp-ai-bridge/bridge-info',
 			array(
-				'label'               => __( 'Bridge Info', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Returns the bridge dependency state and enabled access groups without exposing secrets.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Bridge Info', 'wp-ai-bridge' ),
+				'description'         => __( 'Returns the bridge dependency state and enabled access groups without exposing secrets.', 'wp-ai-bridge' ),
 				'category'            => self::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -248,7 +248,7 @@ final class Registrar {
 		}
 
 		return array(
-			'plugin_version'    => defined( 'WP_NATIVE_BUILDER_BRIDGE_VERSION' ) ? WP_NATIVE_BUILDER_BRIDGE_VERSION : '',
+			'plugin_version'    => defined( 'WP_AI_BRIDGE_VERSION' ) ? WP_AI_BRIDGE_VERSION : '',
 			'wordpress_version' => $environment['wordpress_version'],
 			'abilities_api'     => (bool) $environment['abilities_api'],
 			'mcp_adapter'       => $environment['mcp_adapter'],

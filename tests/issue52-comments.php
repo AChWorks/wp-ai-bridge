@@ -2,15 +2,15 @@
 /**
  * Dependency-free Issue #52 comment administration tests.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
 require __DIR__ . '/bootstrap.php';
 
-use WP_Native_Builder_Bridge\Abilities\Comment_Abilities;
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Abilities\Comment_Abilities;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
 
 $failures = 0;
 $tests    = 0;
@@ -180,14 +180,14 @@ function wp_get_comment_status( $comment_id ) {
 	return $GLOBALS['wpnb52_comment_statuses'][ (int) $comment_id ] ?? 'approved';
 }
 
-wpnb_test_reset_state();
+wpai_test_reset_state();
 $settings = new Settings();
 wpnb52_assert( 0 === $settings->defaults()[ Settings::GROUP_COMMENTS ], 'Comments must default off.' );
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = array( Settings::GROUP_BUILDER_WRITE => 1 );
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = array( Settings::GROUP_BUILDER_WRITE => 1 );
 wpnb52_assert( 0 === $settings->all()[ Settings::GROUP_COMMENTS ], 'Historical write consent must not silently enable Comments.' );
 
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = $settings->defaults();
-$GLOBALS['wpnb_test']['capabilities'] = array(
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = $settings->defaults();
+$GLOBALS['wpai_test']['capabilities'] = array(
 	'read'              => true,
 	'moderate_comments' => true,
 	'edit_comment'      => true,
@@ -198,12 +198,12 @@ $comments    = new Comment_Abilities( $permissions, $log );
 $registered  = $comments->register();
 wpnb52_assert( 4 === count( $registered ), 'Exactly four bounded comment Abilities are registered.' );
 foreach ( array( 'comments-read', 'comment-reply', 'comment-status', 'comment-delete' ) as $name ) {
-	wpnb52_assert( isset( $GLOBALS['wpnb_test']['registered_abilities'][ 'wp-native-builder/' . $name ] ), $name . ' is registered.' );
+	wpnb52_assert( isset( $GLOBALS['wpai_test']['registered_abilities'][ 'wp-ai-bridge/' . $name ] ), $name . ' is registered.' );
 }
 
-$read_ability = $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/comments-read'];
+$read_ability = $GLOBALS['wpai_test']['registered_abilities']['wp-ai-bridge/comments-read'];
 wpnb52_assert( false === call_user_func( $read_ability['permission_callback'], array( 'action' => 'list' ) ), 'Disabled Comments group denies comment reads.' );
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_COMMENTS ] = 1;
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_COMMENTS ] = 1;
 wpnb52_assert( true === call_user_func( $read_ability['permission_callback'], array( 'action' => 'list' ) ), 'Enabled Comments group permits public read before Core route checks.' );
 
 $public = $comments->read( array( 'action' => 'list', 'scope' => 'public', 'status' => 'approved', 'post' => 8, 'page' => 1, 'per_page' => 25 ) );
@@ -231,11 +231,11 @@ $bad_scope = $comments->read( array( 'action' => 'list', 'scope' => 'public', 's
 wpnb52_assert( is_wp_error( $bad_scope ) && 'comment_scope_requires_moderation' === $bad_scope->get_error_code(), 'Public scope cannot inspect non-public queues.' );
 $private_exact = $comments->read( array( 'action' => 'get', 'scope' => 'public', 'id' => 99 ) );
 wpnb52_assert( is_wp_error( $private_exact ) && 'comment_scope_requires_moderation' === $private_exact->get_error_code(), 'Public scope cannot retrieve one non-public comment even for a privileged principal.' );
-$GLOBALS['wpnb_test']['capabilities']['moderate_comments'] = false;
+$GLOBALS['wpai_test']['capabilities']['moderate_comments'] = false;
 wpnb52_assert( false === call_user_func( $read_ability['permission_callback'], array( 'action' => 'list', 'scope' => 'moderation' ) ), 'Moderation read requires WordPress moderation capability.' );
-$GLOBALS['wpnb_test']['capabilities']['moderate_comments'] = true;
+$GLOBALS['wpai_test']['capabilities']['moderate_comments'] = true;
 
-$reply_ability = $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/comment-reply'];
+$reply_ability = $GLOBALS['wpai_test']['registered_abilities']['wp-ai-bridge/comment-reply'];
 $reply_schema  = $reply_ability['input_schema']['properties'];
 foreach ( array( 'author', 'author_email', 'author_ip', 'status', 'meta', 'route', 'method', 'search' ) as $forbidden_input ) {
 	wpnb52_assert( ! isset( $reply_schema[ $forbidden_input ] ), 'Reply schema excludes escalation input ' . $forbidden_input . '.' );
@@ -246,7 +246,7 @@ $last_request = end( $GLOBALS['wpnb52_rest_requests'] );
 wpnb52_assert( 'POST' === $last_request['method'] && '/wp/v2/comments' === $last_request['route'], 'Reply uses only fixed Core create route.' );
 wpnb52_assert( array( 'post', 'content', 'parent' ) === array_keys( $last_request['params'] ), 'Reply forwards only bounded post/content/parent parameters.' );
 
-$status_ability = $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/comment-status'];
+$status_ability = $GLOBALS['wpai_test']['registered_abilities']['wp-ai-bridge/comment-status'];
 $GLOBALS['wpnb52_comment_types'][11] = 'comment';
 wpnb52_assert( true === call_user_func( $status_ability['permission_callback'], array( 'id' => 11, 'status' => 'spam' ) ), 'Status requires Comments plus WordPress moderation capability.' );
 $status = $comments->status( array( 'id' => 11, 'status' => 'unspam' ) );
@@ -255,7 +255,7 @@ $GLOBALS['wpnb52_comment_types'][12] = 'note';
 $note_status = $comments->status( array( 'id' => 12, 'status' => 'approved' ) );
 wpnb52_assert( is_wp_error( $note_status ) && 'comment_type_not_supported' === $note_status->get_error_code(), 'Comment mutations exclude Core/editor notes.' );
 
-$delete_ability = $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/comment-delete'];
+$delete_ability = $GLOBALS['wpai_test']['registered_abilities']['wp-ai-bridge/comment-delete'];
 $GLOBALS['wpnb52_comment_types'][13] = 'comment';
 $GLOBALS['wpnb52_comment_statuses'][13] = 'approved';
 wpnb52_assert( true === call_user_func( $delete_ability['permission_callback'], array( 'id' => 13, 'force' => false ) ), 'Trash requires Comments and exact edit_comment authority.' );
@@ -270,12 +270,12 @@ $already_trashed = $comments->delete( array( 'id' => 13, 'force' => false ) );
 wpnb52_assert( ! is_wp_error( $already_trashed ) && true === $already_trashed['trashed'] && false === $already_trashed['deleted'], 'Non-force delete is idempotent for an already trashed comment.' );
 wpnb52_assert( $requests_before_idempotent_trash === count( $GLOBALS['wpnb52_rest_requests'] ), 'Already-trashed non-force delete never reaches Core delete and cannot become a permanent deletion.' );
 $GLOBALS['wpnb52_comment_statuses'][13] = 'approved';
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
 wpnb52_assert( true === call_user_func( $delete_ability['permission_callback'], array( 'id' => 13, 'force' => true ) ), 'Permanent delete requires both Comments and Users & Destructive.' );
 $forced = $comments->delete( array( 'id' => 13, 'force' => true ) );
 wpnb52_assert( ! is_wp_error( $forced ) && true === $forced['deleted'] && false === $forced['trashed'], 'Force delete requires Core confirmation and reports permanent deletion.' );
 
-$entries = $GLOBALS['wpnb_test']['options'][ Mutation_Log::OPTION_NAME ] ?? array();
+$entries = $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ] ?? array();
 wpnb52_assert( ! empty( $entries ), 'Comment mutations produce bounded mutation-log entries.' );
 $allowed_log_fields = array( 'timestamp', 'user_id', 'ability', 'target_type', 'target_id', 'success', 'error_code' );
 foreach ( $entries as $entry ) {
@@ -283,7 +283,7 @@ foreach ( $entries as $entry ) {
 	wpnb52_assert( ! isset( $entry['content'], $entry['author_email'], $entry['author_ip'] ), 'Mutation log excludes comment content and private author data.' );
 }
 
-$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_COMMENTS ] = 0;
+$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_COMMENTS ] = 0;
 $requests_before_revoked_execute = count( $GLOBALS['wpnb52_rest_requests'] );
 $revoked_reply = $comments->reply( array( 'post' => 8, 'content' => 'must not dispatch' ) );
 wpnb52_assert( is_wp_error( $revoked_reply ) && 'comment_reply_denied' === $revoked_reply->get_error_code(), 'Execute path re-checks Comments after revocation.' );

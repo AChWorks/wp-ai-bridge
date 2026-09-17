@@ -349,7 +349,7 @@ if [[ "$(grep -cF 'wp_remote_get(' "$source_editor" || true)" != "1" ]]; then
     echo "ERROR: source editing runtime validation must retain one bounded Core-compatible loopback request call site." >&2
     exit 1
 fi
-if [[ "$(grep -cF "wp_is_file_mod_allowed( 'wp_native_builder_bridge_source_editing' )" "$source_editor" || true)" != "2" ]]; then
+if [[ "$(grep -cF "wp_is_file_mod_allowed( 'wp_ai_bridge_source_editing' )" "$source_editor" || true)" != "2" ]]; then
     echo "ERROR: source editing must recheck WordPress file-modification policy for normal execution and recovery." >&2
     exit 1
 fi
@@ -395,16 +395,40 @@ fi
 metadata_store='src/Support/class-post-meta-store.php'
 term_metadata_store='src/Support/class-term-meta-store.php'
 user_comment_metadata_store='src/Support/class-user-comment-meta-store.php'
+migration_store='src/class-migrator.php'
 if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comment_metadata_store" ]]; then
     echo "ERROR: one or more bounded metadata stores are missing." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$migration_store" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
-    echo "ERROR: direct database access found outside the bounded metadata stores." >&2
+    echo "ERROR: direct database access found outside the bounded metadata stores and one-time migrator." >&2
     exit 1
 fi
+# Issue #74 permits one activation-only database migration surface. Pin its exact database
+# members and call counts so this exception cannot grow into a generic query facility.
+if [[ ! -f "$migration_store" ]]; then
+    echo "ERROR: one-time Workspace migrator is missing." >&2
+    exit 1
+fi
+if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$migration_store" | grep -vE '\$wpdb->(posts|postmeta|options|query|get_var|prepare|esc_like)([^A-Za-z0-9_]|$)'; then
+    echo "ERROR: Workspace migrator exceeded its fixed WordPress tables/query surface." >&2
+    exit 1
+fi
+if grep -nE 'function[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\([^)]*\$(sql|table|column|query|where)([^A-Za-z0-9_]|$)' "$migration_store"; then
+    echo "ERROR: Workspace migrator must not accept caller-selected SQL/table/column/query inputs." >&2
+    exit 1
+fi
+migration_prepare_count="$(grep -cF '$wpdb->prepare(' "$migration_store" || true)"
+migration_query_count="$(grep -cF '$wpdb->query(' "$migration_store" || true)"
+migration_get_var_count="$(grep -cF '$wpdb->get_var(' "$migration_store" || true)"
+migration_esc_like_count="$(grep -cF '$wpdb->esc_like(' "$migration_store" || true)"
+if [[ "$migration_prepare_count" != "3" || "$migration_query_count" != "6" || "$migration_get_var_count" != "5" || "$migration_esc_like_count" != "1" ]]; then
+    echo "ERROR: Workspace migrator database surface changed outside its fixed migration contract." >&2
+    exit 1
+fi
+
 if [[ -f "$metadata_store" ]]; then
     if grep -nE '\$wpdb->(get_[A-Za-z0-9_]*|replace|esc_like)([^A-Za-z0-9_]|$)' "$metadata_store"; then
         echo "ERROR: post-meta store grew a database read/generic primitive outside its fixed physical-row/CAS design." >&2
@@ -507,4 +531,5 @@ fi
 php bin/check-term-meta-confinement.php
 php bin/check-user-comment-meta-confinement.php
 
+bash bin/check-canonical-identity.sh
 echo "PASS: static safety surface audit."

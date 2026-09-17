@@ -4,8 +4,8 @@
  * The query filter changes only a fixture term, immediately before the pending SQL.
  * It never rewrites SQL, registers database triggers, or targets a live site.
  */
-use WP_Native_Builder_Bridge\Support\Settings;
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Mutation_Log;
 
 // WP-CLI eval-file has local scope; explicitly import the native database handle.
 global $wpdb;
@@ -38,9 +38,9 @@ try {
     $settings[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
     update_option( Settings::OPTION_NAME, $settings, false );
     wp_set_current_user( $actor_id );
-    $read = wp_get_ability( 'wp-native-builder/term-meta-read' );
-    $update = wp_get_ability( 'wp-native-builder/term-meta-update' );
-    $delete = wp_get_ability( 'wp-native-builder/term-meta-delete' );
+    $read = wp_get_ability( 'wp-ai-bridge/term-meta-read' );
+    $update = wp_get_ability( 'wp-ai-bridge/term-meta-update' );
+    $delete = wp_get_ability( 'wp-ai-bridge/term-meta-delete' );
     // Preserve both conditional-insert storage branches and the native key column bound.
     $fixture = $require( wp_insert_term( 'Primary identity positive controls', $taxonomy ), 'Create positive term' );
     $term_id = (int) $fixture['term_id'];
@@ -59,7 +59,7 @@ try {
         $before = $raw_rows( $term_id );
         $result = $update->execute( $target + array( 'key' => $key, 'value_json' => '"not-stored"', 'expected_state_hash' => $state['items'][0]['state_hash'] ) );
         $ok( is_wp_error( $result ) && 'ability_invalid_input' === $result->get_error_code() && $before === $raw_rows( $term_id ), 'The native schema did not reject the oversized key before persistence.' );
-        $store = new \WP_Native_Builder_Bridge\Support\Term_Meta_Store();
+        $store = new \WP_AI_Bridge\Support\Term_Meta_Store();
         $direct = $store->create_unique_row( $term_id, $key, 'not-stored', static fn( $value ) => true, array( 'target_taxonomy' => $taxonomy, 'target_term_taxonomy_id' => $original_tt ) );
         $ok( is_wp_error( $direct ) && 'term_meta_key_not_storable' === $direct->get_error_code() && $before === $raw_rows( $term_id ), 'The internal insert boundary did not enforce the native key storage length.' );
     } finally { wp_delete_term( $term_id, $taxonomy ); $term_id = 0; }

@@ -2,10 +2,10 @@
 /**
  * Administrator-controlled delegation for provider-native Abilities.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Support;
+namespace WP_AI_Bridge\Support;
 
 use WP_Error;
 
@@ -19,7 +19,7 @@ final class Native_Ability_Delegation {
 	/** @var array<int,string> */
 	private $bridge_routes = array(
 		'/wp-ai-bridge/v1/mcp',
-		'/wp-native-builder/v1/mcp',
+		'/wp-ai-bridge/v1/mcp',
 	);
 
 	/** @var Settings */
@@ -97,7 +97,7 @@ final class Native_Ability_Delegation {
 			if ( ! $this->settings->is_enabled( Settings::GROUP_NATIVE_ABILITIES ) ) {
 				return new WP_Error(
 					'wp_ai_bridge_native_abilities_disabled',
-					__( 'Native Abilities access is disabled in WP AI Bridge settings.', 'wp-native-builder-bridge' )
+					__( 'Native Abilities access is disabled in WP AI Bridge settings.', 'wp-ai-bridge' )
 				);
 			}
 

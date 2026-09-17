@@ -1,7 +1,7 @@
 <?php
 /** Real WordPress external plugin/theme package installation boundary tests. */
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Settings;
 
 $GLOBALS['wpnb67_integration_checks'] = 0;
 function wpnb67_integration_assert( $condition, $message ) {
@@ -17,15 +17,15 @@ function wpnb67_fixture_zip( $kind ) {
 	wpnb67_integration_assert( true === $zip->open( $file, ZipArchive::CREATE | ZipArchive::OVERWRITE ), 'Could not open ZIP fixture.' );
 	if ( 'plugin' === $kind ) {
 		$zip->addFromString(
-			'wpnb-external-plugin/wpnb-external-plugin.php',
+			'wpai-external-plugin/wpai-external-plugin.php',
 			"<?php\n/*\nPlugin Name: WPNB External Package Fixture\nVersion: 1.0.0\n*/\n"
 		);
 	} else {
 		$zip->addFromString(
-			'wpnb-external-theme/style.css',
+			'wpai-external-theme/style.css',
 			"/*\nTheme Name: WPNB External Package Fixture\nVersion: 1.0.0\n*/\n"
 		);
-		$zip->addFromString( 'wpnb-external-theme/index.php', "<?php\n" );
+		$zip->addFromString( 'wpai-external-theme/index.php', "<?php\n" );
 	}
 	$zip->close();
 	$bytes = file_get_contents( $file );
@@ -37,8 +37,8 @@ function wpnb67_fixture_zip( $kind ) {
 $settings      = new Settings();
 $original      = get_option( Settings::OPTION_NAME, $settings->defaults() );
 $original_log  = get_option( Mutation_Log::OPTION_NAME, array() );
-$plugin_source = 'https://s.w.org/wpnb-external-plugin.zip?signature=PRIVATE_PACKAGE_MARKER';
-$theme_source  = 'https://s.w.org/wpnb-external-theme.zip?signature=PRIVATE_PACKAGE_MARKER';
+$plugin_source = 'https://s.w.org/wpai-external-plugin.zip?signature=PRIVATE_PACKAGE_MARKER';
+$theme_source  = 'https://s.w.org/wpai-external-theme.zip?signature=PRIVATE_PACKAGE_MARKER';
 $plugin_bytes  = wpnb67_fixture_zip( 'plugin' );
 $theme_bytes   = wpnb67_fixture_zip( 'theme' );
 $enabled       = $settings->defaults();
@@ -53,7 +53,7 @@ $redirect_forwarded = 0;
 
 $mock = static function ( $pre, $args, $url ) use ( &$calls, &$unexpected_calls, &$staging, &$mode, &$redirect_target, &$redirect_forwarded, $plugin_source, $theme_source, $plugin_bytes, $theme_bytes ) {
 	++$calls;
-	if ( ! in_array( $url, array( $plugin_source, $theme_source, 'https://wordpress.org/wpnb-external-redirect.zip' ), true ) ) {
+	if ( ! in_array( $url, array( $plugin_source, $theme_source, 'https://wordpress.org/wpai-external-redirect.zip' ), true ) ) {
 		++$unexpected_calls;
 		return new WP_Error( 'unexpected_fixture_http', 'Unexpected fixture HTTP request was blocked.' );
 	}
@@ -108,7 +108,7 @@ $mock = static function ( $pre, $args, $url ) use ( &$calls, &$unexpected_calls,
 	);
 };
 
-$ability          = wp_get_ability( 'wp-native-builder/extension-lifecycle' );
+$ability          = wp_get_ability( 'wp-ai-bridge/extension-lifecycle' );
 $plugin_input     = array( 'kind' => 'plugin', 'action' => 'install', 'package_url' => $plugin_source );
 $theme_input      = array( 'kind' => 'theme', 'action' => 'install', 'package_url' => $theme_source );
 $installed_plugin = '';

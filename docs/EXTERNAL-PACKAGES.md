@@ -6,7 +6,7 @@ This boundary is deliberately narrower than a generic package downloader. It doe
 
 ## Authorization
 
-An external package install through `wp-native-builder/extension-lifecycle` requires all of the following at the same time:
+An external package install through `wp-ai-bridge/extension-lifecycle` requires all of the following at the same time:
 
 1. **Code & Extensions** is enabled;
 2. **External Packages** is enabled;

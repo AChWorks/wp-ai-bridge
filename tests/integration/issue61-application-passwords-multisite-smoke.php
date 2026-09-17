@@ -2,20 +2,20 @@
 /**
  * Multisite Application Password authority coverage for Issue #61.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Settings;
 
-function wpnb_issue61_ms_assert( $condition, $message ) {
+function wpai_issue61_ms_assert( $condition, $message ) {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message );
 	}
 }
 
-function wpnb_issue61_ms_execute( $name, array $input = array() ) {
+function wpai_issue61_ms_execute( $name, array $input = array() ) {
 	$ability = wp_get_ability( $name );
-	wpnb_issue61_ms_assert( $ability instanceof WP_Ability, 'Missing registered ability: ' . $name );
+	wpai_issue61_ms_assert( $ability instanceof WP_Ability, 'Missing registered ability: ' . $name );
 	return $ability->execute( $input );
 }
 
@@ -34,15 +34,15 @@ $switched           = false;
 $availability_enabled = false;
 
 try {
-	wpnb_issue61_ms_assert( is_multisite(), 'Issue #61 multisite smoke requires multisite.' );
-	wpnb_issue61_ms_assert( is_super_admin( $original_user ), 'Issue #61 multisite smoke must begin as Super Admin.' );
+	wpai_issue61_ms_assert( is_multisite(), 'Issue #61 multisite smoke requires multisite.' );
+	wpai_issue61_ms_assert( is_super_admin( $original_user ), 'Issue #61 multisite smoke must begin as Super Admin.' );
 	foreach ( get_sites( array( 'fields' => 'ids', 'number' => 20 ) ) as $site_id ) {
 		if ( (int) $site_id !== (int) $original_blog ) {
 			$secondary_blog = (int) $site_id;
 			break;
 		}
 	}
-	wpnb_issue61_ms_assert( $secondary_blog > 0, 'Issue #61 multisite smoke requires a secondary site.' );
+	wpai_issue61_ms_assert( $secondary_blog > 0, 'Issue #61 multisite smoke requires a secondary site.' );
 
 	$enabled                                   = $settings->defaults();
 	$enabled[ Settings::GROUP_AUTHENTICATION ] = 1;
@@ -58,35 +58,35 @@ try {
 			'role'       => 'subscriber',
 		)
 	);
-	wpnb_issue61_ms_assert( ! is_wp_error( $ordinary_user ) && $ordinary_user > 0, 'Could not create Issue #61 multisite ordinary user.' );
-	wpnb_issue61_ms_assert( is_user_member_of_blog( $ordinary_user, $original_blog ), 'Ordinary fixture is not a main-site member.' );
+	wpai_issue61_ms_assert( ! is_wp_error( $ordinary_user ) && $ordinary_user > 0, 'Could not create Issue #61 multisite ordinary user.' );
+	wpai_issue61_ms_assert( is_user_member_of_blog( $ordinary_user, $original_blog ), 'Ordinary fixture is not a main-site member.' );
 
-	$main_create = wpnb_issue61_ms_execute(
-		'wp-native-builder/application-password-create',
+	$main_create = wpai_issue61_ms_execute(
+		'wp-ai-bridge/application-password-create',
 		array( 'user_id' => (int) $ordinary_user, 'name' => 'Issue 61 main-site fixture' )
 	);
-	wpnb_issue61_ms_assert( ! is_wp_error( $main_create ), 'Super Admin could not manage Application Passwords for a main-site member.' );
+	wpai_issue61_ms_assert( ! is_wp_error( $main_create ), 'Super Admin could not manage Application Passwords for a main-site member.' );
 	$main_uuid = $main_create['item']['uuid'];
 
 	switch_to_blog( $secondary_blog );
 	$switched           = true;
 	$secondary_settings = get_option( Settings::OPTION_NAME, false );
 	update_option( Settings::OPTION_NAME, $enabled, false );
-	wpnb_issue61_ms_assert( ! is_user_member_of_blog( $ordinary_user, $secondary_blog ), 'Ordinary fixture unexpectedly belongs to the secondary site.' );
+	wpai_issue61_ms_assert( ! is_user_member_of_blog( $ordinary_user, $secondary_blog ), 'Ordinary fixture unexpectedly belongs to the secondary site.' );
 
-	$nonmember = wpnb_issue61_ms_execute(
-		'wp-native-builder/application-passwords-read',
+	$nonmember = wpai_issue61_ms_execute(
+		'wp-ai-bridge/application-passwords-read',
 		array( 'action' => 'list', 'user_id' => (int) $ordinary_user )
 	);
-	wpnb_issue61_ms_assert( is_wp_error( $nonmember ), 'Bridge bypassed Core multisite target-membership protection.' );
+	wpai_issue61_ms_assert( is_wp_error( $nonmember ), 'Bridge bypassed Core multisite target-membership protection.' );
 
 	add_user_to_blog( $secondary_blog, $ordinary_user, 'subscriber' );
-	wpnb_issue61_ms_assert( is_user_member_of_blog( $ordinary_user, $secondary_blog ), 'Could not add ordinary fixture to secondary site.' );
-	$secondary_create = wpnb_issue61_ms_execute(
-		'wp-native-builder/application-password-create',
+	wpai_issue61_ms_assert( is_user_member_of_blog( $ordinary_user, $secondary_blog ), 'Could not add ordinary fixture to secondary site.' );
+	$secondary_create = wpai_issue61_ms_execute(
+		'wp-ai-bridge/application-password-create',
 		array( 'user_id' => (int) $ordinary_user, 'name' => 'Issue 61 secondary fixture' )
 	);
-	wpnb_issue61_ms_assert( ! is_wp_error( $secondary_create ), 'Super Admin could not use Core Application Password lifecycle for a secondary-site member.' );
+	wpai_issue61_ms_assert( ! is_wp_error( $secondary_create ), 'Super Admin could not use Core Application Password lifecycle for a secondary-site member.' );
 	$secondary_uuid = $secondary_create['item']['uuid'];
 
 	$site_admin = wp_insert_user(
@@ -96,45 +96,45 @@ try {
 			'user_email' => 'issue61-ms-admin-' . wp_generate_password( 8, false, false ) . '@example.invalid',
 		)
 	);
-	wpnb_issue61_ms_assert( ! is_wp_error( $site_admin ) && $site_admin > 0, 'Could not create Issue #61 multisite site administrator.' );
+	wpai_issue61_ms_assert( ! is_wp_error( $site_admin ) && $site_admin > 0, 'Could not create Issue #61 multisite site administrator.' );
 	add_user_to_blog( $secondary_blog, $site_admin, 'administrator' );
-	wpnb_issue61_ms_assert( ! is_super_admin( $site_admin ), 'Site-administrator fixture unexpectedly became Super Admin.' );
+	wpai_issue61_ms_assert( ! is_super_admin( $site_admin ), 'Site-administrator fixture unexpectedly became Super Admin.' );
 	wp_set_current_user( $site_admin );
 
-	$super_denied = wpnb_issue61_ms_execute(
-		'wp-native-builder/application-passwords-read',
+	$super_denied = wpai_issue61_ms_execute(
+		'wp-ai-bridge/application-passwords-read',
 		array( 'action' => 'list', 'user_id' => (int) $original_user )
 	);
-	wpnb_issue61_ms_assert( is_wp_error( $super_denied ), 'Non-Super-Admin site administrator bypassed the Super Admin user-management boundary.' );
+	wpai_issue61_ms_assert( is_wp_error( $super_denied ), 'Non-Super-Admin site administrator bypassed the Super Admin user-management boundary.' );
 
-	$self_create = wpnb_issue61_ms_execute(
-		'wp-native-builder/application-password-create',
+	$self_create = wpai_issue61_ms_execute(
+		'wp-ai-bridge/application-password-create',
 		array( 'user_id' => (int) $site_admin, 'name' => 'Issue 61 self fixture' )
 	);
-	wpnb_issue61_ms_assert( ! is_wp_error( $self_create ), 'Core self-user Application Password authority was not preserved for a site administrator.' );
+	wpai_issue61_ms_assert( ! is_wp_error( $self_create ), 'Core self-user Application Password authority was not preserved for a site administrator.' );
 	$self_uuid = $self_create['item']['uuid'];
-	$self_delete = wpnb_issue61_ms_execute(
-		'wp-native-builder/application-password-delete',
+	$self_delete = wpai_issue61_ms_execute(
+		'wp-ai-bridge/application-password-delete',
 		array( 'user_id' => (int) $site_admin, 'uuid' => $self_uuid )
 	);
-	wpnb_issue61_ms_assert( ! is_wp_error( $self_delete ) && true === $self_delete['deleted'], 'Site administrator could not revoke an authorized self Application Password.' );
+	wpai_issue61_ms_assert( ! is_wp_error( $self_delete ) && true === $self_delete['deleted'], 'Site administrator could not revoke an authorized self Application Password.' );
 	$self_uuid = '';
 
 	wp_set_current_user( $original_user );
-	$secondary_delete = wpnb_issue61_ms_execute(
-		'wp-native-builder/application-password-delete',
+	$secondary_delete = wpai_issue61_ms_execute(
+		'wp-ai-bridge/application-password-delete',
 		array( 'user_id' => (int) $ordinary_user, 'uuid' => $secondary_uuid )
 	);
-	wpnb_issue61_ms_assert( ! is_wp_error( $secondary_delete ), 'Super Admin could not revoke the secondary-site Application Password fixture.' );
+	wpai_issue61_ms_assert( ! is_wp_error( $secondary_delete ), 'Super Admin could not revoke the secondary-site Application Password fixture.' );
 	$secondary_uuid = '';
 
 	restore_current_blog();
 	$switched = false;
-	$main_delete = wpnb_issue61_ms_execute(
-		'wp-native-builder/application-password-delete',
+	$main_delete = wpai_issue61_ms_execute(
+		'wp-ai-bridge/application-password-delete',
 		array( 'user_id' => (int) $ordinary_user, 'uuid' => $main_uuid )
 	);
-	wpnb_issue61_ms_assert( ! is_wp_error( $main_delete ), 'Super Admin could not revoke the main-site Application Password fixture.' );
+	wpai_issue61_ms_assert( ! is_wp_error( $main_delete ), 'Super Admin could not revoke the main-site Application Password fixture.' );
 	$main_uuid = '';
 
 	echo "PASS: Issue #61 multisite Application Password authority and membership boundaries.\n";

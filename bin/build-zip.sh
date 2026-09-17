@@ -4,23 +4,20 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 build_dir="$root/build"
 stage_root="$build_dir/stage"
-# Keep the installed plugin directory/entrypoint stable so a WP AI Bridge package
-# upgrades the existing plugin in place instead of creating a duplicate plugin.
-plugin_dir="$stage_root/wp-native-builder-bridge"
+plugin_dir="$stage_root/wp-ai-bridge"
 zip_file="$build_dir/wp-ai-bridge.zip"
-legacy_zip_alias="$build_dir/wp-native-builder-bridge.zip"
 
 rm -rf "$stage_root"
 mkdir -p "$plugin_dir"
 
-cp "$root/wp-native-builder-bridge.php" "$plugin_dir/"
+cp "$root/wp-ai-bridge.php" "$plugin_dir/"
 cp "$root/uninstall.php" "$plugin_dir/"
 cp "$root/README.md" "$plugin_dir/"
 cp "$root/CHANGELOG.md" "$plugin_dir/"
 cp "$root/LICENSE" "$plugin_dir/"
 cp -R "$root/src" "$plugin_dir/src"
 cp -R "$root/languages" "$plugin_dir/languages"
-rm -f "$zip_file" "$legacy_zip_alias"
+rm -f "$zip_file"
 
 php -r '
 $source = $argv[1];
@@ -51,12 +48,12 @@ $zip->close();
 
 mapfile -t entries < <(unzip -Z1 "$zip_file")
 required=(
-    "wp-native-builder-bridge/wp-native-builder-bridge.php"
-    "wp-native-builder-bridge/uninstall.php"
-    "wp-native-builder-bridge/LICENSE"
-    "wp-native-builder-bridge/CHANGELOG.md"
-    "wp-native-builder-bridge/languages/wp-native-builder-bridge-fa_IR.l10n.php"
-    "wp-native-builder-bridge/src/class-plugin.php"
+    "wp-ai-bridge/wp-ai-bridge.php"
+    "wp-ai-bridge/uninstall.php"
+    "wp-ai-bridge/LICENSE"
+    "wp-ai-bridge/CHANGELOG.md"
+    "wp-ai-bridge/languages/wp-ai-bridge-fa_IR.l10n.php"
+    "wp-ai-bridge/src/class-plugin.php"
 )
 for path in "${required[@]}"; do
     found=0
@@ -72,12 +69,6 @@ for path in "${required[@]}"; do
     fi
 done
 
-# A renamed public artifact must not rename the installed plugin directory.
-if printf '%s\n' "${entries[@]}" | grep -q '^wp-ai-bridge/'; then
-    echo "ERROR: release ZIP would install a duplicate wp-ai-bridge plugin directory." >&2
-    exit 1
-fi
-
 for entry in "${entries[@]}"; do
     if [[ "$entry" =~ (^|/)(\.git|\.github|tests|vendor|node_modules|build|composer\.(json|lock))(/|$) ]]; then
         echo "ERROR: release ZIP contains development-only files." >&2
@@ -91,11 +82,7 @@ mkdir -p "$extract_dir"
 unzip -q "$zip_file" -d "$extract_dir"
 while IFS= read -r -d '' file; do
     php -l "$file" >/dev/null
-done < <(find "$extract_dir/wp-native-builder-bridge" -type f -name '*.php' -print0)
+done < <(find "$extract_dir/wp-ai-bridge" -type f -name '*.php' -print0)
 rm -rf "$stage_root" "$extract_dir"
-
-# Transitional local alias only: existing integration helpers may still consume the
-# old filename, while CI/release surfaces publish only build/wp-ai-bridge.zip.
-cp "$zip_file" "$legacy_zip_alias"
 
 echo "PASS: installable WP AI Bridge ZIP validated at build/wp-ai-bridge.zip"

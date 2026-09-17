@@ -2,10 +2,10 @@
 error_reporting( E_ALL );
 
 define( 'ABSPATH', '/tmp/wp/' );
-define( 'WP_NATIVE_BUILDER_BRIDGE_VERSION', '0.3.0' );
+define( 'WP_AI_BRIDGE_VERSION', '0.4.0' );
 
 $GLOBALS['wp_version'] = '7.1';
-$GLOBALS['wpnb_test']  = array(
+$GLOBALS['wpai_test']  = array(
 	'options'               => array(),
 	'capabilities'          => array( 'read' => true, 'manage_options' => true ),
 	'user_id'               => 1,
@@ -32,24 +32,24 @@ $GLOBALS['wpnb_test']  = array(
 );
 $GLOBALS['submenu'] = array();
 
-function wpnb_test_reset_state() {
-	$GLOBALS['wpnb_test']['options']               = array();
-	$GLOBALS['wpnb_test']['capabilities']          = array( 'read' => true, 'manage_options' => true );
-	$GLOBALS['wpnb_test']['registered_settings']   = array();
-	$GLOBALS['wpnb_test']['registered_categories'] = array();
-	$GLOBALS['wpnb_test']['registered_abilities']  = array();
-	$GLOBALS['wpnb_test']['abilities']             = array();
-	$GLOBALS['wpnb_test']['actions']               = array();
-	$GLOBALS['wpnb_test']['options_pages']         = array();
-	$GLOBALS['wpnb_test']['menu_pages']            = array();
-	$GLOBALS['wpnb_test']['submenu_pages']         = array();
+function wpai_test_reset_state() {
+	$GLOBALS['wpai_test']['options']               = array();
+	$GLOBALS['wpai_test']['capabilities']          = array( 'read' => true, 'manage_options' => true );
+	$GLOBALS['wpai_test']['registered_settings']   = array();
+	$GLOBALS['wpai_test']['registered_categories'] = array();
+	$GLOBALS['wpai_test']['registered_abilities']  = array();
+	$GLOBALS['wpai_test']['abilities']             = array();
+	$GLOBALS['wpai_test']['actions']               = array();
+	$GLOBALS['wpai_test']['options_pages']         = array();
+	$GLOBALS['wpai_test']['menu_pages']            = array();
+	$GLOBALS['wpai_test']['submenu_pages']         = array();
 	$GLOBALS['submenu']                            = array();
-	$GLOBALS['wpnb_test']['settings_fields']       = array();
-	$GLOBALS['wpnb_test']['plugins']               = array();
-	$GLOBALS['wpnb_test']['post_types']            = array();
-	$GLOBALS['wpnb_test']['post_type_supports']    = array();
-	$GLOBALS['wpnb_test']['taxonomies']            = array();
-	$GLOBALS['wpnb_test']['theme']                 = array(
+	$GLOBALS['wpai_test']['settings_fields']       = array();
+	$GLOBALS['wpai_test']['plugins']               = array();
+	$GLOBALS['wpai_test']['post_types']            = array();
+	$GLOBALS['wpai_test']['post_type_supports']    = array();
+	$GLOBALS['wpai_test']['taxonomies']            = array();
+	$GLOBALS['wpai_test']['theme']                 = array(
 		'Name'       => 'Test Theme',
 		'Version'    => '1.0.0',
 		'stylesheet' => 'test-theme',
@@ -140,10 +140,10 @@ function rest_url( $path = '' ) { return 'https://example.test/wp-json/' . ltrim
 function home_url( $path = '' ) { return 'https://example.test' . ( '' === $path ? '' : '/' . ltrim( $path, '/' ) ); }
 function untrailingslashit( $value ) { return rtrim( (string) $value, '/\\' ); }
 function wp_parse_url( $url, $component = -1 ) { return parse_url( $url, $component ); }
-function current_user_can( $capability ) { return ! empty( $GLOBALS['wpnb_test']['capabilities'][ $capability ] ); }
-function get_current_user_id() { return (int) $GLOBALS['wpnb_test']['user_id']; }
-function get_option( $name, $default = false ) { return array_key_exists( $name, $GLOBALS['wpnb_test']['options'] ) ? $GLOBALS['wpnb_test']['options'][ $name ] : $default; }
-function update_option( $name, $value, $autoload = null ) { $GLOBALS['wpnb_test']['options'][ $name ] = $value; return true; }
+function current_user_can( $capability ) { return ! empty( $GLOBALS['wpai_test']['capabilities'][ $capability ] ); }
+function get_current_user_id() { return (int) $GLOBALS['wpai_test']['user_id']; }
+function get_option( $name, $default = false ) { return array_key_exists( $name, $GLOBALS['wpai_test']['options'] ) ? $GLOBALS['wpai_test']['options'][ $name ] : $default; }
+function update_option( $name, $value, $autoload = null ) { $GLOBALS['wpai_test']['options'][ $name ] = $value; return true; }
 function sanitize_text_field( $value ) { return trim( strip_tags( (string) $value ) ); }
 function sanitize_textarea_field( $value ) { return trim( strip_tags( (string) $value ) ); }
 function wp_kses_post( $value ) { return strip_tags( (string) $value, '<p><a><strong><em><code><pre><ul><ol><li><blockquote>' ); }
@@ -153,41 +153,41 @@ function wp_slash( $value ) { return $value; }
 function wp_unslash( $value ) { return $value; }
 function sanitize_key( $value ) { return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $value ) ); }
 function absint( $value ) { return abs( (int) $value ); }
-function add_action( $hook, $callback, $priority = 10, $accepted_args = 1 ) { $GLOBALS['wpnb_test']['actions'][ $hook ][] = $callback; return true; }
-function register_setting( $group, $name, $args = array() ) { $GLOBALS['wpnb_test']['registered_settings'][ $name ] = array( 'group' => $group, 'args' => $args ); }
-function add_options_page( $page_title, $menu_title, $capability, $slug, $callback ) { $GLOBALS['wpnb_test']['options_pages'][ $slug ] = compact( 'page_title', 'menu_title', 'capability', 'slug', 'callback' ); return $slug; }
+function add_action( $hook, $callback, $priority = 10, $accepted_args = 1 ) { $GLOBALS['wpai_test']['actions'][ $hook ][] = $callback; return true; }
+function register_setting( $group, $name, $args = array() ) { $GLOBALS['wpai_test']['registered_settings'][ $name ] = array( 'group' => $group, 'args' => $args ); }
+function add_options_page( $page_title, $menu_title, $capability, $slug, $callback ) { $GLOBALS['wpai_test']['options_pages'][ $slug ] = compact( 'page_title', 'menu_title', 'capability', 'slug', 'callback' ); return $slug; }
 function add_menu_page( $page_title, $menu_title, $capability, $slug, $callback = '', $icon_url = '', $position = null ) {
-	$GLOBALS['wpnb_test']['menu_pages'][ $slug ] = compact( 'page_title', 'menu_title', 'capability', 'slug', 'callback', 'icon_url', 'position' );
+	$GLOBALS['wpai_test']['menu_pages'][ $slug ] = compact( 'page_title', 'menu_title', 'capability', 'slug', 'callback', 'icon_url', 'position' );
 	$GLOBALS['submenu'][ $slug ] = array( array( $menu_title, $capability, $slug, $page_title ) );
 	return $slug;
 }
 function add_submenu_page( $parent_slug, $page_title, $menu_title, $capability, $menu_slug, $callback = '' ) {
-	$GLOBALS['wpnb_test']['submenu_pages'][ $parent_slug ][ $menu_slug ] = compact( 'parent_slug', 'page_title', 'menu_title', 'capability', 'menu_slug', 'callback' );
+	$GLOBALS['wpai_test']['submenu_pages'][ $parent_slug ][ $menu_slug ] = compact( 'parent_slug', 'page_title', 'menu_title', 'capability', 'menu_slug', 'callback' );
 	$GLOBALS['submenu'][ $parent_slug ][] = array( $menu_title, $capability, $menu_slug, $page_title );
 	return $menu_slug;
 }
-function settings_fields( $group ) { $GLOBALS['wpnb_test']['settings_fields'][] = $group; echo '<input type="hidden" name="_wpnonce" value="test">'; }
+function settings_fields( $group ) { $GLOBALS['wpai_test']['settings_fields'][] = $group; echo '<input type="hidden" name="_wpnonce" value="test">'; }
 function checked( $checked, $current = true, $echo = true ) { $result = $checked == $current ? 'checked="checked"' : ''; if ( $echo ) { echo $result; } return $result; }
 function selected( $selected, $current = true, $echo = true ) { $result = $selected == $current ? 'selected="selected"' : ''; if ( $echo ) { echo $result; } return $result; }
 function submit_button( $text = 'Save Changes', $type = 'primary', $name = 'submit', $wrap = true ) { echo '<button type="submit">' . esc_html( $text ) . '</button>'; }
 function admin_url( $path = '' ) { return 'https://example.test/wp-admin/' . ltrim( $path, '/' ); }
 function wp_nonce_field( $action = -1, $name = '_wpnonce', $referer = true, $display = true ) { $html = '<input type="hidden" name="' . esc_attr( $name ) . '" value="test">'; if ( $display ) { echo $html; } return $html; }
 function wp_die( $message ) { throw new RuntimeException( (string) $message ); }
-function wp_register_ability_category( $slug, $args ) { $GLOBALS['wpnb_test']['registered_categories'][ $slug ] = $args; return (object) array( 'slug' => $slug ); }
-function wp_register_ability( $name, $args ) { $GLOBALS['wpnb_test']['registered_abilities'][ $name ] = $args; return (object) array( 'name' => $name ); }
-function wp_get_ability( $name ) { return isset( $GLOBALS['wpnb_test']['abilities'][ $name ] ) ? $GLOBALS['wpnb_test']['abilities'][ $name ] : null; }
-function wp_get_abilities( $args = array() ) { return array_values( $GLOBALS['wpnb_test']['abilities'] ); }
-function wp_get_theme() { return new WP_Native_Builder_Test_Theme( $GLOBALS['wpnb_test']['theme'] ); }
-function wp_is_block_theme() { return ! empty( $GLOBALS['wpnb_test']['theme']['block'] ); }
-function get_plugins() { return $GLOBALS['wpnb_test']['plugins']; }
-function get_post_types( $args = array(), $output = 'names' ) { return 'objects' === $output ? $GLOBALS['wpnb_test']['post_types'] : array_keys( $GLOBALS['wpnb_test']['post_types'] ); }
-function get_post_type_object( $post_type ) { return isset( $GLOBALS['wpnb_test']['post_types'][ $post_type ] ) ? $GLOBALS['wpnb_test']['post_types'][ $post_type ] : null; }
-function post_type_supports( $post_type, $feature ) { return ! empty( $GLOBALS['wpnb_test']['post_type_supports'][ $post_type ][ $feature ] ); }
-function get_taxonomies( $args = array(), $output = 'names' ) { return 'objects' === $output ? $GLOBALS['wpnb_test']['taxonomies'] : array_keys( $GLOBALS['wpnb_test']['taxonomies'] ); }
+function wp_register_ability_category( $slug, $args ) { $GLOBALS['wpai_test']['registered_categories'][ $slug ] = $args; return (object) array( 'slug' => $slug ); }
+function wp_register_ability( $name, $args ) { $GLOBALS['wpai_test']['registered_abilities'][ $name ] = $args; return (object) array( 'name' => $name ); }
+function wp_get_ability( $name ) { return isset( $GLOBALS['wpai_test']['abilities'][ $name ] ) ? $GLOBALS['wpai_test']['abilities'][ $name ] : null; }
+function wp_get_abilities( $args = array() ) { return array_values( $GLOBALS['wpai_test']['abilities'] ); }
+function wp_get_theme() { return new WP_Native_Builder_Test_Theme( $GLOBALS['wpai_test']['theme'] ); }
+function wp_is_block_theme() { return ! empty( $GLOBALS['wpai_test']['theme']['block'] ); }
+function get_plugins() { return $GLOBALS['wpai_test']['plugins']; }
+function get_post_types( $args = array(), $output = 'names' ) { return 'objects' === $output ? $GLOBALS['wpai_test']['post_types'] : array_keys( $GLOBALS['wpai_test']['post_types'] ); }
+function get_post_type_object( $post_type ) { return isset( $GLOBALS['wpai_test']['post_types'][ $post_type ] ) ? $GLOBALS['wpai_test']['post_types'][ $post_type ] : null; }
+function post_type_supports( $post_type, $feature ) { return ! empty( $GLOBALS['wpai_test']['post_type_supports'][ $post_type ][ $feature ] ); }
+function get_taxonomies( $args = array(), $output = 'names' ) { return 'objects' === $output ? $GLOBALS['wpai_test']['taxonomies'] : array_keys( $GLOBALS['wpai_test']['taxonomies'] ); }
 
 spl_autoload_register(
 	static function ( $class ) {
-		$prefix = 'WP_Native_Builder_Bridge\\';
+		$prefix = 'WP_AI_Bridge\\';
 		if ( 0 !== strncmp( $class, $prefix, strlen( $prefix ) ) ) {
 			return;
 		}

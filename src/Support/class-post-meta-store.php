@@ -2,10 +2,10 @@
 /**
  * Physical post metadata storage helpers for exact-row mutations.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Support;
+namespace WP_AI_Bridge\Support;
 
 use WP_Error;
 
@@ -26,7 +26,7 @@ final class Post_Meta_Store {
 	public function rows( $post_id, $key = null ) {
 		$post_id = (int) $post_id;
 		if ( $post_id < 1 ) {
-			return new WP_Error( 'post_meta_physical_state_unavailable', __( 'Physical post metadata state could not be established safely.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'post_meta_physical_state_unavailable', __( 'Physical post metadata state could not be established safely.', 'wp-ai-bridge' ) );
 		}
 
 		if ( $this->is_test_mode() ) {
@@ -41,12 +41,12 @@ final class Post_Meta_Store {
 		}
 
 		if ( ! function_exists( 'has_meta' ) ) {
-			return new WP_Error( 'post_meta_physical_state_unavailable', __( 'Physical post metadata state could not be established safely.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'post_meta_physical_state_unavailable', __( 'Physical post metadata state could not be established safely.', 'wp-ai-bridge' ) );
 		}
 
 		$metadata = has_meta( $post_id );
 		if ( ! is_array( $metadata ) ) {
-			return new WP_Error( 'post_meta_physical_state_unavailable', __( 'Physical post metadata state could not be established safely.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'post_meta_physical_state_unavailable', __( 'Physical post metadata state could not be established safely.', 'wp-ai-bridge' ) );
 		}
 
 		$rows = array();
@@ -63,7 +63,7 @@ final class Post_Meta_Store {
 			}
 			$raw_value = $meta['meta_value'];
 			if ( ! is_scalar( $raw_value ) && null !== $raw_value ) {
-				return new WP_Error( 'post_meta_physical_state_unavailable', __( 'Physical post metadata state could not be established safely.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'post_meta_physical_state_unavailable', __( 'Physical post metadata state could not be established safely.', 'wp-ai-bridge' ) );
 			}
 			if ( null !== $raw_value ) {
 				$raw_value = (string) $raw_value;
@@ -155,7 +155,7 @@ final class Post_Meta_Store {
 		}
 
 		if ( ! $captured ) {
-			return new WP_Error( 'post_meta_physical_state_unavailable', __( 'Physical post metadata state could not be established safely.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'post_meta_physical_state_unavailable', __( 'Physical post metadata state could not be established safely.', 'wp-ai-bridge' ) );
 		}
 
 		$prepared = $this->stored_value( $sanitized );
@@ -187,10 +187,10 @@ final class Post_Meta_Store {
 		if ( $this->is_test_mode() ) {
 			$result = update_post_meta( (int) $post_id, (string) $key, $prepared['value'], $row['value'] );
 			if ( false === $result ) {
-				return new WP_Error( 'post_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'post_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-ai-bridge' ) );
 			}
 			$after = $this->rows( $post_id, $key );
-			return isset( $after[0] ) ? $after[0] : new WP_Error( 'post_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-native-builder-bridge' ) );
+			return isset( $after[0] ) ? $after[0] : new WP_Error( 'post_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-ai-bridge' ) );
 		}
 
 		$current = $this->rows( $post_id, $key );
@@ -198,12 +198,12 @@ final class Post_Meta_Store {
 			return $current;
 		}
 		if ( 1 !== count( $current ) || ! $this->row_matches( $current[0], $row ) ) {
-			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-ai-bridge' ) );
 		}
 
 		$short_circuit = apply_filters( 'update_post_metadata', null, (int) $post_id, (string) $key, $prepared['value'], $row['value'] );
 		if ( null !== $short_circuit ) {
-			return new WP_Error( 'post_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata value atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'post_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata value atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-ai-bridge' ) );
 		}
 
 		$meta_id = (int) $row['meta_id'];
@@ -213,11 +213,11 @@ final class Post_Meta_Store {
 		$result = $this->exact_update_raw_row( $meta_id, (int) $post_id, (string) $key, $row['raw_value'], $prepared['raw_value'] );
 		if ( false === $result ) {
 			wp_cache_delete( (int) $post_id, 'post_meta' );
-			return new WP_Error( 'post_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'post_meta_update_failed', __( 'WordPress could not update the requested metadata key.', 'wp-ai-bridge' ) );
 		}
 		if ( 1 !== $result ) {
 			wp_cache_delete( (int) $post_id, 'post_meta' );
-			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-ai-bridge' ) );
 		}
 
 		wp_cache_delete( (int) $post_id, 'post_meta' );
@@ -227,7 +227,7 @@ final class Post_Meta_Store {
 		$after = $this->rows( $post_id, $key );
 		if ( is_wp_error( $after ) ) {
 			if ( ! $this->restore_updated_row( $row, $prepared['raw_value'] ) ) {
-				return new WP_Error( 'post_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'post_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 			}
 			return $after;
 		}
@@ -235,9 +235,9 @@ final class Post_Meta_Store {
 		$expected_row['raw_value'] = $prepared['raw_value'];
 		if ( 1 !== count( $after ) || ! $this->row_matches( $after[0], $expected_row ) ) {
 			if ( ! $this->restore_updated_row( $row, $prepared['raw_value'] ) ) {
-				return new WP_Error( 'post_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'post_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 			}
-			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-ai-bridge' ) );
 		}
 
 		return $after[0];
@@ -255,7 +255,7 @@ final class Post_Meta_Store {
 	 */
 	public function delete_row( $post_id, $key, array $row ) {
 		if ( $this->is_test_mode() ) {
-			return delete_post_meta( (int) $post_id, (string) $key, $row['value'] ) ? true : new WP_Error( 'post_meta_delete_failed', __( 'WordPress could not delete the requested metadata key.', 'wp-native-builder-bridge' ) );
+			return delete_post_meta( (int) $post_id, (string) $key, $row['value'] ) ? true : new WP_Error( 'post_meta_delete_failed', __( 'WordPress could not delete the requested metadata key.', 'wp-ai-bridge' ) );
 		}
 
 		$current = $this->rows( $post_id, $key );
@@ -263,12 +263,12 @@ final class Post_Meta_Store {
 			return $current;
 		}
 		if ( 1 !== count( $current ) || ! $this->row_matches( $current[0], $row ) ) {
-			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-ai-bridge' ) );
 		}
 
 		$short_circuit = apply_filters( 'delete_post_metadata', null, (int) $post_id, (string) $key, $row['value'], false );
 		if ( null !== $short_circuit ) {
-			return new WP_Error( 'post_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata value atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'post_meta_atomic_mutation_unsupported', __( 'WordPress cannot condition this metadata value atomically. The generic Bridge refuses the mutation to avoid a stale write.', 'wp-ai-bridge' ) );
 		}
 
 		$meta_id  = (int) $row['meta_id'];
@@ -279,11 +279,11 @@ final class Post_Meta_Store {
 		$result = $this->exact_delete_raw_row( $meta_id, (int) $post_id, (string) $key, $row['raw_value'] );
 		if ( false === $result ) {
 			wp_cache_delete( (int) $post_id, 'post_meta' );
-			return new WP_Error( 'post_meta_delete_failed', __( 'WordPress could not delete the requested metadata key.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'post_meta_delete_failed', __( 'WordPress could not delete the requested metadata key.', 'wp-ai-bridge' ) );
 		}
 		if ( 1 !== $result ) {
 			wp_cache_delete( (int) $post_id, 'post_meta' );
-			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-ai-bridge' ) );
 		}
 
 		wp_cache_delete( (int) $post_id, 'post_meta' );
@@ -293,15 +293,15 @@ final class Post_Meta_Store {
 		$after = $this->rows( $post_id, $key );
 		if ( is_wp_error( $after ) ) {
 			if ( ! $this->restore_deleted_row( $row ) ) {
-				return new WP_Error( 'post_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'post_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 			}
 			return $after;
 		}
 		if ( ! empty( $after ) ) {
 			if ( ! $this->restore_deleted_row( $row ) ) {
-				return new WP_Error( 'post_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'post_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 			}
-			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before deleting it.', 'wp-ai-bridge' ) );
 		}
 
 		return true;
@@ -378,7 +378,7 @@ final class Post_Meta_Store {
 		if ( $this->is_test_mode() ) {
 			return delete_post_meta( (int) $row['post_id'], (string) $row['key'], $row['value'] )
 				? true
-				: new WP_Error( 'post_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+				: new WP_Error( 'post_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 		}
 
 		$meta_id  = (int) $row['meta_id'];
@@ -389,11 +389,11 @@ final class Post_Meta_Store {
 		$result = $this->exact_delete_raw_row( $meta_id, (int) $row['post_id'], (string) $row['key'], $row['raw_value'] );
 		if ( false === $result ) {
 			wp_cache_delete( (int) $row['post_id'], 'post_meta' );
-			return new WP_Error( 'post_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'post_meta_compensation_failed', __( 'Concurrent metadata changed during mutation and the Bridge could not restore its exact physical row safely.', 'wp-ai-bridge' ) );
 		}
 		if ( 1 !== $result ) {
 			wp_cache_delete( (int) $row['post_id'], 'post_meta' );
-			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'stale_post_meta_conflict', __( 'Post metadata changed after it was read. Refresh the metadata state before updating it.', 'wp-ai-bridge' ) );
 		}
 
 		wp_cache_delete( (int) $row['post_id'], 'post_meta' );
@@ -558,7 +558,7 @@ final class Post_Meta_Store {
 
 	/** @return bool */
 	private function is_test_mode() {
-		return defined( 'WP_NATIVE_BUILDER_BRIDGE_TEST_MODE' ) && WP_NATIVE_BUILDER_BRIDGE_TEST_MODE;
+		return defined( 'WP_AI_BRIDGE_TEST_MODE' ) && WP_AI_BRIDGE_TEST_MODE;
 	}
 
 	/**

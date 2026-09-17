@@ -2,6 +2,15 @@
 
 All notable public changes are documented here.
 
+## 0.4.0
+
+- Establish the canonical WordPress plugin installation identity as `wp-ai-bridge/wp-ai-bridge.php`, with `WP_AI_Bridge` PHP namespace/constants, `wp-ai-bridge` text domain, `wp-ai-bridge/*` Ability identifiers, and canonical Bridge-owned storage/runtime identifiers.
+- Remove former `wp-native-builder...` admin, OAuth/MCP, and Ability compatibility aliases from the maintained runtime; version 0.4.0 serves only the canonical WP AI Bridge routes and identifiers.
+- Add a one-time activation migration for persistent Workspace Documents and Tasks left by the published 0.3.0 uninstall path, preserving WordPress record IDs, content/state, state hashes, and versions while moving them to canonical Workspace post-type/meta identifiers.
+- Intentionally do not migrate former access-group settings, mutation/activity state, OAuth clients/tokens, or other connection/runtime state. The 0.4.0 installation starts from safe access defaults and ChatGPT must be reconnected against the canonical MCP endpoint.
+- Change the supported 0.3.0 migration sequence to deactivate and uninstall/delete the former plugin first, then install/activate 0.4.0; the old uninstall preserves only the durable Workspace records needed by the new migrator.
+- Update release packaging, Persian localization, static identity/confinement checks, and both supported real-WordPress migration lanes for the canonical identity.
+
 ## 0.3.0
 
 - Add admin-controlled generic term metadata read/update/delete for exact authorized taxonomy terms, including private/non-REST taxonomies, with physical-row identity, stale-state protection, secret-policy exclusions, and destructive gating.

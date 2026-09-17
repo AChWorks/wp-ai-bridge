@@ -2,14 +2,14 @@
 /**
  * Gravity Forms API fallback abilities.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Abilities;
+namespace WP_AI_Bridge\Abilities;
 
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
 use WP_Error;
 
 /**
@@ -31,10 +31,10 @@ final class Gravity_Forms_Abilities {
 		if ( ! class_exists( 'GFAPI' ) || $this->native_abilities_present() ) {
 			return array(); }
 		$registered[] = wp_register_ability(
-			'wp-native-builder/gravity-forms-read',
+			'wp-ai-bridge/gravity-forms-read',
 			array(
-				'label'               => __( 'Read Gravity Forms', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists or retrieves Gravity Forms through the documented GFAPI fallback when no native Gravity Forms Ability surface is available.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Gravity Forms', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists or retrieves Gravity Forms through the documented GFAPI fallback when no native Gravity Forms Ability surface is available.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->read_schema(),
 				'output_schema'       => $this->forms_schema(),
@@ -44,10 +44,10 @@ final class Gravity_Forms_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/gravity-form-upsert',
+			'wp-ai-bridge/gravity-form-upsert',
 			array(
-				'label'               => __( 'Create or Update Gravity Form', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Creates or updates a complete Gravity Forms form object through GFAPI, including fields and supported form metadata.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Create or Update Gravity Form', 'wp-ai-bridge' ),
+				'description'         => __( 'Creates or updates a complete Gravity Forms form object through GFAPI, including fields and supported form metadata.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->upsert_schema(),
 				'output_schema'       => $this->form_result_schema(),
@@ -57,10 +57,10 @@ final class Gravity_Forms_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/gravity-form-status',
+			'wp-ai-bridge/gravity-form-status',
 			array(
-				'label'               => __( 'Set Gravity Form Status', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Activates or deactivates one Gravity Form through GFAPI.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Set Gravity Form Status', 'wp-ai-bridge' ),
+				'description'         => __( 'Activates or deactivates one Gravity Form through GFAPI.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -81,10 +81,10 @@ final class Gravity_Forms_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/gravity-form-delete',
+			'wp-ai-bridge/gravity-form-delete',
 			array(
-				'label'               => __( 'Delete Gravity Form', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Permanently deletes one Gravity Form through GFAPI under destructive access.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Delete Gravity Form', 'wp-ai-bridge' ),
+				'description'         => __( 'Permanently deletes one Gravity Form through GFAPI under destructive access.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -130,7 +130,7 @@ final class Gravity_Forms_Abilities {
 		if ( 'get' === $input['action'] ) {
 			$form = \GFAPI::get_form( (int) $input['id'] );
 			if ( ! is_array( $form ) ) {
-				return new WP_Error( 'gravity_form_not_found', __( 'The requested Gravity Form was not found.', 'wp-native-builder-bridge' ) ); }
+				return new WP_Error( 'gravity_form_not_found', __( 'The requested Gravity Form was not found.', 'wp-ai-bridge' ) ); }
 			return array( 'items' => array( $this->normalize_form( $form ) ) );
 		}
 		$active = array_key_exists( 'active', $input ) ? (bool) $input['active'] : null;
@@ -150,21 +150,21 @@ final class Gravity_Forms_Abilities {
 		if ( 'create' === $input['action'] ) {
 			unset( $form['id'] );
 			if ( empty( $form['title'] ) ) {
-				return new WP_Error( 'gravity_form_title_required', __( 'A Gravity Form title is required.', 'wp-native-builder-bridge' ) ); }
+				return new WP_Error( 'gravity_form_title_required', __( 'A Gravity Form title is required.', 'wp-ai-bridge' ) ); }
 			$id = \GFAPI::add_form( $form );
 			if ( is_wp_error( $id ) ) {
 				return $id; }
-			$this->log->record( 'wp-native-builder/gravity-form-upsert', 'gravity_form', (int) $id, true, '' );
+			$this->log->record( 'wp-ai-bridge/gravity-form-upsert', 'gravity_form', (int) $id, true, '' );
 			return $this->form_result( (int) $id );
 		}
 		$id = isset( $input['id'] ) ? (int) $input['id'] : 0;
 		if ( $id < 1 || ! \GFAPI::form_id_exists( $id ) ) {
-			return new WP_Error( 'gravity_form_not_found', __( 'The Gravity Form to update was not found.', 'wp-native-builder-bridge' ) ); }
+			return new WP_Error( 'gravity_form_not_found', __( 'The Gravity Form to update was not found.', 'wp-ai-bridge' ) ); }
 		$form['id'] = $id;
 		$result     = \GFAPI::update_form( $form );
 		if ( is_wp_error( $result ) || false === $result ) {
-			return is_wp_error( $result ) ? $result : new WP_Error( 'gravity_form_update_failed', __( 'Gravity Forms did not update the form.', 'wp-native-builder-bridge' ) ); }
-		$this->log->record( 'wp-native-builder/gravity-form-upsert', 'gravity_form', $id, true, '' );
+			return is_wp_error( $result ) ? $result : new WP_Error( 'gravity_form_update_failed', __( 'Gravity Forms did not update the form.', 'wp-ai-bridge' ) ); }
+		$this->log->record( 'wp-ai-bridge/gravity-form-upsert', 'gravity_form', $id, true, '' );
 		return $this->form_result( $id );
 	}
 
@@ -172,11 +172,11 @@ final class Gravity_Forms_Abilities {
 	public function status( $input ) {
 		$id = (int) $input['id'];
 		if ( ! \GFAPI::form_id_exists( $id ) ) {
-			return new WP_Error( 'gravity_form_not_found', __( 'The Gravity Form was not found.', 'wp-native-builder-bridge' ) );}
+			return new WP_Error( 'gravity_form_not_found', __( 'The Gravity Form was not found.', 'wp-ai-bridge' ) );}
 		$result = \GFAPI::update_form_property( $id, 'is_active', (bool) $input['active'] );
 		if ( is_wp_error( $result ) || false === $result ) {
-			return is_wp_error( $result ) ? $result : new WP_Error( 'gravity_form_status_failed', __( 'Gravity Forms did not update the form status.', 'wp-native-builder-bridge' ) );}
-		$this->log->record( 'wp-native-builder/gravity-form-status', 'gravity_form', $id, true, '' );
+			return is_wp_error( $result ) ? $result : new WP_Error( 'gravity_form_status_failed', __( 'Gravity Forms did not update the form status.', 'wp-ai-bridge' ) );}
+		$this->log->record( 'wp-ai-bridge/gravity-form-status', 'gravity_form', $id, true, '' );
 		return $this->form_result( $id );
 	}
 
@@ -184,11 +184,11 @@ final class Gravity_Forms_Abilities {
 	public function delete( $input ) {
 		$id = (int) $input['id'];
 		if ( ! \GFAPI::form_id_exists( $id ) ) {
-			return new WP_Error( 'gravity_form_not_found', __( 'The Gravity Form was not found.', 'wp-native-builder-bridge' ) );}
+			return new WP_Error( 'gravity_form_not_found', __( 'The Gravity Form was not found.', 'wp-ai-bridge' ) );}
 		$result = \GFAPI::delete_form( $id );
 		if ( is_wp_error( $result ) || true !== $result ) {
-			return is_wp_error( $result ) ? $result : new WP_Error( 'gravity_form_delete_failed', __( 'Gravity Forms did not delete the form.', 'wp-native-builder-bridge' ) );}
-		$this->log->record( 'wp-native-builder/gravity-form-delete', 'gravity_form', $id, true, '' );
+			return is_wp_error( $result ) ? $result : new WP_Error( 'gravity_form_delete_failed', __( 'Gravity Forms did not delete the form.', 'wp-ai-bridge' ) );}
+		$this->log->record( 'wp-ai-bridge/gravity-form-delete', 'gravity_form', $id, true, '' );
 		return array(
 			'deleted' => true,
 			'id'      => $id,
@@ -205,7 +205,7 @@ final class Gravity_Forms_Abilities {
 	/** @param int $id ID. @return array<string,mixed>|WP_Error */
 	private function form_result( $id ) {
 		$form = \GFAPI::get_form( $id );
-		return is_array( $form ) ? array( 'form' => $this->normalize_form( $form ) ) : new WP_Error( 'gravity_form_readback_failed', __( 'The saved Gravity Form could not be read back.', 'wp-native-builder-bridge' ) );}
+		return is_array( $form ) ? array( 'form' => $this->normalize_form( $form ) ) : new WP_Error( 'gravity_form_readback_failed', __( 'The saved Gravity Form could not be read back.', 'wp-ai-bridge' ) );}
 	/** @param array<string,mixed> $form Form. @return array<string,mixed> */
 	private function normalize_form( array $form ) {
 		return array(

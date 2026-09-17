@@ -2,10 +2,10 @@
 /**
  * private_key_jwt OAuth client authentication.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Auth;
+namespace WP_AI_Bridge\Auth;
 
 /**
  * Validates signed assertions for one exact already-approved OAuth client.
@@ -13,8 +13,8 @@ namespace WP_Native_Builder_Bridge\Auth;
 final class Client_Assertion_Validator {
 	const CHATGPT_JWKS_URI      = 'https://chatgpt.com/oauth/jwks.json';
 	const ASSERTION_TYPE        = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
-	const JWKS_CACHE            = 'wpnb_oauth_chatgpt_jwks';
-	const JWKS_REFRESH_COOLDOWN = 'wpnb_oauth_chatgpt_jwks_refresh';
+	const JWKS_CACHE            = 'wpai_oauth_chatgpt_jwks';
+	const JWKS_REFRESH_COOLDOWN = 'wpai_oauth_chatgpt_jwks_refresh';
 	const JWKS_REFRESH_INTERVAL = 60;
 	const MAX_ASSERTION_TTL     = 600;
 	const CLOCK_SKEW            = 60;
@@ -429,11 +429,11 @@ final class Client_Assertion_Validator {
 
 	/** @param string $client_id Client ID. @return string Cache key. */
 	private static function cache_key_for( $client_id ) {
-		return OAuth_Server::CHATGPT_CLIENT_ID === (string) $client_id ? self::JWKS_CACHE : 'wpnb_oauth_jwks_' . substr( hash( 'sha256', (string) $client_id ), 0, 24 );
+		return OAuth_Server::CHATGPT_CLIENT_ID === (string) $client_id ? self::JWKS_CACHE : 'wpai_oauth_jwks_' . substr( hash( 'sha256', (string) $client_id ), 0, 24 );
 	}
 
 	/** @param string $client_id Client ID. @return string Cooldown key. */
 	private static function cooldown_key_for( $client_id ) {
-		return OAuth_Server::CHATGPT_CLIENT_ID === (string) $client_id ? self::JWKS_REFRESH_COOLDOWN : 'wpnb_oauth_jwks_refresh_' . substr( hash( 'sha256', (string) $client_id ), 0, 24 );
+		return OAuth_Server::CHATGPT_CLIENT_ID === (string) $client_id ? self::JWKS_REFRESH_COOLDOWN : 'wpai_oauth_jwks_refresh_' . substr( hash( 'sha256', (string) $client_id ), 0, 24 );
 	}
 }

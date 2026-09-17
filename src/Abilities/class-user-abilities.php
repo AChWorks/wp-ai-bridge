@@ -2,14 +2,14 @@
 /**
  * Bounded WordPress user and role administration abilities.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Abilities;
+namespace WP_AI_Bridge\Abilities;
 
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
 use WP_Error;
 
 /**
@@ -27,10 +27,10 @@ final class User_Abilities {
 	public function register() {
 		$registered   = array();
 		$registered[] = wp_register_ability(
-			'wp-native-builder/users-read',
+			'wp-ai-bridge/users-read',
 			array(
-				'label'               => __( 'Read Users and Roles', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Lists or retrieves bounded WordPress user and editable-role information without password, token, session, or application-password material.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Read Users and Roles', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists or retrieves bounded WordPress user and editable-role information without password, token, session, or application-password material.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -64,10 +64,10 @@ final class User_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/user-upsert',
+			'wp-ai-bridge/user-upsert',
 			array(
-				'label'               => __( 'Create or Update User', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Creates or updates a WordPress user and assigns an existing editable role. New credentials are generated internally and never returned or logged.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Create or Update User', 'wp-ai-bridge' ),
+				'description'         => __( 'Creates or updates a WordPress user and assigns an existing editable role. New credentials are generated internally and never returned or logged.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->upsert_schema(),
 				'output_schema'       => array(
@@ -85,10 +85,10 @@ final class User_Abilities {
 			)
 		);
 		$registered[] = wp_register_ability(
-			'wp-native-builder/user-remove',
+			'wp-ai-bridge/user-remove',
 			array(
-				'label'               => __( 'Remove User', 'wp-native-builder-bridge' ),
-				'description'         => __( 'Removes a user only with an explicit valid content reassignment target; on multisite this removes the user from the current site rather than deleting the network account.', 'wp-native-builder-bridge' ),
+				'label'               => __( 'Remove User', 'wp-ai-bridge' ),
+				'description'         => __( 'Removes a user only with an explicit valid content reassignment target; on multisite this removes the user from the current site rather than deleting the network account.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -153,7 +153,7 @@ final class User_Abilities {
 		if ( 'get' === $action ) {
 			$user = get_userdata( (int) $input['id'] );
 			if ( ! $user ) {
-				return new WP_Error( 'user_not_found', __( 'The requested WordPress user was not found.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'user_not_found', __( 'The requested WordPress user was not found.', 'wp-ai-bridge' ) );
 			}return array(
 				'users' => array( $this->format_user( $user ) ),
 				'roles' => array(),
@@ -181,12 +181,12 @@ final class User_Abilities {
 		$action = (string) $input['action'];
 		$role   = isset( $input['role'] ) ? (string) $input['role'] : '';
 		if ( '' !== $role && ! $this->valid_role( $role ) ) {
-			return new WP_Error( 'invalid_user_role', __( 'The requested role is not editable by the current WordPress user.', 'wp-native-builder-bridge' ) );}
+			return new WP_Error( 'invalid_user_role', __( 'The requested role is not editable by the current WordPress user.', 'wp-ai-bridge' ) );}
 		if ( 'create' === $action ) {
 			if ( ! $this->permissions->allowed( Settings::GROUP_USERS_DESTRUCTIVE, 'create_users' ) ) {
-				return new WP_Error( 'user_create_denied', __( 'User creation is not permitted.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'user_create_denied', __( 'User creation is not permitted.', 'wp-ai-bridge' ) );
 			}if ( empty( $input['username'] ) || empty( $input['email'] ) ) {
-				return new WP_Error( 'user_identity_required', __( 'username and email are required for user creation.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'user_identity_required', __( 'username and email are required for user creation.', 'wp-ai-bridge' ) );
 			}$data = array(
 				'user_login'   => sanitize_user( (string) $input['username'], true ),
 				'user_email'   => sanitize_email( (string) $input['email'] ),
@@ -204,7 +204,7 @@ final class User_Abilities {
 			if ( function_exists( 'wp_new_user_notification' ) ) {
 				wp_new_user_notification( (int) $id, null, 'user' );
 				$notification = true;
-			}$this->log->record( 'wp-native-builder/user-upsert', 'user', (int) $id, true, '' );
+			}$this->log->record( 'wp-ai-bridge/user-upsert', 'user', (int) $id, true, '' );
 			return array(
 				'user'              => $this->format_user( get_userdata( (int) $id ) ),
 				'notification_sent' => $notification,
@@ -212,14 +212,14 @@ final class User_Abilities {
 		$id   = isset( $input['id'] ) ? (int) $input['id'] : 0;
 		$user = get_userdata( $id );
 		if ( ! $user ) {
-			return new WP_Error( 'user_not_found', __( 'The WordPress user to update was not found.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'user_not_found', __( 'The WordPress user to update was not found.', 'wp-ai-bridge' ) );
 		}if ( ! $this->permissions->allowed( Settings::GROUP_USERS_DESTRUCTIVE, 'edit_users' ) || ! current_user_can( 'edit_user', $id ) ) {
-			return new WP_Error( 'user_edit_denied', __( 'The current WordPress user cannot edit that user.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'user_edit_denied', __( 'The current WordPress user cannot edit that user.', 'wp-ai-bridge' ) );
 		}if ( '' !== $role ) {
 			if ( get_current_user_id() === $id ) {
-				return new WP_Error( 'self_role_change_denied', __( 'The acting user role cannot be changed through this ability.', 'wp-native-builder-bridge' ) );
+				return new WP_Error( 'self_role_change_denied', __( 'The acting user role cannot be changed through this ability.', 'wp-ai-bridge' ) );
 			}if ( ! current_user_can( 'promote_user', $id ) ) {
-				return new WP_Error( 'user_role_change_denied', __( 'The current WordPress user cannot change that user role.', 'wp-native-builder-bridge' ) );}
+				return new WP_Error( 'user_role_change_denied', __( 'The current WordPress user cannot change that user role.', 'wp-ai-bridge' ) );}
 		}
 		$data = array( 'ID' => $id );
 		foreach ( array(
@@ -236,7 +236,7 @@ final class User_Abilities {
 		}$result = wp_update_user( $data );
 		if ( is_wp_error( $result ) ) {
 			return $result;
-		}$this->log->record( 'wp-native-builder/user-upsert', 'user', $id, true, '' );
+		}$this->log->record( 'wp-ai-bridge/user-upsert', 'user', $id, true, '' );
 		return array(
 			'user'              => $this->format_user( get_userdata( $id ) ),
 			'notification_sent' => false,
@@ -248,13 +248,13 @@ final class User_Abilities {
 		$id       = (int) $input['id'];
 		$reassign = (int) $input['reassign_id'];
 		if ( get_current_user_id() === $id ) {
-			return new WP_Error( 'self_delete_denied', __( 'The acting WordPress user cannot remove itself through this ability.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'self_delete_denied', __( 'The acting WordPress user cannot remove itself through this ability.', 'wp-ai-bridge' ) );
 		}$user  = get_userdata( $id );
 		$target = get_userdata( $reassign );
 		if ( ! $user || ! $target || $id === $reassign ) {
-			return new WP_Error( 'invalid_user_reassignment', __( 'Both the user and a different valid reassignment user are required.', 'wp-native-builder-bridge' ) );
+			return new WP_Error( 'invalid_user_reassignment', __( 'Both the user and a different valid reassignment user are required.', 'wp-ai-bridge' ) );
 		}if ( ! current_user_can( 'delete_user', $id ) ) {
-			return new WP_Error( 'user_delete_denied', __( 'The current WordPress user cannot remove that user.', 'wp-native-builder-bridge' ) );}
+			return new WP_Error( 'user_delete_denied', __( 'The current WordPress user cannot remove that user.', 'wp-ai-bridge' ) );}
 		if ( is_multisite() ) {
 			$result    = remove_user_from_blog( $id, get_current_blog_id(), $reassign );
 			$preserved = true;
@@ -262,8 +262,8 @@ final class User_Abilities {
 			$result    = wp_delete_user( $id, $reassign );
 			$preserved = false;
 		}if ( is_wp_error( $result ) || true !== $result ) {
-			return is_wp_error( $result ) ? $result : new WP_Error( 'user_remove_failed', __( 'WordPress did not remove the user.', 'wp-native-builder-bridge' ) );
-		}$this->log->record( 'wp-native-builder/user-remove', 'user', $id, true, '' );
+			return is_wp_error( $result ) ? $result : new WP_Error( 'user_remove_failed', __( 'WordPress did not remove the user.', 'wp-ai-bridge' ) );
+		}$this->log->record( 'wp-ai-bridge/user-remove', 'user', $id, true, '' );
 		return array(
 			'removed'                   => true,
 			'id'                        => $id,

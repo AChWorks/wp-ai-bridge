@@ -16,7 +16,7 @@
 
 The settings screen reports whether the WordPress Abilities API, MCP Adapter, and public HTTPS endpoint are available.
 
-The public artifact name changed, but the archive deliberately retains the existing `wp-native-builder-bridge/` plugin directory and entrypoint. Uploading `wp-ai-bridge.zip` therefore upgrades an existing installation in place instead of creating a second plugin installation.
+The 0.4.0 package installs with the canonical `wp-ai-bridge/` directory and `wp-ai-bridge.php` entrypoint. See the migration section below before replacing a published 0.3.0 installation.
 
 ## Connect a ChatGPT Workspace App
 
@@ -38,29 +38,23 @@ With Developer Mode enabled in the ChatGPT workspace:
 
 The OAuth connection acts as the WordPress user who approved it. Bridge access groups and WordPress capabilities are still checked for every operation.
 
-Existing connections created with the former `/wp-json/wp-native-builder/v1/mcp` resource remain available through a bounded legacy endpoint. Tokens remain bound to the exact resource for which they were issued: a legacy token is not accepted by the canonical WP AI Bridge endpoint, and a canonical token is not accepted by the legacy endpoint.
+Connections from the former plugin are intentionally not migrated. Version 0.4.0 serves only the canonical MCP/OAuth routes, so create a fresh ChatGPT connection after migration.
 
 ## OAuth discovery endpoints
 
-New connections use canonical protected-resource metadata at:
+Canonical protected-resource metadata is available at:
 
 ```text
 /.well-known/oauth-protected-resource
 ```
 
-The retained legacy MCP resource has its own migration metadata document:
-
-```text
-/.well-known/oauth-protected-resource/wp-native-builder/v1/mcp
-```
-
-Both resource documents use the same authorization server metadata:
+Authorization server metadata is available at:
 
 ```text
 /.well-known/oauth-authorization-server
 ```
 
-The exact MCP endpoint returns an authentication challenge pointing to the metadata document for that same resource.
+The MCP endpoint returns an authentication challenge pointing to the canonical protected-resource metadata document.
 
 ## Configure access
 
@@ -78,11 +72,25 @@ A conservative starting point is:
 - Comments: leave disabled unless bounded comment discovery, replies, or moderation is needed. It is independent from Site Read/Builder Write and still relies on WordPress Core comment permissions; permanent deletion additionally requires Users & Destructive.
 - Users & Destructive: leave disabled unless the requested operation genuinely requires it.
 
-## Update from the former product name
+## Migrate from the published 0.3.0 package
 
-Install the new `wp-ai-bridge.zip` through WordPress's replace-existing-plugin flow. The migration intentionally preserves the installed plugin directory/entrypoint, text domain, PHP namespace/constants, settings/OAuth/Workspace storage keys, and `wp-native-builder/*` Ability identifiers. Existing data and clients therefore do not need a second storage migration merely because the public product name changed.
+Version 0.4.0 intentionally changes the actual WordPress plugin installation identity to `wp-ai-bridge/wp-ai-bridge.php`. Do **not** use the replace-existing-plugin flow for this migration.
 
-The canonical admin slugs now start with `wp-ai-bridge`; old `wp-native-builder...` admin bookmarks are retained as hidden compatibility aliases.
+When legacy Workspace Documents or Tasks are present, the site's actual WordPress `posts`, `postmeta`, and `options` tables must use InnoDB. Version 0.4.0 verifies all three table engines before changing any legacy Workspace identity and stops activation safely if an engine cannot be verified or is not InnoDB. This requirement applies only to the one-time legacy Workspace migration; a clean installation with no legacy Workspace state is not rejected by this migration guard. If activation reports a non-InnoDB affected table, keep the database backup, convert that exact WordPress core table to InnoDB with your database/hosting tooling, verify the conversion, and retry activation. Do not bypass the guard.
+
+The supported one-time sequence is:
+
+1. Take a normal WordPress/database backup before the migration.
+2. Deactivate the former plugin.
+3. Delete it from **Plugins → Installed Plugins**. WordPress runs the former plugin's uninstall routine; that routine removes its disposable settings/OAuth state while intentionally preserving private Workspace Documents and Tasks.
+4. Upload and activate the 0.4.0 `wp-ai-bridge.zip` package. It installs under `wp-ai-bridge/`.
+5. Activation verifies transaction-capable InnoDB storage when legacy Workspace state exists, then migrates only the preserved Workspace Documents and Tasks to the canonical Workspace identifiers, preserving their WordPress IDs, content/state, state hashes, and versions.
+6. Open **WP AI Bridge → Settings** and enable the access groups you now want. Former access-group settings, mutation/activity state, OAuth clients/tokens, and other connection/runtime state are intentionally not imported.
+7. Reconnect ChatGPT using the canonical MCP endpoint shown on the Settings page.
+
+For WP-CLI automation, use `wp plugin uninstall wp-native-builder-bridge` for step 3; `wp plugin delete` only removes plugin files and does not run the uninstall routine.
+
+After 0.4.0 is active, the maintained runtime serves only canonical `wp-ai-bridge` admin/OAuth/MCP routes and `wp-ai-bridge/*` Ability identifiers. Former admin bookmarks and OAuth/MCP endpoints are not aliases in the new plugin.
 
 ## Deactivate and uninstall
 

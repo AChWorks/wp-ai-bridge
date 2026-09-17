@@ -1,5 +1,5 @@
 <?php
-namespace WP_Native_Builder_Bridge\Abilities {
+namespace WP_AI_Bridge\Abilities {
 	function gethostbynamel( $host ) {
 		return $GLOBALS['wpnb67']['resolved_ipv4'] ?? array( '93.184.216.34' );
 	}
@@ -18,10 +18,10 @@ namespace {
 /** Dependency-free external package installation boundary regressions. */
 require __DIR__ . '/bootstrap.php';
 
-use WP_Native_Builder_Bridge\Abilities\Extension_Abilities;
-use WP_Native_Builder_Bridge\Support\Mutation_Log;
-use WP_Native_Builder_Bridge\Support\Permissions;
-use WP_Native_Builder_Bridge\Support\Settings;
+use WP_AI_Bridge\Abilities\Extension_Abilities;
+use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Settings;
 
 $checks = 0;
 function wpnb67_assert( $condition, $message ) {
@@ -36,10 +36,10 @@ function wpnb67_reset() {
 			unlink( $file );
 		}
 	}
-	wpnb_test_reset_state();
-	$GLOBALS['wpnb_test']['capabilities']['install_plugins'] = true;
-	$GLOBALS['wpnb_test']['capabilities']['install_themes']  = true;
-	$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = array(
+	wpai_test_reset_state();
+	$GLOBALS['wpai_test']['capabilities']['install_plugins'] = true;
+	$GLOBALS['wpai_test']['capabilities']['install_themes']  = true;
+	$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = array(
 		'code_extensions'   => 1,
 		'external_packages' => 1,
 	);
@@ -83,9 +83,9 @@ function wp_http_validate_url( $url ) {
 	return $url;
 }
 function remove_action( $hook, $callback, $priority = 10 ) {
-	$GLOBALS['wpnb_test']['actions'][ $hook ] = array_values(
+	$GLOBALS['wpai_test']['actions'][ $hook ] = array_values(
 		array_filter(
-			$GLOBALS['wpnb_test']['actions'][ $hook ] ?? array(),
+			$GLOBALS['wpai_test']['actions'][ $hook ] ?? array(),
 			static function ( $registered ) use ( $callback ) { return $registered !== $callback; }
 		)
 	);
@@ -97,7 +97,7 @@ function wp_safe_remote_get( $url, $args ) {
 	if ( null !== $GLOBALS['wpnb67']['redirect'] ) {
 		$location = $GLOBALS['wpnb67']['redirect'];
 		try {
-			foreach ( $GLOBALS['wpnb_test']['actions']['requests-requests.before_redirect'] ?? array() as $callback ) {
+			foreach ( $GLOBALS['wpai_test']['actions']['requests-requests.before_redirect'] ?? array() as $callback ) {
 				$callback( $location, array(), null, array( 'filename' => $args['filename'] ) );
 			}
 		} catch ( \WpOrg\Requests\Exception $error ) {
@@ -107,7 +107,7 @@ function wp_safe_remote_get( $url, $args ) {
 	}
 	file_put_contents( $args['filename'], substr( $GLOBALS['wpnb67']['payload'], 0, $args['limit_response_size'] ) );
 	if ( 'revoke_http' === $GLOBALS['wpnb67']['mode'] ) {
-		$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ]['external_packages'] = 0;
+		$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ]['external_packages'] = 0;
 	}
 	if ( 'http_throw' === $GLOBALS['wpnb67']['mode'] ) {
 		throw new RuntimeException( 'PRIVATE_PACKAGE_MARKER ' . $url . ' ' . $args['filename'] );
@@ -136,7 +136,7 @@ class Plugin_Upgrader {
 		}
 		return true;
 	}
-	public function plugin_info() { return 'wpnb-external-plugin/wpnb-external-plugin.php'; }
+	public function plugin_info() { return 'wpai-external-plugin/wpai-external-plugin.php'; }
 }
 class Theme_Upgrader {
 	public function __construct( $skin ) {}
@@ -155,8 +155,8 @@ class Theme_Upgrader {
 			array(
 				'Name'       => 'External Theme',
 				'Version'    => '1.0.0',
-				'stylesheet' => 'wpnb-external-theme',
-				'template'   => 'wpnb-external-theme',
+				'stylesheet' => 'wpai-external-theme',
+				'template'   => 'wpai-external-theme',
 			)
 		);
 	}
@@ -188,18 +188,18 @@ set_error_handler(
 try {
 	wpnb67_assert( 0 === $settings->defaults()[ Settings::GROUP_EXTERNAL_PACKAGES ], 'External Packages must default off.' );
 	$ability->register();
-	$definition = $GLOBALS['wpnb_test']['registered_abilities']['wp-native-builder/extension-lifecycle'];
+	$definition = $GLOBALS['wpai_test']['registered_abilities']['wp-ai-bridge/extension-lifecycle'];
 	wpnb67_assert( isset( $definition['input_schema']['properties']['package_url'] ), 'Lifecycle schema omitted package_url.' );
 	wpnb67_assert( false === $definition['input_schema']['additionalProperties'], 'Lifecycle schema must reject arbitrary package request controls.' );
 	wpnb67_assert( ! isset( $definition['input_schema']['properties']['headers'], $definition['input_schema']['properties']['cookies'], $definition['input_schema']['properties']['path'] ), 'Lifecycle schema exposed generic transport/filesystem inputs.' );
 
-	$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ] = array( 'code_extensions' => 1 );
+	$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = array( 'code_extensions' => 1 );
 	wpnb67_assert( true === $ability->can_mutate( array( 'kind' => 'plugin', 'action' => 'install', 'slug' => 'hello-dolly' ) ), 'WordPress.org slug install incorrectly inherited External Packages consent.' );
 	wpnb67_assert( false === $ability->can_mutate( $package ), 'External package install bypassed External Packages consent.' );
-	$GLOBALS['wpnb_test']['options'][ Settings::OPTION_NAME ]['external_packages'] = 1;
-	$GLOBALS['wpnb_test']['capabilities']['install_plugins'] = false;
+	$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ]['external_packages'] = 1;
+	$GLOBALS['wpai_test']['capabilities']['install_plugins'] = false;
 	wpnb67_assert( false === $ability->can_mutate( $package ), 'External package install bypassed native install_plugins authority.' );
-	$GLOBALS['wpnb_test']['capabilities']['install_plugins'] = true;
+	$GLOBALS['wpai_test']['capabilities']['install_plugins'] = true;
 	wpnb67_assert( true === $ability->can_mutate( $package ), 'Authorized external package input was denied.' );
 
 	foreach ( array( 'http://packages.example.test/plugin.zip', 'file:///tmp/plugin.zip', 'ftp://packages.example.test/plugin.zip', 'https://user:pass@packages.example.test/plugin.zip', 'https://127.0.0.1/plugin.zip', 'https://169.254.169.254/plugin.zip' ) as $unsafe ) {
@@ -211,7 +211,7 @@ try {
 	wpnb67_reset();
 	$result = $ability->mutate( $package );
 	wpnb67_assert( ! is_wp_error( $result ) && true === $result['success'], 'Synthetic external plugin install failed.' );
-	wpnb67_assert( 'wpnb-external-plugin/wpnb-external-plugin.php' === $result['target'], 'Plugin install returned the wrong target.' );
+	wpnb67_assert( 'wpai-external-plugin/wpai-external-plugin.php' === $result['target'], 'Plugin install returned the wrong target.' );
 	wpnb67_assert( 1 === $GLOBALS['wpnb67']['http_calls'] && 1 === $GLOBALS['wpnb67']['installs'], 'Plugin install did not use one bounded download and one Core install.' );
 	wpnb67_assert( true === $GLOBALS['wpnb67']['args']['stream'] && true === $GLOBALS['wpnb67']['args']['sslverify'] && false === $GLOBALS['wpnb67']['args']['decompress'], 'Package download weakened stream/TLS/compression constraints.' );
 	wpnb67_assert( array() === $GLOBALS['wpnb67']['args']['cookies'] && array( 'Accept-Encoding' => 'identity' ) === $GLOBALS['wpnb67']['args']['headers'], 'Package download forwarded cookies or arbitrary headers.' );
@@ -221,7 +221,7 @@ try {
 
 	wpnb67_reset();
 	$theme = $ability->mutate( array_replace( $package, array( 'kind' => 'theme' ) ) );
-	wpnb67_assert( ! is_wp_error( $theme ) && 'wpnb-external-theme' === $theme['target'], 'Synthetic external theme install failed.' );
+	wpnb67_assert( ! is_wp_error( $theme ) && 'wpai-external-theme' === $theme['target'], 'Synthetic external theme install failed.' );
 	wpnb67_no_files();
 
 	foreach ( array( 'http_error', 'http_throw' ) as $mode ) {

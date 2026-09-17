@@ -2,10 +2,10 @@
 /**
  * Runtime environment inspection.
  *
- * @package WP_Native_Builder_Bridge
+ * @package WP_AI_Bridge
  */
 
-namespace WP_Native_Builder_Bridge\Support;
+namespace WP_AI_Bridge\Support;
 
 /**
  * Detects supported WordPress and MCP Adapter runtime capabilities.
