@@ -43,13 +43,37 @@ wp=("${compose[@]}" run --rm cli)
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge-candidate.zip
 
 prefix="$("${wp[@]}" db prefix --allow-root | tail -n 1)"
+if [[ ! "$prefix" =~ ^[A-Za-z0-9_]+$ ]]; then
+    echo "ERROR: unexpected WordPress table prefix in Issue #74 engine guard." >&2
+    exit 1
+fi
 
 set_engine() {
     local suffix="$1"
     local engine="$2"
     local table="${prefix}${suffix}"
-    "${wp[@]}" db query "ALTER TABLE \`${table}\` ENGINE=${engine}" --allow-root >/dev/null
-    actual_engine="$("${wp[@]}" db query "SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '${table}'" --skip-column-names --allow-root | tail -n 1)"
+    if [[ ! "$suffix" =~ ^(posts|postmeta|options)$ || ! "$engine" =~ ^(InnoDB|MyISAM)$ ]]; then
+        echo "ERROR: invalid fixed Issue #74 engine-guard input." >&2
+        exit 1
+    fi
+
+    "${wp[@]}" eval "
+        global \$wpdb;
+        if ( false === \$wpdb->query( 'ALTER TABLE \`${table}\` ENGINE=${engine}' ) ) {
+            fwrite( STDERR, (string) \$wpdb->last_error );
+            exit( 1 );
+        }
+    " --allow-root >/dev/null
+
+    actual_engine="$("${wp[@]}" eval "
+        global \$wpdb;
+        echo (string) \$wpdb->get_var(
+            \$wpdb->prepare(
+                'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+                '${table}'
+            )
+        );
+    " --allow-root | tail -n 1)"
     if [[ "${actual_engine^^}" != "${engine^^}" ]]; then
         echo "ERROR: expected ${table} to use ${engine}, got ${actual_engine}." >&2
         exit 1
