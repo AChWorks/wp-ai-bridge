@@ -69,8 +69,7 @@ final class Migrator {
 
 		if ( (int) get_option( self::SCHEMA_OPTION, 0 ) < self::SCHEMA_VERSION ) {
 			self::assert_workspace_conflicts_absent();
-			$requires_transactional_storage = self::has_legacy_workspace_state();
-			$pre_migration_state            = null;
+			$pre_migration_state = null;
 
 			$started = false;
 			try {
@@ -82,7 +81,8 @@ final class Migrator {
 				// Read all migration-owned tables inside the transaction before checking
 				// their engines. This also holds their metadata identity stable while the
 				// transaction proceeds, so the verified engines cannot change mid-migration.
-				$pre_migration_state = self::workspace_migration_fingerprint();
+				$pre_migration_state            = self::workspace_migration_fingerprint();
+				$requires_transactional_storage = self::has_legacy_workspace_state();
 				if ( $requires_transactional_storage ) {
 					self::assert_transactional_workspace_tables();
 				}
