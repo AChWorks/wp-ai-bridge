@@ -69,7 +69,8 @@ final class Migrator {
 
 		if ( (int) get_option( self::SCHEMA_OPTION, 0 ) < self::SCHEMA_VERSION ) {
 			self::assert_workspace_conflicts_absent();
-			$pre_migration_state = self::workspace_migration_fingerprint();
+			$requires_transactional_storage = self::has_legacy_workspace_state();
+			$pre_migration_state            = null;
 
 			$started = false;
 			try {
@@ -77,6 +78,14 @@ final class Migrator {
 					throw new RuntimeException( 'WP AI Bridge could not establish the required Workspace migration transaction.' );
 				}
 				$started = true;
+
+				// Read all migration-owned tables inside the transaction before checking
+				// their engines. This also holds their metadata identity stable while the
+				// transaction proceeds, so the verified engines cannot change mid-migration.
+				$pre_migration_state = self::workspace_migration_fingerprint();
+				if ( $requires_transactional_storage ) {
+					self::assert_transactional_workspace_tables();
+				}
 
 				self::migrate_workspace_rows();
 
@@ -102,7 +111,9 @@ final class Migrator {
 					}
 				}
 				wp_cache_flush();
-				self::assert_workspace_state_matches( $pre_migration_state );
+				if ( null !== $pre_migration_state ) {
+					self::assert_workspace_state_matches( $pre_migration_state );
+				}
 				throw new RuntimeException( 'WP AI Bridge Workspace migration failed closed: ' . $exception->getMessage() );
 			}
 		}
@@ -114,6 +125,47 @@ final class Migrator {
 	}
 
 	/**
+	 * Returns whether this site still has legacy Workspace identities to migrate.
+	 *
+	 * @return bool
+	 */
+	private static function has_legacy_workspace_state() {
+		global $wpdb;
+
+		$legacy_posts = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type IN ('wpnb_doc','wpnb_task')" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact bounded migration inventory.
+		$legacy_meta  = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_wpnb_workspace_state'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact bounded migration inventory.
+		if ( null === $legacy_posts || null === $legacy_meta ) {
+			throw new RuntimeException( 'WP AI Bridge could not inspect legacy Workspace state before migration.' );
+		}
+
+		return (int) $legacy_posts > 0 || (int) $legacy_meta > 0;
+	}
+
+	/**
+	 * Requires rollback-capable storage for every table mutated by Workspace migration.
+	 *
+	 * @return void
+	 */
+	private static function assert_transactional_workspace_tables() {
+		global $wpdb;
+
+		foreach ( array( $wpdb->posts, $wpdb->postmeta, $wpdb->options ) as $table ) {
+			$engine = $wpdb->get_var(
+				$wpdb->prepare(
+					'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+					$table
+				)
+			); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- One-time storage-engine preflight for migration-owned WordPress tables.
+			if ( ! is_string( $engine ) || '' === trim( $engine ) ) {
+				throw new RuntimeException( 'WP AI Bridge could not verify InnoDB transactional storage for migration table ' . $table . '.' );
+			}
+			if ( 'INNODB' !== strtoupper( trim( $engine ) ) ) {
+				throw new RuntimeException( 'WP AI Bridge Workspace migration requires InnoDB transactional storage; table ' . $table . ' uses ' . $engine . '.' );
+			}
+		}
+	}
+
+	/**
 	 * Returns a stable fingerprint of every migration-sensitive Workspace identity.
 	 *
 	 * @return string
@@ -121,9 +173,16 @@ final class Migrator {
 	private static function workspace_migration_fingerprint() {
 		global $wpdb;
 
-		$posts = $wpdb->get_results( "SELECT ID, post_type FROM {$wpdb->posts} WHERE post_type IN ('wpnb_doc','wpnb_task','wpai_doc','wpai_task') ORDER BY ID", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Bounded pre/post rollback verification for migration-owned identities.
-		$meta  = $wpdb->get_results( "SELECT meta_id, post_id, meta_key, meta_value FROM {$wpdb->postmeta} WHERE meta_key IN ('_wpnb_workspace_state','_wpai_workspace_state') ORDER BY meta_id", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Bounded pre/post rollback verification for migration-owned identities.
-		if ( ! is_array( $posts ) || ! is_array( $meta ) ) {
+		$posts       = $wpdb->get_results( "SELECT ID, post_type FROM {$wpdb->posts} WHERE post_type IN ('wpnb_doc','wpnb_task','wpai_doc','wpai_task') ORDER BY ID", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Bounded pre/post rollback verification for migration-owned identities.
+		$meta        = $wpdb->get_results( "SELECT meta_id, post_id, meta_key, meta_value FROM {$wpdb->postmeta} WHERE meta_key IN ('_wpnb_workspace_state','_wpai_workspace_state') ORDER BY meta_id", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Bounded pre/post rollback verification for migration-owned identities.
+		$schema_rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1",
+				self::SCHEMA_OPTION
+			),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Direct database fingerprint avoids stale option-cache state after rollback.
+		if ( ! is_array( $posts ) || ! is_array( $meta ) || ! is_array( $schema_rows ) ) {
 			throw new RuntimeException( 'WP AI Bridge could not inspect Workspace state for migration rollback protection.' );
 		}
 
@@ -133,7 +192,7 @@ final class Migrator {
 				array(
 					'posts'          => $posts,
 					'meta'           => $meta,
-					'schema_version' => get_option( self::SCHEMA_OPTION, false ),
+					'schema_version' => $schema_rows ? (string) $schema_rows[0]['option_value'] : false,
 				)
 			)
 		);

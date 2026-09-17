@@ -100,10 +100,10 @@ jobs:
             runner: bin/run-issue46-multisite.sh
             wordpress_tag: php8.4-apache
           - name: Issue 74 canonical migration
-            runner: bin/run-issue74-migration.sh
+            runner: bin/run-issue74-migration-suite.sh
             wordpress_tag: 6.9-php8.4-apache
           - name: Issue 74 canonical migration
-            runner: bin/run-issue74-migration.sh
+            runner: bin/run-issue74-migration-suite.sh
             wordpress_tag: php8.4-apache
     steps:
       - name: Checkout

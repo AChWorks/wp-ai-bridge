@@ -76,13 +76,15 @@ A conservative starting point is:
 
 Version 0.4.0 intentionally changes the actual WordPress plugin installation identity to `wp-ai-bridge/wp-ai-bridge.php`. Do **not** use the replace-existing-plugin flow for this migration.
 
+When legacy Workspace Documents or Tasks are present, the site's actual WordPress `posts`, `postmeta`, and `options` tables must use InnoDB. Version 0.4.0 verifies all three table engines before changing any legacy Workspace identity and stops activation safely if an engine cannot be verified or is not InnoDB. This requirement applies only to the one-time legacy Workspace migration; a clean installation with no legacy Workspace state is not rejected by this migration guard. If activation reports a non-InnoDB affected table, keep the database backup, convert that exact WordPress core table to InnoDB with your database/hosting tooling, verify the conversion, and retry activation. Do not bypass the guard.
+
 The supported one-time sequence is:
 
 1. Take a normal WordPress/database backup before the migration.
 2. Deactivate the former plugin.
 3. Delete it from **Plugins → Installed Plugins**. WordPress runs the former plugin's uninstall routine; that routine removes its disposable settings/OAuth state while intentionally preserving private Workspace Documents and Tasks.
 4. Upload and activate the 0.4.0 `wp-ai-bridge.zip` package. It installs under `wp-ai-bridge/`.
-5. Activation migrates only the preserved Workspace Documents and Tasks to the canonical Workspace identifiers, preserving their WordPress IDs, content/state, state hashes, and versions.
+5. Activation verifies transaction-capable InnoDB storage when legacy Workspace state exists, then migrates only the preserved Workspace Documents and Tasks to the canonical Workspace identifiers, preserving their WordPress IDs, content/state, state hashes, and versions.
 6. Open **WP AI Bridge → Settings** and enable the access groups you now want. Former access-group settings, mutation/activity state, OAuth clients/tokens, and other connection/runtime state are intentionally not imported.
 7. Reconnect ChatGPT using the canonical MCP endpoint shown on the Settings page.
 
