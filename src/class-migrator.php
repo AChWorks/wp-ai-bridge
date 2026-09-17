@@ -77,13 +77,10 @@ final class Migrator {
 				}
 				$started = true;
 
-				// Read all migration-owned tables inside the transaction before checking
-				// their engines. This also holds their metadata identity stable while the
-				// transaction proceeds, so the verified engines cannot change mid-migration.
-				$pre_migration_state = self::workspace_migration_fingerprint();
-				self::assert_workspace_conflicts_absent();
-				$requires_transactional_storage = self::has_legacy_workspace_state();
-				if ( $requires_transactional_storage ) {
+				$inventory           = self::workspace_migration_inventory();
+				$pre_migration_state = self::workspace_migration_fingerprint( $inventory );
+				self::assert_workspace_conflicts_absent( $inventory );
+				if ( self::has_legacy_workspace_state( $inventory ) ) {
 					self::assert_transactional_workspace_tables();
 				}
 
@@ -125,20 +122,60 @@ final class Migrator {
 	}
 
 	/**
-	 * Returns whether this site still has legacy Workspace identities to migrate.
+	 * Reads the exact identity categories that the one-time migration can mutate.
 	 *
-	 * @return bool
+	 * The migration changes only post_type, one metadata key, and the schema marker.
+	 * Counts for each legacy/canonical category therefore form a complete rollback
+	 * fingerprint for the mutation surface without copying arbitrary Workspace data.
+	 *
+	 * @return array<string,int|string>
 	 */
-	private static function has_legacy_workspace_state() {
+	private static function workspace_migration_inventory() {
 		global $wpdb;
 
-		$legacy_posts = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type IN ('wpnb_doc','wpnb_task')" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact bounded migration inventory.
-		$legacy_meta  = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_wpnb_workspace_state'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact bounded migration inventory.
-		if ( null === $legacy_posts || null === $legacy_meta ) {
-			throw new RuntimeException( 'WP AI Bridge could not inspect legacy Workspace state before migration.' );
+		$post_counts = $wpdb->get_var(
+			"SELECT CONCAT(COALESCE(SUM(post_type = 'wpnb_doc'), 0), ':', COALESCE(SUM(post_type = 'wpnb_task'), 0), ':', COALESCE(SUM(post_type = 'wpai_doc'), 0), ':', COALESCE(SUM(post_type = 'wpai_task'), 0)) FROM {$wpdb->posts} WHERE post_type IN ('wpnb_doc','wpnb_task','wpai_doc','wpai_task')"
+		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact bounded migration identity inventory.
+		$meta_counts = $wpdb->get_var(
+			"SELECT CONCAT(COALESCE(SUM(meta_key = '_wpnb_workspace_state'), 0), ':', COALESCE(SUM(meta_key = '_wpai_workspace_state'), 0)) FROM {$wpdb->postmeta} WHERE meta_key IN ('_wpnb_workspace_state','_wpai_workspace_state')"
+		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact bounded migration identity inventory.
+		$schema_value = $wpdb->get_var(
+			"SELECT COALESCE(MAX(option_value), '__wpai_absent__') FROM {$wpdb->options} WHERE option_name = 'wp_ai_bridge_schema_version'"
+		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Direct schema-marker inventory avoids stale option-cache state after rollback.
+		$meta_conflicts = $wpdb->get_var(
+			"SELECT COUNT(*) FROM {$wpdb->postmeta} legacy INNER JOIN {$wpdb->postmeta} canonical ON canonical.post_id = legacy.post_id WHERE legacy.meta_key = '_wpnb_workspace_state' AND canonical.meta_key = '_wpai_workspace_state'"
+		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact bounded migration conflict inventory.
+
+		if ( ! is_string( $post_counts ) || ! is_string( $meta_counts ) || ! is_string( $schema_value ) || null === $meta_conflicts ) {
+			throw new RuntimeException( 'WP AI Bridge could not inspect Workspace state for migration rollback protection.' );
 		}
 
-		return (int) $legacy_posts > 0 || (int) $legacy_meta > 0;
+		$post_parts = array_map( 'intval', explode( ':', $post_counts ) );
+		$meta_parts = array_map( 'intval', explode( ':', $meta_counts ) );
+		if ( 4 !== count( $post_parts ) || 2 !== count( $meta_parts ) ) {
+			throw new RuntimeException( 'WP AI Bridge received an invalid Workspace migration inventory.' );
+		}
+
+		return array(
+			'legacy_docs'     => $post_parts[0],
+			'legacy_tasks'    => $post_parts[1],
+			'canonical_docs'  => $post_parts[2],
+			'canonical_tasks' => $post_parts[3],
+			'legacy_meta'     => $meta_parts[0],
+			'canonical_meta'  => $meta_parts[1],
+			'meta_conflicts'  => (int) $meta_conflicts,
+			'schema_version'  => $schema_value,
+		);
+	}
+
+	/**
+	 * Returns whether this site still has legacy Workspace identities to migrate.
+	 *
+	 * @param array<string,int|string> $inventory Current migration inventory.
+	 * @return bool
+	 */
+	private static function has_legacy_workspace_state( $inventory ) {
+		return (int) $inventory['legacy_docs'] > 0 || (int) $inventory['legacy_tasks'] > 0 || (int) $inventory['legacy_meta'] > 0;
 	}
 
 	/**
@@ -150,12 +187,11 @@ final class Migrator {
 		global $wpdb;
 
 		foreach ( array( $wpdb->posts, $wpdb->postmeta, $wpdb->options ) as $table ) {
-			$engine = $wpdb->get_var(
-				$wpdb->prepare(
-					'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
-					$table
-				)
-			); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- One-time storage-engine preflight for migration-owned WordPress tables.
+			if ( ! is_string( $table ) || 1 !== preg_match( '/^[A-Za-z0-9_]+$/D', $table ) ) {
+				throw new RuntimeException( 'WP AI Bridge could not verify the migration table identity safely.' );
+			}
+			$table_name = esc_sql( $table );
+			$engine     = $wpdb->get_var( "SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{$table_name}'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact trusted WordPress table engine preflight.
 			if ( ! is_string( $engine ) || '' === trim( $engine ) ) {
 				throw new RuntimeException( 'WP AI Bridge could not verify InnoDB transactional storage for migration table ' . $table . '.' );
 			}
@@ -166,36 +202,17 @@ final class Migrator {
 	}
 
 	/**
-	 * Returns a stable fingerprint of every migration-sensitive Workspace identity.
+	 * Returns a stable fingerprint of the complete migration mutation surface.
 	 *
+	 * @param array<string,int|string>|null $inventory Optional current inventory.
 	 * @return string
 	 */
-	private static function workspace_migration_fingerprint() {
-		global $wpdb;
-
-		$posts       = $wpdb->get_results( "SELECT ID, post_type FROM {$wpdb->posts} WHERE post_type IN ('wpnb_doc','wpnb_task','wpai_doc','wpai_task') ORDER BY ID", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Bounded pre/post rollback verification for migration-owned identities.
-		$meta        = $wpdb->get_results( "SELECT meta_id, post_id, meta_key, meta_value FROM {$wpdb->postmeta} WHERE meta_key IN ('_wpnb_workspace_state','_wpai_workspace_state') ORDER BY meta_id", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Bounded pre/post rollback verification for migration-owned identities.
-		$schema_rows = $wpdb->get_results(
-			$wpdb->prepare(
-				"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1",
-				self::SCHEMA_OPTION
-			),
-			ARRAY_A
-		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Direct database fingerprint avoids stale option-cache state after rollback.
-		if ( ! is_array( $posts ) || ! is_array( $meta ) || ! is_array( $schema_rows ) ) {
-			throw new RuntimeException( 'WP AI Bridge could not inspect Workspace state for migration rollback protection.' );
+	private static function workspace_migration_fingerprint( $inventory = null ) {
+		if ( ! is_array( $inventory ) ) {
+			$inventory = self::workspace_migration_inventory();
 		}
 
-		return hash(
-			'sha256',
-			wp_json_encode(
-				array(
-					'posts'          => $posts,
-					'meta'           => $meta,
-					'schema_version' => $schema_rows ? (string) $schema_rows[0]['option_value'] : false,
-				)
-			)
-		);
+		return hash( 'sha256', wp_json_encode( $inventory ) );
 	}
 
 	/**
@@ -210,26 +227,17 @@ final class Migrator {
 		}
 	}
 
-	/** @return void */
-	private static function assert_workspace_conflicts_absent() {
-		global $wpdb;
-
-		$legacy = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type IN ('wpnb_doc','wpnb_task')" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact bounded migration inventory.
-		$new    = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type IN ('wpai_doc','wpai_task')" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact bounded migration inventory.
-		if ( null === $legacy || null === $new ) {
-			throw new RuntimeException( 'WP AI Bridge could not inspect Workspace record conflicts before migration.' );
-		}
-		if ( (int) $legacy > 0 && (int) $new > 0 ) {
+	/**
+	 * @param array<string,int|string> $inventory Current migration inventory.
+	 * @return void
+	 */
+	private static function assert_workspace_conflicts_absent( $inventory ) {
+		$legacy_posts    = (int) $inventory['legacy_docs'] + (int) $inventory['legacy_tasks'];
+		$canonical_posts = (int) $inventory['canonical_docs'] + (int) $inventory['canonical_tasks'];
+		if ( $legacy_posts > 0 && $canonical_posts > 0 ) {
 			throw new RuntimeException( 'Both legacy and canonical WP AI Bridge Workspace records exist; automatic migration would be ambiguous.' );
 		}
-
-		$meta_conflicts = $wpdb->get_var(
-			"SELECT COUNT(*) FROM {$wpdb->postmeta} legacy INNER JOIN {$wpdb->postmeta} canonical ON canonical.post_id = legacy.post_id WHERE legacy.meta_key = '_wpnb_workspace_state' AND canonical.meta_key = '_wpai_workspace_state'"
-		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact bounded migration conflict check.
-		if ( null === $meta_conflicts ) {
-			throw new RuntimeException( 'WP AI Bridge could not inspect Workspace metadata conflicts before migration.' );
-		}
-		if ( (int) $meta_conflicts > 0 ) {
+		if ( (int) $inventory['meta_conflicts'] > 0 ) {
 			throw new RuntimeException( 'Conflicting legacy and canonical Workspace metadata exists.' );
 		}
 	}
@@ -300,10 +308,8 @@ final class Migrator {
 
 	/** @return void */
 	private static function verify_workspace_migration() {
-		global $wpdb;
-		$legacy_posts = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type IN ('wpnb_doc','wpnb_task')" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact post-migration verification.
-		$legacy_meta  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_wpnb_workspace_state'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Exact post-migration verification.
-		if ( 0 !== $legacy_posts || 0 !== $legacy_meta ) {
+		$inventory = self::workspace_migration_inventory();
+		if ( 0 !== (int) $inventory['legacy_docs'] || 0 !== (int) $inventory['legacy_tasks'] || 0 !== (int) $inventory['legacy_meta'] ) {
 			throw new RuntimeException( 'Legacy Workspace storage identifiers remained after migration.' );
 		}
 	}
