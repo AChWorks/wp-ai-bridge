@@ -174,6 +174,120 @@ SRC,
 SRC,
 		$canonical
 	),
+	'procedural mysqli query' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    mysqli_query( $db, 'SELECT 1' );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'fully-qualified procedural mysqli query' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    \mysqli_query( $db, 'SELECT 1' );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'procedural mysqli connect and query' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    $db = mysqli_connect( DB_HOST, DB_USER, DB_PASSWORD, DB_NAME );
+    mysqli_query( $db, 'SELECT 1' );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'procedural caller-selected SQL' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    \mysqli_query( \mysqli_connect( DB_HOST, DB_USER, DB_PASSWORD, DB_NAME ), $sql );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'variable function database dispatch' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    $fn = 'mysqli_query';
+    $fn( $db, $sql );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'call_user_func database dispatch' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    call_user_func( 'mysqli_query', $db, $sql );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'call_user_func_array database dispatch' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    call_user_func_array( 'mysqli_query', array( $db, $sql ) );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'forward_static_call database dispatch' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    forward_static_call( 'mysqli_query', $db, $sql );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'string callable database dispatch' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    ( 'mysqli_query' )( $db, $sql );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'array callable database dispatch' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    array( 'mysqli_query' )[0]( $db, $sql );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'static callable factory dispatch' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    $fn = \Closure::fromCallable( 'mysqli_query' );
+    $fn( $db, $sql );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'function alias import bypass' => str_replace(
+		"<?php\n",
+		"<?php\nuse function mysqli_query as is_object;\n",
+		$canonical
+	),
+	'include code-loading bypass' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    include 'unsafe-db.php';
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+
+	'allowed callback carrier changed to DB primitive' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    $recovery_ids = array_filter( $recovery_ids, 'mysqli_query' );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+
 );
 
 foreach ( $fixtures as $label => $fixture ) {

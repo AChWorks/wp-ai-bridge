@@ -84,6 +84,55 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 		'\\wp_error'                 => true,
 	);
 
+	// This fixed-purpose store has a deliberately pinned direct function-call surface.
+	// Rejecting every other named callable closes procedural DB APIs and callback carriers
+	// without maintaining an open-ended database-function blacklist.
+	$allowed_function_names = array(
+		'add_option'               => true,
+		'array_filter'             => true,
+		'array_key_exists'         => true,
+		'array_reverse'            => true,
+		'array_unique'             => true,
+		'array_values'             => true,
+		'base64_decode'            => true,
+		'base64_encode'            => true,
+		'bin2hex'                  => true,
+		'delete_option'            => true,
+		'delete_transient'         => true,
+		'function_exists'          => true,
+		'get_option'               => true,
+		'get_transient'            => true,
+		'hash'                     => true,
+		'hash_equals'              => true,
+		'hash_hmac'                => true,
+		'in_array'                 => true,
+		'is_array'                 => true,
+		'is_object'                => true,
+		'is_string'                => true,
+		'json_decode'              => true,
+		'json_last_error'          => true,
+		'max'                      => true,
+		'openssl_decrypt'          => true,
+		'openssl_encrypt'          => true,
+		'preg_match'               => true,
+		'preg_quote'               => true,
+		'random_bytes'             => true,
+		'rtrim'                    => true,
+		'sanitize_key'             => true,
+		'set_transient'            => true,
+		'sort'                     => true,
+		'strlen'                   => true,
+		'strtr'                    => true,
+		'substr'                   => true,
+		'time'                     => true,
+		'wp_json_encode'           => true,
+		'wp_salt'                  => true,
+		'wp_schedule_single_event' => true,
+	);
+	$allowed_callback_calls = array(
+		"array_filter(\$recovery_ids,'is_string')" => true,
+	);
+
 	$allowed_calls = array(
 		"get_var|\$wpdb->get_var(\$wpdb->prepare('SELECT GET_LOCK(%s, %d)',\$name,self::REFRESH_LOCK_TIMEOUT))" => 1,
 		"prepare|\$wpdb->prepare('SELECT GET_LOCK(%s, %d)',\$name,self::REFRESH_LOCK_TIMEOUT)"              => 1,
@@ -104,6 +153,70 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 		$token = $tokens[ $i ];
 		$next  = $tokens[ $i + 1 ] ?? null;
 
+		// Disallow code loading/evaluation, namespace function aliases, and shell execution.
+		// Any of these could introduce executable database access outside the pinned call surface.
+		if (
+			( is_array( $token ) && in_array( $token[0], array( T_INCLUDE, T_INCLUDE_ONCE, T_REQUIRE, T_REQUIRE_ONCE, T_EVAL, T_USE ), true ) ) ||
+			'`' === $text( $token )
+		) {
+			return 'dynamic code-loading/alias/shell execution is not permitted in the OAuth store';
+		}
+
+		// Reject dynamic invocation forms before processing named calls. This covers variable
+		// functions, string/array/expression callables, and callback values returned by helpers.
+		if ( '(' === $text( $next ) ) {
+			if ( is_array( $token ) && T_VARIABLE === $token[0] ) {
+				return 'variable function invocation is not permitted in the OAuth store';
+			}
+			if (
+				( is_array( $token ) && T_CONSTANT_ENCAPSED_STRING === $token[0] ) ||
+				in_array( $text( $token ), array( ')', ']', '}' ), true )
+			) {
+				return 'dynamic callable invocation is not permitted in the OAuth store';
+			}
+		}
+
+		// Static method invocation is not part of the current store contract. self:: constants
+		// remain allowed because they are not followed by a callable argument list.
+		if ( is_array( $token ) && T_DOUBLE_COLON === $token[0] ) {
+			$static_member = $tokens[ $i + 1 ] ?? null;
+			$static_open   = $tokens[ $i + 2 ] ?? null;
+			if ( '(' === $text( $static_open ) ) {
+				return 'static method invocation is not permitted in the OAuth store';
+			}
+		}
+
+		// Pin every direct named function call. Current production calls are unqualified T_STRING
+		// names only; qualified/fully-qualified/relative callables fail closed, which prevents
+		// namespace spelling changes from bypassing the direct-function inventory.
+		if ( is_array( $token ) && in_array( $token[0], $class_name_tokens, true ) && '(' === $text( $next ) ) {
+			$previous = $tokens[ $i - 1 ] ?? null;
+			$is_method = is_array( $previous ) && in_array(
+				$previous[0],
+				array( T_FUNCTION, T_NEW, T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR, T_DOUBLE_COLON ),
+				true
+			);
+			if ( ! $is_method ) {
+				if ( T_STRING !== $token[0] ) {
+					return 'qualified direct function invocation is not permitted in the OAuth store';
+				}
+				$call_name = strtolower( (string) $token[1] );
+				if ( ! isset( $allowed_function_names[ $call_name ] ) ) {
+					return 'unapproved direct function invocation in the OAuth store: ' . $call_name;
+				}
+				if ( 'array_filter' === $call_name ) {
+					$call_end = $matching_paren( $tokens, $i + 1 );
+					if ( false === $call_end ) {
+						return 'unterminated array_filter call in the OAuth store';
+					}
+					$call_expression = $normalize( $tokens, $i, $call_end );
+					if ( ! isset( $allowed_callback_calls[ $call_expression ] ) ) {
+						return 'unapproved callback carrier in the OAuth store: ' . $call_expression;
+					}
+				}
+			}
+		}
+
 		// Every object call in this fixed-purpose store must be directly bound to the store
 		// itself or the exact $wpdb surface checked below. This blocks database calls through
 		// aliases, factories, class aliases, subclasses, reflection-produced handles, or other
@@ -123,14 +236,6 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 			}
 		}
 
-		// These local-symbol helpers can recover the imported global $wpdb by name without an
-		// executable T_VARIABLE("$wpdb") occurrence. They are unnecessary in this store.
-		if ( is_array( $token ) && in_array( $token[0], $class_name_tokens, true ) && '(' === $text( $next ) ) {
-			$call_name = $terminal_class_name( $token );
-			if ( in_array( $call_name, array( 'get_defined_vars', 'compact' ), true ) ) {
-				return 'indirect local-symbol lookup is not permitted in the OAuth store';
-			}
-		}
 		// The OAuth store has no legitimate reason to use the global symbol table. Reject the
 		// entire entry point so literal and computed $GLOBALS keys cannot create an untracked
 		// database handle.
