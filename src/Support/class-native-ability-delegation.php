@@ -14,11 +14,13 @@ use WP_Error;
  * the exact WP AI Bridge MCP routes while preserving native provider permissions.
  */
 final class Native_Ability_Delegation {
-	const ADAPTER_EXECUTE_ABILITY = 'mcp-adapter/execute-ability';
+	const ADAPTER_EXECUTE_ABILITY         = 'mcp-adapter/execute-ability';
+	const ADAPTER_EXECUTE_TOOL            = 'mcp-adapter-execute-ability';
+	const BRIDGE_MCP_SERVER_ID            = 'wp-ai-bridge-direct';
+	const NATIVE_RESULT_INSPECTION_BUDGET = 4194304;
 
 	/** @var array<int,string> */
 	private $bridge_routes = array(
-		'/wp-ai-bridge/v1/mcp',
 		'/wp-ai-bridge/v1/mcp',
 	);
 
@@ -42,6 +44,7 @@ final class Native_Ability_Delegation {
 	/** @return void */
 	public function boot() {
 		add_filter( 'wp_register_ability_args', array( $this, 'filter_ability_args' ), PHP_INT_MAX, 2 );
+		add_filter( 'mcp_adapter_tool_call_result', array( $this, 'filter_tool_call_result' ), PHP_INT_MAX, 5 );
 		add_filter( 'rest_endpoints', array( $this, 'filter_rest_endpoints' ), PHP_INT_MAX );
 	}
 
@@ -64,8 +67,7 @@ final class Native_Ability_Delegation {
 	}
 
 	/**
-	 * Wraps only the Adapter generic execution permission callback.
-	 * execution permission callback.
+	 * Wraps the Adapter generic execution permission callback.
 	 *
 	 * Provider metadata, annotations, namespaces, class names and custom Ability
 	 * virtual methods are deliberately irrelevant to Bridge ownership provenance.
@@ -101,14 +103,150 @@ final class Native_Ability_Delegation {
 				);
 			}
 
-			return call_user_func( $original_permission, $input );
+			try {
+				$result = call_user_func( $original_permission, $input );
+			} catch ( \Throwable $throwable ) {
+				return new WP_Error(
+					'wp_ai_bridge_native_ability_permission_failed',
+					__( 'Native Ability permission check failed.', 'wp-ai-bridge' )
+				);
+			}
+
+			if ( is_wp_error( $result ) ) {
+				return new WP_Error(
+					'wp_ai_bridge_native_ability_permission_denied',
+					__( 'Native Ability permission was denied.', 'wp-ai-bridge' )
+				);
+			}
+
+			return $result;
 		};
 
 		return $args;
 	}
 
 	/**
-	 * Wraps only the exact canonical and legacy Bridge MCP callbacks. The request
+	 * Bounds provider-native results at the Adapter's final pre-protocol result hook.
+	 *
+	 * The hook is scoped to the Bridge-owned MCP server and execute-ability tool.
+	 * Direct Ability execution and other Adapter servers remain unchanged.
+	 *
+	 * @param mixed  $result    Raw Adapter tool result.
+	 * @param mixed  $args      Tool arguments.
+	 * @param string $tool_name Protocol tool name.
+	 * @param mixed  $mcp_tool  Adapter MCP tool object.
+	 * @param mixed  $server    Adapter MCP server object.
+	 * @return mixed
+	 */
+	public function filter_tool_call_result( $result, $args, $tool_name, $mcp_tool, $server ) {
+		if (
+			self::ADAPTER_EXECUTE_TOOL !== $tool_name ||
+			! is_array( $args ) ||
+			empty( $args['ability_name'] ) ||
+			! is_string( $args['ability_name'] ) ||
+			! is_object( $mcp_tool ) ||
+			! is_object( $server ) ||
+			! method_exists( $server, 'get_server_id' ) ||
+			self::BRIDGE_MCP_SERVER_ID !== $server->get_server_id()
+		) {
+			return $result;
+		}
+
+		$target = function_exists( 'wp_get_ability' ) ? wp_get_ability( $args['ability_name'] ) : null;
+		if ( $target && $this->is_bridge_owned_ability( $target ) ) {
+			return $result;
+		}
+
+		return $this->sanitize_native_execution_result( $result );
+	}
+
+	/**
+	 * Replaces provider-native execution failures and unsafe result shapes with
+	 * bounded Bridge-owned responses that cannot carry provider secret material.
+	 *
+	 * @param mixed $result Adapter execute-ability callback result.
+	 * @return array<string,mixed>
+	 */
+	private function sanitize_native_execution_result( $result ) {
+		if ( ! is_array( $result ) || ! array_key_exists( 'success', $result ) || ! is_bool( $result['success'] ) ) {
+			return $this->native_result_blocked();
+		}
+
+		if ( false === $result['success'] ) {
+			return $this->native_execution_failure();
+		}
+
+		if ( ! array_key_exists( 'data', $result ) ) {
+			return $this->native_result_blocked();
+		}
+
+		$remaining = self::NATIVE_RESULT_INSPECTION_BUDGET;
+		if ( ! $this->is_safe_native_result( $result['data'], $remaining ) ) {
+			return $this->native_result_blocked();
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Traverses JSON-compatible provider data without invoking custom serializers.
+	 *
+	 * @param mixed $value     Provider result value.
+	 * @param int   $remaining Remaining inspection budget.
+	 * @param int   $depth     Current nesting depth.
+	 * @return bool
+	 */
+	private function is_safe_native_result( $value, &$remaining, $depth = 0 ) {
+		if ( $depth > 64 || is_resource( $value ) || ( is_object( $value ) && ! ( $value instanceof \stdClass ) ) ) {
+			return false;
+		}
+
+		$remaining -= is_string( $value ) ? strlen( $value ) : 1;
+		if ( $remaining < 0 ) {
+			return false;
+		}
+
+		if ( is_array( $value ) || $value instanceof \stdClass ) {
+			foreach ( (array) $value as $key => $child ) {
+				if ( is_string( $key ) ) {
+					$remaining -= strlen( $key );
+					if ( $remaining < 0 || Metadata_Key_Policy::is_sensitive( $key ) ) {
+						return false;
+					}
+				} else {
+					--$remaining;
+					if ( $remaining < 0 ) {
+						return false;
+					}
+				}
+
+				if ( ! $this->is_safe_native_result( $child, $remaining, $depth + 1 ) ) {
+					return false;
+				}
+			}
+		}
+
+		return true;
+	}
+
+	/** @return array<string,mixed> */
+	private function native_execution_failure() {
+		return array(
+			'success' => false,
+			'error'   => __( 'Native Ability execution failed.', 'wp-ai-bridge' ),
+		);
+	}
+
+	/** @return array<string,mixed> */
+	private function native_result_blocked() {
+		return array(
+			'success' => false,
+			'error'   => __( 'Native Ability result was blocked because it may contain credential or security data.', 'wp-ai-bridge' ),
+		);
+	}
+
+	/**
+	 * Wraps only the exact canonical Bridge MCP callback. The request
 	 * context therefore encloses Adapter tool permission and execution without
 	 * changing transport authentication or unrelated REST requests.
 	 *

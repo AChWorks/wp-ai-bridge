@@ -60,6 +60,7 @@ for test in \
     issue36-term-meta-security-smoke.php \
     issue36-primary-identity-smoke.php \
     issue42-ability-catalog-smoke.php \
+    issue44-native-ability-delegation-smoke.php \
     issue46-source-editing-smoke.php \
     issue3-content-block-smoke.php \
     issue3-safety-regressions.php \
@@ -78,9 +79,16 @@ do
         "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/mu-plugins
         "${compose[@]}" cp "$root/tests/fixtures/ability-catalog-contract.php" wordpress:/var/www/html/wp-content/mu-plugins/wpai-catalog-contract.php
     fi
+    if [[ "$test" == "issue44-native-ability-delegation-smoke.php" ]]; then
+        "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/mu-plugins
+        "${compose[@]}" cp "$root/tests/fixtures/issue44-native-provider.php" wordpress:/var/www/html/wp-content/mu-plugins/wpai-issue44-native-provider.php
+    fi
     "${wp[@]}" eval-file "wp-content/plugins/wp-ai-bridge/tests/integration/${test}" --user=1 --allow-root
     if [[ "$test" == "issue42-ability-catalog-smoke.php" ]]; then
         "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-content/mu-plugins/wpai-catalog-contract.php
+    fi
+    if [[ "$test" == "issue44-native-ability-delegation-smoke.php" ]]; then
+        "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-content/mu-plugins/wpai-issue44-native-provider.php
     fi
 done
 

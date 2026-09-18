@@ -159,6 +159,13 @@ bash bin/run-single-site-regressions.sh 6.9-php8.4-apache
 bash bin/run-single-site-regressions.sh php8.4-apache
 ```
 
+For the rotating-refresh lost-response recovery and real-database concurrency layer:
+
+```bash
+bash bin/run-issue80-refresh-recovery.sh 6.9-php8.4-apache
+bash bin/run-issue80-refresh-recovery.sh php8.4-apache
+```
+
 For the native canonical identity/activation layer:
 
 ```bash
@@ -166,7 +173,7 @@ bash bin/run-canonical-identity.sh 6.9-php8.4-apache
 bash bin/run-canonical-identity.sh php8.4-apache
 ```
 
-Coverage includes WordPress 6.9/current, direct OAuth/MCP transport, raw MCP discovery/execution, content/block safety, Persian runtime localization, Workspace concurrency/lifecycle, Astra native Ability reuse, Code Snippets provider generations, consolidated regressions for integrated administrator-capability slices, and clean canonical activation without retired migration code.
+Coverage includes WordPress 6.9/current, direct OAuth/MCP transport, rotating-refresh ambiguous-response recovery with real MariaDB concurrency, raw MCP discovery/execution, content/block safety, Persian runtime localization, Workspace concurrency/lifecycle, Astra native Ability reuse, Code Snippets provider generations, consolidated regressions for integrated administrator-capability slices, and clean canonical activation without retired migration code.
 
 Gravity Forms automated coverage uses a test-only GFAPI contract fixture; it is not evidence that a commercial Gravity Forms binary was executed in CI.
 

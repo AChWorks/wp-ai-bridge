@@ -21,6 +21,8 @@ class WP_Error {
 }
 function __( $text, $domain = null ) {
 	return $text; }
+function is_wp_error( $value ) {
+	return $value instanceof WP_Error; }
 function get_option( $name, $default = false ) {
 	return array_key_exists( $name, $GLOBALS['wpai_issue44_options'] ) ? $GLOBALS['wpai_issue44_options'][ $name ] : $default;
 }
@@ -35,6 +37,7 @@ function current_user_can( $capability ) {
 }
 
 require dirname( __DIR__ ) . '/src/Support/class-settings.php';
+require dirname( __DIR__ ) . '/src/Support/class-metadata-key-policy.php';
 require dirname( __DIR__ ) . '/src/Support/class-native-ability-delegation.php';
 require dirname( __DIR__ ) . '/src/Support/class-permissions.php';
 require dirname( __DIR__ ) . '/src/Abilities/class-ability-resolver.php';
@@ -87,6 +90,16 @@ class WP_Native_Builder_Issue44_Ability {
 
 class WP_Native_Builder_Issue44_Custom_Ability extends WP_Native_Builder_Issue44_Ability {}
 
+class WP_Native_Builder_Issue44_Mcp_Server {
+	private $server_id;
+	public function __construct( $server_id ) {
+		$this->server_id = (string) $server_id;
+	}
+	public function get_server_id() {
+		return $this->server_id;
+	}
+}
+
 $settings   = new Settings();
 $delegation = new Native_Ability_Delegation( $settings );
 
@@ -100,6 +113,7 @@ $bridge_object = new WP_Native_Builder_Issue44_Ability(
 	'wp-ai-bridge/fixture',
 	array(
 		'public'      => true,
+		'mcp'         => array( 'public' => true ),
 		'annotations' => array( 'readonly' => true ),
 	)
 );
@@ -114,6 +128,7 @@ $reentrant_object = new WP_Native_Builder_Issue44_Ability(
 	'wp-ai-bridge/reentrant-provider',
 	array(
 		'public'             => true,
+		'mcp'                => array( 'public' => true ),
 		'wp_ai_bridge_owned' => true,
 	)
 );
@@ -149,6 +164,7 @@ $provider_args = $delegation->filter_ability_args(
 			return true; },
 		'meta'                => array(
 			'public'             => true,
+			'mcp'                => array( 'public' => true ),
 			'wp_ai_bridge_owned' => true,
 		),
 	),
@@ -165,7 +181,7 @@ wpai_issue44_assert(
 );
 
 $rogue_delegation = new Native_Ability_Delegation( new Settings() );
-$rogue_object     = new WP_Native_Builder_Issue44_Ability( 'wp-ai-bridge/rogue-capture', array( 'public' => true ) );
+$rogue_object     = new WP_Native_Builder_Issue44_Ability( 'wp-ai-bridge/rogue-capture', array( 'public' => true, 'mcp' => array( 'public' => true ) ) );
 $GLOBALS['wpai_issue44_abilities']['wp-ai-bridge/rogue-capture'] = $rogue_object;
 $rogue_delegation->remember_bridge_abilities( array( $rogue_object ) );
 wpai_issue44_assert(
@@ -177,23 +193,65 @@ wpai_issue44_assert(
 	'Separate delegation instance did not retain its own isolated provenance.'
 );
 
-$provider_allowed   = true;
-$provider_checks    = 0;
-$adapter_args       = $delegation->filter_ability_args(
+$provider_allowed          = true;
+$provider_checks           = 0;
+$result_secret             = 'ISSUE82_SYNTHETIC_RESULT_SECRET';
+$error_secret              = 'ISSUE82_SYNTHETIC_ERROR_SECRET';
+$throw_secret              = 'ISSUE82_SYNTHETIC_THROW_SECRET';
+$permission_error_secret   = 'ISSUE82_SYNTHETIC_PERMISSION_ERROR_SECRET';
+$permission_throw_secret   = 'ISSUE82_SYNTHETIC_PERMISSION_THROW_SECRET';
+$bridge_owned_secret       = 'ISSUE82_SYNTHETIC_BRIDGE_OWNED_SECRET';
+$adapter_args              = $delegation->filter_ability_args(
 	array(
-		'permission_callback' => static function ( $input ) use ( &$provider_allowed, &$provider_checks ) {
+		'permission_callback' => static function ( $input ) use ( &$provider_allowed, &$provider_checks, $permission_error_secret, $permission_throw_secret ) {
 			++$provider_checks;
+			$name = is_array( $input ) ? ( $input['ability_name'] ?? '' ) : '';
+			if ( 'vendor/permission-error' === $name ) {
+				return new WP_Error( 'provider_permission_error', $permission_error_secret );
+			}
+			if ( 'vendor/permission-throw' === $name ) {
+				throw new RuntimeException( $permission_throw_secret );
+			}
 			return $provider_allowed;
+		},
+		'execute_callback'    => static function ( $input ) use ( $result_secret, $error_secret, $throw_secret, $bridge_owned_secret ) {
+			$name = is_array( $input ) ? ( $input['ability_name'] ?? '' ) : '';
+			switch ( $name ) {
+				case 'vendor/secret-provider':
+					return array(
+						'success' => true,
+						'data'    => array(
+							'status' => 'ok',
+							'nested' => array( 'api_key' => $result_secret ),
+						),
+					);
+				case 'vendor/error-provider':
+					return array( 'success' => false, 'error' => 'Provider failure: ' . $error_secret );
+				case 'vendor/throw-provider':
+					return array( 'success' => false, 'error' => 'Provider throw: ' . $throw_secret );
+				case 'wp-ai-bridge/fixture':
+					return array(
+						'success' => true,
+						'data'    => array( 'application_password' => $bridge_owned_secret ),
+					);
+				default:
+					return array(
+						'success' => true,
+						'data'    => array( 'status' => 'ok', 'nested' => array( 'count' => 1 ) ),
+					);
+			}
 		},
 	),
 	Native_Ability_Delegation::ADAPTER_EXECUTE_ABILITY
 );
 $adapter_permission = $adapter_args['permission_callback'];
+$adapter_execute    = $adapter_args['execute_callback'];
 
 $GLOBALS['wpai_issue44_abilities']['vendor/late-provider'] = new WP_Native_Builder_Issue44_Custom_Ability(
 	'vendor/late-provider',
 	array(
 		'public'      => true,
+		'mcp'         => array( 'public' => true ),
 		'annotations' => array(
 			'readonly'    => true,
 			'destructive' => false,
@@ -201,6 +259,28 @@ $GLOBALS['wpai_issue44_abilities']['vendor/late-provider'] = new WP_Native_Build
 		),
 	)
 );
+
+foreach (
+	array(
+		'vendor/secret-provider',
+		'vendor/error-provider',
+		'vendor/throw-provider',
+		'vendor/permission-error',
+		'vendor/permission-throw',
+	) as $provider_name
+) {
+	$GLOBALS['wpai_issue44_abilities'][ $provider_name ] = new WP_Native_Builder_Issue44_Custom_Ability(
+		$provider_name,
+		array(
+			'mcp'         => array( 'public' => true ),
+			'annotations' => array(
+				'readonly'    => true,
+				'destructive' => false,
+				'idempotent'  => true,
+			),
+		)
+	);
+}
 
 wpai_issue44_assert(
 	true === $adapter_permission(
@@ -210,6 +290,17 @@ wpai_issue44_assert(
 		)
 	),
 	'Ordinary direct Adapter permission was changed outside a Bridge MCP request.'
+);
+
+$direct_secret_result = $adapter_execute(
+	array(
+		'ability_name' => 'vendor/secret-provider',
+		'parameters'   => array(),
+	)
+);
+wpai_issue44_assert(
+	$result_secret === ( $direct_secret_result['data']['nested']['api_key'] ?? '' ),
+	'Direct Adapter execution outside the Bridge boundary was unexpectedly sanitized.'
 );
 
 $invoke = static function ( $route, $permission, $ability_name ) use ( $delegation ) {
@@ -232,7 +323,26 @@ $invoke = static function ( $route, $permission, $ability_name ) use ( $delegati
 	return $endpoints[ $route ][0]['callback']( null );
 };
 
-foreach ( array( '/wp-ai-bridge/v1/mcp', '/wp-ai-bridge/v1/mcp' ) as $route ) {
+$bridge_mcp_server  = new WP_Native_Builder_Issue44_Mcp_Server( Native_Ability_Delegation::BRIDGE_MCP_SERVER_ID );
+$default_mcp_server = new WP_Native_Builder_Issue44_Mcp_Server( 'mcp-adapter-default-server' );
+$mcp_tool_fixture   = new stdClass();
+
+$filter_execute_result = static function ( $ability_name, $server ) use ( $delegation, $adapter_execute, $mcp_tool_fixture ) {
+	$args = array(
+		'ability_name' => $ability_name,
+		'parameters'   => array(),
+	);
+	$raw_result = $adapter_execute( $args );
+	return $delegation->filter_tool_call_result(
+		$raw_result,
+		$args,
+		Native_Ability_Delegation::ADAPTER_EXECUTE_TOOL,
+		$mcp_tool_fixture,
+		$server
+	);
+};
+
+foreach ( array( '/wp-ai-bridge/v1/mcp' ) as $route ) {
 	$result = $invoke( $route, $adapter_permission, 'vendor/late-provider' );
 	wpai_issue44_assert( $result instanceof WP_Error && 'wp_ai_bridge_native_abilities_disabled' === $result->get_error_code(), 'Native provider execution bypassed the disabled group on ' . $route . '.' );
 	$result = $invoke( $route, $adapter_permission, 'wp-ai-bridge/reentrant-provider' );
@@ -247,6 +357,55 @@ wpai_issue44_assert( $result instanceof WP_Error, 'Third-party Ability escaped t
 $GLOBALS['wpai_issue44_options'][ Settings::OPTION_NAME ][ Settings::GROUP_NATIVE_ABILITIES ] = 1;
 $result = $invoke( '/wp-ai-bridge/v1/mcp', $adapter_permission, 'vendor/late-provider' );
 wpai_issue44_assert( true === $result, 'Enabled Native Abilities did not delegate to the provider permission callback.' );
+
+$safe_result = $filter_execute_result( 'vendor/late-provider', $bridge_mcp_server );
+wpai_issue44_assert(
+	true === ( $safe_result['success'] ?? false )
+	&& 'ok' === ( $safe_result['data']['status'] ?? '' )
+	&& 1 === ( $safe_result['data']['nested']['count'] ?? 0 ),
+	'Safe provider-native result was not preserved.'
+);
+
+$default_server_secret = $filter_execute_result( 'vendor/secret-provider', $default_mcp_server );
+wpai_issue44_assert(
+	$result_secret === ( $default_server_secret['data']['nested']['api_key'] ?? '' ),
+	'Provider-native result filtering escaped the Bridge-owned MCP server.'
+);
+
+$secret_result = $filter_execute_result( 'vendor/secret-provider', $bridge_mcp_server );
+wpai_issue44_assert( false === ( $secret_result['success'] ?? true ), 'Sensitive provider-native result was not blocked.' );
+wpai_issue44_assert( false === strpos( json_encode( $secret_result ), $result_secret ), 'Sensitive provider-native result leaked its sentinel.' );
+
+$error_result = $filter_execute_result( 'vendor/error-provider', $bridge_mcp_server );
+wpai_issue44_assert( false === ( $error_result['success'] ?? true ), 'Provider-native error was not normalized.' );
+wpai_issue44_assert( false === strpos( json_encode( $error_result ), $error_secret ), 'Provider-native error leaked its sentinel.' );
+
+$throw_result = $filter_execute_result( 'vendor/throw-provider', $bridge_mcp_server );
+wpai_issue44_assert( false === ( $throw_result['success'] ?? true ), 'Provider-native throwable was not normalized.' );
+wpai_issue44_assert( false === strpos( json_encode( $throw_result ), $throw_secret ), 'Provider-native throwable leaked its sentinel.' );
+
+$permission_error = $invoke( '/wp-ai-bridge/v1/mcp', $adapter_permission, 'vendor/permission-error' );
+wpai_issue44_assert(
+	$permission_error instanceof WP_Error
+	&& 'wp_ai_bridge_native_ability_permission_denied' === $permission_error->get_error_code()
+	&& false === strpos( $permission_error->get_error_message(), $permission_error_secret ),
+	'Provider-native permission error was not replaced by a Bridge-owned bounded error.'
+);
+
+$permission_throw = $invoke( '/wp-ai-bridge/v1/mcp', $adapter_permission, 'vendor/permission-throw' );
+wpai_issue44_assert(
+	$permission_throw instanceof WP_Error
+	&& 'wp_ai_bridge_native_ability_permission_failed' === $permission_throw->get_error_code()
+	&& false === strpos( $permission_throw->get_error_message(), $permission_throw_secret ),
+	'Provider-native permission throwable was not replaced by a Bridge-owned bounded error.'
+);
+
+$bridge_owned_result = $filter_execute_result( 'wp-ai-bridge/fixture', $bridge_mcp_server );
+wpai_issue44_assert(
+	true === ( $bridge_owned_result['success'] ?? false )
+	&& $bridge_owned_secret === ( $bridge_owned_result['data']['application_password'] ?? '' ),
+	'Bridge-owned purpose-specific result was incorrectly sanitized by the native boundary.'
+);
 $provider_allowed = false;
 $result           = $invoke( '/wp-ai-bridge/v1/mcp', $adapter_permission, 'vendor/late-provider' );
 wpai_issue44_assert( false === $result, 'Bridge delegation widened an explicit provider denial.' );

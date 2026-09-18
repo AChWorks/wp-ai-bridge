@@ -104,7 +104,7 @@ $fixture_client_metadata                  = array(
 	'token_endpoint_auth_method' => 'private_key_jwt',
 	'jwks_uri'                   => Client_Assertion_Validator::CHATGPT_JWKS_URI,
 );
-$GLOBALS['wpai_issue6_jwks_fetches'] = 0;
+$GLOBALS['wpai_issue6_jwks_fetches']      = 0;
 $wpai_issue6_http_mock                    = static function ( $preempt, $args, $url ) use ( $fixture_jwks, $fixture_client_metadata ) {
 	if ( OAuth_Server::CHATGPT_CLIENT_ID === $url ) {
 		$body = $fixture_client_metadata;
@@ -374,6 +374,20 @@ $new_refresh = isset( $refreshed['refresh_token'] ) ? (string) $refreshed['refre
 wpai_issue6_oauth_assert( '' !== $new_access && $new_access !== $access, 'Refresh did not rotate the access token.' );
 wpai_issue6_oauth_assert( '' !== $new_refresh && $new_refresh !== $refresh, 'Refresh did not rotate the refresh token.' );
 
+// A single exact retry with fresh client authentication may recover the same
+// already-committed response if the first HTTP response was lost after rotation.
+$refresh_recovery = wpai_issue6_oauth_token_request(
+	$oauth,
+	array(
+		'grant_type'    => 'refresh_token',
+		'refresh_token' => $refresh,
+		'client_id'     => OAuth_Server::CHATGPT_CLIENT_ID,
+		'resource'      => $oauth->mcp_endpoint_url(),
+	)
+);
+wpai_issue6_oauth_assert( 200 === $refresh_recovery->get_status(), 'Exact lost-response refresh retry did not recover.' );
+wpai_issue6_oauth_assert( wpai_issue6_oauth_data( $refresh_recovery ) === $refreshed, 'Refresh recovery minted or returned a different successor response.' );
+
 $refresh_replay = wpai_issue6_oauth_token_request(
 	$oauth,
 	array(
@@ -383,8 +397,8 @@ $refresh_replay = wpai_issue6_oauth_token_request(
 		'resource'      => $oauth->mcp_endpoint_url(),
 	)
 );
-wpai_issue6_oauth_assert( 400 === $refresh_replay->get_status(), 'Rotated refresh token was reusable.' );
-wpai_issue6_oauth_assert( 'invalid_grant' === ( wpai_issue6_oauth_data( $refresh_replay )['error'] ?? '' ), 'Refresh-token replay did not fail as invalid_grant.' );
+wpai_issue6_oauth_assert( 400 === $refresh_replay->get_status(), 'Consumed refresh recovery allowance permitted another replay.' );
+wpai_issue6_oauth_assert( 'invalid_grant' === ( wpai_issue6_oauth_data( $refresh_replay )['error'] ?? '' ), 'Post-recovery refresh replay did not fail as invalid_grant.' );
 
 $revoke = new WP_REST_Request( 'POST', '/wp-ai-bridge/v1/oauth/revoke' );
 $revoke->set_param( 'token', $new_access );

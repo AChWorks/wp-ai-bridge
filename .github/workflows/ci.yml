@@ -87,6 +87,12 @@ jobs:
           - name: Single-site regressions
             runner: bin/run-single-site-regressions.sh
             wordpress_tag: php8.4-apache
+          - name: Issue 80 refresh recovery
+            runner: bin/run-issue80-refresh-recovery.sh
+            wordpress_tag: 6.9-php8.4-apache
+          - name: Issue 80 refresh recovery
+            runner: bin/run-issue80-refresh-recovery.sh
+            wordpress_tag: php8.4-apache
           - name: User/auth multisite regressions
             runner: bin/run-issue58-user-meta-multisite.sh
             wordpress_tag: 6.9-php8.4-apache

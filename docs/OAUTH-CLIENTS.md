@@ -28,6 +28,8 @@ The Bridge fetches metadata and JWKS only through bounded, redirect-disabled Wor
 
 Authorization still uses S256 PKCE. Authorization codes, access tokens, refresh tokens, redirect URIs, MCP resource, WordPress user and scopes remain bound to the exact authenticated client. A client cannot revoke another client's artifact.
 
+Refresh tokens remain rotating and one-time. If a successful refresh response is lost after the Bridge commits rotation, the same authenticated client may retry the exact old refresh token once within the Bridge's 60-second recovery window. The retry must use fresh `private_key_jwt` authentication and the same resource and effective scope. The Bridge returns the exact already-committed successor pair; it does not mint another generation. Wrong-client/resource/scope retries, expired/tampered state, authorization or approved-client revision changes, and revoked/expired successors fail closed.
+
 ## Revocation behavior
 
 Changing the approved additional-client list rotates a shared additional-client approval revision. This intentionally invalidates every outstanding non-ChatGPT consent/code/access/refresh artifact immediately. Re-adding the same client later does not resurrect artifacts issued under an older revision. ChatGPT remains independent from this revision.
