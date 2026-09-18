@@ -48,6 +48,13 @@ try {
 		$bridge_public = ( new \WP_AI_Bridge\Abilities\Ability_Resolver() )->is_mcp_exposed( $probe );
 		wpai_issue42_assert( $native_public === $bridge_public, 'Bridge exposure must match the pinned Adapter on the actual registered object.' );
 	}
+	$public_fallback = wp_get_ability( 'catalog-public-fallback/operation' );
+	wpai_issue42_assert( $public_fallback instanceof WP_Ability, 'Public fallback fixture was not registered.' );
+	wpai_issue42_assert( \WP\MCP\Abilities\McpAbilityExposure::is_public( $public_fallback ), 'Pinned Adapter did not expose meta.public fallback fixture.' );
+	wpai_issue42_assert( ( new \WP_AI_Bridge\Abilities\Ability_Resolver() )->is_mcp_exposed( $public_fallback ), 'Bridge did not follow the active Adapter exposure resolver.' );
+	$public_fallback_contract = $catalog->execute( array( 'action' => 'get', 'name' => 'catalog-public-fallback/operation' ) );
+	wpai_issue42_assert( ! is_wp_error( $public_fallback_contract ), 'Catalog omitted an Ability the active Adapter exposes.' );
+
 	$hidden_list = $catalog->execute( array( 'namespace' => 'catalog-hidden' ) );
 	wpai_issue42_assert( 0 === $hidden_list['total'], 'Hidden provider contracts leaked in list.' );
 	foreach ( array( 'catalog-hidden/private', 'catalog-hidden/optout', 'catalog-hidden/malformed', 'catalog-hidden/string-public', 'catalog-missing/name' ) as $name ) {
@@ -62,6 +69,19 @@ try {
 	$adapter = wp_get_ability( 'mcp-adapter/execute-ability' );
 	$wrapped = $adapter->execute( array( 'ability_name' => 'wp-ai-bridge/abilities-read', 'parameters' => array( 'namespace' => 'catalog-fixture', 'page' => 2, 'per_page' => 100 ) ) );
 	wpai_issue42_assert( ! is_wp_error( $wrapped ) && true === $wrapped['success'] && 37 === count( $wrapped['data']['items'] ), 'Official Adapter execution did not preserve the catalog response.' );
+	$public_fallback_execution = $adapter->execute(
+		array(
+			'ability_name' => 'catalog-public-fallback/operation',
+			'parameters'   => array( 'probe' => 'issue81' ),
+		)
+	);
+	wpai_issue42_assert(
+		! is_wp_error( $public_fallback_execution )
+		&& true === ( $public_fallback_execution['success'] ?? false )
+		&& true === ( $public_fallback_execution['data']['ok'] ?? false )
+		&& 'issue81' === ( $public_fallback_execution['data']['probe'] ?? '' ),
+		'Catalog advertised an Ability that the active Adapter execution path could not invoke.'
+	);
 	wpai_issue42_assert( 0 === $GLOBALS['wpai_catalog_permission_calls'] && 0 === $GLOBALS['wpai_catalog_execute_calls'], 'Catalog invoked a target callback during inspection.' );
 	$provider_denial = $provider->execute( array( 'target' => 1 ) );
 	wpai_issue42_assert( is_wp_error( $provider_denial ) && $GLOBALS['wpai_catalog_permission_calls'] > 0 && 0 === $GLOBALS['wpai_catalog_execute_calls'], 'Discovery must not change a provider execution denial.' );

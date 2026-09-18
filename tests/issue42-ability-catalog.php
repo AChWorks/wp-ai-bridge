@@ -137,8 +137,9 @@ $exposure_cases = array(
 	array( array( 'public' => true, 'mcp' => false ), false ),
 	array( array( 'public' => 'true' ), false ),
 	array( array( 'public' => 1 ), false ),
-	array( array( 'public' => true, 'mcp' => null ), true ),
-	array( array( 'public' => true, 'mcp' => array( 'public' => null ) ), true ),
+	array( array( 'public' => true ), false ),
+	array( array( 'public' => true, 'mcp' => null ), false ),
+	array( array( 'public' => true, 'mcp' => array( 'public' => null ) ), false ),
 	array( array( 'public' => true, 'mcp' => array( 'public' => 0 ) ), false ),
 	array( array( 'public' => false, 'mcp' => array( 'public' => true ) ), true ),
 );
@@ -147,7 +148,7 @@ foreach ( $exposure_cases as $index => $case ) {
 	$exposure = new WPAI_Catalog_Test_Ability( 'exposure/case-' . $index );
 	$exposure->meta = $case[0];
 	$GLOBALS['wpai_test']['abilities'][ $exposure->name ] = $exposure;
-	wpai_catalog_assert( $case[1] === $resolver->is_mcp_exposed( $exposure ), 'Resolver disagrees with pinned Adapter exposure semantics.' );
+	wpai_catalog_assert( $case[1] === $resolver->is_mcp_exposed( $exposure ), 'Resolver fallback widened exposure without the Adapter runtime resolver.' );
 	$read = $catalog->read( array( 'action' => 'get', 'name' => $exposure->name ) );
 	wpai_catalog_assert( $case[1] === ! is_wp_error( $read ), 'Exact inspection disagrees with the native exposure rule.' );
 	$found = $resolver->find( array( $exposure->name ) );

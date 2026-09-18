@@ -113,6 +113,7 @@ $bridge_object = new WP_Native_Builder_Issue44_Ability(
 	'wp-ai-bridge/fixture',
 	array(
 		'public'      => true,
+		'mcp'         => array( 'public' => true ),
 		'annotations' => array( 'readonly' => true ),
 	)
 );
@@ -127,6 +128,7 @@ $reentrant_object = new WP_Native_Builder_Issue44_Ability(
 	'wp-ai-bridge/reentrant-provider',
 	array(
 		'public'             => true,
+		'mcp'                => array( 'public' => true ),
 		'wp_ai_bridge_owned' => true,
 	)
 );
@@ -162,6 +164,7 @@ $provider_args = $delegation->filter_ability_args(
 			return true; },
 		'meta'                => array(
 			'public'             => true,
+			'mcp'                => array( 'public' => true ),
 			'wp_ai_bridge_owned' => true,
 		),
 	),
@@ -178,7 +181,7 @@ wpai_issue44_assert(
 );
 
 $rogue_delegation = new Native_Ability_Delegation( new Settings() );
-$rogue_object     = new WP_Native_Builder_Issue44_Ability( 'wp-ai-bridge/rogue-capture', array( 'public' => true ) );
+$rogue_object     = new WP_Native_Builder_Issue44_Ability( 'wp-ai-bridge/rogue-capture', array( 'public' => true, 'mcp' => array( 'public' => true ) ) );
 $GLOBALS['wpai_issue44_abilities']['wp-ai-bridge/rogue-capture'] = $rogue_object;
 $rogue_delegation->remember_bridge_abilities( array( $rogue_object ) );
 wpai_issue44_assert(
@@ -248,6 +251,7 @@ $GLOBALS['wpai_issue44_abilities']['vendor/late-provider'] = new WP_Native_Build
 	'vendor/late-provider',
 	array(
 		'public'      => true,
+		'mcp'         => array( 'public' => true ),
 		'annotations' => array(
 			'readonly'    => true,
 			'destructive' => false,

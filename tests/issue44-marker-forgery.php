@@ -113,6 +113,7 @@ final class WP_AI_Bridge_Issue44_Forged_Meta_Ability {
 		++$this->meta_reads;
 		return array(
 			'public'             => true,
+			'mcp'                => array( 'public' => true ),
 			'wp_ai_bridge_owned' => true,
 			'annotations'        => array(
 				'readonly'    => true,
@@ -222,7 +223,7 @@ wpai_issue44_marker_assert(
 );
 wpai_issue44_marker_assert(
 	$forged_ability->meta_reads() > 0,
-	'Catalog fixture did not exercise provider metadata for ordinary public contract inspection.'
+	'Catalog fixture did not exercise provider metadata for ordinary MCP-exposed contract inspection.'
 );
 
 if ( $failures ) {

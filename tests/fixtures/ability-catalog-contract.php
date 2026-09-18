@@ -22,6 +22,39 @@ add_action( 'wp_abilities_api_init', static function () {
 	for ( $i = 136; $i >= 0; --$i ) {
 		wp_register_ability( sprintf( 'catalog-fixture/operation-%03d', $i ), $base );
 	}
+
+	$public_fallback = $base;
+	$public_fallback['input_schema'] = array(
+		'type'                 => 'object',
+		'properties'           => array( 'probe' => array( 'type' => 'string' ) ),
+		'additionalProperties' => false,
+	);
+	$public_fallback['output_schema'] = array(
+		'type'                 => 'object',
+		'properties'           => array(
+			'ok'    => array( 'type' => 'boolean' ),
+			'probe' => array( 'type' => 'string' ),
+		),
+		'required'             => array( 'ok', 'probe' ),
+		'additionalProperties' => false,
+	);
+	$public_fallback['permission_callback'] = static function () { return current_user_can( 'read' ); };
+	$public_fallback['execute_callback'] = static function ( $input ) {
+		return array(
+			'ok'    => true,
+			'probe' => isset( $input['probe'] ) ? (string) $input['probe'] : '',
+		);
+	};
+	$public_fallback['meta'] = array(
+		'public'      => true,
+		'annotations' => array(
+			'readonly'    => true,
+			'destructive' => false,
+			'idempotent'  => true,
+		),
+	);
+	wp_register_ability( 'catalog-public-fallback/operation', $public_fallback );
+
 	$hidden = $base;
 	$hidden['meta'] = array( 'public' => true, 'mcp' => array( 'public' => false ) );
 	wp_register_ability( 'catalog-hidden/optout', $hidden );
