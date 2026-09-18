@@ -39,8 +39,8 @@ if grep -R -nE 'LEGACY_|wp-native-builder' src/Admin src/Auth --include='*.php';
     exit 1
 fi
 
-if ! grep -qF "Version: 0.4.1" wp-ai-bridge.php || ! grep -qF "define( 'WP_AI_BRIDGE_VERSION', '0.4.1' );" wp-ai-bridge.php; then
-    echo "ERROR: canonical cleanup release version metadata is not 0.4.1." >&2
+if ! grep -qF "Version: 0.4.2" wp-ai-bridge.php || ! grep -qF "define( 'WP_AI_BRIDGE_VERSION', '0.4.2' );" wp-ai-bridge.php; then
+    echo "ERROR: canonical release version metadata is not 0.4.2." >&2
     exit 1
 fi
 

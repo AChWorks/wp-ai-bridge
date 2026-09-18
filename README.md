@@ -40,7 +40,7 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 4. Install and activate the official WordPress MCP Adapter if it is not already active.
 5. Open **WP AI Bridge → Settings**.
 
-Version 0.4.1 is the native canonical baseline and installs as `wp-ai-bridge/wp-ai-bridge.php` with no pre-0.4.0 migration runtime. Existing 0.4.0 installations can use the normal WordPress replace/update flow. A site still on the published 0.3.0 package that must preserve its old Workspace data should first perform the one-time migration using the immutable v0.4.0 release, verify the migrated Workspace, and then update to the latest release.
+Version 0.4.1 is the native canonical baseline and installs as `wp-ai-bridge/wp-ai-bridge.php` with no pre-0.4.0 migration runtime. The current v0.4.2 patch keeps that canonical identity and normal WordPress replace/update flow. A site still on the published 0.3.0 package that must preserve its old Workspace data should first perform the one-time migration using the immutable v0.4.0 release, verify the migrated Workspace, and then update to the latest release.
 
 See [Installation and connection](./docs/INSTALLATION.md) for the complete setup.
 
@@ -61,7 +61,7 @@ In a ChatGPT workspace with Developer Mode enabled:
 5. Sign in to WordPress when prompted.
 6. Review the WordPress consent page and authorize ChatGPT.
 
-Current releases serve only the canonical `wp-ai-bridge` MCP/OAuth routes. Updating an already-canonical 0.4.0 installation to 0.4.1 keeps the canonical installation/storage identity; a normal reconnect is not required merely because of the 0.4.1 cleanup release.
+Current releases serve only the canonical `wp-ai-bridge` MCP/OAuth routes. Updating an already-canonical 0.4.0 or 0.4.1 installation to 0.4.2 keeps the canonical installation/storage identity; a normal reconnect is not required solely because of this patch release.
 
 No tunnel or separate proxy service is required for the direct HTTPS setup.
 
