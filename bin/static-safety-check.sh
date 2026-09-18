@@ -389,22 +389,30 @@ if [[ "$(grep -cF '@chmod(' "$source_editor" || true)" != "2" || "$(grep -cF '@c
     exit 1
 fi
 
-# Issues #34/#36/#58 need exact-row compare-and-swap against fixed metadata tables. Direct database
-# use remains forbidden outside the three explicitly confined metadata stores below. Those stores
-# accept no SQL text, table name, column name, row selector, or query fragment from Ability input.
+# Issues #34/#36/#58 need exact-row compare-and-swap against fixed metadata tables. Issue #80
+# additionally needs four fixed advisory-lock reads in the OAuth store to serialize one exact
+# refresh-token identity across PHP processes. Direct database use remains forbidden everywhere
+# else. No bounded store below may accept caller-selected SQL/table/column/query fragments.
 metadata_store='src/Support/class-post-meta-store.php'
 term_metadata_store='src/Support/class-term-meta-store.php'
 user_comment_metadata_store='src/Support/class-user-comment-meta-store.php'
-if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comment_metadata_store" ]]; then
-    echo "ERROR: one or more bounded metadata stores are missing." >&2
+oauth_store='src/Auth/class-oauth-store.php'
+if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comment_metadata_store" || ! -f "$oauth_store" ]]; then
+    echo "ERROR: one or more bounded database stores are missing." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
-    echo "ERROR: direct database access found outside the bounded metadata stores." >&2
+    echo "ERROR: direct database access found outside the bounded stores." >&2
     exit 1
 fi
+
+# The OAuth store may use the database only as a named-lock coordinator. A syntax-aware checker
+# binds every executable $wpdb call to the exact fixed query shape; comments, unrelated literals,
+# variable names, aliases, or extra DB calls cannot satisfy the confinement proof.
+php bin/check-oauth-store-db-confinement.php "$oauth_store"
+php tests/issue80-oauth-db-confinement.php
 
 if [[ -f "$metadata_store" ]]; then
     if grep -nE '\$wpdb->(get_[A-Za-z0-9_]*|replace|esc_like)([^A-Za-z0-9_]|$)' "$metadata_store"; then

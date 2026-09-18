@@ -37,7 +37,8 @@ function wp_ai_bridge_uninstall_site_options() {
 
 	global $wpdb;
 	// Assertion claims contain only a hashed JWT ID and expiry. Dynamic metadata/JWKS
-	// transients contain only public client metadata/public signing keys. Remove every
+	// transients contain only public client metadata/public signing keys. Refresh-recovery
+	// transients contain only a short-lived authenticated-encryption envelope. Remove every
 	// Bridge-owned bounded prefix so uninstall leaves no disposable OAuth state behind.
 	$prefixes = array(
 		'wpai_oauth_assertion_',
@@ -47,6 +48,8 @@ function wp_ai_bridge_uninstall_site_options() {
 		'_transient_timeout_wpai_oauth_jwks_',
 		'_transient_wpai_oauth_jwks_refresh_',
 		'_transient_timeout_wpai_oauth_jwks_refresh_',
+		'_transient_wpai_oauth_refresh_recovery_',
+		'_transient_timeout_wpai_oauth_refresh_recovery_',
 	);
 	foreach ( $prefixes as $prefix ) {
 		$like = $wpdb->esc_like( $prefix ) . '%';
