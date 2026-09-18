@@ -226,10 +226,10 @@ $GLOBALS['wpai_test']['taxonomies'] = array(
 	),
 );
 $GLOBALS['wpai_test']['abilities'] = array(
-	'core/get-site-info' => wpai_test_ability( 'core/get-site-info', array( 'fields' => array( 'type' => 'array' ) ), array( 'public' => true ), 'site' ),
-	'core/get-user-info' => wpai_test_ability( 'core/get-user-info', array( 'fields' => array( 'type' => 'array' ) ), array( 'public' => true ), 'user' ),
-	'core/get-environment-info' => wpai_test_ability( 'core/get-environment-info', array( 'fields' => array( 'type' => 'array' ) ), array( 'public' => true ), 'site' ),
-	'acme/site-builder-info' => wpai_test_ability( 'acme/site-builder-info', array(), array( 'public' => true ), 'acme' ),
+	'core/get-site-info' => wpai_test_ability( 'core/get-site-info', array( 'fields' => array( 'type' => 'array' ) ), array( 'public' => true, 'mcp' => array( 'public' => true ) ), 'site' ),
+	'core/get-user-info' => wpai_test_ability( 'core/get-user-info', array( 'fields' => array( 'type' => 'array' ) ), array( 'public' => true, 'mcp' => array( 'public' => true ) ), 'user' ),
+	'core/get-environment-info' => wpai_test_ability( 'core/get-environment-info', array( 'fields' => array( 'type' => 'array' ) ), array( 'public' => true, 'mcp' => array( 'public' => true ) ), 'site' ),
+	'acme/site-builder-info' => wpai_test_ability( 'acme/site-builder-info', array(), array( 'public' => true, 'mcp' => array( 'public' => true ) ), 'acme' ),
 );
 $permissions = new Permissions( $settings );
 $registrar   = new Registrar( $environment, $settings, $permissions );
@@ -321,12 +321,12 @@ $gf_deleted = call_user_func( $gf_delete['execute_callback'], array( 'id' => 1 )
 wpai_assert( ! is_wp_error( $gf_deleted ) && true === $gf_deleted['deleted'], 'GFAPI fallback deletes through GFAPI rather than provider storage internals.' );
 unset( $GLOBALS['wpai_test']['capabilities']['gravityforms_edit_forms'] );
 
-// A current public native Gravity Forms Ability must suppress the Bridge GFAPI duplicate.
-$GLOBALS['wpai_test']['abilities']['gravityforms/forms-get'] = wpai_test_ability( 'gravityforms/forms-get', array( 'id' => array( 'type' => 'integer' ) ), array( 'public' => true ), 'gravityforms' );
+// A current MCP-exposed native Gravity Forms Ability must suppress the Bridge GFAPI duplicate.
+$GLOBALS['wpai_test']['abilities']['gravityforms/forms-get'] = wpai_test_ability( 'gravityforms/forms-get', array( 'id' => array( 'type' => 'integer' ) ), array( 'public' => true, 'mcp' => array( 'public' => true ) ), 'gravityforms' );
 $GLOBALS['wpai_test']['registered_abilities'] = array();
 $gf_native_registrar = new Registrar( $environment, $settings, $permissions );
 $gf_native_registrar->register_abilities();
-wpai_assert( ! isset( $GLOBALS['wpai_test']['registered_abilities']['wp-ai-bridge/gravity-forms-read'] ), 'Observed public Gravity Forms native Ability suppresses the GFAPI fallback.' );
+wpai_assert( ! isset( $GLOBALS['wpai_test']['registered_abilities']['wp-ai-bridge/gravity-forms-read'] ), 'Observed MCP-exposed Gravity Forms native Ability suppresses the GFAPI fallback.' );
 $integration_status = call_user_func( $GLOBALS['wpai_test']['registered_abilities']['wp-ai-bridge/integration-status']['execute_callback'] );
 wpai_assert( 'ability' === $integration_status['gravity_forms']['mode'], 'Integration status prefers observed Gravity Forms native Abilities over GFAPI fallback.' );
 wpai_assert( in_array( 'gravityforms/forms-get', $integration_status['gravity_forms']['ability_names'], true ), 'Integration status exposes the observed stable Gravity Forms Ability name.' );
