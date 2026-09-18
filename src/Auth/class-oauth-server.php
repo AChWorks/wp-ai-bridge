@@ -25,10 +25,11 @@ final class OAuth_Server {
 	const SCOPE_MCP     = 'mcp:use';
 	const SCOPE_OFFLINE = 'offline_access';
 
-	const CONSENT_TTL = 600;
-	const CODE_TTL    = 300;
-	const ACCESS_TTL  = 3600;
-	const REFRESH_TTL = 2592000;
+	const CONSENT_TTL          = 600;
+	const CODE_TTL             = 300;
+	const ACCESS_TTL           = 3600;
+	const REFRESH_TTL          = 2592000;
+	const REFRESH_RECOVERY_TTL = 60;
 
 	// Retained for direct-ChatGPT test/runtime compatibility.
 	const CLIENT_METADATA_CACHE = 'wpai_oauth_chatgpt_cimd_ok';
@@ -595,20 +596,142 @@ final class OAuth_Server {
 		if ( ! $this->is_supported_resource_url( $resource ) ) {
 			return $this->oauth_error( 'invalid_target', 'The OAuth resource is invalid.' );
 		}
-		$claims = $this->store->read( OAuth_Store::TYPE_REFRESH, $refresh_token, true );
-		if ( false === $claims ) {
-			return $this->oauth_error( 'invalid_grant', 'The refresh token is invalid, expired, revoked, or already rotated.' );
+
+		$recovery_id = $this->store->acquire_refresh_lock( $refresh_token );
+		if ( false === $recovery_id ) {
+			return $this->oauth_error( 'temporarily_unavailable', 'The refresh exchange could not be serialized safely. Retry the exact request.' );
 		}
+
+		try {
+			$recovery = $this->store->read_refresh_recovery( $refresh_token );
+			if ( is_array( $recovery ) ) {
+				return $this->recover_refresh_token_response( $request, $refresh_token, $client_id, $resource, $recovery );
+			}
+
+			$claims = $this->store->read( OAuth_Store::TYPE_REFRESH, $refresh_token, false, $client_id );
+			if ( false === $claims ) {
+				return $this->oauth_error( 'invalid_grant', 'The refresh token is invalid, expired, revoked, or already rotated.' );
+			}
+			$binding_error = $this->validate_refresh_bindings( $request, $claims, $client_id, $resource );
+			if ( is_wp_error( $binding_error ) ) {
+				return $this->oauth_error( $binding_error->get_error_code(), $binding_error->get_error_message() );
+			}
+			if ( ! $this->refresh_authorization_current( $claims ) ) {
+				return $this->oauth_error( 'invalid_grant', 'The WordPress authorization is no longer valid.' );
+			}
+
+			$recovery = $this->store->stage_refresh_recovery(
+				$refresh_token,
+				$claims,
+				self::ACCESS_TTL,
+				self::REFRESH_TTL,
+				self::REFRESH_RECOVERY_TTL
+			);
+			if ( is_wp_error( $recovery ) ) {
+				return $this->oauth_error( 'temporarily_unavailable', 'The refresh successor could not be staged safely.' );
+			}
+			if ( ! $this->store->consume_refresh_source( $refresh_token, $client_id, $claims, false ) ) {
+				$this->store->cancel_refresh_recovery( $refresh_token, $recovery, true );
+				return $this->oauth_error( 'invalid_grant', 'The refresh token could not be rotated safely.' );
+			}
+			return $this->refresh_recovery_response( $recovery );
+		} finally {
+			$this->store->release_refresh_lock( $recovery_id );
+		}
+	}
+
+	/**
+	 * Recovers exactly one already-prepared refresh response after ambiguous delivery.
+	 *
+	 * @param \WP_REST_Request    $request       REST request.
+	 * @param string              $refresh_token Exact old refresh token.
+	 * @param string              $client_id     Freshly authenticated client.
+	 * @param string              $resource_url  Requested resource.
+	 * @param array<string,mixed> $recovery      Authenticated recovery payload.
+	 * @return \WP_REST_Response Token or error response.
+	 */
+	private function recover_refresh_token_response( $request, $refresh_token, $client_id, $resource_url, array $recovery ) {
+		$claims        = isset( $recovery['claims'] ) && is_array( $recovery['claims'] ) ? $recovery['claims'] : array();
+		$binding_error = $this->validate_refresh_bindings( $request, $claims, $client_id, $resource_url );
+		if ( is_wp_error( $binding_error ) ) {
+			return $this->oauth_error( $binding_error->get_error_code(), $binding_error->get_error_message() );
+		}
+		if ( ! $this->refresh_authorization_current( $claims ) ) {
+			$this->store->cancel_refresh_recovery( $refresh_token, $recovery, true );
+			return $this->oauth_error( 'invalid_grant', 'The WordPress authorization is no longer valid.' );
+		}
+
+		$recovery = $this->store->resume_refresh_recovery( $refresh_token, $recovery );
+		if ( is_wp_error( $recovery ) ) {
+			return $this->oauth_error( 'temporarily_unavailable', 'The committed refresh response could not be recovered safely.' );
+		}
+		if ( ! $this->store->consume_refresh_source( $refresh_token, $client_id, $claims, true ) ) {
+			$this->store->cancel_refresh_recovery( $refresh_token, $recovery, true );
+			return $this->oauth_error( 'invalid_grant', 'The refresh recovery binding is invalid.' );
+		}
+		if ( ! $this->store->refresh_recovery_successors_valid( $recovery, $client_id ) ) {
+			$this->store->cancel_refresh_recovery( $refresh_token, $recovery, false );
+			return $this->oauth_error( 'invalid_grant', 'The refresh successor is no longer valid.' );
+		}
+		if ( ! $this->store->consume_refresh_recovery( $refresh_token ) ) {
+			return $this->oauth_error( 'temporarily_unavailable', 'The one-shot refresh recovery allowance could not be consumed safely.' );
+		}
+		return $this->refresh_recovery_response( $recovery );
+	}
+
+	/**
+	 * Validates exact refresh request/client/resource/scope bindings.
+	 *
+	 * @param \WP_REST_Request    $request   REST request.
+	 * @param array<string,mixed> $claims    Stored authorization claims.
+	 * @param string              $client_id Freshly authenticated client.
+	 * @param string              $resource_url Requested resource.
+	 * @return true|\WP_Error Validation result.
+	 */
+	private function validate_refresh_bindings( $request, array $claims, $client_id, $resource_url ) {
 		if (
-			! $this->artifact_claims_current( $claims ) ||
-			! hash_equals( (string) $claims['client_id'], $client_id ) ||
-			! hash_equals( (string) $claims['resource'], $resource ) ||
+			empty( $claims['client_id'] ) ||
+			empty( $claims['resource'] ) ||
 			empty( $claims['scope'] ) ||
+			! hash_equals( (string) $claims['client_id'], (string) $client_id ) ||
+			! hash_equals( (string) $claims['resource'], (string) $resource_url ) ||
 			! in_array( self::SCOPE_OFFLINE, $this->parse_scope( (string) $claims['scope'] ), true )
 		) {
-			return $this->oauth_error( 'invalid_grant', 'The refresh token binding is invalid.' );
+			return new \WP_Error( 'invalid_grant', 'The refresh token binding is invalid.' );
 		}
-		return $this->issue_token_response( $claims );
+		if ( $request instanceof \WP_REST_Request && $request->has_param( 'scope' ) ) {
+			$scope = $this->bounded_param( $request, 'scope', 256 );
+			if ( '' === $scope ) {
+				return new \WP_Error( 'invalid_scope', 'The refresh scope is invalid.' );
+			}
+			$scope = $this->normalize_scope( $scope );
+			if ( is_wp_error( $scope ) || ! hash_equals( (string) $claims['scope'], (string) $scope ) ) {
+				return new \WP_Error( 'invalid_scope', 'The refresh scope must exactly match the original authorization.' );
+			}
+		}
+		return true;
+	}
+
+	/** @param array<string,mixed> $claims Authorization claims. @return bool Whether authorization is still live. */
+	private function refresh_authorization_current( array $claims ) {
+		$user_id  = isset( $claims['user_id'] ) ? (int) $claims['user_id'] : 0;
+		$resource = isset( $claims['resource'] ) ? (string) $claims['resource'] : '';
+		$user     = $user_id ? get_user_by( 'id', $user_id ) : false;
+		return (bool) (
+			$user &&
+			user_can( $user, 'read' ) &&
+			$this->artifact_claims_current( $claims ) &&
+			$this->is_supported_resource_url( $resource )
+		);
+	}
+
+	/** @param array<string,mixed> $recovery Recovery payload. @return \WP_REST_Response Exact token response. */
+	private function refresh_recovery_response( array $recovery ) {
+		$data     = isset( $recovery['response'] ) && is_array( $recovery['response'] ) ? $recovery['response'] : array();
+		$response = new \WP_REST_Response( $data, 200 );
+		$response->header( 'Cache-Control', 'no-store' );
+		$response->header( 'Pragma', 'no-cache' );
+		return $response;
 	}
 
 	/**

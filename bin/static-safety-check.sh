@@ -389,20 +389,44 @@ if [[ "$(grep -cF '@chmod(' "$source_editor" || true)" != "2" || "$(grep -cF '@c
     exit 1
 fi
 
-# Issues #34/#36/#58 need exact-row compare-and-swap against fixed metadata tables. Direct database
-# use remains forbidden outside the three explicitly confined metadata stores below. Those stores
-# accept no SQL text, table name, column name, row selector, or query fragment from Ability input.
+# Issues #34/#36/#58 need exact-row compare-and-swap against fixed metadata tables. Issue #80
+# additionally needs four fixed advisory-lock reads in the OAuth store to serialize one exact
+# refresh-token identity across PHP processes. Direct database use remains forbidden everywhere
+# else. No bounded store below may accept caller-selected SQL/table/column/query fragments.
 metadata_store='src/Support/class-post-meta-store.php'
 term_metadata_store='src/Support/class-term-meta-store.php'
 user_comment_metadata_store='src/Support/class-user-comment-meta-store.php'
-if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comment_metadata_store" ]]; then
-    echo "ERROR: one or more bounded metadata stores are missing." >&2
+oauth_store='src/Auth/class-oauth-store.php'
+if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comment_metadata_store" || ! -f "$oauth_store" ]]; then
+    echo "ERROR: one or more bounded database stores are missing." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
-    echo "ERROR: direct database access found outside the bounded metadata stores." >&2
+    echo "ERROR: direct database access found outside the bounded stores." >&2
+    exit 1
+fi
+
+# The OAuth store may use the database only as a named-lock coordinator. Keep this surface exact:
+# three prepared lock queries plus the fixed current-connection lookup, with no table access or
+# caller-selected SQL fragments. This is deliberately not a general OAuth database persistence API.
+if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$oauth_store" | grep -vE '\$wpdb->(get_var|prepare)([^A-Za-z0-9_]|$)'; then
+    echo "ERROR: OAuth store exceeded the fixed Issue #80 advisory-lock database surface." >&2
+    exit 1
+fi
+if grep -nE 'function[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\([^)]*\$(sql|table|column|query|where)([^A-Za-z0-9_]|$)|\$(sql|prepared_sql|set_sql|raw_sql)[[:space:]]*=' "$oauth_store"; then
+    echo "ERROR: OAuth store must not accept or assemble SQL fragments." >&2
+    exit 1
+fi
+oauth_prepare_count="$(grep -cF '$wpdb->prepare(' "$oauth_store" || true)"
+oauth_get_var_count="$(grep -cF '$wpdb->get_var(' "$oauth_store" || true)"
+oauth_get_lock_count="$(grep -cF "'SELECT GET_LOCK(%s, %d)'" "$oauth_store" || true)"
+oauth_release_lock_count="$(grep -cF "'SELECT RELEASE_LOCK(%s)'" "$oauth_store" || true)"
+oauth_is_used_lock_count="$(grep -cF "'SELECT IS_USED_LOCK(%s)'" "$oauth_store" || true)"
+oauth_connection_id_count="$(grep -cF "'SELECT CONNECTION_ID()'" "$oauth_store" || true)"
+if [[ "$oauth_prepare_count" != "3" || "$oauth_get_var_count" != "4" || "$oauth_get_lock_count" != "1" || "$oauth_release_lock_count" != "1" || "$oauth_is_used_lock_count" != "1" || "$oauth_connection_id_count" != "1" ]]; then
+    echo "ERROR: OAuth store advisory-lock SQL surface changed outside the exact Issue #80 contract." >&2
     exit 1
 fi
 

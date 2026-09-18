@@ -202,6 +202,8 @@ The Bridge does not expose:
 
 Authorization codes, access tokens, and refresh tokens are opaque. Secret-bearing values are not intentionally stored in plaintext. Refresh tokens rotate, revocation is supported, and the direct MCP resource is bound to the OAuth flow.
 
+A successful refresh rotation also keeps a narrowly bounded, one-shot recovery envelope for ambiguous response loss. The exact old refresh-token identity is serialized with a keyed database advisory lock; the old token remains consumed, and an exact retry can return only the already-committed successor response. Recovery requires fresh approved-client authentication and revalidates the exact client, resource, WordPress user, effective scope, approved-client revision, and successor token lifecycle. The allowance expires after 60 seconds and is consumed by the first successful recovery. Corrupt/tampered state fails closed. The recovery envelope is authenticated-encrypted with AES-256-GCM and binds to the Bridge installation identity; bearer values are not stored in plaintext recovery metadata, diagnostics, or Activity records.
+
 ## Activity logging
 
 The mutation log is bounded and metadata-oriented. It should not be treated as a content archive and must not be used to log credentials, metadata keys, metadata values, or full submitted payloads.
