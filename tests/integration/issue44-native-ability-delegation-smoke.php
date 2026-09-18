@@ -200,28 +200,25 @@ foreach ( $resources as $route => $resource ) {
 	wpai_issue44_live_assert( true === ( $allowed_structured['success'] ?? false ) && true === ( $allowed_structured['data']['executed'] ?? false ), 'Authorized provider execution result was not preserved.' );
 
 	$secret_result = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-secret-result', ++$id );
-	$secret_structured = wpai_issue44_live_structured( $secret_result );
-	wpai_issue44_live_assert( false === ( $secret_structured['success'] ?? true ), 'Sensitive provider result crossed the Bridge MCP boundary.' );
 	wpai_issue44_live_assert(
 		false === strpos( wp_json_encode( $secret_result ), 'ISSUE82_SYNTHETIC_INTEGRATION_RESULT_SECRET' ),
 		'Sensitive provider result sentinel leaked through the Bridge MCP response.'
 	);
+	wpai_issue44_live_assert( true === ( $secret_result['result']['isError'] ?? false ), 'Sensitive provider result was not converted to a bounded MCP tool error.' );
 
 	$error_result = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-error-result', ++$id );
-	$error_structured = wpai_issue44_live_structured( $error_result );
-	wpai_issue44_live_assert( false === ( $error_structured['success'] ?? true ), 'Provider WP_Error was not normalized by the Bridge MCP boundary.' );
 	wpai_issue44_live_assert(
 		false === strpos( wp_json_encode( $error_result ), 'ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET' ),
 		'Provider WP_Error sentinel leaked through the Bridge MCP response.'
 	);
+	wpai_issue44_live_assert( true === ( $error_result['result']['isError'] ?? false ), 'Provider WP_Error was not normalized to a bounded MCP tool error.' );
 
 	$throw_result = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-throw-result', ++$id );
-	$throw_structured = wpai_issue44_live_structured( $throw_result );
-	wpai_issue44_live_assert( false === ( $throw_structured['success'] ?? true ), 'Provider throwable was not normalized by the Bridge MCP boundary.' );
 	wpai_issue44_live_assert(
 		false === strpos( wp_json_encode( $throw_result ), 'ISSUE82_SYNTHETIC_INTEGRATION_THROW_SECRET' ),
 		'Provider throwable sentinel leaked through the Bridge MCP response.'
 	);
+	wpai_issue44_live_assert( true === ( $throw_result['result']['isError'] ?? false ), 'Provider throwable was not normalized to a bounded MCP tool error.' );
 
 	$permission_error_result = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-permission-error', ++$id );
 	wpai_issue44_live_assert( true === ( $permission_error_result['result']['isError'] ?? false ), 'Provider permission WP_Error was not denied.' );
