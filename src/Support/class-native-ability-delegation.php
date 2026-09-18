@@ -14,7 +14,9 @@ use WP_Error;
  * the exact WP AI Bridge MCP routes while preserving native provider permissions.
  */
 final class Native_Ability_Delegation {
-	const ADAPTER_EXECUTE_ABILITY          = 'mcp-adapter/execute-ability';
+	const ADAPTER_EXECUTE_ABILITY         = 'mcp-adapter/execute-ability';
+	const ADAPTER_EXECUTE_TOOL            = 'mcp-adapter-execute-ability';
+	const BRIDGE_MCP_SERVER_ID            = 'wp-ai-bridge-direct';
 	const NATIVE_RESULT_INSPECTION_BUDGET = 4194304;
 
 	/** @var array<int,string> */
@@ -42,6 +44,7 @@ final class Native_Ability_Delegation {
 	/** @return void */
 	public function boot() {
 		add_filter( 'wp_register_ability_args', array( $this, 'filter_ability_args' ), PHP_INT_MAX, 2 );
+		add_filter( 'mcp_adapter_tool_call_result', array( $this, 'filter_tool_call_result' ), PHP_INT_MAX, 5 );
 		add_filter( 'rest_endpoints', array( $this, 'filter_rest_endpoints' ), PHP_INT_MAX );
 	}
 
@@ -64,12 +67,10 @@ final class Native_Ability_Delegation {
 	}
 
 	/**
-	 * Wraps the Adapter generic execution permission and result callbacks.
+	 * Wraps the Adapter generic execution permission callback.
 	 *
 	 * Provider metadata, annotations, namespaces, class names and custom Ability
 	 * virtual methods are deliberately irrelevant to Bridge ownership provenance.
-	 * Provider-native errors and results are additionally bounded at the exact
-	 * Bridge MCP request boundary so credentials cannot escape through the Adapter.
 	 *
 	 * @param array<string,mixed> $args Ability registration arguments.
 	 * @param string              $name Ability name.
@@ -121,29 +122,42 @@ final class Native_Ability_Delegation {
 			return $result;
 		};
 
-		if ( ! empty( $args['execute_callback'] ) && is_callable( $args['execute_callback'] ) ) {
-			$original_execute         = $args['execute_callback'];
-			$args['execute_callback'] = function ( $input = array() ) use ( $original_execute ) {
-				if ( ! $this->in_bridge_request() || ! is_array( $input ) || empty( $input['ability_name'] ) || ! is_string( $input['ability_name'] ) ) {
-					return call_user_func( $original_execute, $input );
-				}
+		return $args;
+	}
 
-				$target = function_exists( 'wp_get_ability' ) ? wp_get_ability( $input['ability_name'] ) : null;
-				if ( ! $target || $this->is_bridge_owned_ability( $target ) ) {
-					return call_user_func( $original_execute, $input );
-				}
-
-				try {
-					$result = call_user_func( $original_execute, $input );
-				} catch ( \Throwable $throwable ) {
-					return $this->native_execution_failure();
-				}
-
-				return $this->sanitize_native_execution_result( $result );
-			};
+	/**
+	 * Bounds provider-native results at the Adapter's final pre-protocol result hook.
+	 *
+	 * The hook is scoped to the Bridge-owned MCP server and execute-ability tool.
+	 * Direct Ability execution and other Adapter servers remain unchanged.
+	 *
+	 * @param mixed  $result    Raw Adapter tool result.
+	 * @param mixed  $args      Tool arguments.
+	 * @param string $tool_name Protocol tool name.
+	 * @param mixed  $mcp_tool  Adapter MCP tool object.
+	 * @param mixed  $server    Adapter MCP server object.
+	 * @return mixed
+	 */
+	public function filter_tool_call_result( $result, $args, $tool_name, $mcp_tool, $server ) {
+		if (
+			self::ADAPTER_EXECUTE_TOOL !== $tool_name ||
+			! is_array( $args ) ||
+			empty( $args['ability_name'] ) ||
+			! is_string( $args['ability_name'] ) ||
+			! is_object( $mcp_tool ) ||
+			! is_object( $server ) ||
+			! method_exists( $server, 'get_server_id' ) ||
+			self::BRIDGE_MCP_SERVER_ID !== $server->get_server_id()
+		) {
+			return $result;
 		}
 
-		return $args;
+		$target = function_exists( 'wp_get_ability' ) ? wp_get_ability( $args['ability_name'] ) : null;
+		if ( $target && $this->is_bridge_owned_ability( $target ) ) {
+			return $result;
+		}
+
+		return $this->sanitize_native_execution_result( $result );
 	}
 
 	/**
