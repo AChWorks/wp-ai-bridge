@@ -70,14 +70,57 @@ $fixtures = array(
 		"\$db = \$wpdb;\n    \$current = \$db->get_var( 'SELECT CONNECTION_ID()' );",
 		$canonical
 	),
-	'globals wpdb bypass' => str_replace(
+	'literal globals wpdb bypass' => str_replace(
 		"\$current = \$wpdb->get_var( 'SELECT CONNECTION_ID()' );",
 		"\$current = \$GLOBALS['wpdb']->get_var( 'SELECT CONNECTION_ID()' );",
+		$canonical
+	),
+	'indirect globals wpdb bypass' => str_replace(
+		'    return $owner === $current;',
+		"    \$key = 'wpdb';\n    \$shadow = \$GLOBALS[\$key];\n    \$shadow->get_var( 'SELECT 1' );\n    return \$owner === \$current;",
 		$canonical
 	),
 	'new wpdb bypass' => str_replace(
 		'    return $owner === $current;',
 		"    \$shadow = new wpdb( 'u', 'p', 'd', 'h' );\n    return \$owner === \$current;",
+		$canonical
+	),
+	'new fully-qualified wpdb bypass' => str_replace(
+		'    return $owner === $current;',
+		"    \$shadow = new \\wpdb( 'u', 'p', 'd', 'h' );\n    return \$owner === \$current;",
+		$canonical
+	),
+	'new qualified wpdb bypass' => str_replace(
+		'    return $owner === $current;',
+		"    \$shadow = new Vendor\\wpdb( 'u', 'p', 'd', 'h' );\n    return \$owner === \$current;",
+		$canonical
+	),
+	'new relative wpdb bypass' => str_replace(
+		'    return $owner === $current;',
+		"    \$shadow = new namespace\\wpdb( 'u', 'p', 'd', 'h' );\n    return \$owner === \$current;",
+		$canonical
+	),
+	'new mixed-case wpdb bypass' => str_replace(
+		'    return $owner === $current;',
+		"    \$shadow = new \\WpDb( 'u', 'p', 'd', 'h' );\n    return \$owner === \$current;",
+		$canonical
+	),
+	'dynamic class construction bypass' => str_replace(
+		'    return $owner === $current;',
+		"    \$class = 'wpdb';\n    \$shadow = new \$class( 'u', 'p', 'd', 'h' );\n    return \$owner === \$current;",
+		$canonical
+	),
+	'double-dollar variable bypass' => str_replace(
+		'    return $owner === $current;',
+		"    \$key = 'wpdb';\n    \$shadow = \$\$key;\n    return \$owner === \$current;",
+		$canonical
+	),
+	'braced variable bypass' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    $shadow = ${'wpdb'};
+    return $owner === $current;
+SRC,
 		$canonical
 	),
 );

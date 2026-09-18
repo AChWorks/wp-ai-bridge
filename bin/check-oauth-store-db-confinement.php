@@ -56,16 +56,22 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 		return $result;
 	};
 
-	$literal_string = static function ( $token ) {
-		if ( ! is_array( $token ) || T_CONSTANT_ENCAPSED_STRING !== $token[0] ) {
+	$class_name_tokens = array(
+		T_STRING,
+		T_NAME_FULLY_QUALIFIED,
+		T_NAME_QUALIFIED,
+		T_NAME_RELATIVE,
+	);
+	$terminal_class_name = static function ( $token ) use ( $class_name_tokens ) {
+		if ( ! is_array( $token ) || ! in_array( $token[0], $class_name_tokens, true ) ) {
 			return null;
 		}
-		$raw = $token[1];
-		if ( strlen( $raw ) < 2 ) {
+		$name  = ltrim( (string) $token[1], '\\' );
+		$parts = preg_split( '/\\\\+/', $name );
+		if ( false === $parts || empty( $parts ) ) {
 			return null;
 		}
-		$value = substr( $raw, 1, -1 );
-		return '"' === $raw[0] ? stripcslashes( $value ) : str_replace( "\\\\", "\\", $value );
+		return strtolower( (string) end( $parts ) );
 	};
 
 	$allowed_calls = array(
@@ -86,19 +92,33 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 
 	for ( $i = 0; $i < $count; ++$i ) {
 		$token = $tokens[ $i ];
+		$next  = $tokens[ $i + 1 ] ?? null;
 
-		// Alternate entry points would evade an exact $wpdb call inventory, so reject them too.
+		// The OAuth store has no legitimate reason to use the global symbol table. Reject the
+		// entire entry point so literal and computed $GLOBALS keys cannot create an untracked
+		// database handle.
 		if ( is_array( $token ) && T_VARIABLE === $token[0] && '$GLOBALS' === $token[1] ) {
-			$open  = $tokens[ $i + 1 ] ?? null;
-			$key   = $tokens[ $i + 2 ] ?? null;
-			$close = $tokens[ $i + 3 ] ?? null;
-			if ( '[' === $text( $open ) && 'wpdb' === $literal_string( $key ) && ']' === $text( $close ) ) {
-				return 'direct $GLOBALS[\'wpdb\'] access is not permitted';
+			return '$GLOBALS access is not permitted in the OAuth store';
+		}
+
+		// Variable-variable syntax can manufacture a $wpdb reference without an executable
+		// T_VARIABLE("$wpdb") token. This fixed-purpose store does not require that mechanism.
+		if ( '$' === $text( $token ) ) {
+			if ( ( is_array( $next ) && T_VARIABLE === $next[0] ) || '{' === $text( $next ) ) {
+				return 'dynamic variable-variable access is not permitted in the OAuth store';
 			}
 		}
-		if ( is_array( $token ) && T_STRING === $token[0] && 'wpdb' === strtolower( $token[1] ) ) {
-			$previous = $tokens[ $i - 1 ] ?? null;
-			if ( is_array( $previous ) && T_NEW === $previous[0] ) {
+
+		// Constructor syntax is safe only when the class target is a static name. Dynamic
+		// construction could resolve to wpdb without leaving a wpdb class-name token. For static
+		// names, normalize every PHP 8 class-name token form and reject any terminal wpdb name
+		// case-insensitively.
+		if ( is_array( $token ) && T_NEW === $token[0] ) {
+			$class_token = $next;
+			if ( null === $terminal_class_name( $class_token ) ) {
+				return 'dynamic or anonymous class construction is not permitted in the OAuth store';
+			}
+			if ( 'wpdb' === $terminal_class_name( $class_token ) ) {
 				return 'constructing a separate wpdb instance is not permitted';
 			}
 		}
@@ -107,7 +127,6 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 			continue;
 		}
 		++$wpdb_count;
-		$next = $tokens[ $i + 1 ] ?? null;
 
 		if ( is_array( $next ) && T_OBJECT_OPERATOR === $next[0] ) {
 			$method = $tokens[ $i + 2 ] ?? null;
