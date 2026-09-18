@@ -89,9 +89,11 @@ final class Ability_Resolver {
 	}
 
 	/**
-	 * Resolves whether an Ability is exposed through the official MCP Adapter default server.
+	 * Resolves whether an Ability is exposed through the active MCP Adapter default server.
 	 *
-	 * Explicit MCP metadata wins over the general public flag, matching Adapter semantics.
+	 * The Adapter's runtime resolver is authoritative when available. Older Adapter
+	 * runtimes that do not expose that resolver fall back to the pre-0.6 explicit
+	 * mcp.public opt-in instead of guessing a broader public surface.
 	 *
 	 * @param object $ability Ability object.
 	 * @return bool
@@ -99,6 +101,19 @@ final class Ability_Resolver {
 	public function is_mcp_exposed( $ability ) {
 		if ( ! $this->is_ability_object( $ability ) ) {
 			return false;
+		}
+
+		if (
+			class_exists( '\\WP\\MCP\\Abilities\\McpAbilityExposure' )
+			&& class_exists( 'WP_Ability' )
+			&& $ability instanceof \\WP_Ability
+			&& is_callable( array( '\\WP\\MCP\\Abilities\\McpAbilityExposure', 'is_public' ) )
+		) {
+			try {
+				return (bool) \\WP\\MCP\\Abilities\\McpAbilityExposure::is_public( $ability );
+			} catch ( \\Throwable $throwable ) {
+				return false;
+			}
 		}
 
 		$meta = $ability->get_meta();
@@ -110,11 +125,8 @@ final class Ability_Resolver {
 		if ( ! is_array( $mcp_meta ) ) {
 			return false;
 		}
-		if ( isset( $mcp_meta['public'] ) ) {
-			return (bool) $mcp_meta['public'];
-		}
 
-		return true === ( $meta['public'] ?? false );
+		return true === ( $mcp_meta['public'] ?? false );
 	}
 
 	/**
