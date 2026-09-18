@@ -2,6 +2,14 @@
 
 All notable public changes are documented here.
 
+## 0.4.2
+
+- Make rotating OAuth refresh-token exchange recover deterministically from an ambiguous lost response using bounded client/resource/user/scope/revision-bound recovery state while preserving one-time rotation and replay rejection.
+- Keep the Gateway-facing provider-native Ability catalog aligned with the active MCP Adapter exposure resolver; when that runtime resolver is unavailable, fail closed unless `meta.mcp.public=true` is explicitly present.
+- Bound provider-native Ability results at the canonical Bridge MCP boundary with the shared sensitive-identity policy so credential/security-like nested results, errors, and throwables cannot cross; direct/default Adapter execution and Bridge-owned purpose-specific credential contracts remain unchanged.
+- Expand regression coverage for refresh recovery/concurrency, result-boundary secret confinement, catalog-to-Adapter execution parity, and canonical identity across the supported WordPress lanes.
+- Require no data migration, OAuth client reset, or ChatGPT reconnection solely for this patch release on an already-canonical v0.4.x installation.
+
 ## 0.4.1
 
 - Retire the one-time pre-0.4.0 Workspace migration runtime after the sole real installation was verified on canonical v0.4.0 with its existing Workspace Documents/Tasks intact.

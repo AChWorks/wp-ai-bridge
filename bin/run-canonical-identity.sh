@@ -49,8 +49,8 @@ actual_php="$("${wp[@]}" eval 'echo PHP_VERSION;' --allow-root | tail -n 1)"
 actual_version="$("${wp[@]}" plugin get wp-ai-bridge --field=version --allow-root | tail -n 1)"
 echo "Canonical baseline: WordPress ${actual_wp}; PHP ${actual_php}; plugin ${actual_version}; image ${wordpress_tag}"
 
-if [[ "$actual_version" != "0.4.1" ]]; then
-    echo "ERROR: installed cleanup release is not version 0.4.1." >&2
+if [[ "$actual_version" != "0.4.2" ]]; then
+    echo "ERROR: installed canonical release is not version 0.4.2." >&2
     exit 1
 fi
 
@@ -81,7 +81,7 @@ fi
 
 "${wp[@]}" eval '
 $store = new WP_AI_Bridge\Workspace\Store();
-$doc = $store->create_document(array("key" => "canonical-cleanup", "title" => "Canonical cleanup", "content" => "v0.4.1 native Workspace"));
+$doc = $store->create_document(array("key" => "canonical-cleanup", "title" => "Canonical cleanup", "content" => "v0.4.2 native Workspace"));
 $task = $store->create_task(array("title" => "Canonical cleanup task", "progress" => "in_progress", "review" => "not_required", "delivery" => "not_applicable"));
 if (is_wp_error($doc) || is_wp_error($task)) { exit(1); }
 $doc_read = $store->get_document((int) $doc["id"]);
@@ -91,4 +91,4 @@ if ((int) $doc_read["id"] !== (int) $doc["id"] || (int) $task_read["id"] !== (in
 if (!hash_equals((string) $doc["state_hash"], (string) $doc_read["state_hash"]) || !hash_equals((string) $task["state_hash"], (string) $task_read["state_hash"])) { exit(1); }
 ' --user=1 --allow-root
 
-echo "PASS: v0.4.1 activates natively with canonical identity and canonical Workspace storage, without retired migration code."
+echo "PASS: v0.4.2 activates natively with canonical identity and canonical Workspace storage, without retired migration code."

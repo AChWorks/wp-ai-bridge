@@ -16,19 +16,19 @@
 
 The settings screen reports whether the WordPress Abilities API, MCP Adapter, and public HTTPS endpoint are available.
 
-Current releases install with the canonical `wp-ai-bridge/` directory and `wp-ai-bridge.php` entrypoint. Version 0.4.1 is the native canonical baseline and contains no pre-0.4.0 migration runtime.
+Current releases install with the canonical `wp-ai-bridge/` directory and `wp-ai-bridge.php` entrypoint. Version 0.4.1 established the native canonical baseline; current v0.4.2 keeps the same identity and contains no pre-0.4.0 migration runtime.
 
-### Updating from 0.4.0
+### Updating from 0.4.0 or 0.4.1
 
-An existing canonical 0.4.0 installation can be updated normally with WordPress's replace/update flow. The plugin directory, Workspace identifiers, settings identity, OAuth identity, MCP routes, and Ability namespace remain canonical, so the 0.4.1 cleanup itself does not require another migration or a new ChatGPT connection.
+An existing canonical 0.4.0 or 0.4.1 installation can be updated normally with WordPress's replace/update flow. The plugin directory, Workspace identifiers, settings identity, OAuth identity, MCP routes, and Ability namespace remain canonical, so the v0.4.2 patch does not require another migration or a new ChatGPT connection.
 
 Before any production plugin update, keep a normal WordPress/database backup appropriate to the site.
 
 ### Sites still on the published 0.3.0 package
 
-Version 0.4.1 deliberately does not contain the retired pre-0.4.0 importer. If a site is still on 0.3.0 and must preserve its old Workspace Documents/Tasks, first use the immutable **v0.4.0** release and its documented one-time migration procedure. Verify the canonical Workspace after that migration, then update the resulting 0.4.0 installation to the current release.
+Version 0.4.1 and later deliberately do not contain the retired pre-0.4.0 importer. If a site is still on 0.3.0 and must preserve its old Workspace Documents/Tasks, first use the immutable **v0.4.0** release and its documented one-time migration procedure. Verify the canonical Workspace after that migration, then update the resulting 0.4.0 installation to the current release.
 
-Do not install 0.4.1 directly over a 0.3.0 installation when preservation of the pre-canonical Workspace is required. The historical migration implementation remains available only through the immutable v0.4.0 release; it is not part of current maintained runtime code.
+Do not install v0.4.1 or later directly over a 0.3.0 installation when preservation of the pre-canonical Workspace is required. The historical migration implementation remains available only through the immutable v0.4.0 release; it is not part of current maintained runtime code.
 
 ## Connect a ChatGPT Workspace App
 
@@ -50,7 +50,7 @@ With Developer Mode enabled in the ChatGPT workspace:
 
 The OAuth connection acts as the WordPress user who approved it. Bridge access groups and WordPress capabilities are still checked for every operation.
 
-Current releases serve only the canonical MCP/OAuth routes. A fresh installation needs a fresh OAuth connection. Updating an already-connected canonical 0.4.0 installation to 0.4.1 does not by itself invalidate that canonical connection.
+Current releases serve only the canonical MCP/OAuth routes. A fresh installation needs a fresh OAuth connection. Updating an already-connected canonical 0.4.0 or 0.4.1 installation to 0.4.2 does not by itself invalidate that canonical connection.
 
 ## OAuth discovery endpoints
 
@@ -88,7 +88,7 @@ A conservative starting point is:
 
 The maintained plugin uses only the WP AI Bridge runtime identity: `wp-ai-bridge/wp-ai-bridge.php`, `WP_AI_Bridge`, `wp-ai-bridge`, canonical `wp-ai-bridge/*` Abilities, and canonical Bridge-owned storage identifiers.
 
-The one-time 0.3.0 -> 0.4.0 Workspace importer, its migration schema marker, engine preflight, migration-only localization, and migration-only CI fixtures were retired after the sole real installation was verified on canonical v0.4.0 with its Workspace intact. They are not loaded or shipped by v0.4.1.
+The one-time 0.3.0 -> 0.4.0 Workspace importer, its migration schema marker, engine preflight, migration-only localization, and migration-only CI fixtures were retired after the sole real installation was verified on canonical v0.4.0 with its Workspace intact. They are not loaded or shipped by v0.4.1 or later.
 
 Published tags/releases remain immutable and preserve the historical v0.4.0 migration implementation for audit or recovery of an installation that never performed that transition.
 
