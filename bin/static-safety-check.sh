@@ -408,27 +408,11 @@ if [[ -n "$unexpected_db_files" ]]; then
     exit 1
 fi
 
-# The OAuth store may use the database only as a named-lock coordinator. Keep this surface exact:
-# three prepared lock queries plus the fixed current-connection lookup, with no table access or
-# caller-selected SQL fragments. This is deliberately not a general OAuth database persistence API.
-if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$oauth_store" | grep -vE '\$wpdb->(get_var|prepare)([^A-Za-z0-9_]|$)'; then
-    echo "ERROR: OAuth store exceeded the fixed Issue #80 advisory-lock database surface." >&2
-    exit 1
-fi
-if grep -nE 'function[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\([^)]*\$(sql|table|column|query|where)([^A-Za-z0-9_]|$)|\$(sql|prepared_sql|set_sql|raw_sql)[[:space:]]*=' "$oauth_store"; then
-    echo "ERROR: OAuth store must not accept or assemble SQL fragments." >&2
-    exit 1
-fi
-oauth_prepare_count="$(grep -cF '$wpdb->prepare(' "$oauth_store" || true)"
-oauth_get_var_count="$(grep -cF '$wpdb->get_var(' "$oauth_store" || true)"
-oauth_get_lock_count="$(grep -cF "'SELECT GET_LOCK(%s, %d)'" "$oauth_store" || true)"
-oauth_release_lock_count="$(grep -cF "'SELECT RELEASE_LOCK(%s)'" "$oauth_store" || true)"
-oauth_is_used_lock_count="$(grep -cF "'SELECT IS_USED_LOCK(%s)'" "$oauth_store" || true)"
-oauth_connection_id_count="$(grep -cF "'SELECT CONNECTION_ID()'" "$oauth_store" || true)"
-if [[ "$oauth_prepare_count" != "3" || "$oauth_get_var_count" != "4" || "$oauth_get_lock_count" != "1" || "$oauth_release_lock_count" != "1" || "$oauth_is_used_lock_count" != "1" || "$oauth_connection_id_count" != "1" ]]; then
-    echo "ERROR: OAuth store advisory-lock SQL surface changed outside the exact Issue #80 contract." >&2
-    exit 1
-fi
+# The OAuth store may use the database only as a named-lock coordinator. A syntax-aware checker
+# binds every executable $wpdb call to the exact fixed query shape; comments, unrelated literals,
+# variable names, aliases, or extra DB calls cannot satisfy the confinement proof.
+php bin/check-oauth-store-db-confinement.php "$oauth_store"
+php tests/issue80-oauth-db-confinement.php
 
 if [[ -f "$metadata_store" ]]; then
     if grep -nE '\$wpdb->(get_[A-Za-z0-9_]*|replace|esc_like)([^A-Za-z0-9_]|$)' "$metadata_store"; then
