@@ -288,6 +288,96 @@ SRC,
 		$canonical
 	),
 
+
+	'foreign unqualified static constant' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    Issue80_Autoload_Probe::TRIGGER;
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'foreign fully-qualified static constant' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    \WP_AI_Bridge\Auth\Issue80_Autoload_Probe::TRIGGER;
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'foreign qualified static constant' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    Vendor\Issue80_Autoload_Probe::TRIGGER;
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'foreign relative static constant' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    namespace\Issue80_Autoload_Probe::TRIGGER;
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'foreign static property read' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    $probe = Issue80_Autoload_Probe::$trigger;
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'foreign static property write' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    Issue80_Autoload_Probe::$trigger = 1;
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'parent static scope' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    parent::TRIGGER;
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'late-static scope' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    static::TRIGGER;
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'self static property' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    $probe = self::$trigger;
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'self static method' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    self::TYPE_ACCESS();
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'unapproved self constant' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    self::UNREVIEWED_STATIC_CONSTANT;
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+
 );
 
 foreach ( $fixtures as $label => $fixture ) {

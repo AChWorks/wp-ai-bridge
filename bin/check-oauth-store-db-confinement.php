@@ -16,7 +16,7 @@
  * @param string $source PHP source to inspect.
  * @return string Empty string on success, otherwise a failure description.
  */
-function wpai_issue80_check_oauth_store_db_confinement( $source ) {
+function wpai_issue80_check_oauth_store_db_confinement( $source, $require_full_static_inventory = false ) {
 	$ignored = array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT, T_OPEN_TAG, T_CLOSE_TAG );
 	$tokens  = array();
 	foreach ( token_get_all( $source ) as $token ) {
@@ -133,6 +133,21 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 		"array_filter(\$recovery_ids,'is_string')" => true,
 	);
 
+	$allowed_self_constants = array(
+		'CLIENT_ASSERTION_REPLAY_SKEW'    => 1,
+		'CLIENT_ASSERTION_REPLAY_TTL_CAP' => 2,
+		'INSTANCE_OPTION'                  => 3,
+		'REFRESH_LOCK_TIMEOUT'             => 1,
+		'REFRESH_RECOVERY_CLAIM'           => 7,
+		'REFRESH_RECOVERY_PREFIX'          => 1,
+		'REFRESH_RECOVERY_TTL_MAX'         => 3,
+		'REFRESH_RECOVERY_VERSION'         => 4,
+		'TYPE_ACCESS'                      => 9,
+		'TYPE_CODE'                        => 3,
+		'TYPE_CONSENT'                     => 2,
+		'TYPE_REFRESH'                     => 15,
+	);
+
 	$allowed_calls = array(
 		"get_var|\$wpdb->get_var(\$wpdb->prepare('SELECT GET_LOCK(%s, %d)',\$name,self::REFRESH_LOCK_TIMEOUT))" => 1,
 		"prepare|\$wpdb->prepare('SELECT GET_LOCK(%s, %d)',\$name,self::REFRESH_LOCK_TIMEOUT)"              => 1,
@@ -142,7 +157,8 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 		"prepare|\$wpdb->prepare('SELECT IS_USED_LOCK(%s)',\$name)"                                          => 1,
 		"get_var|\$wpdb->get_var('SELECT CONNECTION_ID()')"                                                   => 1,
 	);
-	$observed_calls  = array();
+	$observed_calls            = array();
+	$observed_self_constants   = array();
 	$global_count    = 0;
 	$isset_count     = 0;
 	$is_object_count = 0;
@@ -176,14 +192,32 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 			}
 		}
 
-		// Static method invocation is not part of the current store contract. self:: constants
-		// remain allowed because they are not followed by a callable argument list.
+		// Pin the complete static-scope surface. The real OAuth store legitimately uses only
+		// self::CONSTANT references. Any foreign/qualified/parent/static scope could trigger
+		// autoload or escape this file's bounded proof, while static properties/methods are not
+		// part of the current contract.
 		if ( is_array( $token ) && T_DOUBLE_COLON === $token[0] ) {
+			$static_scope  = $tokens[ $i - 1 ] ?? null;
 			$static_member = $tokens[ $i + 1 ] ?? null;
-			$static_open   = $tokens[ $i + 2 ] ?? null;
-			if ( '(' === $text( $static_open ) ) {
+			$static_after  = $tokens[ $i + 2 ] ?? null;
+			if (
+				! is_array( $static_scope ) ||
+				T_STRING !== $static_scope[0] ||
+				'self' !== strtolower( (string) $static_scope[1] )
+			) {
+				return 'foreign static scope is not permitted in the OAuth store near line ' . $line( $token );
+			}
+			if ( ! is_array( $static_member ) || T_STRING !== $static_member[0] ) {
+				return 'dynamic/static-property member access is not permitted in the OAuth store near line ' . $line( $token );
+			}
+			if ( '(' === $text( $static_after ) ) {
 				return 'static method invocation is not permitted in the OAuth store';
 			}
+			$constant_name = (string) $static_member[1];
+			if ( ! array_key_exists( $constant_name, $allowed_self_constants ) ) {
+				return 'unapproved self constant in the OAuth store: ' . $constant_name;
+			}
+			$observed_self_constants[ $constant_name ] = ( $observed_self_constants[ $constant_name ] ?? 0 ) + 1;
 		}
 
 		// Pin every direct named function call. Current production calls are unqualified T_STRING
@@ -325,6 +359,17 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 	if ( count( $observed_calls ) !== count( $allowed_calls ) ) {
 		return 'unexpected advisory-lock call shape';
 	}
+	if ( $require_full_static_inventory ) {
+		foreach ( $allowed_self_constants as $constant_name => $expected_count ) {
+			$actual_count = $observed_self_constants[ $constant_name ] ?? 0;
+			if ( $expected_count !== $actual_count ) {
+				return "self constant inventory changed: expected {$expected_count}, observed {$actual_count}: {$constant_name}";
+			}
+		}
+		if ( count( $observed_self_constants ) !== count( $allowed_self_constants ) ) {
+			return 'unexpected self constant surface';
+		}
+	}
 	if ( 3 !== $global_count || 3 !== $isset_count || 3 !== $is_object_count || 16 !== $wpdb_count ) {
 		return 'wpdb usage inventory changed outside the exact Issue #80 contract';
 	}
@@ -341,7 +386,7 @@ if ( realpath( $_SERVER['SCRIPT_FILENAME'] ?? '' ) === __FILE__ ) {
 		fwrite( STDERR, "ERROR: could not read OAuth store source.\n" );
 		exit( 2 );
 	}
-	$error = wpai_issue80_check_oauth_store_db_confinement( $source );
+	$error = wpai_issue80_check_oauth_store_db_confinement( $source, true );
 	if ( '' !== $error ) {
 		fwrite( STDERR, 'ERROR: OAuth store DB confinement failed: ' . $error . "\n" );
 		exit( 1 );
