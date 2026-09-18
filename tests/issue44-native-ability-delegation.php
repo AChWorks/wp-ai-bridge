@@ -21,6 +21,8 @@ class WP_Error {
 }
 function __( $text, $domain = null ) {
 	return $text; }
+function is_wp_error( $value ) {
+	return $value instanceof WP_Error; }
 function get_option( $name, $default = false ) {
 	return array_key_exists( $name, $GLOBALS['wpai_issue44_options'] ) ? $GLOBALS['wpai_issue44_options'][ $name ] : $default;
 }
@@ -35,6 +37,7 @@ function current_user_can( $capability ) {
 }
 
 require dirname( __DIR__ ) . '/src/Support/class-settings.php';
+require dirname( __DIR__ ) . '/src/Support/class-metadata-key-policy.php';
 require dirname( __DIR__ ) . '/src/Support/class-native-ability-delegation.php';
 require dirname( __DIR__ ) . '/src/Support/class-permissions.php';
 require dirname( __DIR__ ) . '/src/Abilities/class-ability-resolver.php';
