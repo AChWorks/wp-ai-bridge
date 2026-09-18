@@ -123,6 +123,57 @@ $fixtures = array(
 SRC,
 		$canonical
 	),
+	'get_defined_vars handle acquisition' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    $shadow = get_defined_vars()['wpdb'];
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'compact handle acquisition' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    $shadow = compact( 'wpdb' )['wpdb'];
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'alternate object receiver' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    $shadow = null;
+    $shadow->get_var( 'SELECT 1' );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'class-alias database handle' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    class_alias( '\wpdb', 'Issue80ShadowDb' );
+    $shadow = new Issue80ShadowDb( 'u', 'p', 'd', 'h' );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'subclass database handle' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    class Issue80ShadowDb extends \wpdb {}
+    $shadow = new Issue80ShadowDb( 'u', 'p', 'd', 'h' );
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'unapproved static constructor' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    $shadow = new \stdClass();
+    return $owner === $current;
+SRC,
+		$canonical
+	),
 );
 
 foreach ( $fixtures as $label => $fixture ) {

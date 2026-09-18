@@ -62,6 +62,12 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 		T_NAME_QUALIFIED,
 		T_NAME_RELATIVE,
 	);
+	$normalized_class_name = static function ( $token ) use ( $class_name_tokens ) {
+		if ( ! is_array( $token ) || ! in_array( $token[0], $class_name_tokens, true ) ) {
+			return null;
+		}
+		return strtolower( (string) $token[1] );
+	};
 	$terminal_class_name = static function ( $token ) use ( $class_name_tokens ) {
 		if ( ! is_array( $token ) || ! in_array( $token[0], $class_name_tokens, true ) ) {
 			return null;
@@ -73,6 +79,10 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 		}
 		return strtolower( (string) end( $parts ) );
 	};
+	$allowed_constructor_names = array(
+		'\\invalidargumentexception' => true,
+		'\\wp_error'                 => true,
+	);
 
 	$allowed_calls = array(
 		"get_var|\$wpdb->get_var(\$wpdb->prepare('SELECT GET_LOCK(%s, %d)',\$name,self::REFRESH_LOCK_TIMEOUT))" => 1,
@@ -94,6 +104,33 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 		$token = $tokens[ $i ];
 		$next  = $tokens[ $i + 1 ] ?? null;
 
+		// Every object call in this fixed-purpose store must be directly bound to the store
+		// itself or the exact $wpdb surface checked below. This blocks database calls through
+		// aliases, factories, class aliases, subclasses, reflection-produced handles, or other
+		// alternate receivers without trying to enumerate every acquisition spelling.
+		$is_object_operator = is_array( $token ) && (
+			T_OBJECT_OPERATOR === $token[0] ||
+			( defined( 'T_NULLSAFE_OBJECT_OPERATOR' ) && T_NULLSAFE_OBJECT_OPERATOR === $token[0] )
+		);
+		if ( $is_object_operator ) {
+			$receiver = $tokens[ $i - 1 ] ?? null;
+			if (
+				! is_array( $receiver ) ||
+				T_VARIABLE !== $receiver[0] ||
+				! in_array( $receiver[1], array( '$this', '$wpdb' ), true )
+			) {
+				return 'object access outside $this/$wpdb confinement is not permitted near line ' . $line( $token );
+			}
+		}
+
+		// These local-symbol helpers can recover the imported global $wpdb by name without an
+		// executable T_VARIABLE("$wpdb") occurrence. They are unnecessary in this store.
+		if ( is_array( $token ) && in_array( $token[0], $class_name_tokens, true ) && '(' === $text( $next ) ) {
+			$call_name = $terminal_class_name( $token );
+			if ( in_array( $call_name, array( 'get_defined_vars', 'compact' ), true ) ) {
+				return 'indirect local-symbol lookup is not permitted in the OAuth store';
+			}
+		}
 		// The OAuth store has no legitimate reason to use the global symbol table. Reject the
 		// entire entry point so literal and computed $GLOBALS keys cannot create an untracked
 		// database handle.
@@ -109,17 +146,20 @@ function wpai_issue80_check_oauth_store_db_confinement( $source ) {
 			}
 		}
 
-		// Constructor syntax is safe only when the class target is a static name. Dynamic
-		// construction could resolve to wpdb without leaving a wpdb class-name token. For static
-		// names, normalize every PHP 8 class-name token form and reject any terminal wpdb name
-		// case-insensitively.
+		// Constructor targets are fail-closed. The current OAuth store legitimately constructs
+		// only WP_Error and InvalidArgumentException. Any other static class, dynamic target, or
+		// anonymous class requires an explicit confinement-contract update before it can ship.
 		if ( is_array( $token ) && T_NEW === $token[0] ) {
 			$class_token = $next;
-			if ( null === $terminal_class_name( $class_token ) ) {
+			$class_name  = $normalized_class_name( $class_token );
+			if ( null === $class_name ) {
 				return 'dynamic or anonymous class construction is not permitted in the OAuth store';
 			}
 			if ( 'wpdb' === $terminal_class_name( $class_token ) ) {
 				return 'constructing a separate wpdb instance is not permitted';
+			}
+			if ( ! isset( $allowed_constructor_names[ $class_name ] ) ) {
+				return 'unapproved class construction is not permitted in the OAuth store: ' . $class_name;
 			}
 		}
 
