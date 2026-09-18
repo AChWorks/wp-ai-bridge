@@ -378,6 +378,24 @@ SRC,
 		$canonical
 	),
 
+
+	'foreign parent-class autoload' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    class Issue80_Child_Probe extends \WP_AI_Bridge\Auth\Issue80_Autoload_Probe {}
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+	'foreign interface autoload' => str_replace(
+		'    return $owner === $current;',
+		<<<'SRC'
+    class Issue80_Interface_Probe implements \WP_AI_Bridge\Auth\Issue80_Autoload_Interface {}
+    return $owner === $current;
+SRC,
+		$canonical
+	),
+
 );
 
 foreach ( $fixtures as $label => $fixture ) {

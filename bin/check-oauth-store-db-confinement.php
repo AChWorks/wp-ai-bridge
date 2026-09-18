@@ -178,6 +178,13 @@ function wpai_issue80_check_oauth_store_db_confinement( $source, $require_full_s
 			return 'dynamic code-loading/alias/shell execution is not permitted in the OAuth store';
 		}
 
+		// The real OAuth store has no inheritance/interface declaration. Foreign parent or
+		// interface resolution can dispatch SPL autoload and therefore escape this file's
+		// bounded executable-surface proof.
+		if ( is_array( $token ) && in_array( $token[0], array( T_EXTENDS, T_IMPLEMENTS ), true ) ) {
+			return 'inheritance/interface autoload is not permitted in the OAuth store near line ' . $line( $token );
+		}
+
 		// Reject dynamic invocation forms before processing named calls. This covers variable
 		// functions, string/array/expression callables, and callback values returned by helpers.
 		if ( '(' === $text( $next ) ) {
