@@ -180,18 +180,59 @@ wpai_issue44_assert(
 	'Separate delegation instance did not retain its own isolated provenance.'
 );
 
-$provider_allowed   = true;
-$provider_checks    = 0;
-$adapter_args       = $delegation->filter_ability_args(
+$provider_allowed          = true;
+$provider_checks           = 0;
+$result_secret             = 'ISSUE82_SYNTHETIC_RESULT_SECRET';
+$error_secret              = 'ISSUE82_SYNTHETIC_ERROR_SECRET';
+$throw_secret              = 'ISSUE82_SYNTHETIC_THROW_SECRET';
+$permission_error_secret   = 'ISSUE82_SYNTHETIC_PERMISSION_ERROR_SECRET';
+$permission_throw_secret   = 'ISSUE82_SYNTHETIC_PERMISSION_THROW_SECRET';
+$bridge_owned_secret       = 'ISSUE82_SYNTHETIC_BRIDGE_OWNED_SECRET';
+$adapter_args              = $delegation->filter_ability_args(
 	array(
-		'permission_callback' => static function ( $input ) use ( &$provider_allowed, &$provider_checks ) {
+		'permission_callback' => static function ( $input ) use ( &$provider_allowed, &$provider_checks, $permission_error_secret, $permission_throw_secret ) {
 			++$provider_checks;
+			$name = is_array( $input ) ? ( $input['ability_name'] ?? '' ) : '';
+			if ( 'vendor/permission-error' === $name ) {
+				return new WP_Error( 'provider_permission_error', $permission_error_secret );
+			}
+			if ( 'vendor/permission-throw' === $name ) {
+				throw new RuntimeException( $permission_throw_secret );
+			}
 			return $provider_allowed;
+		},
+		'execute_callback'    => static function ( $input ) use ( $result_secret, $error_secret, $throw_secret, $bridge_owned_secret ) {
+			$name = is_array( $input ) ? ( $input['ability_name'] ?? '' ) : '';
+			switch ( $name ) {
+				case 'vendor/secret-provider':
+					return array(
+						'success' => true,
+						'data'    => array(
+							'status' => 'ok',
+							'nested' => array( 'api_key' => $result_secret ),
+						),
+					);
+				case 'vendor/error-provider':
+					return array( 'success' => false, 'error' => 'Provider failure: ' . $error_secret );
+				case 'vendor/throw-provider':
+					throw new RuntimeException( $throw_secret );
+				case 'wp-ai-bridge/fixture':
+					return array(
+						'success' => true,
+						'data'    => array( 'application_password' => $bridge_owned_secret ),
+					);
+				default:
+					return array(
+						'success' => true,
+						'data'    => array( 'status' => 'ok', 'nested' => array( 'count' => 1 ) ),
+					);
+			}
 		},
 	),
 	Native_Ability_Delegation::ADAPTER_EXECUTE_ABILITY
 );
 $adapter_permission = $adapter_args['permission_callback'];
+$adapter_execute    = $adapter_args['execute_callback'];
 
 $GLOBALS['wpai_issue44_abilities']['vendor/late-provider'] = new WP_Native_Builder_Issue44_Custom_Ability(
 	'vendor/late-provider',
@@ -204,6 +245,28 @@ $GLOBALS['wpai_issue44_abilities']['vendor/late-provider'] = new WP_Native_Build
 		),
 	)
 );
+
+foreach (
+	array(
+		'vendor/secret-provider',
+		'vendor/error-provider',
+		'vendor/throw-provider',
+		'vendor/permission-error',
+		'vendor/permission-throw',
+	) as $provider_name
+) {
+	$GLOBALS['wpai_issue44_abilities'][ $provider_name ] = new WP_Native_Builder_Issue44_Custom_Ability(
+		$provider_name,
+		array(
+			'mcp'         => array( 'public' => true ),
+			'annotations' => array(
+				'readonly'    => true,
+				'destructive' => false,
+				'idempotent'  => true,
+			),
+		)
+	);
+}
 
 wpai_issue44_assert(
 	true === $adapter_permission(
