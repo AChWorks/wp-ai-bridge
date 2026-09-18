@@ -102,6 +102,32 @@ add_action(
 		};
 		wp_register_ability( 'issue44/provider-allowed', $allowed );
 
+		$secret_result = $base;
+		$secret_result['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
+		$secret_result['execute_callback']    = static function () {
+			return array(
+				'status' => 'ok',
+				'nested' => array(
+					'api_key' => 'ISSUE82_SYNTHETIC_INTEGRATION_RESULT_SECRET',
+				),
+			);
+		};
+		wp_register_ability( 'issue44/provider-secret-result', $secret_result );
+
+		$error_result = $base;
+		$error_result['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
+		$error_result['execute_callback']    = static function () {
+			return new WP_Error( 'issue82_provider_error', 'ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET' );
+		};
+		wp_register_ability( 'issue44/provider-error-result', $error_result );
+
+		$throw_result = $base;
+		$throw_result['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
+		$throw_result['execute_callback']    = static function () {
+			throw new RuntimeException( 'ISSUE82_SYNTHETIC_INTEGRATION_THROW_SECRET' );
+		};
+		wp_register_ability( 'issue44/provider-throw-result', $throw_result );
+
 		$denied = $base;
 		$denied['permission_callback'] = static function () { return false; };
 		$denied['execute_callback']    = static function () { return array( 'executed' => true ); };
