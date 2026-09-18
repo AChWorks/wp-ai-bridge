@@ -3,6 +3,7 @@
 
 use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Auth\OAuth_Store;
+use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Settings;
 
 function wpai_issue44_live_assert( $condition, $message ) {
@@ -110,12 +111,22 @@ $current         = is_array( $before_settings ) ? $before_settings : array();
 $current[ Settings::GROUP_NATIVE_ABILITIES ] = 0;
 update_option( Settings::OPTION_NAME, $current, false );
 
-$provider      = wp_get_ability( 'issue44/provider-allowed' );
-$foreign       = wp_get_ability( 'wp-ai-bridge/foreign-fixture' );
+$provider          = wp_get_ability( 'issue44/provider-allowed' );
+$secret_provider   = wp_get_ability( 'issue44/provider-secret-result' );
+$error_provider    = wp_get_ability( 'issue44/provider-error-result' );
+$throw_provider    = wp_get_ability( 'issue44/provider-throw-result' );
+$permission_error  = wp_get_ability( 'issue44/provider-permission-error' );
+$permission_throw  = wp_get_ability( 'issue44/provider-permission-throw' );
+$foreign           = wp_get_ability( 'wp-ai-bridge/foreign-fixture' );
 $forged_class  = wp_get_ability( 'wp-ai-bridge/forged-class-fixture' );
 $reentrant     = wp_get_ability( 'wp-ai-bridge/reentrant-provider-fixture' );
 $bridge_info   = wp_get_ability( 'wp-ai-bridge/bridge-info' );
 wpai_issue44_live_assert( $provider instanceof WP_AI_Bridge_Issue44_Custom_Ability, 'Late custom provider Ability was not registered.' );
+wpai_issue44_live_assert( $secret_provider instanceof WP_Ability, 'Synthetic secret-result provider was not registered.' );
+wpai_issue44_live_assert( $error_provider instanceof WP_Ability, 'Synthetic error-result provider was not registered.' );
+wpai_issue44_live_assert( $throw_provider instanceof WP_Ability, 'Synthetic throw-result provider was not registered.' );
+wpai_issue44_live_assert( $permission_error instanceof WP_Ability, 'Synthetic permission-error provider was not registered.' );
+wpai_issue44_live_assert( $permission_throw instanceof WP_Ability, 'Synthetic permission-throw provider was not registered.' );
 wpai_issue44_live_assert( $foreign instanceof WP_Ability, 'Historical-prefix provider fixture was not registered.' );
 wpai_issue44_live_assert( $forged_class instanceof WP_AI_Bridge_Issue44_Forged_Meta_Ability, 'Forged custom ability_class fixture was not registered.' );
 wpai_issue44_live_assert( $reentrant instanceof WP_Ability, 'Re-entrant provider fixture was not registered during the Bridge call stack.' );
@@ -123,6 +134,12 @@ wpai_issue44_live_assert( $bridge_info instanceof WP_Ability, 'Bridge-owned Abil
 
 $direct = $provider->execute( array() );
 wpai_issue44_live_assert( ! is_wp_error( $direct ) && true === ( $direct['executed'] ?? false ), 'Native direct Ability execution changed while Bridge delegation was disabled.' );
+$direct_secret = $secret_provider->execute( array() );
+wpai_issue44_live_assert(
+	! is_wp_error( $direct_secret )
+	&& 'ISSUE82_SYNTHETIC_INTEGRATION_RESULT_SECRET' === ( $direct_secret['nested']['api_key'] ?? '' ),
+	'Direct provider execution outside the Bridge boundary was unexpectedly sanitized.'
+);
 $direct_forged = $forged_class->execute( array() );
 wpai_issue44_live_assert( ! is_wp_error( $direct_forged ) && true === ( $direct_forged['executed'] ?? false ), 'Forged custom class changed ordinary direct Ability execution.' );
 $direct_reentrant = $reentrant->execute( array() );
@@ -181,6 +198,57 @@ foreach ( $resources as $route => $resource ) {
 	wpai_issue44_live_assert( false === ( $allowed['result']['isError'] ?? false ), 'Enabled Native Abilities did not allow authorized provider on ' . $route );
 	$allowed_structured = wpai_issue44_live_structured( $allowed );
 	wpai_issue44_live_assert( true === ( $allowed_structured['success'] ?? false ) && true === ( $allowed_structured['data']['executed'] ?? false ), 'Authorized provider execution result was not preserved.' );
+
+	$secret_result = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-secret-result', ++$id );
+	$secret_structured = wpai_issue44_live_structured( $secret_result );
+	wpai_issue44_live_assert( false === ( $secret_structured['success'] ?? true ), 'Sensitive provider result crossed the Bridge MCP boundary.' );
+	wpai_issue44_live_assert(
+		false === strpos( wp_json_encode( $secret_result ), 'ISSUE82_SYNTHETIC_INTEGRATION_RESULT_SECRET' ),
+		'Sensitive provider result sentinel leaked through the Bridge MCP response.'
+	);
+
+	$error_result = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-error-result', ++$id );
+	$error_structured = wpai_issue44_live_structured( $error_result );
+	wpai_issue44_live_assert( false === ( $error_structured['success'] ?? true ), 'Provider WP_Error was not normalized by the Bridge MCP boundary.' );
+	wpai_issue44_live_assert(
+		false === strpos( wp_json_encode( $error_result ), 'ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET' ),
+		'Provider WP_Error sentinel leaked through the Bridge MCP response.'
+	);
+
+	$throw_result = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-throw-result', ++$id );
+	$throw_structured = wpai_issue44_live_structured( $throw_result );
+	wpai_issue44_live_assert( false === ( $throw_structured['success'] ?? true ), 'Provider throwable was not normalized by the Bridge MCP boundary.' );
+	wpai_issue44_live_assert(
+		false === strpos( wp_json_encode( $throw_result ), 'ISSUE82_SYNTHETIC_INTEGRATION_THROW_SECRET' ),
+		'Provider throwable sentinel leaked through the Bridge MCP response.'
+	);
+
+	$permission_error_result = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-permission-error', ++$id );
+	wpai_issue44_live_assert( true === ( $permission_error_result['result']['isError'] ?? false ), 'Provider permission WP_Error was not denied.' );
+	wpai_issue44_live_assert(
+		false === strpos( wp_json_encode( $permission_error_result ), 'ISSUE82_SYNTHETIC_INTEGRATION_PERMISSION_ERROR_SECRET' ),
+		'Provider permission WP_Error sentinel leaked through the Bridge MCP response.'
+	);
+
+	$permission_throw_result = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-permission-throw', ++$id );
+	wpai_issue44_live_assert( true === ( $permission_throw_result['result']['isError'] ?? false ), 'Provider permission throwable was not denied.' );
+	wpai_issue44_live_assert(
+		false === strpos( wp_json_encode( $permission_throw_result ), 'ISSUE82_SYNTHETIC_INTEGRATION_PERMISSION_THROW_SECRET' ),
+		'Provider permission throwable sentinel leaked through the Bridge MCP response.'
+	);
+
+	$mutation_log = wp_json_encode( get_option( Mutation_Log::OPTION_NAME, array() ) );
+	foreach (
+		array(
+			'ISSUE82_SYNTHETIC_INTEGRATION_RESULT_SECRET',
+			'ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET',
+			'ISSUE82_SYNTHETIC_INTEGRATION_THROW_SECRET',
+			'ISSUE82_SYNTHETIC_INTEGRATION_PERMISSION_ERROR_SECRET',
+			'ISSUE82_SYNTHETIC_INTEGRATION_PERMISSION_THROW_SECRET',
+		) as $sentinel
+	) {
+		wpai_issue44_live_assert( false === strpos( $mutation_log, $sentinel ), 'Synthetic provider secret reached the Bridge mutation log.' );
+	}
 
 	$forged_allowed = wpai_issue44_live_call( $route, $token, $session, 'wp-ai-bridge/forged-class-fixture', ++$id );
 	wpai_issue44_live_assert( false === ( $forged_allowed['result']['isError'] ?? false ), 'Enabled Native Abilities did not allow provider custom class after native permission.' );
