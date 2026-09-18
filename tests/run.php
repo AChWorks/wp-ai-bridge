@@ -123,7 +123,7 @@ $GLOBALS['wpai_test']['abilities'] = array(
 			'post_type' => array( 'type' => 'string' ),
 			'fields'    => array( 'type' => 'array' ),
 		),
-		array( 'public' => true ),
+		array( 'public' => true, 'mcp' => array( 'public' => true ) ),
 		'content'
 	),
 	'wp-ai-bridge/internal' => wpai_test_ability( 'wp-ai-bridge/internal', array(), array( 'public' => true ) ),
