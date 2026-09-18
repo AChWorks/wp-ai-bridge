@@ -106,12 +106,12 @@ final class Ability_Resolver {
 		if (
 			class_exists( '\\WP\\MCP\\Abilities\\McpAbilityExposure' )
 			&& class_exists( 'WP_Ability' )
-			&& $ability instanceof \\WP_Ability
+			&& $ability instanceof \WP_Ability
 			&& is_callable( array( '\\WP\\MCP\\Abilities\\McpAbilityExposure', 'is_public' ) )
 		) {
 			try {
-				return (bool) \\WP\\MCP\\Abilities\\McpAbilityExposure::is_public( $ability );
-			} catch ( \\Throwable $throwable ) {
+				return (bool) \WP\MCP\Abilities\McpAbilityExposure::is_public( $ability );
+			} catch ( \Throwable $throwable ) {
 				return false;
 			}
 		}
