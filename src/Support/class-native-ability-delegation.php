@@ -183,7 +183,7 @@ final class Native_Ability_Delegation {
 	 * @return bool
 	 */
 	private function is_safe_native_result( $value, &$remaining, $depth = 0 ) {
-		if ( $depth > 64 || is_resource( $value ) || ( is_object( $value ) && ! $value instanceof \stdClass ) ) {
+		if ( $depth > 64 || is_resource( $value ) || ( is_object( $value ) && ! ( $value instanceof \stdClass ) ) ) {
 			return false;
 		}
 
