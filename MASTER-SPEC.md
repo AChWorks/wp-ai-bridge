@@ -4,7 +4,7 @@ Status: Canonical project specification
 
 Canonical repository: `AChWorks/wp-ai-bridge`
 
-Companion project: `ach1992/wp-native-builder`
+Companion project: `AChWorks/wp-native-builder`
 
 ## How to use this specification
 
