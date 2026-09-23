@@ -1,7 +1,7 @@
 # WP AI Bridge
 
-[![CI](https://github.com/ach1992/wp-ai-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ach1992/wp-ai-bridge/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/ach1992/wp-ai-bridge)](https://github.com/ach1992/wp-ai-bridge/releases/latest)
+[![CI](https://github.com/AChWorks/wp-ai-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/AChWorks/wp-ai-bridge/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/AChWorks/wp-ai-bridge)](https://github.com/AChWorks/wp-ai-bridge/releases/latest)
 [![License](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](./LICENSE)
 
 WP AI Bridge connects a WordPress site to ChatGPT through a direct HTTPS MCP endpoint, WordPress-backed OAuth, the official WordPress MCP Adapter, and the WordPress Abilities API.
@@ -34,7 +34,7 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 
 ## Install
 
-1. Download `wp-ai-bridge.zip` from the [latest GitHub release](https://github.com/ach1992/wp-ai-bridge/releases/latest).
+1. Download `wp-ai-bridge.zip` from the [latest GitHub release](https://github.com/AChWorks/wp-ai-bridge/releases/latest).
 2. In WordPress open **Plugins → Add Plugin → Upload Plugin**.
 3. Upload the ZIP, install it, and activate **WP AI Bridge**.
 4. Install and activate the official WordPress MCP Adapter if it is not already active.

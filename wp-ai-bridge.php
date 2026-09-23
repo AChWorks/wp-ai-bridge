@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: WP AI Bridge
- * Plugin URI: https://github.com/ach1992/wp-ai-bridge
+ * Plugin URI: https://github.com/AChWorks/wp-ai-bridge
  * Description: Connects ChatGPT to WordPress through OAuth, MCP, and permission-checked WordPress Abilities.
  * Version: 0.4.2
  * Requires at least: 6.9
