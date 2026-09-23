@@ -77,4 +77,4 @@ When future development changes durable product behavior or architecture:
 
 ## Repository boundary
 
-This repository owns the WordPress Bridge plugin. The companion `ach1992/wp-native-builder` repository is separate. Cross-repository reads may be useful for interface compatibility, but this repository's recovery must remain possible from its own canonical specification, code/docs, and GitHub control plane.
+This repository owns the WordPress Bridge plugin. The companion `AChWorks/wp-native-builder` repository is separate. Cross-repository reads may be useful for interface compatibility, but this repository's recovery must remain possible from its own canonical specification, code/docs, and GitHub control plane.
