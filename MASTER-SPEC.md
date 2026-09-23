@@ -2,7 +2,7 @@
 
 Status: Canonical project specification
 
-Canonical repository: `ach1992/wp-ai-bridge`
+Canonical repository: `AChWorks/wp-ai-bridge`
 
 Companion project: `ach1992/wp-native-builder`
 

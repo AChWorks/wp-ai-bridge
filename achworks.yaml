@@ -1,0 +1,52 @@
+schemaVersion: achworks.dev/v1alpha1
+kind: Component
+
+metadata:
+  name: wp-ai-bridge
+  title: WP AI Bridge
+  description: WordPress plugin connecting AI clients to bounded WordPress management capabilities through OAuth, MCP, and WordPress Abilities.
+
+spec:
+  type: wordpress-plugin
+  lifecycle: active
+  system: wordpress-ai
+  ownership: AChWorks
+
+  technology:
+    languages: [php]
+    frameworks: [wordpress]
+    runtimes: [wordpress-6.9-plus]
+
+  capabilities:
+    provides:
+      - wordpress-management
+      - mcp-bridge
+      - oauth-authorization
+      - content-management
+      - media-management
+      - plugin-theme-lifecycle
+    consumes:
+      - wordpress-abilities
+      - wordpress-mcp-adapter
+
+  interfaces:
+    - type: https-mcp
+      name: wordpress-mcp-endpoint
+    - type: wordpress-abilities
+      name: wordpress-ability-surface
+
+  dependencies:
+    - wordpress
+    - wordpress-mcp-adapter
+
+  documentation:
+    path: docs/
+
+  source:
+    repository: AChWorks/wp-ai-bridge
+    url: https://github.com/AChWorks/wp-ai-bridge
+
+  extensions:
+    achworks:
+      ecosystemPlatform: AChWorks/platform
+      applicationFoundationConsumption: none-currently

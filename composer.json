@@ -33,7 +33,7 @@
     ],
     "safety": "bash bin/static-safety-check.sh"
   },
-  "homepage": "https://github.com/ach1992/wp-ai-bridge",
+  "homepage": "https://github.com/AChWorks/wp-ai-bridge",
   "authors": [
     {
       "name": "ACh",
