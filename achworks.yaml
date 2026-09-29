@@ -28,6 +28,9 @@ spec:
     consumes:
       - wordpress-abilities
       - wordpress-mcp-adapter
+      - lifecycle-contract
+      - validation-evidence-contract
+      - external-effect-safety-contract
 
   interfaces:
     - type: https-mcp
