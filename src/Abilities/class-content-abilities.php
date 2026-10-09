@@ -80,13 +80,13 @@ final class Content_Abilities {
 		$registered[] = wp_register_ability(
 			'wp-ai-bridge/content-delete',
 			array(
-				'label'         => __( 'Trash or Delete Content', 'wp-ai-bridge' ),
-				'description'   => __( 'Moves content to Trash or permanently deletes it when destructive access is enabled.', 'wp-ai-bridge' ),
-				'category'      => Registrar::CATEGORY,
-				'input_schema'  => $this->delete_input_schema(),
-				'output_schema' => array(
-					'type'       => 'object',
-					'properties' => array(
+				'label'               => __( 'Trash or Delete Content', 'wp-ai-bridge' ),
+				'description'         => __( 'Moves content to Trash or permanently deletes it when destructive access is enabled.', 'wp-ai-bridge' ),
+				'category'            => Registrar::CATEGORY,
+				'input_schema'        => $this->delete_input_schema(),
+				'output_schema'       => array(
+					'type'                 => 'object',
+					'properties'           => array(
 						'id'      => array( 'type' => 'integer' ),
 						'deleted' => array( 'type' => 'boolean' ),
 						'trashed' => array( 'type' => 'boolean' ),
@@ -103,12 +103,12 @@ final class Content_Abilities {
 		$registered[] = wp_register_ability(
 			'wp-ai-bridge/revisions-read',
 			array(
-				'label'        => __( 'Read Content Revisions', 'wp-ai-bridge' ),
-				'description'  => __( 'Lists WordPress revisions for one content object.', 'wp-ai-bridge' ),
-				'category'     => Registrar::CATEGORY,
-				'input_schema' => array(
-					'type'       => 'object',
-					'properties' => array(
+				'label'               => __( 'Read Content Revisions', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists WordPress revisions for one content object.', 'wp-ai-bridge' ),
+				'category'            => Registrar::CATEGORY,
+				'input_schema'        => array(
+					'type'                 => 'object',
+					'properties'           => array(
 						'post_id'         => array(
 							'type'    => 'integer',
 							'minimum' => 1,
@@ -140,12 +140,12 @@ final class Content_Abilities {
 		$registered[] = wp_register_ability(
 			'wp-ai-bridge/revision-restore',
 			array(
-				'label'        => __( 'Restore Content Revision', 'wp-ai-bridge' ),
-				'description'  => __( 'Restores a WordPress revision after checking the expected current content identity.', 'wp-ai-bridge' ),
-				'category'     => Registrar::CATEGORY,
-				'input_schema' => array(
-					'type'       => 'object',
-					'properties' => array(
+				'label'               => __( 'Restore Content Revision', 'wp-ai-bridge' ),
+				'description'         => __( 'Restores a WordPress revision after checking the expected current content identity.', 'wp-ai-bridge' ),
+				'category'            => Registrar::CATEGORY,
+				'input_schema'        => array(
+					'type'                 => 'object',
+					'properties'           => array(
 						'post_id'               => array(
 							'type'    => 'integer',
 							'minimum' => 1,
@@ -803,7 +803,7 @@ final class Content_Abilities {
 		if ( isset( $input['expected_state_hash'] ) && ! hash_equals( $state_hash, (string) $input['expected_state_hash'] ) ) {
 			return new WP_Error( 'stale_content_conflict', __( 'The content state changed while reading the text field; restart at offset zero.', 'wp-ai-bridge' ) );
 		}
-		$values = array(
+		$values             = array(
 			'title'    => (string) $post->post_title,
 			'excerpt'  => (string) $post->post_excerpt,
 			'slug'     => (string) $post->post_name,
@@ -960,8 +960,8 @@ final class Content_Abilities {
 	 */
 	private function read_input_schema() {
 		return array(
-			'type'       => 'object',
-			'properties' => array(
+			'type'                 => 'object',
+			'properties'           => array(
 				'action'                => array(
 					'type'    => 'string',
 					'enum'    => array( 'list', 'get' ),
@@ -975,10 +975,10 @@ final class Content_Abilities {
 					'type'    => 'integer',
 					'minimum' => 1,
 				),
-				'slug'   => array( 'type' => 'string' ),
-				'search' => array( 'type' => 'string' ),
-				'status' => array( 'type' => 'string' ),
-				'page'   => array(
+				'slug'                  => array( 'type' => 'string' ),
+				'search'                => array( 'type' => 'string' ),
+				'status'                => array( 'type' => 'string' ),
+				'page'                  => array(
 					'type'    => 'integer',
 					'minimum' => 1,
 					'default' => 1,
@@ -1037,8 +1037,8 @@ final class Content_Abilities {
 	 */
 	private function read_output_schema() {
 		return array(
-			'type'       => 'object',
-			'properties' => array(
+			'type'                 => 'object',
+			'properties'           => array(
 				'items'       => array(
 					'type'  => 'array',
 					'items' => $this->item_schema( false ),
@@ -1060,8 +1060,8 @@ final class Content_Abilities {
 	 */
 	private function upsert_input_schema() {
 		return array(
-			'type'       => 'object',
-			'properties' => array(
+			'type'                 => 'object',
+			'properties'           => array(
 				'action'                => array(
 					'type' => 'string',
 					'enum' => array( 'create', 'update' ),
@@ -1070,19 +1070,19 @@ final class Content_Abilities {
 					'type'    => 'integer',
 					'minimum' => 1,
 				),
-				'post_type' => array( 'type' => 'string' ),
-				'title'     => array( 'type' => 'string' ),
-				'content'   => array( 'type' => 'string' ),
-				'excerpt'   => array( 'type' => 'string' ),
-				'status'    => array( 'type' => 'string' ),
-				'slug'      => array( 'type' => 'string' ),
-				'parent_id' => array(
+				'post_type'             => array( 'type' => 'string' ),
+				'title'                 => array( 'type' => 'string' ),
+				'content'               => array( 'type' => 'string' ),
+				'excerpt'               => array( 'type' => 'string' ),
+				'status'                => array( 'type' => 'string' ),
+				'slug'                  => array( 'type' => 'string' ),
+				'parent_id'             => array(
 					'type'    => 'integer',
 					'minimum' => 0,
 				),
-				'menu_order'     => array( 'type' => 'integer' ),
-				'template'       => array( 'type' => 'string' ),
-				'featured_media' => array(
+				'menu_order'            => array( 'type' => 'integer' ),
+				'template'              => array( 'type' => 'string' ),
+				'featured_media'        => array(
 					'type'    => 'integer',
 					'minimum' => 0,
 				),
@@ -1105,8 +1105,8 @@ final class Content_Abilities {
 	 */
 	private function delete_input_schema() {
 		return array(
-			'type'       => 'object',
-			'properties' => array(
+			'type'                 => 'object',
+			'properties'           => array(
 				'id'    => array(
 					'type'    => 'integer',
 					'minimum' => 1,
@@ -1151,12 +1151,12 @@ final class Content_Abilities {
 				'type'  => 'array',
 				'items' => array( 'type' => 'string' ),
 			),
-			'text_field'       => array( 'type' => 'string' ),
-			'text_chunk'       => array( 'type' => 'string' ),
-			'text_hash'        => array( 'type' => 'string' ),
-			'text_total_bytes' => array( 'type' => 'integer' ),
-			'text_next_offset' => array( 'type' => 'integer' ),
-			'text_complete'    => array( 'type' => 'boolean' ),
+			'text_field'           => array( 'type' => 'string' ),
+			'text_chunk'           => array( 'type' => 'string' ),
+			'text_hash'            => array( 'type' => 'string' ),
+			'text_total_bytes'     => array( 'type' => 'integer' ),
+			'text_next_offset'     => array( 'type' => 'integer' ),
+			'text_complete'        => array( 'type' => 'boolean' ),
 		);
 		$required   = array( 'id', 'post_type', 'modified_gmt', 'content_hash', 'state_hash' );
 		if ( $content_required ) {
@@ -1177,8 +1177,8 @@ final class Content_Abilities {
 	 */
 	private function revision_schema() {
 		return array(
-			'type'       => 'object',
-			'properties' => array(
+			'type'                 => 'object',
+			'properties'           => array(
 				'id'           => array( 'type' => 'integer' ),
 				'parent_id'    => array( 'type' => 'integer' ),
 				'date_gmt'     => array( 'type' => 'string' ),

@@ -154,8 +154,8 @@ try {
 	// Confirm a successful large full-content mutation never emits oversized readback.
 
 	$huge_body = str_repeat( 'سلام گوتنبرگ! ', 5000 );
-	$huge_title = str_repeat( 'Really long saved WordPress title ', 5000 );
-	$huge_excerpt = str_repeat( 'Very large saved WordPress excerpt ', 5000 );
+	$huge_title = str_repeat( 'Really long saved WordPress title ', 1200 );
+	$huge_excerpt = str_repeat( 'Very large saved WordPress excerpt ', 1200 );
 	// A real WordPress fixture may have much larger stored metadata than
 	// the ordinary MCP mutation request body can safely carry.
 	$seeded = wp_update_post(

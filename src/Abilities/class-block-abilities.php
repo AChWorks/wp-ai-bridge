@@ -228,7 +228,7 @@ final class Block_Abilities {
 			'walked'      => 0,
 			'complete'    => true,
 		);
-		$index = 0;
+		$index  = 0;
 		foreach ( $this->walk_blocks( $blocks, $after ) as $entry ) {
 			++$result['walked'];
 			// Older offset-only consumers continue to work; cursor consumers
@@ -242,9 +242,9 @@ final class Block_Abilities {
 			}
 			$block = $entry['block'];
 			if ( $this->matches_find_filters( $block, $input ) ) {
-				$children = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
-				$deferred = ! empty( $children ) && empty( $input['include_container_hash'] );
-				$item     = array(
+				$children                = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
+				$deferred                = ! empty( $children ) && empty( $input['include_container_hash'] );
+				$item                    = array(
 					'path'            => $entry['path'],
 					'name'            => isset( $block['blockName'] ) ? (string) $block['blockName'] : '',
 					'block_hash'      => $deferred ? '' : hash( 'sha256', serialize_block( $block ) ),
@@ -709,8 +709,8 @@ final class Block_Abilities {
 	 */
 	private function read_input_schema() {
 		return array(
-			'type'       => 'object',
-			'properties' => array(
+			'type'                 => 'object',
+			'properties'           => array(
 				'post_id'               => array(
 					'type'    => 'integer',
 					'minimum' => 1,
@@ -746,8 +746,8 @@ final class Block_Abilities {
 	 */
 	private function find_input_schema() {
 		return array(
-			'type'       => 'object',
-			'properties' => array(
+			'type'                 => 'object',
+			'properties'           => array(
 				'post_id'                  => array(
 					'type'    => 'integer',
 					'minimum' => 1,
@@ -772,12 +772,12 @@ final class Block_Abilities {
 					'type'      => 'string',
 					'maxLength' => 200,
 				),
-				'after_path'              => array(
+				'after_path'               => array(
 					'type'      => 'string',
 					'minLength' => 1,
 					'maxLength' => 2048,
 				),
-				'include_container_hash'  => array(
+				'include_container_hash'   => array(
 					'type'    => 'boolean',
 					'default' => false,
 				),
@@ -814,8 +814,8 @@ final class Block_Abilities {
 	 */
 	private function find_output_schema() {
 		return array(
-			'type'       => 'object',
-			'properties' => array(
+			'type'                 => 'object',
+			'properties'           => array(
 				'post_id'      => array( 'type' => 'integer' ),
 				'modified_gmt' => array( 'type' => 'string' ),
 				'content_hash' => array( 'type' => 'string' ),
@@ -827,8 +827,8 @@ final class Block_Abilities {
 				'items'        => array(
 					'type'  => 'array',
 					'items' => array(
-						'type'       => 'object',
-						'properties' => array(
+						'type'                 => 'object',
+						'properties'           => array(
 							'path'            => array( 'type' => 'string' ),
 							'name'            => array( 'type' => 'string' ),
 							'block_hash'      => array( 'type' => 'string' ),
@@ -853,8 +853,8 @@ final class Block_Abilities {
 	 */
 	private function mutate_input_schema() {
 		return array(
-			'type'       => 'object',
-			'properties' => array(
+			'type'                 => 'object',
+			'properties'           => array(
 				'post_id'               => array(
 					'type'    => 'integer',
 					'minimum' => 1,
@@ -863,8 +863,8 @@ final class Block_Abilities {
 					'type' => 'string',
 					'enum' => array( 'append', 'insert_before', 'insert_after', 'replace', 'remove' ),
 				),
-				'path'          => array( 'type' => 'string' ),
-				'response_mode' => array(
+				'path'                  => array( 'type' => 'string' ),
+				'response_mode'         => array(
 					'type'    => 'string',
 					'enum'    => array( 'auto', 'summary' ),
 					'default' => 'auto',
@@ -897,11 +897,11 @@ final class Block_Abilities {
 	 */
 	private function tree_schema() {
 		$block                                        = array(
-			'type'       => 'object',
-			'properties' => array(
-				'path'  => array( 'type' => 'string' ),
-				'name'  => array( 'type' => 'string' ),
-				'attrs' => array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'path'            => array( 'type' => 'string' ),
+				'name'            => array( 'type' => 'string' ),
+				'attrs'           => array(
 					'type'                 => 'object',
 					'additionalProperties' => true,
 				),
@@ -915,8 +915,8 @@ final class Block_Abilities {
 		$block['properties']['inner_blocks']['items'] = $block;
 
 		return array(
-			'type'       => 'object',
-			'properties' => array(
+			'type'                 => 'object',
+			'properties'           => array(
 				'post_id'      => array( 'type' => 'integer' ),
 				'modified_gmt' => array( 'type' => 'string' ),
 				'content_hash' => array( 'type' => 'string' ),
