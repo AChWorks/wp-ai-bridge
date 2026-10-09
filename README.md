@@ -4,13 +4,13 @@
 [![Latest release](https://img.shields.io/github/v/release/AChWorks/wp-ai-bridge)](https://github.com/AChWorks/wp-ai-bridge/releases/latest)
 [![License](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](./LICENSE)
 
-WP AI Bridge connects a WordPress site to ChatGPT through a direct HTTPS MCP endpoint, WordPress-backed OAuth, the official WordPress MCP Adapter, and the WordPress Abilities API.
+WP AI Bridge connects WordPress to authenticated, compatible AI/MCP clients through HTTPS, WordPress-backed OAuth, the official WordPress MCP Adapter, and the WordPress Abilities API. It includes a tested direct ChatGPT connection and administrator-approved additional OAuth client identities; compatibility with other named AI products must be verified rather than assumed.
 
 It exposes bounded, typed site-management abilities while keeping WordPress capabilities and explicit Bridge access groups in control.
 
 ## What it provides
 
-- Direct ChatGPT Workspace App connection over HTTPS with OAuth 2.1 and PKCE.
+- Direct ChatGPT Workspace App connection over HTTPS with OAuth 2.1 and PKCE, plus explicit approval of independently operated compatible OAuth clients.
 - Read and update posts, pages, supported custom post types, revisions, and Gutenberg blocks.
 - Admin-controlled generic post/term metadata access for exact WordPress objects the connected user may edit, including protected/private metadata without provider/post-type/taxonomy/meta-key allowlists.
 - Media Library read, upload, safe URL import, update, and delete operations.
@@ -29,7 +29,7 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 
 - WordPress **6.9 or newer**.
 - The official [WordPress MCP Adapter](https://github.com/WordPress/mcp-adapter), currently validated with `0.6.1`.
-- HTTPS and a publicly reachable WordPress REST API for direct ChatGPT Workspace App connections.
+- HTTPS and a publicly reachable WordPress REST API for direct ChatGPT Workspace App connections; other remote clients must be able to reach the endpoint over their supported transport.
 - A WordPress account with the capabilities required for the operations you enable.
 
 ## Install
@@ -44,7 +44,7 @@ Version 0.4.1 is the native canonical baseline and installs as `wp-ai-bridge/wp-
 
 See [Installation and connection](./docs/INSTALLATION.md) for the complete setup.
 
-## Connect ChatGPT
+## Connect ChatGPT (built-in client)
 
 On an HTTPS WordPress site, **WP AI Bridge → Settings** shows the canonical MCP endpoint for the site:
 
@@ -63,7 +63,7 @@ In a ChatGPT workspace with Developer Mode enabled:
 
 Current releases serve only the canonical `wp-ai-bridge` MCP/OAuth routes. Updating an already-canonical 0.4.0 or 0.4.1 installation to 0.4.2 keeps the canonical installation/storage identity; a normal reconnect is not required solely because of this patch release.
 
-No tunnel or separate proxy service is required for the direct HTTPS setup.
+No tunnel or separate proxy service is required for the direct ChatGPT HTTPS setup. Independently operated clients supporting the existing metadata and signed-client contract can be explicitly approved under **WP AI Bridge → OAuth Clients**; see [Approved OAuth clients](./docs/OAUTH-CLIENTS.md). This does not assert direct Claude or Gemini interoperability has been tested.
 
 ## WordPress admin
 
@@ -73,7 +73,7 @@ The plugin adds a top-level **WP AI Bridge** menu:
 - **Documents** — durable project documents.
 - **Tasks** — durable work items with independent progress, review, and delivery state.
 - **Activity** — bounded mutation activity.
-- **Settings** — ChatGPT connection details and Bridge access groups.
+- **Settings** — shared MCP endpoint, ChatGPT onboarding and Bridge access groups.
 
 Administration uses only the canonical `wp-ai-bridge...` slugs. Former product admin aliases are not registered by current releases.
 

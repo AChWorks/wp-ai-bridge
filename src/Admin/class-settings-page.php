@@ -316,21 +316,21 @@ final class Settings_Page {
 				?>
 				<div class="notice notice-success is-dismissible"><p><?php echo esc_html__( 'Workspace documents and tasks were cleared.', 'wp-ai-bridge' ); ?></p></div><?php endif; ?>
 
-			<h2><?php echo esc_html__( 'Direct ChatGPT App', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'Use the direct HTTPS MCP endpoint below when creating a custom App in a ChatGPT workspace with Developer Mode enabled. ChatGPT will open this WordPress site for OAuth login and consent; no tunnel or separate proxy service is required.', 'wp-ai-bridge' ); ?></p>
+			<h2><?php echo esc_html__( 'AI/MCP client connections', 'wp-ai-bridge' ); ?></h2>
+			<p><?php echo esc_html__( 'This HTTPS MCP endpoint serves the built-in ChatGPT connection and other compatible OAuth clients explicitly approved by an administrator. Use the ChatGPT instructions below, or configure an independent client under WP AI Bridge → OAuth Clients. Compatibility depends on the supported OAuth/MCP contract of each client.', 'wp-ai-bridge' ); ?></p>
 			<table class="widefat striped" style="max-width: 900px"><tbody>
 				<tr><th scope="row"><?php echo esc_html__( 'WordPress', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( $this->environment->wordpress_version() ); ?></td></tr>
 				<tr><th scope="row"><?php echo esc_html__( 'Abilities API', 'wp-ai-bridge' ); ?></th><td><?php echo $this->environment->abilities_api_available() ? esc_html__( 'Available', 'wp-ai-bridge' ) : esc_html__( 'Unavailable', 'wp-ai-bridge' ); ?></td></tr>
 				<tr><th scope="row"><?php echo esc_html__( 'MCP Adapter', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( $mcp_available ? sprintf( __( 'Available (%s)', 'wp-ai-bridge' ), $this->environment->mcp_adapter_version() ) : __( 'Unavailable', 'wp-ai-bridge' ) ); // phpcs:ignore WordPress.WP.I18n.MissingTranslatorsComment -- Existing short version placeholder. ?></td></tr>
 				<tr><th scope="row"><?php echo esc_html__( 'Public HTTPS', 'wp-ai-bridge' ); ?></th><td><?php echo $https_ready ? esc_html__( 'Ready', 'wp-ai-bridge' ) : esc_html__( 'Not ready — endpoint is not HTTPS', 'wp-ai-bridge' ); ?></td></tr>
-				<tr><th scope="row"><?php echo esc_html__( 'App MCP endpoint', 'wp-ai-bridge' ); ?></th><td><code><?php echo esc_html( $direct_endpoint ); ?></code></td></tr>
+				<tr><th scope="row"><?php echo esc_html__( 'MCP endpoint', 'wp-ai-bridge' ); ?></th><td><code><?php echo esc_html( $direct_endpoint ); ?></code></td></tr>
 				<tr><th scope="row"><?php echo esc_html__( 'OAuth protected-resource metadata', 'wp-ai-bridge' ); ?></th><td><code><?php echo esc_html( $this->oauth_server->protected_resource_metadata_url() ); ?></code></td></tr>
 				<tr><th scope="row"><?php echo esc_html__( 'OAuth authorization-server metadata', 'wp-ai-bridge' ); ?></th><td><code><?php echo esc_html( $this->oauth_server->authorization_server_metadata_url() ); ?></code></td></tr>
 			</tbody></table>
 			<?php if ( $mcp_available && $https_ready ) : ?>
-				<p><strong><?php echo esc_html__( 'ChatGPT setup:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html__( 'In Workspace settings, open Apps, create a custom App, enter the App MCP endpoint above, choose OAuth, and run Scan Tools. Sign in to WordPress in the browser window and approve the connection.', 'wp-ai-bridge' ); ?></p>
+				<p><strong><?php echo esc_html__( 'ChatGPT setup:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html__( 'In Workspace settings, open Apps, create a custom App, enter the MCP endpoint above, choose OAuth, and run Scan Tools. Sign in to WordPress in the browser window and approve the connection.', 'wp-ai-bridge' ); ?></p>
 			<?php else : ?>
-				<p><strong><?php echo esc_html__( 'Connection is not ready yet.', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html__( 'The official MCP Adapter must be active and the WordPress REST URL must be publicly reachable over HTTPS before ChatGPT can create this App.', 'wp-ai-bridge' ); ?></p>
+				<p><strong><?php echo esc_html__( 'Connection is not ready yet.', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html__( 'The official MCP Adapter must be active and the WordPress endpoint reachable by the client over HTTPS. Direct ChatGPT apps require a publicly reachable endpoint.', 'wp-ai-bridge' ); ?></p>
 			<?php endif; ?>
 
 			<h2><?php echo esc_html__( 'Access groups', 'wp-ai-bridge' ); ?></h2>

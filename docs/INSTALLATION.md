@@ -4,7 +4,7 @@
 
 - WordPress 6.9 or newer.
 - Official WordPress MCP Adapter installed and active.
-- HTTPS with a publicly reachable REST API for direct ChatGPT connections.
+- HTTPS with a publicly reachable REST API for direct ChatGPT connections; independent clients need a mutually supported transport and authentication contract.
 - A WordPress user with the capabilities needed for the intended operations.
 
 ## Install the plugin
@@ -51,6 +51,12 @@ With Developer Mode enabled in the ChatGPT workspace:
 The OAuth connection acts as the WordPress user who approved it. Bridge access groups and WordPress capabilities are still checked for every operation.
 
 Current releases serve only the canonical MCP/OAuth routes. A fresh installation needs a fresh OAuth connection. Updating an already-connected canonical 0.4.0 or 0.4.1 installation to 0.4.2 does not by itself invalidate that canonical connection.
+
+## Other approved AI/MCP clients
+
+The same WordPress MCP endpoint is not specific to ChatGPT. WP AI Bridge already supports administrator-approved additional HTTPS OAuth Client ID Metadata identities when those clients implement its validated `private_key_jwt`, JWKS, PKCE and resource-binding contract. Configure those identities under **WP AI Bridge → OAuth Clients**, following [Approved OAuth clients](./OAUTH-CLIENTS.md).
+
+ChatGPT is the tested built-in profile. Other AI products (including Claude and Gemini) are **not automatically compatible** simply because they support MCP; verify the client's actual remote-MCP/OAuth requirements before attempting direct onboarding. Never reuse the ChatGPT client identity or signing keys for another client.
 
 ## OAuth discovery endpoints
 

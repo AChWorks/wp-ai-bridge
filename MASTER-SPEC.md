@@ -18,7 +18,7 @@ Historical documents under `docs/maintainer/reference/` are design evidence only
 
 ## 1. Purpose
 
-WP AI Bridge is a small, free, self-hosted WordPress plugin whose goal is to make the full range of administration available to a real WordPress administrator discoverable and delegable to an AI through the Bridge. The canonical WordPress plugin installation identity is `wp-ai-bridge/wp-ai-bridge.php`; maintained PHP, localization, Ability, admin, OAuth/MCP, and Bridge-owned storage identifiers use the WP AI Bridge identity. The bounded pre-canonical Workspace migration is preserved only in the immutable v0.4.0 release; current maintained runtime beginning with v0.4.1 does not read or depend on pre-0.4.0 product or storage identifiers.
+WP AI Bridge is a small, free, self-hosted WordPress plugin whose goal is to make the full range of administration available to a real WordPress administrator discoverable and delegable to an AI through the Bridge. The Bridge is AI-client-neutral: ChatGPT, Claude, Gemini, independently operated agents, and future compatible MCP clients are potential consumers, not separate WordPress permission frameworks. Compatibility with a named consumer requires verification of its actual transport and authentication contract; the product goal does not assert that every named client is already supported. The canonical WordPress plugin installation identity is `wp-ai-bridge/wp-ai-bridge.php`; maintained PHP, localization, Ability, admin, OAuth/MCP, and Bridge-owned storage identifiers use the WP AI Bridge identity. The bounded pre-canonical Workspace migration is preserved only in the immutable v0.4.0 release; current maintained runtime beginning with v0.4.1 does not read or depend on pre-0.4.0 product or storage identifiers.
 
 The intended experience is an additional WordPress administrator whose effective access the principal site administrator can increase, reduce, or revoke in WordPress settings. The AI must be able to discover the operations available on the actual installation, understand their inputs and required permissions, and perform the operations the administrator has delegated. Broad administrator-equivalent access and narrower grants must use the same simple access model.
 
@@ -232,7 +232,11 @@ When a public contract is insufficient, report the precise gap and implement onl
 
 ## 13. Authentication and MCP transport
 
-Use WordPress-backed authentication/delegation and HTTPS MCP with the official Adapter. Bind each connection to the intended installation and WordPress principal. Reuse current authentication and capability machinery; a broad grant is explicit, never an unauthenticated AI administrator.
+Use WordPress-backed authentication/delegation and HTTPS MCP with the official Adapter. Bind each connection to the intended installation, authenticated client identity, and WordPress principal. Reuse current authentication and capability machinery; a broad grant is explicit, never an unauthenticated AI administrator.
+
+Keep the **AI/MCP client** (ChatGPT, Claude, Gemini, an independent Gateway or another agent) distinct from a **WordPress operation provider** (Core, an installed plugin or a theme). Client onboarding and transport must be reusable across compatible consumers without duplicating the Bridge's Abilities, access groups or WordPress authority for each vendor. The existing built-in ChatGPT connection is a supported compatibility profile, not the product's identity or an OAuth client ID that another client may impersonate. Additional clients require explicit administrator approval and their own verifiable identity; separate client credentials, grants and revocation must remain bound to the actual client/resource/principal. Do not silently expand access merely because another AI client connects.
+
+Verify each client's current official remote-MCP discovery, OAuth/client-authentication, redirect and refresh requirements before claiming that named client's direct interoperability. Extend a proven standards-compatible mechanism only when necessary, instead of weakening authenticated client binding or introducing vendor-specific policy switches. Public copy should describe the generic Bridge connection first and identify ChatGPT only for its actual tested setup and consent flow. Client-specific compatibility identifiers, persisted OAuth artifacts, routes, caches and deployed ChatGPT connections must not be renamed or invalidated as a cosmetic rebrand.
 
 Verify version-sensitive client and Adapter requirements before modifying transport. Do not add a proxy, tunnel, independent identity platform, or second MCP stack merely for completeness. Connection/delegation revocation and relevant policy changes must affect subsequent execution rather than only a cached discovery response.
 
@@ -251,6 +255,7 @@ Return only information necessary for the authorized operation. Separate broad d
 - Treat broader targets of a supported generic contract differently from materially new risky operations requiring consent.
 - Prefer extending existing mechanisms over a new framework, store, service, or integration dependency.
 - Public docs describe implemented behavior; this specification defines required product behavior. Record and close gaps without misrepresenting either.
+- Preserve current verified ChatGPT OAuth/MCP functionality during client-neutral wording and future compatible-client extensions; do not present planned direct client integrations as shipped.
 
 ## 16. Validation and delivery discipline
 
