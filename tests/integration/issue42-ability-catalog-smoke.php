@@ -12,6 +12,40 @@ try {
 	update_option( Settings::OPTION_NAME, $settings->defaults(), false );
 	$catalog = wp_get_ability( 'wp-ai-bridge/abilities-read' );
 	wpai_issue42_assert( $catalog instanceof WP_Ability, 'Missing native catalog Ability.' );
+	// Discovery is independent of the default-off executable-operation grant.
+	$extension = wp_get_ability( 'wp-ai-bridge/extension-lifecycle' );
+	$bridge    = wp_get_ability( 'wp-ai-bridge/bridge-info' );
+	wpai_issue42_assert( $extension instanceof WP_Ability && $bridge instanceof WP_Ability, 'Bridge status or extension lifecycle is missing from the native registry.' );
+	$extension_input = array( 'kind' => 'plugin', 'action' => 'install', 'slug' => 'hello-dolly' );
+	$package_input   = array( 'kind' => 'plugin', 'action' => 'install', 'package_url' => 'https://packages.example.test/reviewed.zip' );
+	$extension_list  = $catalog->execute( array( 'search' => 'extension-lifecycle' ) );
+	wpai_issue42_assert( ! is_wp_error( $extension_list ) && in_array( 'wp-ai-bridge/extension-lifecycle', array_column( $extension_list['items'], 'name' ), true ), 'Default-off lifecycle is missing from the public searchable catalog.' );
+	$extension_detail = $catalog->execute( array( 'action' => 'get', 'name' => 'wp-ai-bridge/extension-lifecycle' ) );
+	wpai_issue42_assert( ! is_wp_error( $extension_detail ) && 'ability_specific' === $extension_detail['items'][0]['bridge_delegation'], 'Lifecycle contract must remain discoverable with genuine Bridge provenance.' );
+	wpai_issue42_assert( 'not_evaluated' === $extension_detail['execution_permission'], 'Lifecycle contract lookup must not imply execution consent.' );
+	$bridge_off = $bridge->execute( array() );
+	wpai_issue42_assert( false === $bridge_off['access_groups'][ Settings::GROUP_CODE_EXTENSIONS ] && '' !== $bridge_off['plugin_version'], 'Bridge status must identify deployed version and disabled executable grant.' );
+	wpai_issue42_assert( true !== $extension->check_permissions( $extension_input ), 'Disabled Code & Extensions group permitted an install.' );
+
+	$extension_enabled = $settings->defaults();
+	$extension_enabled[ Settings::GROUP_CODE_EXTENSIONS ] = 1;
+	update_option( Settings::OPTION_NAME, $extension_enabled, false );
+	$bridge_on = $bridge->execute( array() );
+	wpai_issue42_assert( true === $bridge_on['access_groups'][ Settings::GROUP_CODE_EXTENSIONS ], 'Bridge status did not reflect an enabled Code & Extensions grant.' );
+	wpai_issue42_assert( current_user_can( 'install_plugins' ) === $extension->check_permissions( $extension_input ), 'Lifecycle permission must intersect delegation with WordPress install authority.' );
+	wpai_issue42_assert( true !== $extension->check_permissions( $package_input ), 'Enabling ordinary extension management unexpectedly enabled external packages.' );
+	$extension_enabled[ Settings::GROUP_EXTERNAL_PACKAGES ] = 1;
+	update_option( Settings::OPTION_NAME, $extension_enabled, false );
+	wpai_issue42_assert( current_user_can( 'install_plugins' ) === $extension->check_permissions( $package_input ), 'Reviewed external package permission must intersect both grants and native authority.' );
+	wp_set_current_user( 0 );
+	try {
+		wpai_issue42_assert( true !== $extension->check_permissions( $extension_input ) && true !== $extension->check_permissions( $package_input ), 'An unauthenticated principal inherited executable permission from Bridge settings.' );
+	} finally {
+		wp_set_current_user( $user );
+	}
+	$extension_still_listed = $catalog->execute( array( 'action' => 'get', 'name' => 'wp-ai-bridge/extension-lifecycle' ) );
+	wpai_issue42_assert( ! is_wp_error( $extension_still_listed ), 'Changing only executable delegation hid a public read-only contract.' );
+	update_option( Settings::OPTION_NAME, $settings->defaults(), false );
 	wpai_issue42_assert( wp_get_ability( 'catalog-fixture/operation-136' ) instanceof WP_Ability, 'Isolated catalog fixture was not registered.' );
 	$first = $catalog->execute( array( 'namespace' => 'catalog-fixture', 'per_page' => 100 ) );
 	wpai_issue42_assert( ! is_wp_error( $first ), 'Catalog list failed native input/output validation.' );
