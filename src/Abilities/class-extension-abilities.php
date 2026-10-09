@@ -717,9 +717,15 @@ final class Extension_Abilities {
 		if ( ! $this->can_read() ) {
 			return new WP_Error( 'extension_authorization_read_denied', __( 'Site Read and the WordPress read capability are required to inspect extension authorization.', 'wp-ai-bridge' ) );
 		}
-		if ( ! is_array( $input )
-			|| array_diff( array_keys( $input ), array( 'kind', 'action', 'install_source' ) )
-			|| ! isset( $input['kind'], $input['action'] )
+		if ( ! is_array( $input ) ) {
+			return $this->invalid_authorization_input();
+		}
+		foreach ( array_keys( $input ) as $key ) {
+			if ( ! in_array( $key, array( 'kind', 'action', 'install_source' ), true ) ) {
+				return $this->invalid_authorization_input();
+			}
+		}
+		if ( ! isset( $input['kind'], $input['action'] )
 			|| ! is_string( $input['kind'] )
 			|| ! is_string( $input['action'] ) ) {
 			return $this->invalid_authorization_input();
