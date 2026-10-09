@@ -284,7 +284,7 @@ final class Block_Abilities {
 
 	/** @param array<string,mixed> $block Block. @param array<string,mixed> $filters Search filters. @return bool */
 	private function matches_find_filters( array $block, array $filters ) {
-		if ( ! empty( $filters['block_name'] ) && false === stripos( (string) ( $block['blockName'] ?? '' ), (string) $filters['block_name'] ) ) {
+		if ( ! empty( $filters['block_name'] ) && (string) ( $block['blockName'] ?? '' ) !== (string) $filters['block_name'] ) {
 			return false;
 		}
 		if ( ! empty( $filters['class_name'] ) ) {

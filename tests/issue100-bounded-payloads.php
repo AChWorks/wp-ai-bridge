@@ -97,7 +97,10 @@ $fixture = array();
 for ( $i = 0; $i < 2400; ++$i ) {
 	$fixture[] = wpai_issue100_block( 'core/paragraph', 'Normal ' . $i );
 }
-$fixture[]                      = wpai_issue100_block( 'core/button', 'دکمه هدف نهایی' );
+$group                          = wpai_issue100_block( 'core/buttons', '' );
+$group['innerBlocks']           = array( wpai_issue100_block( 'core/button', 'دکمه هدف نهایی' ) );
+$group['innerContent']          = array( '<div>', null, '</div>' );
+$fixture[]                      = $group;
 $post                           = (object) array(
 	'ID'                => 100,
 	'post_type'         => 'page',
@@ -143,7 +146,7 @@ for ( $step = 0; $step < 10; ++$step ) {
 	}
 	$offset = $next['next_offset'];
 }
-wpai_issue100_assert( ! empty( $next['items'] ) && '2400' === $next['items'][0]['path'], 'Search failed to locate the target beyond the early tree pages.' );
+wpai_issue100_assert( ! empty( $next['items'] ) && '2400.0' === $next['items'][0]['path'], 'Search failed to locate the target beyond the early tree pages.' );
 $target      = $next['items'][0];
 $text_result = $blocks->find(
 	array(
@@ -162,7 +165,7 @@ $text_result = $blocks->find(
 		'expected_content_hash' => $first['content_hash'],
 	)
 );
-wpai_issue100_assert( ! is_wp_error( $text_result ) && '2400' === $text_result['items'][0]['path'], 'Unicode text-filtered discovery missed a late block.' );
+wpai_issue100_assert( ! is_wp_error( $text_result ) && '2400.0' === $text_result['items'][0]['path'], 'Unicode text-filtered discovery missed a late block.' );
 $read = $blocks->read(
 	array(
 		'post_id'               => 100,
@@ -178,7 +181,7 @@ $changed = $blocks->mutate(
 	array(
 		'post_id'               => 100,
 		'action'                => 'replace',
-		'path'                  => '2400',
+		'path'                  => '2400.0',
 		'block_markup'          => serialize_blocks( array( wpai_issue100_block( 'core/button', 'جایگزین' ) ) ),
 		'expected_modified_gmt' => $read['modified_gmt'],
 		'expected_content_hash' => $read['content_hash'],
@@ -188,7 +191,7 @@ $changed = $blocks->mutate(
 wpai_issue100_assert( ! is_wp_error( $changed ) && ! empty( $changed['truncated'] ) && empty( $changed['blocks'] ), 'Successful large mutation must return a bounded explicit confirmation.' );
 wpai_issue100_assert( Bounded_Payload::fits( $changed ), 'Large mutation confirmation exceeded the budget.' );
 wpai_issue100_assert( 'core/paragraph' === parse_blocks( $post->post_content )[0]['blockName'], 'Targeted write damaged unrelated blocks.' );
-wpai_issue100_assert( 'جایگزین' === strip_tags( parse_blocks( $post->post_content )[2400]['innerHTML'] ), 'Targeted write was not persisted.' );
+wpai_issue100_assert( 'جایگزین' === strip_tags( parse_blocks( $post->post_content )[2400]['innerBlocks'][0]['innerHTML'] ), 'Targeted write was not persisted.' );
 wpai_issue100_assert( hash( 'sha256', $post->post_content ) === $changed['content_hash'], 'Mutation confirmation did not identify the committed content.' );
 
 $stale = $blocks->find(
@@ -202,7 +205,7 @@ wpai_issue100_assert( is_wp_error( $stale ) && 'stale_content_conflict' === $sta
 $stale_read = $blocks->read(
 	array(
 		'post_id'               => 100,
-		'path'                  => '2400',
+		'path'                  => '2400.0',
 		'expected_content_hash' => $first['content_hash'],
 	)
 );
