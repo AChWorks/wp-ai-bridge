@@ -261,11 +261,12 @@ final class OAuth_Store {
 			'refresh_token'      => $refresh_token_successor,
 			'refresh_expires_at' => $now + $refresh_ttl,
 			'response'           => array(
-				'access_token'  => $access_token,
-				'token_type'    => 'Bearer',
-				'expires_in'    => $access_ttl,
-				'scope'         => (string) $canonical_claims['scope'],
-				'refresh_token' => $refresh_token_successor,
+				'access_token'             => $access_token,
+				'token_type'               => 'Bearer',
+				'expires_in'               => $access_ttl,
+				'scope'                    => (string) $canonical_claims['scope'],
+				'refresh_token'            => $refresh_token_successor,
+				'refresh_token_expires_in' => $refresh_ttl,
 			),
 		);
 

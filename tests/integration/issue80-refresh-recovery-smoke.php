@@ -201,12 +201,14 @@ try {
 	wpai_issue80_assert( 200 === $first->get_status(), 'Issue #80 normal refresh rotation failed.' );
 	$first_data = wpai_issue80_data( $first );
 	wpai_issue80_assert( ! empty( $first_data['access_token'] ) && ! empty( $first_data['refresh_token'] ), 'Issue #80 rotation did not return a successor pair.' );
+	wpai_issue80_assert( OAuth_Server::REFRESH_TTL === ( $first_data['refresh_token_expires_in'] ?? null ), 'The approved non-ChatGPT client did not receive a bounded refresh maintenance interval.' );
 	wpai_issue80_assert( false === $store->read( OAuth_Store::TYPE_REFRESH, $old ), 'Issue #80 normal rotation did not consume the old refresh token.' );
 	$issued_pairs[] = $first_data;
 
 	$recovery = $store->read_refresh_recovery( $old );
 	wpai_issue80_assert( is_array( $recovery ), 'Issue #80 did not stage committed recovery state.' );
 	wpai_issue80_assert( 'committed' === ( $recovery['phase'] ?? '' ), 'Issue #80 recovery state was not committed before returning success.' );
+	wpai_issue80_assert( ( $recovery['response']['refresh_token_expires_in'] ?? null ) === ( (int) $recovery['refresh_expires_at'] - (int) $recovery['created_at'] ), 'The committed successor advertised a refresh lifetime different from its persisted expiry.' );
 	wpai_issue80_assert( (int) $recovery['expires_at'] > time(), 'Issue #80 recovery state was already expired.' );
 	wpai_issue80_assert( (int) $recovery['expires_at'] - (int) $recovery['created_at'] <= OAuth_Server::REFRESH_RECOVERY_TTL, 'Issue #80 recovery lifetime exceeded its bounded contract.' );
 

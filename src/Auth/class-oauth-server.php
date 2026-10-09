@@ -766,7 +766,8 @@ final class OAuth_Server {
 			'scope'        => $scope,
 		);
 		if ( in_array( self::SCOPE_OFFLINE, $this->parse_scope( $scope ), true ) ) {
-			$data['refresh_token'] = $this->store->issue( OAuth_Store::TYPE_REFRESH, $token_claims, self::REFRESH_TTL );
+			$data['refresh_token']            = $this->store->issue( OAuth_Store::TYPE_REFRESH, $token_claims, self::REFRESH_TTL );
+			$data['refresh_token_expires_in'] = self::REFRESH_TTL;
 		}
 		$response = new \WP_REST_Response( $data, 200 );
 		$response->header( 'Cache-Control', 'no-store' );
