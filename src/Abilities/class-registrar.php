@@ -54,6 +54,8 @@ final class Registrar {
 	private $site_config_abilities;
 	/** @var Extension_Abilities */
 	private $extension_abilities;
+	/** @var Extension_Authorization_Abilities */
+	private $extension_authorization_abilities;
 	/** @var Source_Editing_Abilities */
 	private $source_editing_abilities;
 	/** @var User_Abilities */
@@ -100,6 +102,7 @@ final class Registrar {
 		$this->integration_abilities       = new Integration_Abilities( $this->resolver, $this->permissions );
 		$this->site_config_abilities       = new Site_Config_Abilities( $this->permissions, $mutation_log );
 		$this->extension_abilities         = new Extension_Abilities( $this->permissions, $mutation_log );
+		$this->extension_authorization_abilities = new Extension_Authorization_Abilities( $this->extension_abilities, $this->permissions, $this->settings );
 		$this->source_editing_abilities    = new Source_Editing_Abilities( $this->permissions, $mutation_log );
 		$this->user_abilities              = new User_Abilities( $this->permissions, $mutation_log );
 		$this->app_password_abilities      = new Secure_Application_Password_Abilities( $this->permissions, $mutation_log );
@@ -207,6 +210,7 @@ final class Registrar {
 			$this->integration_abilities,
 			$this->site_config_abilities,
 			$this->extension_abilities,
+			$this->extension_authorization_abilities,
 			$this->source_editing_abilities,
 			$this->user_abilities,
 			$this->app_password_abilities,

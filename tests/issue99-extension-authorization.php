@@ -23,10 +23,12 @@ function wpai99_check( $condition, $message ) {
 
 wpai_test_reset_state();
 $settings   = new Settings();
-$provider   = new Extension_Abilities( new Permissions( $settings ), new Mutation_Log() );
-$registered = $provider->register();
-$ability    = $GLOBALS['wpai_test']['registered_abilities']['wp-ai-bridge/extension-authorization'];
-wpai99_check( 3 === count( $registered ), 'Expected read, mutation and readonly authorization contracts.' );
+$permissions = new Permissions( $settings );
+$extensions  = new Extension_Abilities( $permissions, new Mutation_Log() );
+$provider    = new WP_AI_Bridge\Abilities\Extension_Authorization_Abilities( $extensions, $permissions, $settings );
+$registered  = $provider->register();
+$ability     = $GLOBALS['wpai_test']['registered_abilities']['wp-ai-bridge/extension-authorization'];
+wpai99_check( 1 === count( $registered ), 'Expected one independently registered readonly authorization contract.' );
 wpai99_check( true === $ability['meta']['annotations']['readonly'] && false === $ability['meta']['annotations']['destructive'], 'Authorization inspection must be read-only.' );
 wpai99_check( isset( $ability['input_schema']['properties']['install_source'] ) && false === $ability['input_schema']['additionalProperties'], 'Authorization selectors must be closed and typed.' );
 
@@ -80,6 +82,22 @@ foreach ( array(
 ) as $bad ) {
 	$failure = $provider->inspect_authorization( $bad );
 	wpai99_check( is_wp_error( $failure ) && 'invalid_extension_authorization_input' === $failure->get_error_code(), 'Malformed preflight selector was accepted.' );
+}
+
+
+foreach ( array(
+	array( 'kind' => 'plugin', 'action' => 'update', 'native' => 'update_plugins' ),
+	array( 'kind' => 'plugin', 'action' => 'activate', 'native' => 'activate_plugins' ),
+	array( 'kind' => 'plugin', 'action' => 'deactivate', 'native' => 'activate_plugins' ),
+	array( 'kind' => 'theme', 'action' => 'update', 'native' => 'update_themes' ),
+	array( 'kind' => 'theme', 'action' => 'activate', 'native' => 'switch_themes' ),
+	array( 'kind' => 'theme', 'action' => 'delete', 'native' => 'delete_themes' ),
+) as $case ) {
+	$GLOBALS['wpai_test']['capabilities'][ $case['native'] ] = true;
+	$probe = array( 'kind' => $case['kind'], 'action' => $case['action'] );
+	$answer = $provider->inspect_authorization( $probe );
+	wpai99_check( $case['native'] === $answer['native_capability'], 'Native capability mapping diverged from lifecycle.' );
+	wpai99_check( $extensions->can_mutate( $probe ) === $answer['permission_callback_allows'], 'Read-only permission result diverged from lifecycle predicate.' );
 }
 
 $enabled[ Settings::GROUP_SITE_READ ] = 0;
