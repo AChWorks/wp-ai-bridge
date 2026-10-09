@@ -191,6 +191,8 @@ Import is not idempotent: importing the same URL again can create another attach
 
 ## Public Ability contract inspection
 
+**Direct MCP tool inventory versus WordPress operations:** the canonical direct server exposes only the three generic MCP Adapter tools in `tools/list`. Use `mcp-adapter-discover-abilities` to discover public WordPress operations, including `wp-ai-bridge/extension-lifecycle`; absence of that Ability name from `tools/list` alone does not mean it is unimplemented. For a site-specific diagnosis of build version, delegation, native authority and remaining administrator-parity gaps, see [administrator capability audit](POST-PARITY-AUDIT.md).
+
 Use `wp-ai-bridge/abilities-read` with `action: "list"` (the default), optional exact `namespace`, case-insensitive `search` over public name/label/description, `page` (default 1) and `per_page` (default 25, maximum 100). Results sort by exact Ability name and report `total` and `total_pages`; all pages of the current registry are reachable. The registry is a live view, not an immutable snapshot across requests.
 
 An exact `action: "get"` plus `name` returns the provider's actual input/output schemas. An absent native schema stays empty; the Bridge does not invent one. Public name, namespace, label, description, category, MCP type and the three standard boolean-or-null annotations are selected explicitly. Arbitrary provider metadata and callbacks are not returned. Explicit MCP opt-out remains authoritative for both list and exact reads, with no name-guessing bypass. Malformed MCP metadata and non-boolean inherited public flags fail closed, matching the pinned official Adapter exposure rule.

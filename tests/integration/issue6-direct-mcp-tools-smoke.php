@@ -159,6 +159,10 @@ $discover_data       = wpai_issue6_direct_tools_data( $discover );
 $discover_structured = wpai_issue6_direct_tools_structured_content( $discover_data );
 $ability_names       = array_column( $discover_structured['abilities'] ?? array(), 'name' );
 wpai_issue6_direct_tools_assert(
+	in_array( 'wp-ai-bridge/extension-lifecycle', $ability_names, true ),
+	'Direct OAuth MCP discovery omitted registered extension-lifecycle; tools/list intentionally contains only Adapter transport tools.'
+);
+wpai_issue6_direct_tools_assert(
 	in_array( 'wp-ai-bridge/bridge-info', $ability_names, true ),
 	'Direct OAuth MCP discovery did not expose bridge-info from the live mcp.public registry.'
 );
