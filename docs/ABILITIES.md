@@ -7,7 +7,7 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | Ability | Primary access group | Purpose |
 | --- | --- | --- |
 | `bridge-info` | Site Read | Bridge/dependency state and enabled groups. |
-| `site-context` | Site Read | Bounded WordPress/theme/plugin/content-type context. |
+| `site-context` | Site Read | Small-site legacy context, or explicit bounded current-principal capabilities and paged site/plugin/content-type/provider metadata on larger sites. |
 | `abilities-read` | Site Read | Paginated public Core/Bridge/provider contract list and exact named schema inspection; never executes target callbacks or grants permission. |
 | `integration-status` | Site Read | Optional-provider availability and observed Ability mode. |
 | `content-read` | Site Read | Read eligible posts/pages/custom post types with bounded, content-hash-guarded UTF-8 windows for large bodies. |
@@ -64,6 +64,16 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `workspace-resume` | Site Read | Return compact durable Workspace orientation. |
 | `workspace-document` | Site Read / Builder Write | List/read/create/update/archive private Workspace documents. |
 | `workspace-task` | Site Read / Builder Write | List/read/create/update/transition/archive private Workspace tasks. |
+
+### Bounded site-context on large sites
+
+`wp-ai-bridge/site-context` with `{}` preserves its original `site`, `current_user`, `theme`, `plugins`, `post_types`, `taxonomies`, `reuse`, and `external_abilities` structure **only when the entire response fits** the conservative 30 KiB JSON budget and the external Ability hint catalog has no more than 50 entries. No existing small-site field changes. When the combined view would be oversized or silently stop at 50 provider hints, `{}` instead returns just a **fresh** `current_user` (`id` and WordPress native capability booleans) and a `projection` recording `section: "all"`, the reason (`response_budget` or `catalog_limit`), and every omitted section. An omitted section is **not** an empty collection or an unsupported capability.
+
+For a reliable current-principal native authority probe without loading provider inventories, call `{"section":"current_user"}`. This returns the actual current WordPress capability checks including `install_plugins` and `install_themes`; it is **not** Bridge delegation, actual operation authorization, site configuration or proof that installation is possible. Every request checks current **Site Read + WordPress `read`**, and the selected capabilities are recomputed for the current principal. If either permission is revoked, further reads (including pages) are denied.
+
+Other scalar selections: `site`, `theme`, `reuse`. Collection selections: `plugins`, `post_types`, `taxonomies`, `external_abilities`, each accepting `offset` (nonnegative integer, default 0) and `limit` (1–50, default 25). A collection returns its named array plus `page` with `section`, requested `offset`/`limit`, actual `returned`, `has_more`, and `next_offset` **only if more entries remain**. Advance by the returned `next_offset`, which may be less than the requested limit when the encoded page approaches the budget. Results and public provider summaries are evaluated afresh; if WordPress registrations change between requests, restart paging to avoid index drift. `external_abilities` pages use only MCP-public Core/provider metadata (excluding Bridge/Adapter and any hidden Ability) and can reach beyond the legacy first 50; detailed contract inspection remains `abilities-read`.
+
+Untrusted long labels and descriptions are represented by UTF-8-safe bounded prefixes (at most 512 bytes per string); taxonomy object-type lists are capped at 16. Each affected record contains `truncated_fields`, and page metadata reports `projection_truncated`. Selected scalar fields use top-level `projection.truncated_fields`. These are **loss markers**, not reconstructed values, and there is no arbitrary option, private provider metadata, or credential exposure. Invalid input and nonrepresentable pages return typed errors without oversized bodies. See Issue #110 for fixture validation and future live-site confirmation after an authorized deployment.
 
 For large content and transfer contracts, see [Large MCP payloads](./LARGE-PAYLOADS.md).
 

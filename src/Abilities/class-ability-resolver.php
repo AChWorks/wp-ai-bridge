@@ -47,19 +47,22 @@ final class Ability_Resolver {
 	/**
 	 * Returns a compact inventory of externally provided MCP-exposed Abilities.
 	 *
-	 * @param int $limit Maximum results to return.
+	 * @param int $limit  Maximum results to return.
+	 * @param int $offset Number of eligible public results to skip.
 	 * @return array<int,array<string,string>> Ability summaries.
 	 */
-	public function public_catalog( $limit = 50 ) {
+	public function public_catalog( $limit = 50, $offset = 0 ) {
 		if ( ! function_exists( 'wp_get_abilities' ) ) {
 			return array();
 		}
 
 		$limit     = max( 0, min( (int) $limit, 100 ) );
+		$offset    = max( 0, (int) $offset );
+		$seen      = 0;
 		$abilities = wp_get_abilities();
 		$results   = array();
 
-		if ( ! is_array( $abilities ) ) {
+		if ( ! is_array( $abilities ) || 0 === $limit ) {
 			return $results;
 		}
 
@@ -70,6 +73,9 @@ final class Ability_Resolver {
 
 			$name = $ability->get_name();
 			if ( 0 === strpos( $name, 'wp-ai-bridge/' ) || 0 === strpos( $name, 'mcp-adapter/' ) ) {
+				continue;
+			}
+			if ( $seen++ < $offset ) {
 				continue;
 			}
 
