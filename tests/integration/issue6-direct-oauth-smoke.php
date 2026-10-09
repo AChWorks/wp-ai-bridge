@@ -238,6 +238,7 @@ $mcp_only_response = wpai_issue6_oauth_token_request(
 wpai_issue6_oauth_assert( 200 === $mcp_only_response->get_status(), 'MCP-only authorization code exchange failed.' );
 $mcp_only_data = wpai_issue6_oauth_data( $mcp_only_response );
 wpai_issue6_oauth_assert( ! isset( $mcp_only_data['refresh_token'] ), 'Refresh token was issued without offline_access.' );
+wpai_issue6_oauth_assert( ! isset( $mcp_only_data['refresh_token_expires_in'] ), 'An MCP-only authorization leaked offline maintenance hints.' );
 wpai_issue6_oauth_assert( OAuth_Server::SCOPE_MCP === ( $mcp_only_data['scope'] ?? '' ), 'MCP-only token response changed the authorized scope.' );
 if ( ! empty( $mcp_only_data['access_token'] ) ) {
 	$store->revoke( (string) $mcp_only_data['access_token'] );
@@ -276,6 +277,7 @@ wpai_issue6_oauth_assert( 0 === strpos( $refresh, 'wpai_r.' ), 'Refresh token is
 wpai_issue6_oauth_assert( 'Bearer' === ( $token_data['token_type'] ?? '' ), 'Token response does not use Bearer token_type.' );
 wpai_issue6_oauth_assert( ( $token_data['scope'] ?? '' ) === $scope, 'Token response changed the authorized scope.' );
 wpai_issue6_oauth_assert( OAuth_Server::ACCESS_TTL === ( $token_data['expires_in'] ?? 0 ), 'Token response does not advertise the bounded access-token lifetime.' );
+wpai_issue6_oauth_assert( OAuth_Server::REFRESH_TTL === ( $token_data['refresh_token_expires_in'] ?? null ), 'Initial offline grant omitted its finite refresh rotation lifetime.' );
 wpai_issue6_oauth_assert( 'no-store' === ( $token_response->get_headers()['Cache-Control'] ?? '' ), 'Token response is not cache-disabled.' );
 
 $access_parts = explode( '.', $access );
@@ -358,6 +360,8 @@ wpai_issue6_oauth_assert( 200 === $initialized->get_status(), 'OAuth-authenticat
 $initialized_data = wpai_issue6_oauth_data( $initialized );
 wpai_issue6_oauth_assert( '2025-11-25' === ( $initialized_data['result']['protocolVersion'] ?? '' ), 'Direct OAuth MCP route did not negotiate the expected MCP protocol.' );
 
+// An already-approved offline grant survives absence of an active WordPress session.
+wp_set_current_user( 0 );
 $refresh_response = wpai_issue6_oauth_token_request(
 	$oauth,
 	array(
@@ -367,7 +371,9 @@ $refresh_response = wpai_issue6_oauth_token_request(
 		'resource'      => $oauth->mcp_endpoint_url(),
 	)
 );
+wp_set_current_user( $authenticated_user_id );
 wpai_issue6_oauth_assert( 200 === $refresh_response->get_status(), 'Valid refresh token rotation failed.' );
+wpai_issue6_oauth_assert( OAuth_Server::REFRESH_TTL === ( wpai_issue6_oauth_data( $refresh_response )['refresh_token_expires_in'] ?? null ), 'A successful idle rotation omitted the successor refresh lifetime.' );
 $refreshed   = wpai_issue6_oauth_data( $refresh_response );
 $new_access  = isset( $refreshed['access_token'] ) ? (string) $refreshed['access_token'] : '';
 $new_refresh = isset( $refreshed['refresh_token'] ) ? (string) $refreshed['refresh_token'] : '';
