@@ -31,9 +31,9 @@ final class Extension_Authorization_Abilities {
 	 * @param Settings            $settings Existing Bridge access-group settings.
 	 */
 	public function __construct( Extension_Abilities $extensions, Permissions $permissions, Settings $settings ) {
-		$this->extensions = $extensions;
+		$this->extensions  = $extensions;
 		$this->permissions = $permissions;
-		$this->settings = $settings;
+		$this->settings    = $settings;
 	}
 
 	/** @return array<int,object> */
@@ -78,13 +78,13 @@ final class Extension_Authorization_Abilities {
 			'deactivate' => 'activate_plugins',
 			'delete'     => 'delete_plugins',
 		);
-		$theme = array(
+		$theme  = array(
 			'install'  => 'install_themes',
 			'update'   => 'update_themes',
 			'activate' => 'switch_themes',
 			'delete'   => 'delete_themes',
 		);
-		$map = 'plugin' === $kind ? $plugin : $theme;
+		$map    = 'plugin' === $kind ? $plugin : $theme;
 		return isset( $map[ $action ] ) ? $map[ $action ] : 'do_not_allow';
 	}
 
@@ -275,5 +275,4 @@ final class Extension_Authorization_Abilities {
 			'additionalProperties' => false,
 		);
 	}
-
 }
