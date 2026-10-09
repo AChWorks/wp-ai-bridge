@@ -13,7 +13,7 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `content-read` | Site Read | Read eligible posts/pages/custom post types with bounded, content-hash-guarded UTF-8 windows for large bodies. |
 | `content-upsert` | Builder Write | Create/update eligible content; Live Content is additionally required for live status. |
 | `content-delete` | Users & Destructive | Trash/delete content with WordPress delete authority. |
-| `revisions-read` | Site Read | Bounded revision metadata and UTF-8/hash-guarded exact revision body/title/excerpt windows; current per-post read authority on each continuation. |
+| `revisions-read` | Site Read | Bounded revision metadata and UTF-8/hash-guarded exact revision body/title/excerpt windows; current native `edit_post` authority on each continuation (a readable public post does not expose unpublished historical revisions). |
 | `revision-restore` | Builder Write | Restore a revision with stale-state checks. |
 | `blocks-read` | Site Read | Read a small Gutenberg tree or a bounded subtree by numeric path and maximum depth. |
 | `blocks-find` | Site Read | Scan paginated/guarded batches to locate nested Gutenberg blocks by name, text, class or selected attribute without expanding the full tree. |

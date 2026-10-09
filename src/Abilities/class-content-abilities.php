@@ -288,7 +288,8 @@ final class Content_Abilities {
 	}
 
 	/**
-	 * Checks permission for revision inspection.
+	 * Checks permission for revision inspection. WordPress Core protects a post's
+	 * historical (potentially unpublished) revisions with edit_post, not read_post.
 	 *
 	 * @param array<string,mixed> $input Validated Ability input.
 	 * @return bool Whether the current user may read revisions.
@@ -297,7 +298,7 @@ final class Content_Abilities {
 		return is_array( $input )
 			&& ! empty( $input['post_id'] )
 			&& $this->permissions->allowed( Settings::GROUP_SITE_READ, 'read' )
-			&& current_user_can( 'read_post', (int) $input['post_id'] );
+			&& current_user_can( 'edit_post', (int) $input['post_id'] );
 	}
 
 	/**

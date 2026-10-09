@@ -24,11 +24,12 @@ function wpai105_live_adapt( $adapter, $post_id, $revision_id, array $more = arr
 	);
 }
 
-$settings = new Settings();
-$original = get_option( Settings::OPTION_NAME, $settings->defaults() );
-$user     = get_current_user_id();
-$post_id  = 0;
-$other_id = 0;
+$settings  = new Settings();
+$original  = get_option( Settings::OPTION_NAME, $settings->defaults() );
+$user      = get_current_user_id();
+$post_id   = 0;
+$other_id  = 0;
+$viewer_id = 0;
 try {
 	update_option( Settings::OPTION_NAME, $settings->defaults(), false );
 	$post_id = wp_insert_post(
@@ -150,6 +151,45 @@ try {
 	);
 	wpai105_live_assert( is_wp_error( $foreign ) && 'revision_not_found' === $foreign->get_error_code(), 'The selected revision crossed the parent-post boundary.' );
 
+	// Core revisions require edit_post even when a published parent is readable.
+	$published = wp_update_post(
+		array(
+			'ID'          => $post_id,
+			'post_status' => 'publish',
+		),
+		true
+	);
+	wpai105_live_assert( ! is_wp_error( $published ) && $post_id === $published, 'Could not publish the isolated viewer-authorization fixture.' );
+	$viewer_id = wp_insert_user(
+		array(
+			'user_login' => 'wpai105_viewer_' . $post_id,
+			'user_pass'  => wp_generate_password( 32, true, true ),
+			'user_email' => 'wpai105-viewer-' . $post_id . '@example.invalid',
+			'role'       => 'subscriber',
+		)
+	);
+	wpai105_live_assert( ! is_wp_error( $viewer_id ) && $viewer_id > 0, 'Could not create an isolated non-editing WordPress principal.' );
+	wp_set_current_user( $viewer_id );
+	wpai105_live_assert( current_user_can( 'read_post', $post_id ) && ! current_user_can( 'edit_post', $post_id ), 'Viewer fixture must read the published parent but lack Core revisions authority.' );
+	$viewer_listing = $reader->execute(
+		array(
+			'post_id' => $post_id,
+			'limit'   => 5,
+		)
+	);
+	wpai105_live_assert( is_wp_error( $viewer_listing ), 'A public-post viewer without edit_post could list private historical revisions.' );
+	$viewer_window = wpai105_live_adapt(
+		$adapter,
+		$post_id,
+		(int) $selected->ID,
+		array(
+			'include_content' => true,
+			'content_offset'  => 0,
+		)
+	);
+	wpai105_live_assert( is_wp_error( $viewer_window ) || true !== ( $viewer_window['success'] ?? false ), 'A public-post viewer without edit_post read historical content through MCP Adapter.' );
+	wp_set_current_user( $user );
+
 	$off                              = $settings->defaults();
 	$off[ Settings::GROUP_SITE_READ ] = 0;
 	update_option( Settings::OPTION_NAME, $off, false );
@@ -175,6 +215,12 @@ try {
 	echo "PASS: WordPress and official Adapter bounded historical revision discovery, windows, identity and authority.\n";
 } finally {
 	wp_set_current_user( $user );
+	if ( $viewer_id && ! is_wp_error( $viewer_id ) ) {
+		if ( ! function_exists( 'wp_delete_user' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/user.php';
+		}
+		wp_delete_user( (int) $viewer_id );
+	}
 	if ( $other_id && ! is_wp_error( $other_id ) ) {
 		wp_delete_post( (int) $other_id, true );
 	}

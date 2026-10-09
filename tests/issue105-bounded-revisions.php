@@ -47,7 +47,13 @@ function wpai105_rev( $id, $content, $title = 'Revision title', $excerpt = 'Revi
 }
 wpai_test_reset_state();
 $GLOBALS['wpai_test']['capabilities']['read_post'] = true;
-$GLOBALS['wpai105_posts']                          = array( 900 => (object) array( 'ID' => 900 ) );
+$GLOBALS['wpai_test']['capabilities']['edit_post'] = true;
+$GLOBALS['wpai105_posts']                          = array(
+	900 => (object) array(
+		'ID'          => 900,
+		'post_status' => 'publish',
+	),
+);
 $GLOBALS['wpai105_revisions']                      = array( 1 => wpai105_rev( 1, 'Small reversible sample' ) );
 $settings = new Settings();
 $ability  = new Content_Abilities( new Permissions( $settings ), new Mutation_Log() );
@@ -275,7 +281,9 @@ wpai105_error(
 	'revision_not_found'
 );
 $GLOBALS['wpai105_revisions'][2]->post_parent      = 900;
-$GLOBALS['wpai_test']['capabilities']['read_post'] = false;
+$GLOBALS['wpai_test']['capabilities']['edit_post'] = false;
+wpai105_assert( ! $ability->can_read_revisions( array( 'post_id' => 900 ) ), 'Read-only public post permission must not grant private revision access.' );
+wpai105_error( $ability->read_revisions( array( 'post_id' => 900 ) ), 'revision_read_forbidden' );
 wpai105_error(
 	$ability->read_revisions(
 		array(
@@ -287,7 +295,19 @@ wpai105_error(
 	),
 	'revision_read_forbidden'
 );
-$GLOBALS['wpai_test']['capabilities']['read_post']        = true;
+wpai105_error(
+	$ability->read_revisions(
+		array(
+			'post_id'               => 900,
+			'revision_id'           => 2,
+			'include_content'       => true,
+			'content_offset'        => 4096,
+			'expected_content_hash' => $hash,
+		)
+	),
+	'revision_read_forbidden'
+);
+$GLOBALS['wpai_test']['capabilities']['edit_post']        = true;
 $GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = array( Settings::GROUP_SITE_READ => 0 );
 wpai105_error(
 	$ability->read_revisions(
