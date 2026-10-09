@@ -244,7 +244,7 @@ final class Block_Abilities {
 			if ( $this->matches_find_filters( $block, $input ) ) {
 				$children = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
 				$deferred = ! empty( $children ) && empty( $input['include_container_hash'] );
-				$item = array(
+				$item     = array(
 					'path'            => $entry['path'],
 					'name'            => isset( $block['blockName'] ) ? (string) $block['blockName'] : '',
 					'block_hash'      => $deferred ? '' : hash( 'sha256', serialize_block( $block ) ),
@@ -252,8 +252,8 @@ final class Block_Abilities {
 					'content_summary' => $this->direct_block_summary( $block, 160 ),
 					'child_count'     => count( $children ),
 				);
-				$proposed = $result;
-				$proposed['items'][] = $item;
+				$proposed                = $result;
+				$proposed['items'][]     = $item;
 				$proposed['next_cursor'] = $entry['path'];
 				++$proposed['scanned'];
 				++$proposed['next_offset'];
@@ -294,11 +294,11 @@ final class Block_Abilities {
 		if ( '' !== $after ) {
 			$prefix = '';
 			foreach ( explode( '.', $after ) as $part ) {
-				$index = (int) $part;
-				$top   = count( $stack ) - 1;
-				$block = $stack[ $top ]['blocks'][ $index ];
+				$index                  = (int) $part;
+				$top                    = count( $stack ) - 1;
+				$block                  = $stack[ $top ]['blocks'][ $index ];
 				$stack[ $top ]['index'] = $index + 1;
-				$prefix = '' === $prefix ? (string) $index : $prefix . '.' . $index;
+				$prefix                 = '' === $prefix ? (string) $index : $prefix . '.' . $index;
 				if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
 					$stack[] = array(
 						'blocks' => $block['innerBlocks'],
@@ -709,8 +709,8 @@ final class Block_Abilities {
 	 */
 	private function read_input_schema() {
 		return array(
-			'type'                 => 'object',
-			'properties'           => array(
+			'type'       => 'object',
+			'properties' => array(
 				'post_id'               => array(
 					'type'    => 'integer',
 					'minimum' => 1,
@@ -746,8 +746,8 @@ final class Block_Abilities {
 	 */
 	private function find_input_schema() {
 		return array(
-			'type'                 => 'object',
-			'properties'           => array(
+			'type'       => 'object',
+			'properties' => array(
 				'post_id'                  => array(
 					'type'    => 'integer',
 					'minimum' => 1,
@@ -772,8 +772,15 @@ final class Block_Abilities {
 					'type'      => 'string',
 					'maxLength' => 200,
 				),
-				'after_path'              => array( 'type' => 'string', 'minLength' => 1, 'maxLength' => 2048 ),
-				'include_container_hash'  => array( 'type' => 'boolean', 'default' => false ),
+				'after_path'              => array(
+					'type'      => 'string',
+					'minLength' => 1,
+					'maxLength' => 2048,
+				),
+				'include_container_hash'  => array(
+					'type'    => 'boolean',
+					'default' => false,
+				),
 				'offset'                   => array(
 					'type'    => 'integer',
 					'minimum' => 0,
@@ -807,8 +814,8 @@ final class Block_Abilities {
 	 */
 	private function find_output_schema() {
 		return array(
-			'type'                 => 'object',
-			'properties'           => array(
+			'type'       => 'object',
+			'properties' => array(
 				'post_id'      => array( 'type' => 'integer' ),
 				'modified_gmt' => array( 'type' => 'string' ),
 				'content_hash' => array( 'type' => 'string' ),
@@ -820,8 +827,8 @@ final class Block_Abilities {
 				'items'        => array(
 					'type'  => 'array',
 					'items' => array(
-						'type'                 => 'object',
-						'properties'           => array(
+						'type'       => 'object',
+						'properties' => array(
 							'path'            => array( 'type' => 'string' ),
 							'name'            => array( 'type' => 'string' ),
 							'block_hash'      => array( 'type' => 'string' ),
@@ -846,8 +853,8 @@ final class Block_Abilities {
 	 */
 	private function mutate_input_schema() {
 		return array(
-			'type'                 => 'object',
-			'properties'           => array(
+			'type'       => 'object',
+			'properties' => array(
 				'post_id'               => array(
 					'type'    => 'integer',
 					'minimum' => 1,
@@ -856,8 +863,8 @@ final class Block_Abilities {
 					'type' => 'string',
 					'enum' => array( 'append', 'insert_before', 'insert_after', 'replace', 'remove' ),
 				),
-				'path'                  => array( 'type' => 'string' ),
-				'response_mode'         => array(
+				'path'          => array( 'type' => 'string' ),
+				'response_mode' => array(
 					'type'    => 'string',
 					'enum'    => array( 'auto', 'summary' ),
 					'default' => 'auto',
@@ -890,11 +897,11 @@ final class Block_Abilities {
 	 */
 	private function tree_schema() {
 		$block                                        = array(
-			'type'                 => 'object',
-			'properties'           => array(
-				'path'            => array( 'type' => 'string' ),
-				'name'            => array( 'type' => 'string' ),
-				'attrs'           => array(
+			'type'       => 'object',
+			'properties' => array(
+				'path'  => array( 'type' => 'string' ),
+				'name'  => array( 'type' => 'string' ),
+				'attrs' => array(
 					'type'                 => 'object',
 					'additionalProperties' => true,
 				),
@@ -908,8 +915,8 @@ final class Block_Abilities {
 		$block['properties']['inner_blocks']['items'] = $block;
 
 		return array(
-			'type'                 => 'object',
-			'properties'           => array(
+			'type'       => 'object',
+			'properties' => array(
 				'post_id'      => array( 'type' => 'integer' ),
 				'modified_gmt' => array( 'type' => 'string' ),
 				'content_hash' => array( 'type' => 'string' ),

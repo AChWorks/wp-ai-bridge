@@ -80,13 +80,13 @@ final class Content_Abilities {
 		$registered[] = wp_register_ability(
 			'wp-ai-bridge/content-delete',
 			array(
-				'label'               => __( 'Trash or Delete Content', 'wp-ai-bridge' ),
-				'description'         => __( 'Moves content to Trash or permanently deletes it when destructive access is enabled.', 'wp-ai-bridge' ),
-				'category'            => Registrar::CATEGORY,
-				'input_schema'        => $this->delete_input_schema(),
-				'output_schema'       => array(
-					'type'                 => 'object',
-					'properties'           => array(
+				'label'         => __( 'Trash or Delete Content', 'wp-ai-bridge' ),
+				'description'   => __( 'Moves content to Trash or permanently deletes it when destructive access is enabled.', 'wp-ai-bridge' ),
+				'category'      => Registrar::CATEGORY,
+				'input_schema'  => $this->delete_input_schema(),
+				'output_schema' => array(
+					'type'       => 'object',
+					'properties' => array(
 						'id'      => array( 'type' => 'integer' ),
 						'deleted' => array( 'type' => 'boolean' ),
 						'trashed' => array( 'type' => 'boolean' ),
@@ -103,12 +103,12 @@ final class Content_Abilities {
 		$registered[] = wp_register_ability(
 			'wp-ai-bridge/revisions-read',
 			array(
-				'label'               => __( 'Read Content Revisions', 'wp-ai-bridge' ),
-				'description'         => __( 'Lists WordPress revisions for one content object.', 'wp-ai-bridge' ),
-				'category'            => Registrar::CATEGORY,
-				'input_schema'        => array(
-					'type'                 => 'object',
-					'properties'           => array(
+				'label'        => __( 'Read Content Revisions', 'wp-ai-bridge' ),
+				'description'  => __( 'Lists WordPress revisions for one content object.', 'wp-ai-bridge' ),
+				'category'     => Registrar::CATEGORY,
+				'input_schema' => array(
+					'type'       => 'object',
+					'properties' => array(
 						'post_id'         => array(
 							'type'    => 'integer',
 							'minimum' => 1,
@@ -140,12 +140,12 @@ final class Content_Abilities {
 		$registered[] = wp_register_ability(
 			'wp-ai-bridge/revision-restore',
 			array(
-				'label'               => __( 'Restore Content Revision', 'wp-ai-bridge' ),
-				'description'         => __( 'Restores a WordPress revision after checking the expected current content identity.', 'wp-ai-bridge' ),
-				'category'            => Registrar::CATEGORY,
-				'input_schema'        => array(
-					'type'                 => 'object',
-					'properties'           => array(
+				'label'        => __( 'Restore Content Revision', 'wp-ai-bridge' ),
+				'description'  => __( 'Restores a WordPress revision after checking the expected current content identity.', 'wp-ai-bridge' ),
+				'category'     => Registrar::CATEGORY,
+				'input_schema' => array(
+					'type'       => 'object',
+					'properties' => array(
 						'post_id'               => array(
 							'type'    => 'integer',
 							'minimum' => 1,
@@ -342,7 +342,7 @@ final class Content_Abilities {
 			$args['s'] = (string) $input['search'];
 		}
 
-		$query = new \WP_Query( $args );
+		$query         = new \WP_Query( $args );
 		$items         = array();
 		$compact_items = array();
 		foreach ( $query->posts as $post ) {
@@ -359,7 +359,7 @@ final class Content_Abilities {
 						$item['content_complete']    = true;
 					}
 				}
-				$items[]         = $item;
+				$items[] = $item;
 				$compact = $this->compact_post_identity( $post );
 				if ( $include_content ) {
 					$compact['content_total_bytes'] = strlen( $content );
@@ -713,8 +713,8 @@ final class Content_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private function read_single_content( $post, $input, $content, $offset, $windowed ) {
-		$item = $this->format_post( $post, false );
-		$limit = isset( $input['content_max_bytes'] ) ? (int) $input['content_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
+		$item          = $this->format_post( $post, false );
+		$limit         = isset( $input['content_max_bytes'] ) ? (int) $input['content_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
 		$needs_content = $windowed || strlen( $content ) <= Bounded_Payload::TEXT_WINDOW_BYTES;
 		if ( $needs_content ) {
 			$window = Bounded_Payload::text_window( $content, $offset, $limit );
@@ -745,7 +745,7 @@ final class Content_Abilities {
 				$item['content']             = $window['content'];
 				$item['content_next_offset'] = $window['next_offset'];
 				$item['content_complete']    = $window['complete'];
-				$result = $this->single_item_result( $item );
+				$result                      = $this->single_item_result( $item );
 				if ( Bounded_Payload::fits( $result ) ) {
 					return $result;
 				}
@@ -756,10 +756,10 @@ final class Content_Abilities {
 		}
 
 		// The title/excerpt/slug/template may dwarf the body itself.
-		$item = $this->compact_post_identity( $post );
+		$item                        = $this->compact_post_identity( $post );
 		$item['content_total_bytes'] = strlen( $content );
 		$item['content_next_offset'] = $offset;
-		$item['content_complete'] = $offset === strlen( $content );
+		$item['content_complete']    = strlen( $content ) === $offset;
 		if ( $needs_content ) {
 			for ( $size = $limit; $size >= 4; $size = (int) floor( $size / 2 ) ) {
 				$window = Bounded_Payload::text_window( $content, $offset, $size );
@@ -769,7 +769,7 @@ final class Content_Abilities {
 				$item['content']             = $window['content'];
 				$item['content_next_offset'] = $window['next_offset'];
 				$item['content_complete']    = $window['complete'];
-				$result = $this->single_item_result( $item );
+				$result                      = $this->single_item_result( $item );
 				if ( Bounded_Payload::fits( $result ) ) {
 					return $result;
 				}
@@ -795,7 +795,7 @@ final class Content_Abilities {
 		if ( ! in_array( $field, array( 'title', 'excerpt', 'slug', 'status', 'template' ), true ) ) {
 			return $this->oversized_content_error();
 		}
-		$offset = isset( $input['text_offset'] ) ? (int) $input['text_offset'] : 0;
+		$offset     = isset( $input['text_offset'] ) ? (int) $input['text_offset'] : 0;
 		$state_hash = $this->state_hash( $post );
 		if ( $offset > 0 && empty( $input['expected_state_hash'] ) ) {
 			return new WP_Error( 'content_identity_required', __( 'A resumed text-field read requires expected_state_hash from the previous response.', 'wp-ai-bridge' ) );
@@ -810,21 +810,21 @@ final class Content_Abilities {
 			'status'   => (string) $post->post_status,
 			'template' => function_exists( 'get_page_template_slug' ) ? (string) get_page_template_slug( $post->ID ) : '',
 		);
-		$value = $values[ $field ];
-		$item = $this->compact_post_identity( $post );
+		$value              = $values[ $field ];
+		$item               = $this->compact_post_identity( $post );
 		$item['text_field'] = $field;
-		$item['text_hash'] = hash( 'sha256', $value );
-		$limit = isset( $input['text_max_bytes'] ) ? (int) $input['text_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
+		$item['text_hash']  = hash( 'sha256', $value );
+		$limit              = isset( $input['text_max_bytes'] ) ? (int) $input['text_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
 		for ( $size = $limit; $size >= 4; $size = (int) floor( $size / 2 ) ) {
 			$window = Bounded_Payload::text_window( $value, $offset, $size );
 			if ( is_wp_error( $window ) ) {
 				return $window;
 			}
-			$item['text_chunk'] = $window['content'];
+			$item['text_chunk']       = $window['content'];
 			$item['text_total_bytes'] = $window['total_bytes'];
 			$item['text_next_offset'] = $window['next_offset'];
-			$item['text_complete'] = $window['complete'];
-			$result = $this->single_item_result( $item );
+			$item['text_complete']    = $window['complete'];
+			$result                   = $this->single_item_result( $item );
 			if ( Bounded_Payload::fits( $result ) ) {
 				return $result;
 			}
@@ -879,8 +879,8 @@ final class Content_Abilities {
 	 * @return array<string,mixed>
 	 */
 	private function format_post_after_mutation( $post ) {
-		$item = $this->format_post( $post, false );
-		$body = (string) $post->post_content;
+		$item                        = $this->format_post( $post, false );
+		$body                        = (string) $post->post_content;
 		$item['content_total_bytes'] = strlen( $body );
 		for ( $size = Bounded_Payload::TEXT_WINDOW_BYTES; $size >= 4; $size = (int) floor( $size / 2 ) ) {
 			$window = Bounded_Payload::text_window( $body, 0, $size );
@@ -900,11 +900,11 @@ final class Content_Abilities {
 
 		// WordPress has ALREADY persisted the change. Return only bounded
 		// committed identities; never reattempt a destructive write.
-		$item = $this->compact_post_identity( $post );
-		$item['content'] = '';
+		$item                        = $this->compact_post_identity( $post );
+		$item['content']             = '';
 		$item['content_total_bytes'] = strlen( $body );
 		$item['content_next_offset'] = 0;
-		$item['content_complete'] = '' === $body;
+		$item['content_complete']    = '' === $body;
 		if ( Bounded_Payload::fits( $item ) ) {
 			return $item;
 		}
@@ -916,9 +916,9 @@ final class Content_Abilities {
 			'content_hash'         => hash( 'sha256', $body ),
 			'state_hash'           => $this->state_hash( $post ),
 			'content'              => '',
-			'content_total_bytes'   => strlen( $body ),
-			'content_next_offset'   => 0,
-			'content_complete'      => '' === $body,
+			'content_total_bytes'  => strlen( $body ),
+			'content_next_offset'  => 0,
+			'content_complete'     => '' === $body,
 			'projection_truncated' => true,
 			'omitted_fields'       => array( 'title', 'excerpt', 'slug', 'status', 'template', 'parent_id', 'menu_order', 'featured_media' ),
 		);
@@ -960,8 +960,8 @@ final class Content_Abilities {
 	 */
 	private function read_input_schema() {
 		return array(
-			'type'                 => 'object',
-			'properties'           => array(
+			'type'       => 'object',
+			'properties' => array(
 				'action'                => array(
 					'type'    => 'string',
 					'enum'    => array( 'list', 'get' ),
@@ -975,10 +975,10 @@ final class Content_Abilities {
 					'type'    => 'integer',
 					'minimum' => 1,
 				),
-				'slug'                  => array( 'type' => 'string' ),
-				'search'                => array( 'type' => 'string' ),
-				'status'                => array( 'type' => 'string' ),
-				'page'                  => array(
+				'slug'   => array( 'type' => 'string' ),
+				'search' => array( 'type' => 'string' ),
+				'status' => array( 'type' => 'string' ),
+				'page'   => array(
 					'type'    => 'integer',
 					'minimum' => 1,
 					'default' => 1,
@@ -1007,10 +1007,24 @@ final class Content_Abilities {
 					'minLength' => 64,
 					'maxLength' => 64,
 				),
-				'text_field'            => array( 'type' => 'string', 'enum' => array( 'title', 'excerpt', 'slug', 'status', 'template' ) ),
-				'text_offset'           => array( 'type' => 'integer', 'minimum' => 0 ),
-				'text_max_bytes'        => array( 'type' => 'integer', 'minimum' => 4, 'maximum' => Bounded_Payload::TEXT_WINDOW_BYTES ),
-				'expected_state_hash'   => array( 'type' => 'string', 'minLength' => 64, 'maxLength' => 64 ),
+				'text_field'            => array(
+					'type' => 'string',
+					'enum' => array( 'title', 'excerpt', 'slug', 'status', 'template' ),
+				),
+				'text_offset'           => array(
+					'type'    => 'integer',
+					'minimum' => 0,
+				),
+				'text_max_bytes'        => array(
+					'type'    => 'integer',
+					'minimum' => 4,
+					'maximum' => Bounded_Payload::TEXT_WINDOW_BYTES,
+				),
+				'expected_state_hash'   => array(
+					'type'      => 'string',
+					'minLength' => 64,
+					'maxLength' => 64,
+				),
 			),
 			'additionalProperties' => false,
 		);
@@ -1023,8 +1037,8 @@ final class Content_Abilities {
 	 */
 	private function read_output_schema() {
 		return array(
-			'type'                 => 'object',
-			'properties'           => array(
+			'type'       => 'object',
+			'properties' => array(
 				'items'       => array(
 					'type'  => 'array',
 					'items' => $this->item_schema( false ),
@@ -1046,8 +1060,8 @@ final class Content_Abilities {
 	 */
 	private function upsert_input_schema() {
 		return array(
-			'type'                 => 'object',
-			'properties'           => array(
+			'type'       => 'object',
+			'properties' => array(
 				'action'                => array(
 					'type' => 'string',
 					'enum' => array( 'create', 'update' ),
@@ -1056,19 +1070,19 @@ final class Content_Abilities {
 					'type'    => 'integer',
 					'minimum' => 1,
 				),
-				'post_type'             => array( 'type' => 'string' ),
-				'title'                 => array( 'type' => 'string' ),
-				'content'               => array( 'type' => 'string' ),
-				'excerpt'               => array( 'type' => 'string' ),
-				'status'                => array( 'type' => 'string' ),
-				'slug'                  => array( 'type' => 'string' ),
-				'parent_id'             => array(
+				'post_type' => array( 'type' => 'string' ),
+				'title'     => array( 'type' => 'string' ),
+				'content'   => array( 'type' => 'string' ),
+				'excerpt'   => array( 'type' => 'string' ),
+				'status'    => array( 'type' => 'string' ),
+				'slug'      => array( 'type' => 'string' ),
+				'parent_id' => array(
 					'type'    => 'integer',
 					'minimum' => 0,
 				),
-				'menu_order'            => array( 'type' => 'integer' ),
-				'template'              => array( 'type' => 'string' ),
-				'featured_media'        => array(
+				'menu_order'     => array( 'type' => 'integer' ),
+				'template'       => array( 'type' => 'string' ),
+				'featured_media' => array(
 					'type'    => 'integer',
 					'minimum' => 0,
 				),
@@ -1091,8 +1105,8 @@ final class Content_Abilities {
 	 */
 	private function delete_input_schema() {
 		return array(
-			'type'                 => 'object',
-			'properties'           => array(
+			'type'       => 'object',
+			'properties' => array(
 				'id'    => array(
 					'type'    => 'integer',
 					'minimum' => 1,
@@ -1115,31 +1129,34 @@ final class Content_Abilities {
 	 */
 	private function item_schema( $content_required ) {
 		$properties = array(
-			'id'                  => array( 'type' => 'integer' ),
-			'post_type'           => array( 'type' => 'string' ),
-			'status'              => array( 'type' => 'string' ),
-			'slug'                => array( 'type' => 'string' ),
-			'title'               => array( 'type' => 'string' ),
-			'excerpt'             => array( 'type' => 'string' ),
-			'modified_gmt'        => array( 'type' => 'string' ),
-			'parent_id'           => array( 'type' => 'integer' ),
-			'menu_order'          => array( 'type' => 'integer' ),
-			'template'            => array( 'type' => 'string' ),
-			'featured_media'      => array( 'type' => 'integer' ),
-			'content_hash'        => array( 'type' => 'string' ),
-			'state_hash'          => array( 'type' => 'string' ),
-			'content'             => array( 'type' => 'string' ),
-			'content_total_bytes' => array( 'type' => 'integer' ),
-			'content_next_offset' => array( 'type' => 'integer' ),
-			'content_complete'    => array( 'type' => 'boolean' ),
+			'id'                   => array( 'type' => 'integer' ),
+			'post_type'            => array( 'type' => 'string' ),
+			'status'               => array( 'type' => 'string' ),
+			'slug'                 => array( 'type' => 'string' ),
+			'title'                => array( 'type' => 'string' ),
+			'excerpt'              => array( 'type' => 'string' ),
+			'modified_gmt'         => array( 'type' => 'string' ),
+			'parent_id'            => array( 'type' => 'integer' ),
+			'menu_order'           => array( 'type' => 'integer' ),
+			'template'             => array( 'type' => 'string' ),
+			'featured_media'       => array( 'type' => 'integer' ),
+			'content_hash'         => array( 'type' => 'string' ),
+			'state_hash'           => array( 'type' => 'string' ),
+			'content'              => array( 'type' => 'string' ),
+			'content_total_bytes'  => array( 'type' => 'integer' ),
+			'content_next_offset'  => array( 'type' => 'integer' ),
+			'content_complete'     => array( 'type' => 'boolean' ),
 			'projection_truncated' => array( 'type' => 'boolean' ),
-			'omitted_fields'       => array( 'type' => 'array', 'items' => array( 'type' => 'string' ) ),
-			'text_field'           => array( 'type' => 'string' ),
-			'text_chunk'           => array( 'type' => 'string' ),
-			'text_hash'            => array( 'type' => 'string' ),
-			'text_total_bytes'     => array( 'type' => 'integer' ),
-			'text_next_offset'     => array( 'type' => 'integer' ),
-			'text_complete'        => array( 'type' => 'boolean' ),
+			'omitted_fields'       => array(
+				'type'  => 'array',
+				'items' => array( 'type' => 'string' ),
+			),
+			'text_field'       => array( 'type' => 'string' ),
+			'text_chunk'       => array( 'type' => 'string' ),
+			'text_hash'        => array( 'type' => 'string' ),
+			'text_total_bytes' => array( 'type' => 'integer' ),
+			'text_next_offset' => array( 'type' => 'integer' ),
+			'text_complete'    => array( 'type' => 'boolean' ),
 		);
 		$required   = array( 'id', 'post_type', 'modified_gmt', 'content_hash', 'state_hash' );
 		if ( $content_required ) {
@@ -1160,8 +1177,8 @@ final class Content_Abilities {
 	 */
 	private function revision_schema() {
 		return array(
-			'type'                 => 'object',
-			'properties'           => array(
+			'type'       => 'object',
+			'properties' => array(
 				'id'           => array( 'type' => 'integer' ),
 				'parent_id'    => array( 'type' => 'integer' ),
 				'date_gmt'     => array( 'type' => 'string' ),

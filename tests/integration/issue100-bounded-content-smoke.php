@@ -156,17 +156,33 @@ try {
 	$huge_body = str_repeat( 'سلام گوتنبرگ! ', 5000 );
 	$huge_title = str_repeat( 'Really long saved WordPress title ', 5000 );
 	$huge_excerpt = str_repeat( 'Very large saved WordPress excerpt ', 5000 );
+	// A real WordPress fixture may have much larger stored metadata than
+	// the ordinary MCP mutation request body can safely carry.
+	$seeded = wp_update_post(
+		array(
+			'ID'           => $post_id,
+			'post_title'   => $huge_title,
+			'post_excerpt' => $huge_excerpt,
+			'post_content' => $huge_body,
+		),
+		true
+	);
+	wpai_issue100_real_assert( ! is_wp_error( $seeded ), 'Could not seed large persisted post metadata.' );
+	$pre_update = $content_read->execute( array( 'action' => 'get', 'id' => $post_id ) );
+	wpai_issue100_real_assert(
+		! is_wp_error( $pre_update ) && ! empty( $pre_update['items'][0]['projection_truncated'] ),
+		'Large seeded metadata was not discoverable before mutation.'
+	);
+	$prior = $pre_update['items'][0];
 	$adapter_content = wp_get_ability( 'mcp-adapter/execute-ability' )->execute(
 		array(
 			'ability_name' => 'wp-ai-bridge/content-upsert',
 			'parameters'   => array(
 				'action'                => 'update',
 				'id'                    => $post_id,
-				'title'                 => $huge_title,
-				'excerpt'               => $huge_excerpt,
-				'content'               => $huge_body,
-				'expected_modified_gmt' => $meta['items'][0]['modified_gmt'],
-				'expected_state_hash'   => $meta['items'][0]['state_hash'],
+				'content'               => 'Updated successfully through MCP Adapter after large metadata was already stored.',
+				'expected_modified_gmt' => $prior['modified_gmt'],
+				'expected_state_hash'   => $prior['state_hash'],
 			),
 		)
 	);
