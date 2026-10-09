@@ -83,7 +83,6 @@ final class Extension_Abilities {
 			)
 		);
 
-
 		$registered[] = wp_register_ability(
 			'wp-ai-bridge/extension-authorization',
 			array(
@@ -786,17 +785,17 @@ final class Extension_Abilities {
 		}
 
 		return array(
-			'ability_name'                => 'wp-ai-bridge/extension-lifecycle',
-			'kind'                        => $kind,
-			'action'                      => $action,
-			'install_source'              => $source,
-			'required_groups'             => $required_groups,
-			'group_grants'                => $group_grants,
-			'native_capability'           => $capability,
-			'native_capability_granted'   => $native_allows,
-			'permission_callback_allows'  => $permission_callback_allows,
-			'status'                      => $status,
-			'execution_permission'        => 'not_evaluated',
+			'ability_name'               => 'wp-ai-bridge/extension-lifecycle',
+			'kind'                       => $kind,
+			'action'                     => $action,
+			'install_source'             => $source,
+			'required_groups'            => $required_groups,
+			'group_grants'               => $group_grants,
+			'native_capability'          => $capability,
+			'native_capability_granted'  => $native_allows,
+			'permission_callback_allows' => $permission_callback_allows,
+			'status'                     => $status,
+			'execution_permission'       => 'not_evaluated',
 		);
 	}
 
