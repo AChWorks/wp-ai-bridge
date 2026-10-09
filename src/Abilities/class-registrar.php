@@ -207,6 +207,7 @@ final class Registrar {
 			$this->integration_abilities,
 			$this->site_config_abilities,
 			$this->extension_abilities,
+			new Extension_Authorization_Abilities( $this->extension_abilities, $this->permissions, $this->settings ),
 			$this->source_editing_abilities,
 			$this->user_abilities,
 			$this->app_password_abilities,

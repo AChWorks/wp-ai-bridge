@@ -44,6 +44,7 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `site-settings-read` | Site Read | Read the bounded site-settings allowlist. |
 | `site-settings-update` | Site Configuration | Update bounded site settings. |
 | `extensions-read` | Site Read | Read installed plugin/theme metadata. |
+| `extension-authorization` | Site Read | Read-only per-kind/action/group/native-capability preflight. Execution permission, target and environment are not evaluated. |
 | `extension-lifecycle` | Code & Extensions; External Packages additionally for external HTTPS install | Preserve WordPress.org slug install/update/activate/deactivate and separately allow one public-HTTPS package install when additionally authorized; deletion is destructive. |
 | `source-files-read` | Code & Extensions + Source Editing | List or read exact installed plugin/theme editable source targets; source payloads require the elevated boundary. |
 | `source-file-preview` | Code & Extensions + Source Editing | Validate and bind an exact candidate to the current target/preimage without writing. |
@@ -76,6 +77,13 @@ Other scalar selections: `site`, `theme`, `reuse`. Collection selections: `plugi
 Untrusted long labels and descriptions are represented by UTF-8-safe bounded prefixes (at most 512 bytes per string); taxonomy object-type lists are capped at 16. Each affected record contains `truncated_fields`, and page metadata reports `projection_truncated`. Selected scalar fields use top-level `projection.truncated_fields`. These are **loss markers**, not reconstructed values, and there is no arbitrary option, private provider metadata, or credential exposure. Invalid input and nonrepresentable pages return typed errors without oversized bodies. See Issue #110 for fixture validation and future live-site confirmation after an authorized deployment.
 
 For large content and transfer contracts, see [Large MCP payloads](./LARGE-PAYLOADS.md).
+
+
+### Extension lifecycle authorization preflight (Issue #99)
+
+Before attempting a plugin/theme install, activation, update, deactivation or deletion, use `wp-ai-bridge/extension-authorization` with `{"kind":"plugin","action":"install"}` (or `"theme"`), and for public HTTPS ZIP installs also `"install_source":"public_https"`. This is **read-only** and requires Site Read plus current native WordPress `read`. It does not perform a lifecycle operation, fetch a package, evaluate a target or alter any setting.
+
+The bounded response names `required_groups`, current `group_grants`, the exact `native_capability` and its live boolean, and the result of the current Bridge-owned `extension-lifecycle` **permission callback** for that kind/action/source. Possible `status` values are `bridge_delegation_disabled`, `native_authority_denied`, `additional_authorization_denied`, and `permission_preflight_passed`. **All** return `execution_permission:"not_evaluated"`: a passing permission preflight is **not** proof the package/target exists, the filesystem/host/multisite policy permits changes, an installation will succeed, or that the caller can bypass native upgrader validation. Authorization is rechecked during actual execution. For unrelated provider/Core Abilities, do **not** assume the Bridge can safely evaluate a permission callback without an exact target and native contract; use `abilities-read` and its `execution_permission:not_evaluated`.
 
 ## External package installation boundary
 

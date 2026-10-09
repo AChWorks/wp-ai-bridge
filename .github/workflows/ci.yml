@@ -10,11 +10,70 @@ on:
 permissions:
   contents: read
 
+env:
+  # CI-only: Docker-published Official Images on the verified ECR Public namespace.
+  # Local compose keeps the original Docker Hub references unless explicitly overridden.
+  WPAI_CI_IMAGE_REGISTRY: public.ecr.aws/docker/library/
+  WPAI_CI_PULL_POLICY: never
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
+  image-supply:
+    name: Official OCI image bundle / amd64
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Resolve and pull exact Docker Official Image manifests once
+        shell: bash
+        run: |
+          set -euo pipefail
+          images=()
+          for image in \
+            mariadb:lts \
+            wordpress:6.9-php8.4-apache \
+            wordpress:php8.4-apache \
+            wordpress:cli-php8.4; do
+            ref="${WPAI_CI_IMAGE_REGISTRY}${image}"
+            details="$(docker buildx imagetools inspect "$ref")"
+            digest="$(sed -nE 's/^Digest:[[:space:]]*(sha256:[0-9a-f]{64}).*/\1/p' <<< "$details" | head -n 1)"
+            if ! grep -Eq 'linux/amd64' <<< "$details" || ! grep -Eq '^sha256:[0-9a-f]{64}$' <<< "$digest"; then
+              echo "::error::Missing trustworthy amd64 manifest/digest for ${ref}"
+              exit 1
+            fi
+            echo "Verified ${ref}@${digest} for linux/amd64"
+            # ECR Public limits unauthenticated pulls to 1/s. The manifest
+            # inspection can consume a request immediately before docker pull.
+            sleep 2
+            for attempt in 1 2 3; do
+              if docker pull "${ref}@${digest}"; then
+                break
+              fi
+              if [[ "$attempt" == "3" ]]; then
+                echo "::error::Verified OCI image pull failed after 3 attempts: ${ref}@${digest}"
+                exit 1
+              fi
+              # Bounded backoff for transient public-registry throttling.
+              sleep $(( attempt * 15 ))
+            done
+            docker tag "${ref}@${digest}" "$ref"
+            images+=("$ref")
+            sleep 2
+          done
+          docker save --output "${RUNNER_TEMP}/wpai-ci-images.tar" "${images[@]}"
+          ls -lh "${RUNNER_TEMP}/wpai-ci-images.tar"
+
+      - name: Share same-run verified images with isolated test jobs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wpai-ci-official-images
+          path: ${{ runner.temp }}/wpai-ci-images.tar
+          retention-days: 1
+          compression-level: 1
+          if-no-files-found: error
+
   quality:
     name: Quality / PHP 8.4
     if: ${{ github.event.pull_request.draft == false }}
@@ -46,6 +105,7 @@ jobs:
           retention-days: 7
 
   integration:
+    needs: image-supply
     name: Integration / ${{ matrix.wordpress_tag }}
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
@@ -61,6 +121,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Restore verified OCI image bundle
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: wpai-ci-official-images
+          path: ${{ runner.temp }}/wpai-ci-images
+
+      - name: Load images without remote pulls
+        run: |
+          docker load --input "${RUNNER_TEMP}/wpai-ci-images/wpai-ci-images.tar"
+          docker image inspect \
+            "${WPAI_CI_IMAGE_REGISTRY}mariadb:lts" \
+            "${WPAI_CI_IMAGE_REGISTRY}wordpress:6.9-php8.4-apache" \
+            "${WPAI_CI_IMAGE_REGISTRY}wordpress:php8.4-apache" \
+            "${WPAI_CI_IMAGE_REGISTRY}wordpress:cli-php8.4" \
+            --format 'Platform={{.Os}}/{{.Architecture}} ID={{.Id}}'
+
       - name: Setup PHP for release ZIP build
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
@@ -74,6 +150,7 @@ jobs:
         run: bash bin/run-integration.sh '${{ matrix.wordpress_tag }}'
 
   specialized:
+    needs: image-supply
     name: ${{ matrix.name }} / ${{ matrix.wordpress_tag }}
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
@@ -114,6 +191,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore verified OCI image bundle
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: wpai-ci-official-images
+          path: ${{ runner.temp }}/wpai-ci-images
+
+      - name: Load images without remote pulls
+        run: |
+          docker load --input "${RUNNER_TEMP}/wpai-ci-images/wpai-ci-images.tar"
+          docker image inspect \
+            "${WPAI_CI_IMAGE_REGISTRY}mariadb:lts" \
+            "${WPAI_CI_IMAGE_REGISTRY}wordpress:6.9-php8.4-apache" \
+            "${WPAI_CI_IMAGE_REGISTRY}wordpress:php8.4-apache" \
+            "${WPAI_CI_IMAGE_REGISTRY}wordpress:cli-php8.4" \
+            --format 'Platform={{.Os}}/{{.Architecture}} ID={{.Id}}'
 
       - name: Setup PHP for release ZIP build
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2

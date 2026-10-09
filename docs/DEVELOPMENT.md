@@ -46,7 +46,7 @@ Security regression coverage belongs to implementation and CI. Add or adjust det
 
 Mark the PR ready only after implementation, targeted validation, documentation, and self-review are complete enough to freeze a candidate. For a parent/program completion PR, that means the accepted parent cutline is complete, not merely that one absorbed child or remediation commit is ready.
 
-The complete supported WordPress assurance set runs when a runtime-relevant PR is explicitly ready for review, or is opened/reopened as a non-draft PR. A later `synchronize` push does not automatically launch the full matrix again.
+The current `.github/workflows/ci.yml` runs the complete supported WordPress assurance set for **non-draft** pull requests on `opened`, `reopened`, `ready_for_review`, and **every subsequent `synchronize` push** that changes non-ignored paths. Draft PR jobs are skipped by each job's `if` guard. A ready/non-draft PR runs **14 workflow jobs**: the existing **13 assurance jobs** (Quality, two WordPress integrations, ten specialized suites) plus **one OCI image-supply job**. Keep active remediation in Draft and batch local/targeted checks before making a final ready candidate. Path filtering applies to the **cumulative changed-file set of the PR, not just the latest commit**: a docs-only push on a mixed code+docs PR can trigger full CI, while an entirely docs-only PR is ignored. Reuse unaffected technical evidence when legitimate, but still diagnose new failures and meet enforced branch/PR checks.
 
 Full assurance includes:
 
