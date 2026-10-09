@@ -104,24 +104,65 @@ final class Content_Abilities {
 			'wp-ai-bridge/revisions-read',
 			array(
 				'label'               => __( 'Read Content Revisions', 'wp-ai-bridge' ),
-				'description'         => __( 'Lists WordPress revisions for one content object.', 'wp-ai-bridge' ),
+				'description'         => __( 'Lists bounded WordPress revision metadata or reads one revision through hash-guarded UTF-8 content and title/excerpt windows.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
 					'properties'           => array(
-						'post_id'         => array(
+						'post_id'               => array(
 							'type'    => 'integer',
 							'minimum' => 1,
 						),
-						'limit'           => array(
+						'limit'                 => array(
 							'type'    => 'integer',
 							'minimum' => 1,
 							'maximum' => 50,
 							'default' => 10,
 						),
-						'include_content' => array(
+						'include_content'       => array(
 							'type'    => 'boolean',
 							'default' => false,
+						),
+						'offset'                => array(
+							'type'    => 'integer',
+							'minimum' => 0,
+							'maximum' => 100000,
+						),
+						'revision_id'           => array(
+							'type'    => 'integer',
+							'minimum' => 1,
+						),
+						'content_offset'        => array(
+							'type'    => 'integer',
+							'minimum' => 0,
+						),
+						'content_max_bytes'     => array(
+							'type'    => 'integer',
+							'minimum' => 4,
+							'maximum' => Bounded_Payload::TEXT_WINDOW_BYTES,
+						),
+						'expected_content_hash' => array(
+							'type'      => 'string',
+							'minLength' => 64,
+							'maxLength' => 64,
+						),
+						'text_field'            => array(
+							'type' => 'string',
+							'enum' => array( 'title', 'excerpt' ),
+						),
+						'text_offset'           => array(
+							'type'    => 'integer',
+							'minimum' => 0,
+						),
+						'text_max_bytes'        => array(
+							'type'    => 'integer',
+							'minimum' => 4,
+							'maximum' => Bounded_Payload::TEXT_WINDOW_BYTES,
+						),
+						'expected_text_hash'    => array(
+							'type'      => 'string',
+							'minLength' => 64,
+							'maxLength' => 64,
 						),
 					),
 					'required'             => array( 'post_id' ),
@@ -523,17 +564,225 @@ final class Content_Abilities {
 	 * @return array<int,array<string,mixed>>|WP_Error
 	 */
 	public function read_revisions( $input ) {
+		// Each request, including a continuation, must pass the CURRENT parent-post authority.
+		if ( ! $this->can_read_revisions( $input ) ) {
+			return new WP_Error( 'revision_read_forbidden', __( 'Revision access is no longer permitted.', 'wp-ai-bridge' ) );
+		}
 		$post = get_post( (int) $input['post_id'] );
 		if ( ! $post ) {
 			return new WP_Error( 'content_not_found', __( 'The requested content does not exist.', 'wp-ai-bridge' ) );
 		}
-		$limit     = isset( $input['limit'] ) ? max( 1, min( 50, (int) $input['limit'] ) ) : 10;
-		$revisions = wp_get_post_revisions( $post->ID, array( 'posts_per_page' => $limit ) );
-		$result    = array();
-		foreach ( $revisions as $revision ) {
-			$result[] = $this->format_revision( $revision, ! empty( $input['include_content'] ) );
+
+		if ( isset( $input['revision_id'] ) ) {
+			$revision_id = (int) $input['revision_id'];
+			$revision    = wp_get_post_revision( $revision_id );
+			if ( ! $revision || (int) $revision->post_parent !== (int) $post->ID ) {
+				return new WP_Error( 'revision_not_found', __( 'The requested revision does not belong to this content object.', 'wp-ai-bridge' ) );
+			}
+			return $this->read_selected_revision( $revision, $input );
 		}
-		return $result;
+
+		foreach ( array( 'content_offset', 'content_max_bytes', 'expected_content_hash', 'text_field', 'text_offset', 'text_max_bytes', 'expected_text_hash' ) as $field ) {
+			if ( isset( $input[ $field ] ) ) {
+				return new WP_Error( 'revision_selector_required', __( 'Choose an exact revision_id to read content or text windows.', 'wp-ai-bridge' ) );
+			}
+		}
+
+		$limit     = isset( $input['limit'] ) ? max( 1, min( 50, (int) $input['limit'] ) ) : 10;
+		$offset    = isset( $input['offset'] ) ? max( 0, min( 100000, (int) $input['offset'] ) ) : 0;
+		$include   = ! empty( $input['include_content'] );
+		$revisions = wp_get_post_revisions(
+			$post->ID,
+			array(
+				'posts_per_page' => $limit,
+				'offset'         => $offset,
+			)
+		);
+		$items     = array();
+		$compact   = array();
+
+		foreach ( $revisions as $revision ) {
+			if ( (int) $revision->post_parent !== (int) $post->ID || ! $this->can_read_revisions( $input ) ) {
+				return new WP_Error( 'revision_read_forbidden', __( 'Revision access is no longer permitted.', 'wp-ai-bridge' ) );
+			}
+			$body       = (string) $revision->post_content;
+			$large_meta = strlen( (string) $revision->post_title ) > Bounded_Payload::TEXT_WINDOW_BYTES || strlen( (string) $revision->post_excerpt ) > Bounded_Payload::TEXT_WINDOW_BYTES;
+			$item       = $large_meta ? $this->compact_revision( $revision, $include ) : $this->format_revision( $revision, false );
+			if ( $include && ! $large_meta ) {
+				if ( strlen( $body ) <= Bounded_Payload::TEXT_WINDOW_BYTES ) {
+					$item['content'] = $body;
+				} else {
+					$item['content_total_bytes']  = strlen( $body );
+					$item['content_next_offset']  = 0;
+					$item['content_complete']     = false;
+					$item['projection_truncated'] = true;
+					$item['omitted_fields']       = array( 'content' );
+				}
+			}
+			$items[]   = $item;
+			$compact[] = $this->compact_revision( $revision, $include );
+		}
+		if ( Bounded_Payload::fits( $items ) ) {
+			return $items;
+		}
+		return Bounded_Payload::fits( $compact ) ? $compact : $this->revision_oversized_error();
+	}
+
+	/**
+	 * Reads one revision, with explicit byte-safe body/metadata continuation.
+	 *
+	 * @param object              $revision Authorized, exact-parent revision.
+	 * @param array<string,mixed> $input    Validated selector and optional window.
+	 * @return array<int,array<string,mixed>>|WP_Error
+	 */
+	private function read_selected_revision( $revision, $input ) {
+		if ( isset( $input['text_field'] ) ) {
+			if ( ! empty( $input['include_content'] ) || isset( $input['content_offset'] ) || isset( $input['content_max_bytes'] ) || isset( $input['expected_content_hash'] ) ) {
+				return new WP_Error( 'invalid_revision_query', __( 'Select either a revision text field or its content, not both.', 'wp-ai-bridge' ) );
+			}
+			return $this->read_revision_text_window( $revision, $input );
+		}
+		foreach ( array( 'text_offset', 'text_max_bytes', 'expected_text_hash' ) as $field ) {
+			if ( isset( $input[ $field ] ) ) {
+				return new WP_Error( 'invalid_revision_query', __( 'Choose text_field before requesting a revision text window.', 'wp-ai-bridge' ) );
+			}
+		}
+
+		$include = ! empty( $input['include_content'] );
+		if ( ! $include ) {
+			if ( isset( $input['content_offset'] ) || isset( $input['content_max_bytes'] ) || isset( $input['expected_content_hash'] ) ) {
+				return new WP_Error( 'invalid_revision_query', __( 'Set include_content to read revision content windows.', 'wp-ai-bridge' ) );
+			}
+			$large_meta = strlen( (string) $revision->post_title ) > Bounded_Payload::TEXT_WINDOW_BYTES || strlen( (string) $revision->post_excerpt ) > Bounded_Payload::TEXT_WINDOW_BYTES;
+			$item       = $large_meta ? $this->compact_revision( $revision, false ) : $this->format_revision( $revision, false );
+			if ( Bounded_Payload::fits( array( $item ) ) ) {
+				return array( $item );
+			}
+			$item = $this->compact_revision( $revision, false );
+			return Bounded_Payload::fits( array( $item ) ) ? array( $item ) : $this->revision_oversized_error();
+		}
+
+		$content = (string) $revision->post_content;
+		$hash    = hash( 'sha256', $content );
+		$offset  = isset( $input['content_offset'] ) ? (int) $input['content_offset'] : 0;
+		$limit   = isset( $input['content_max_bytes'] ) ? (int) $input['content_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
+		if ( $offset > 0 && empty( $input['expected_content_hash'] ) ) {
+			return new WP_Error( 'revision_identity_required', __( 'A resumed revision read requires its expected_content_hash.', 'wp-ai-bridge' ) );
+		}
+		if ( isset( $input['expected_content_hash'] ) && ! hash_equals( $hash, (string) $input['expected_content_hash'] ) ) {
+			return new WP_Error( 'stale_revision_conflict', __( 'The selected revision content changed; restart from offset zero.', 'wp-ai-bridge' ) );
+		}
+
+		// Existing callers retain complete small-body behavior; selectors always report windows.
+		if ( ! isset( $input['content_offset'] ) && ! isset( $input['content_max_bytes'] ) &&
+			strlen( $content ) <= Bounded_Payload::TEXT_WINDOW_BYTES &&
+			strlen( (string) $revision->post_title ) <= Bounded_Payload::TEXT_WINDOW_BYTES &&
+			strlen( (string) $revision->post_excerpt ) <= Bounded_Payload::TEXT_WINDOW_BYTES ) {
+			$item                        = $this->format_revision( $revision, true );
+			$item['content_total_bytes'] = strlen( $content );
+			$item['content_next_offset'] = strlen( $content );
+			$item['content_complete']    = true;
+			if ( Bounded_Payload::fits( array( $item ) ) ) {
+				return array( $item );
+			}
+		}
+
+		$item = $this->compact_revision( $revision, true );
+		for ( $size = $limit; $size >= 4; $size = max( 3, (int) floor( $size / 2 ) ) ) {
+			$window = Bounded_Payload::text_window( $content, $offset, $size );
+			if ( is_wp_error( $window ) ) {
+				return $window;
+			}
+			$item['content']             = $window['content'];
+			$item['content_total_bytes'] = $window['total_bytes'];
+			$item['content_next_offset'] = $window['next_offset'];
+			$item['content_complete']    = $window['complete'];
+			if ( $window['complete'] ) {
+				$item['omitted_fields'] = array_values( array_diff( $item['omitted_fields'], array( 'content' ) ) );
+			}
+			if ( Bounded_Payload::fits( array( $item ) ) ) {
+				return array( $item );
+			}
+		}
+		return $this->revision_oversized_error();
+	}
+
+	/**
+	 * Reads one giant title/excerpt field without inline or silent truncation.
+	 *
+	 * @param object              $revision Selected revision.
+	 * @param array<string,mixed> $input    Text field selection.
+	 * @return array<int,array<string,mixed>>|WP_Error
+	 */
+	private function read_revision_text_window( $revision, $input ) {
+		$field = (string) $input['text_field'];
+		if ( ! in_array( $field, array( 'title', 'excerpt' ), true ) ) {
+			return new WP_Error( 'invalid_revision_query', __( 'Only revision title or excerpt windows are supported.', 'wp-ai-bridge' ) );
+		}
+		$value  = (string) ( 'title' === $field ? $revision->post_title : $revision->post_excerpt );
+		$hash   = hash( 'sha256', $value );
+		$offset = isset( $input['text_offset'] ) ? (int) $input['text_offset'] : 0;
+		$limit  = isset( $input['text_max_bytes'] ) ? (int) $input['text_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
+		if ( $offset > 0 && empty( $input['expected_text_hash'] ) ) {
+			return new WP_Error( 'revision_identity_required', __( 'A resumed revision text read requires its expected_text_hash.', 'wp-ai-bridge' ) );
+		}
+		if ( isset( $input['expected_text_hash'] ) && ! hash_equals( $hash, (string) $input['expected_text_hash'] ) ) {
+			return new WP_Error( 'stale_revision_conflict', __( 'The selected revision text changed; restart from offset zero.', 'wp-ai-bridge' ) );
+		}
+		$item = $this->compact_revision( $revision, false );
+		for ( $size = $limit; $size >= 4; $size = max( 3, (int) floor( $size / 2 ) ) ) {
+			$window = Bounded_Payload::text_window( $value, $offset, $size );
+			if ( is_wp_error( $window ) ) {
+				return $window;
+			}
+			$item['text_field']       = $field;
+			$item['text_hash']        = $hash;
+			$item['text_chunk']       = $window['content'];
+			$item['text_total_bytes'] = $window['total_bytes'];
+			$item['text_next_offset'] = $window['next_offset'];
+			$item['text_complete']    = $window['complete'];
+			if ( Bounded_Payload::fits( array( $item ) ) ) {
+				return array( $item );
+			}
+		}
+		return $this->revision_oversized_error();
+	}
+
+	/**
+	 * Small fixed revision identity for a long historical record or list.
+	 *
+	 * @param object $revision Revision object.
+	 * @param bool   $include_content Whether caller also requested its content.
+	 * @return array<string,mixed> Bounded projection with explicit omissions.
+	 */
+	private function compact_revision( $revision, $include_content ) {
+		$title   = (string) $revision->post_title;
+		$excerpt = (string) $revision->post_excerpt;
+		$content = (string) $revision->post_content;
+		$fields  = array( 'title', 'excerpt' );
+		if ( $include_content ) {
+			$fields[] = 'content';
+		}
+		return array(
+			'id'                   => (int) $revision->ID,
+			'parent_id'            => (int) $revision->post_parent,
+			'date_gmt'             => (string) $revision->post_date_gmt,
+			'modified_gmt'         => (string) $revision->post_modified_gmt,
+			'author_id'            => (int) $revision->post_author,
+			'content_hash'         => hash( 'sha256', $content ),
+			'content_total_bytes'  => strlen( $content ),
+			'title_hash'           => hash( 'sha256', $title ),
+			'title_total_bytes'    => strlen( $title ),
+			'excerpt_hash'         => hash( 'sha256', $excerpt ),
+			'excerpt_total_bytes'  => strlen( $excerpt ),
+			'projection_truncated' => true,
+			'omitted_fields'       => $fields,
+		);
+	}
+
+	/** @return WP_Error */
+	private function revision_oversized_error() {
+		return new WP_Error( 'revision_response_too_large', __( 'Revision results exceed the MCP response budget. Reduce limit, select revision_id, or use content/text windows.', 'wp-ai-bridge' ) );
 	}
 
 	/**
@@ -1179,17 +1428,38 @@ final class Content_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'id'           => array( 'type' => 'integer' ),
-				'parent_id'    => array( 'type' => 'integer' ),
-				'date_gmt'     => array( 'type' => 'string' ),
-				'modified_gmt' => array( 'type' => 'string' ),
-				'author_id'    => array( 'type' => 'integer' ),
-				'title'        => array( 'type' => 'string' ),
-				'excerpt'      => array( 'type' => 'string' ),
-				'content_hash' => array( 'type' => 'string' ),
-				'content'      => array( 'type' => 'string' ),
+				'id'                   => array( 'type' => 'integer' ),
+				'parent_id'            => array( 'type' => 'integer' ),
+				'date_gmt'             => array( 'type' => 'string' ),
+				'modified_gmt'         => array( 'type' => 'string' ),
+				'author_id'            => array( 'type' => 'integer' ),
+				'title'                => array( 'type' => 'string' ),
+				'excerpt'              => array( 'type' => 'string' ),
+				'content_hash'         => array( 'type' => 'string' ),
+				'content'              => array( 'type' => 'string' ),
+				'content_total_bytes'  => array( 'type' => 'integer' ),
+				'content_next_offset'  => array( 'type' => 'integer' ),
+				'content_complete'     => array( 'type' => 'boolean' ),
+				'title_hash'           => array( 'type' => 'string' ),
+				'title_total_bytes'    => array( 'type' => 'integer' ),
+				'excerpt_hash'         => array( 'type' => 'string' ),
+				'excerpt_total_bytes'  => array( 'type' => 'integer' ),
+				'text_field'           => array(
+					'type' => 'string',
+					'enum' => array( 'title', 'excerpt' ),
+				),
+				'text_hash'            => array( 'type' => 'string' ),
+				'text_chunk'           => array( 'type' => 'string' ),
+				'text_total_bytes'     => array( 'type' => 'integer' ),
+				'text_next_offset'     => array( 'type' => 'integer' ),
+				'text_complete'        => array( 'type' => 'boolean' ),
+				'projection_truncated' => array( 'type' => 'boolean' ),
+				'omitted_fields'       => array(
+					'type'  => 'array',
+					'items' => array( 'type' => 'string' ),
+				),
 			),
-			'required'             => array( 'id', 'parent_id', 'date_gmt', 'modified_gmt', 'author_id', 'title', 'excerpt', 'content_hash' ),
+			'required'             => array( 'id', 'parent_id', 'date_gmt', 'modified_gmt', 'author_id', 'content_hash' ),
 			'additionalProperties' => false,
 		);
 	}
