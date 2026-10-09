@@ -21,7 +21,7 @@ $loaded = load_textdomain( $domain, $language_file, 'fa_IR' );
 wpai_issue6_i18n_assert( true === $loaded, 'WordPress could not load the bundled fa_IR runtime catalog.' );
 
 wpai_issue6_i18n_assert(
-	'اتصال مستقیم به ChatGPT App' === __( 'Direct ChatGPT App', $domain ),
+	'اتصال‌های کلاینت AI/MCP' === __( 'AI/MCP client connections', $domain ),
 	'Persian admin connection heading did not load at runtime.'
 );
 wpai_issue6_i18n_assert(

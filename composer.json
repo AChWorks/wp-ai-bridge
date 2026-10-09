@@ -1,6 +1,6 @@
 {
   "name": "achworks/wp-ai-bridge",
-  "description": "WP AI Bridge for direct ChatGPT OAuth/MCP access to permission-checked WordPress Abilities.",
+  "description": "WP AI Bridge for authenticated AI/MCP clients and permission-checked WordPress Abilities.",
   "type": "wordpress-plugin",
   "license": "GPL-2.0-or-later",
   "require-dev": {

@@ -32,6 +32,14 @@ AI / MCP client
 
 Production requires the official Adapter and this Bridge, not Composer, Docker, Node.js, a daemon, another database, or an external identity platform. Build and integration tooling remain development-only.
 
+## AI clients versus WordPress providers
+
+A **WordPress operation provider** is Core, a plugin or a theme registering operations. Its Abilities are discovered generically at runtime under WordPress and provider permission checks. An **AI/MCP client** is the external caller (ChatGPT, an independently operated Gateway, or another future compatible AI application) authenticated to this WordPress installation through the existing Bridge OAuth/MCP contract.
+
+Multiple approved clients must share the same administrator delegation and WordPress execution boundary, while keeping distinct client identities, grants and revocation. The existing built-in ChatGPT compatibility branch is intentional: do not rename its persisted token/client identity or assume other applications can authenticate as ChatGPT. Client-specific compatibility must be verified against its actual protocol; the Bridge is not a chat/model API proxy.
+
+See [Approved OAuth clients](./OAUTH-CLIENTS.md) for the currently implemented additional-client contract and `MASTER-SPEC.md` for future AI-client neutrality as a product requirement.
+
 ## Discovery and reuse
 
 Use the native registry as the one operation inventory. Prefer a suitable Core/provider Ability with its real public contract. Otherwise use a supported public WordPress/provider API, including an appropriate registered REST contract, through the smallest typed fallback needed for the actual gap. Only a proven public contract justifies a provider-specific fallback. Keep such fallbacks removable when upstream publishes a suitable native Ability.

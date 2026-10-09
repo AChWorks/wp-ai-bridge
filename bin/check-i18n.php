@@ -28,7 +28,7 @@ foreach ( $messages as $source => $translation ) {
 }
 
 $required = array(
-	'Direct ChatGPT App' => 'اتصال مستقیم به ChatGPT App',
+	'AI/MCP client connections' => 'اتصال‌های کلاینت AI/MCP',
 	'Authorize ChatGPT'  => 'تأیید دسترسی ChatGPT',
 	'Access groups'      => 'گروه‌های دسترسی',
 	'Live Content'       => 'محتوای زنده',

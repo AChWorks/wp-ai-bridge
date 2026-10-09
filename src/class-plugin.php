@@ -155,7 +155,7 @@ final class Plugin {
 		if ( ! $this->oauth_server->is_https_ready() ) {
 			printf(
 				'<div class="notice notice-warning"><p>%s</p></div>',
-				esc_html__( 'Direct ChatGPT App connections require the public WP AI Bridge MCP endpoint to use HTTPS. Check the WordPress Site URL and reverse-proxy HTTPS configuration before creating the App.', 'wp-ai-bridge' )
+				esc_html__( 'Remote AI/MCP connections require the WP AI Bridge endpoint to use HTTPS. Check the WordPress Site URL and reverse-proxy HTTPS configuration before connecting a remote client.', 'wp-ai-bridge' )
 			);
 		}
 	}
