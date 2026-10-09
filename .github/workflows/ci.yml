@@ -44,7 +44,20 @@ jobs:
               exit 1
             fi
             echo "Verified ${ref}@${digest} for linux/amd64"
-            docker pull "${ref}@${digest}"
+            # ECR Public limits unauthenticated pulls to 1/s. The manifest
+            # inspection can consume a request immediately before docker pull.
+            sleep 2
+            for attempt in 1 2 3; do
+              if docker pull "${ref}@${digest}"; then
+                break
+              fi
+              if [[ "$attempt" == "3" ]]; then
+                echo "::error::Verified OCI image pull failed after 3 attempts: ${ref}@${digest}"
+                exit 1
+              fi
+              # Bounded backoff for transient public-registry throttling.
+              sleep $(( attempt * 15 ))
+            done
             docker tag "${ref}@${digest}" "$ref"
             images+=("$ref")
             sleep 2
