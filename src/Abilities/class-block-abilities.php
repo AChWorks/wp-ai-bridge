@@ -7,6 +7,7 @@
 
 namespace WP_AI_Bridge\Abilities;
 
+use WP_AI_Bridge\Support\Bounded_Payload;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Settings;
@@ -54,19 +55,23 @@ final class Block_Abilities {
 				'label'               => __( 'Read Gutenberg Blocks', 'wp-ai-bridge' ),
 				'description'         => __( 'Parses one content object into a structured Gutenberg block tree with stable change fingerprints.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
-				'input_schema'        => array(
-					'type'                 => 'object',
-					'properties'           => array(
-						'post_id' => array(
-							'type'    => 'integer',
-							'minimum' => 1,
-						),
-					),
-					'required'             => array( 'post_id' ),
-					'additionalProperties' => false,
-				),
+				'input_schema'        => $this->read_input_schema(),
 				'output_schema'       => $this->tree_schema(),
 				'execute_callback'    => array( $this, 'read' ),
+				'permission_callback' => array( $this, 'can_read' ),
+				'meta'                => $this->meta( true, false, true ),
+			)
+		);
+
+		$registered[] = wp_register_ability(
+			'wp-ai-bridge/blocks-find',
+			array(
+				'label'               => __( 'Find Gutenberg Blocks', 'wp-ai-bridge' ),
+				'description'         => __( 'Scans bounded batches of blocks and returns stable paths and fingerprints without expanding the block tree.', 'wp-ai-bridge' ),
+				'category'            => Registrar::CATEGORY,
+				'input_schema'        => $this->find_input_schema(),
+				'output_schema'       => $this->find_output_schema(),
+				'execute_callback'    => array( $this, 'find' ),
 				'permission_callback' => array( $this, 'can_read' ),
 				'meta'                => $this->meta( true, false, true ),
 			)
@@ -138,13 +143,187 @@ final class Block_Abilities {
 	 * @param array<string,mixed> $input Input.
 	 * @return array<string,mixed>|WP_Error
 	 */
+
 	public function read( $input ) {
 		$post = get_post( (int) $input['post_id'] );
 		if ( ! $post || ! Content_Eligibility::supports_blocks( $post->post_type ) ) {
 			return new WP_Error( 'unsupported_block_target', __( 'The requested content type is not eligible for generic Gutenberg operations.', 'wp-ai-bridge' ) );
 		}
+		$identity = $this->tree_identity( $post );
+		if ( isset( $input['expected_content_hash'] ) && ! hash_equals( $identity['content_hash'], (string) $input['expected_content_hash'] ) ) {
+			return new WP_Error( 'stale_content_conflict', __( 'The content changed after inspection; restart the bounded read.', 'wp-ai-bridge' ) );
+		}
 
-		return $this->format_tree( $post );
+		if ( isset( $input['path'] ) ) {
+			$segments = $this->parse_path( $input['path'] );
+			if ( is_wp_error( $segments ) ) {
+				return $segments;
+			}
+			$target = $this->get_block_at_path( parse_blocks( (string) $post->post_content ), $segments );
+			if ( is_wp_error( $target ) ) {
+				return $target;
+			}
+			$depth              = isset( $input['max_depth'] ) ? (int) $input['max_depth'] : 0;
+			$include_attrs      = ! isset( $input['include_attrs'] ) || true === $input['include_attrs'];
+			$identity['blocks'] = array( $this->format_block( $target, (string) $input['path'], 0, $depth, $include_attrs ) );
+		} else {
+			// Preserve small-page legacy reads, but diagnose oversized reads locally.
+			if ( strlen( (string) $post->post_content ) > Bounded_Payload::RESPONSE_BYTES ) {
+				return $this->oversized_read_error();
+			}
+			$identity = $this->format_tree( $post );
+		}
+
+		return Bounded_Payload::fits( $identity ) ? $identity : $this->oversized_read_error();
+	}
+
+	/**
+	 * Scan bounded portions of the complete parsed tree without serializing its output.
+	 *
+	 * Offsets count visited nodes in canonical pre-order, including non-matches.
+	 * Resumed scans require the exact content hash to prevent stale paths.
+	 *
+	 * @param array<string,mixed> $input Validated discovery filters and window.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function find( $input ) {
+		$post = get_post( (int) $input['post_id'] );
+		if ( ! $post || ! Content_Eligibility::supports_blocks( $post->post_type ) ) {
+			return new WP_Error( 'unsupported_block_target', __( 'The requested content type is not eligible for generic Gutenberg operations.', 'wp-ai-bridge' ) );
+		}
+		$identity = $this->tree_identity( $post );
+		$offset   = isset( $input['offset'] ) ? (int) $input['offset'] : 0;
+		$limit    = isset( $input['limit'] ) ? (int) $input['limit'] : 25;
+		$scan     = isset( $input['scan_limit'] ) ? (int) $input['scan_limit'] : 1000;
+		if ( $offset > 0 && empty( $input['expected_content_hash'] ) ) {
+			return new WP_Error( 'content_identity_required', __( 'A continuation scan requires expected_content_hash from the previous response.', 'wp-ai-bridge' ) );
+		}
+		if ( isset( $input['expected_content_hash'] ) && ! hash_equals( $identity['content_hash'], (string) $input['expected_content_hash'] ) ) {
+			return new WP_Error( 'stale_content_conflict', __( 'The content changed after inspection; restart the block search.', 'wp-ai-bridge' ) );
+		}
+
+		$result = $identity + array(
+			'items'       => array(),
+			'next_offset' => $offset,
+			'scanned'     => 0,
+			'complete'    => true,
+		);
+		$index  = 0;
+		foreach ( $this->walk_blocks( parse_blocks( (string) $post->post_content ) ) as $entry ) {
+			if ( $index++ < $offset ) {
+				continue;
+			}
+			if ( $result['scanned'] >= $scan || count( $result['items'] ) >= $limit ) {
+				$result['complete'] = false;
+				break;
+			}
+			$block = $entry['block'];
+			if ( $this->matches_find_filters( $block, $input ) ) {
+				$summary             = $this->direct_block_summary( $block, 160 );
+				$item                = array(
+					'path'            => $entry['path'],
+					'name'            => isset( $block['blockName'] ) ? (string) $block['blockName'] : '',
+					'block_hash'      => hash( 'sha256', serialize_block( $block ) ),
+					'content_summary' => $summary,
+					'child_count'     => count( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array() ),
+				);
+				$proposed            = $result;
+				$proposed['items'][] = $item;
+				if ( ! Bounded_Payload::fits( $proposed ) ) {
+					if ( empty( $result['items'] ) ) {
+						return $this->oversized_read_error();
+					}
+					$result['complete'] = false;
+					break;
+				}
+				$result['items'][] = $item;
+			}
+			++$result['scanned'];
+			++$result['next_offset'];
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Traverse nested blocks in stable pre-order with memory proportional to depth.
+	 *
+	 * @param array<int,array<string,mixed>> $blocks Parsed blocks.
+	 * @return iterable<array<string,mixed>>
+	 */
+	private function walk_blocks( array $blocks ) {
+		$stack = array(
+			array(
+				'blocks' => $blocks,
+				'index'  => 0,
+				'prefix' => '',
+			),
+		);
+		while ( ! empty( $stack ) ) {
+			$top = count( $stack ) - 1;
+			if ( $stack[ $top ]['index'] >= count( $stack[ $top ]['blocks'] ) ) {
+				array_pop( $stack );
+				continue;
+			}
+			$index = $stack[ $top ]['index']++;
+			$block = $stack[ $top ]['blocks'][ $index ];
+			$path  = '' === $stack[ $top ]['prefix'] ? (string) $index : $stack[ $top ]['prefix'] . '.' . $index;
+			yield array(
+				'path'  => $path,
+				'block' => $block,
+			);
+			if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
+				$stack[] = array(
+					'blocks' => $block['innerBlocks'],
+					'index'  => 0,
+					'prefix' => $path,
+				);
+			}
+		}
+	}
+
+	/** @param array<string,mixed> $block Block. @param array<string,mixed> $filters Search filters. @return bool */
+	private function matches_find_filters( array $block, array $filters ) {
+		if ( ! empty( $filters['block_name'] ) && false === stripos( (string) ( $block['blockName'] ?? '' ), (string) $filters['block_name'] ) ) {
+			return false;
+		}
+		if ( ! empty( $filters['class_name'] ) ) {
+			$class = $block['attrs']['className'] ?? '';
+			if ( ! is_string( $class ) || false === stripos( $class, (string) $filters['class_name'] ) ) {
+				return false;
+			}
+		}
+		if ( ! empty( $filters['text_contains'] ) && false === stripos( wp_strip_all_tags( (string) ( $block['innerHTML'] ?? '' ) ), (string) $filters['text_contains'] ) ) {
+			return false;
+		}
+		if ( ! empty( $filters['attribute_key'] ) ) {
+			$attrs = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
+			$key   = (string) $filters['attribute_key'];
+			if ( ! array_key_exists( $key, $attrs ) ) {
+				return false;
+			}
+			if ( isset( $filters['attribute_value_contains'] ) ) {
+				if ( ! is_scalar( $attrs[ $key ] ) || false === stripos( (string) $attrs[ $key ], (string) $filters['attribute_value_contains'] ) ) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/** @param array<string,mixed> $block Block. @param int $length Max summary bytes. @return string */
+	private function direct_block_summary( array $block, $length ) {
+		$summary = trim( (string) preg_replace( '/\s+/u', ' ', wp_strip_all_tags( (string) ( $block['innerHTML'] ?? '' ) ) ) );
+		if ( strlen( $summary ) <= $length ) {
+			return $summary;
+		}
+		$part = Bounded_Payload::text_window( $summary, 0, $length - 3 );
+		return is_wp_error( $part ) ? '' : $part['content'] . '...';
+	}
+
+	/** @return WP_Error */
+	private function oversized_read_error() {
+		return new WP_Error( 'blocks_response_too_large', __( 'The Gutenberg result is too large for a normal MCP response. Use blocks-find with continuation, then blocks-read with path and max_depth, or disable attrs for a large target.', 'wp-ai-bridge' ) );
 	}
 
 	/**
@@ -235,8 +414,16 @@ final class Block_Abilities {
 			return $result;
 		}
 
-		$this->log->record( $ability, 'post', $post_id, true, '' );
-		return $this->format_tree( get_post( $post_id ) );
+		$this->log->record( 'wp-ai-bridge/blocks-mutate', 'post', $post_id, true, '' );
+		$updated              = get_post( $post_id );
+		$compact              = $this->tree_identity( $updated );
+		$compact['blocks']    = array();
+		$compact['truncated'] = true;
+		if ( 'summary' === ( $input['response_mode'] ?? 'auto' ) || strlen( (string) $updated->post_content ) > Bounded_Payload::RESPONSE_BYTES ) {
+			return $compact;
+		}
+		$tree = $this->format_tree( $updated );
+		return Bounded_Payload::fits( $tree ) ? $tree : $compact;
 	}
 
 	/**
@@ -245,42 +432,69 @@ final class Block_Abilities {
 	 * @param object $post Post object.
 	 * @return array<string,mixed>
 	 */
+
 	private function format_tree( $post ) {
-		$content = (string) $post->post_content;
+		$result           = $this->tree_identity( $post );
+		$result['blocks'] = $this->format_blocks( parse_blocks( (string) $post->post_content ) );
+		return $result;
+	}
+
+	/** @param object $post Post object. @return array<string,mixed> */
+	private function tree_identity( $post ) {
 		return array(
 			'post_id'      => (int) $post->ID,
 			'modified_gmt' => (string) $post->post_modified_gmt,
-			'content_hash' => hash( 'sha256', $content ),
-			'blocks'       => $this->format_blocks( parse_blocks( $content ) ),
+			'content_hash' => hash( 'sha256', (string) $post->post_content ),
 		);
 	}
 
 	/**
-	 * Recursively formats blocks with path and block fingerprint.
+	 * Recursively format blocks; targeted reads limit depth and optionally attrs.
 	 *
-	 * @param array<int,array<string,mixed>> $blocks Parsed blocks.
-	 * @param string                         $prefix Path prefix.
+	 * @param array<int,array<string,mixed>> $blocks        Parsed blocks.
+	 * @param string                         $prefix        Parent path prefix.
+	 * @param int                            $depth         Current depth.
+	 * @param int|null                       $max_depth     Maximum descendant depth.
+	 * @param bool                           $include_attrs Include raw block attributes.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function format_blocks( array $blocks, $prefix = '' ) {
+	private function format_blocks( array $blocks, $prefix = '', $depth = 0, $max_depth = null, $include_attrs = true ) {
 		$result = array();
 		foreach ( $blocks as $index => $block ) {
-			$path       = '' === $prefix ? (string) $index : $prefix . '.' . $index;
-			$serialized = serialize_block( $block );
-			$summary    = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( $serialized ) ) );
-			if ( strlen( $summary ) > 240 ) {
-				$summary = substr( $summary, 0, 237 ) . '...';
-			}
-			$result[] = array(
-				'path'            => $path,
-				'name'            => isset( $block['blockName'] ) && null !== $block['blockName'] ? (string) $block['blockName'] : '',
-				'attrs'           => isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array(),
-				'content_summary' => $summary,
-				'block_hash'      => hash( 'sha256', $serialized ),
-				'inner_blocks'    => $this->format_blocks( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array(), $path ),
-			);
+			$path     = '' === $prefix ? (string) $index : $prefix . '.' . $index;
+			$result[] = $this->format_block( $block, $path, $depth, $max_depth, $include_attrs );
 		}
 		return $result;
+	}
+
+	/**
+	 * @param array<string,mixed> $block Parsed block.
+	 * @param string              $path Stable numeric path.
+	 * @param int                 $depth Current depth.
+	 * @param int|null            $max_depth Maximum child traversal depth.
+	 * @param bool                $include_attrs Include attributes.
+	 * @return array<string,mixed>
+	 */
+	private function format_block( array $block, $path, $depth, $max_depth, $include_attrs ) {
+		$serialized = serialize_block( $block );
+		$summary    = null === $max_depth
+			? trim( (string) preg_replace( '/\s+/', ' ', wp_strip_all_tags( $serialized ) ) )
+			: $this->direct_block_summary( $block, 240 );
+		if ( strlen( $summary ) > 240 ) {
+			$part    = Bounded_Payload::text_window( $summary, 0, 237 );
+			$summary = is_wp_error( $part ) ? '' : $part['content'] . '...';
+		}
+		$children = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
+		return array(
+			'path'            => $path,
+			'name'            => isset( $block['blockName'] ) && null !== $block['blockName'] ? (string) $block['blockName'] : '',
+			'attrs'           => $include_attrs && isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array(),
+			'content_summary' => $summary,
+			'block_hash'      => hash( 'sha256', $serialized ),
+			'inner_blocks'    => null === $max_depth || $depth < $max_depth
+				? $this->format_blocks( $children, $path, $depth + 1, $max_depth, $include_attrs )
+				: array(),
+		);
 	}
 
 	/**
@@ -442,6 +656,136 @@ final class Block_Abilities {
 	}
 
 	/**
+	 * @return array<string,mixed> Gutenberg targeted-read input contract.
+	 */
+	private function read_input_schema() {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'post_id'               => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+				),
+				'path'                  => array(
+					'type'      => 'string',
+					'minLength' => 1,
+					'maxLength' => 512,
+				),
+				'max_depth'             => array(
+					'type'    => 'integer',
+					'minimum' => 0,
+					'maximum' => 8,
+					'default' => 0,
+				),
+				'include_attrs'         => array(
+					'type'    => 'boolean',
+					'default' => true,
+				),
+				'expected_content_hash' => array(
+					'type'      => 'string',
+					'minLength' => 64,
+					'maxLength' => 64,
+				),
+			),
+			'required'             => array( 'post_id' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * @return array<string,mixed> Bounded block-discovery input contract.
+	 */
+	private function find_input_schema() {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'post_id'                  => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+				),
+				'block_name'               => array(
+					'type'      => 'string',
+					'maxLength' => 120,
+				),
+				'class_name'               => array(
+					'type'      => 'string',
+					'maxLength' => 120,
+				),
+				'text_contains'            => array(
+					'type'      => 'string',
+					'maxLength' => 200,
+				),
+				'attribute_key'            => array(
+					'type'      => 'string',
+					'maxLength' => 120,
+				),
+				'attribute_value_contains' => array(
+					'type'      => 'string',
+					'maxLength' => 200,
+				),
+				'offset'                   => array(
+					'type'    => 'integer',
+					'minimum' => 0,
+					'default' => 0,
+				),
+				'limit'                    => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+					'maximum' => 50,
+					'default' => 25,
+				),
+				'scan_limit'               => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+					'maximum' => 2000,
+					'default' => 1000,
+				),
+				'expected_content_hash'    => array(
+					'type'      => 'string',
+					'minLength' => 64,
+					'maxLength' => 64,
+				),
+			),
+			'required'             => array( 'post_id' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * @return array<string,mixed> Flat match entries plus a guarded continuation.
+	 */
+	private function find_output_schema() {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'post_id'      => array( 'type' => 'integer' ),
+				'modified_gmt' => array( 'type' => 'string' ),
+				'content_hash' => array( 'type' => 'string' ),
+				'next_offset'  => array( 'type' => 'integer' ),
+				'scanned'      => array( 'type' => 'integer' ),
+				'complete'     => array( 'type' => 'boolean' ),
+				'items'        => array(
+					'type'  => 'array',
+					'items' => array(
+						'type'                 => 'object',
+						'properties'           => array(
+							'path'            => array( 'type' => 'string' ),
+							'name'            => array( 'type' => 'string' ),
+							'block_hash'      => array( 'type' => 'string' ),
+							'content_summary' => array( 'type' => 'string' ),
+							'child_count'     => array( 'type' => 'integer' ),
+						),
+						'required'             => array( 'path', 'name', 'block_hash', 'content_summary', 'child_count' ),
+						'additionalProperties' => false,
+					),
+				),
+			),
+			'required'             => array( 'post_id', 'modified_gmt', 'content_hash', 'next_offset', 'scanned', 'complete', 'items' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
 	 * Returns the block-mutation input schema.
 	 *
 	 * @return array<string,mixed> JSON schema.
@@ -459,6 +803,11 @@ final class Block_Abilities {
 					'enum' => array( 'append', 'insert_before', 'insert_after', 'replace', 'remove' ),
 				),
 				'path'                  => array( 'type' => 'string' ),
+				'response_mode'         => array(
+					'type'    => 'string',
+					'enum'    => array( 'auto', 'summary', 'full' ),
+					'default' => 'auto',
+				),
 				'block_markup'          => array( 'type' => 'string' ),
 				'expected_modified_gmt' => array(
 					'type'      => 'string',
@@ -510,6 +859,7 @@ final class Block_Abilities {
 				'post_id'      => array( 'type' => 'integer' ),
 				'modified_gmt' => array( 'type' => 'string' ),
 				'content_hash' => array( 'type' => 'string' ),
+				'truncated'    => array( 'type' => 'boolean' ),
 				'blocks'       => array(
 					'type'  => 'array',
 					'items' => $block,

@@ -7,6 +7,7 @@
 
 namespace WP_AI_Bridge\Abilities;
 
+use WP_AI_Bridge\Support\Bounded_Payload;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Settings;
@@ -297,13 +298,65 @@ final class Content_Abilities {
 				return new WP_Error( 'content_not_found', __( 'The requested content is not available.', 'wp-ai-bridge' ) );
 			}
 
-			return array(
-				'items'       => array( $this->format_post( $post, true ) ),
+			$content  = (string) $post->post_content;
+			$identity = hash( 'sha256', $content );
+			$offset   = isset( $input['content_offset'] ) ? (int) $input['content_offset'] : 0;
+			$windowed = isset( $input['content_offset'] ) || isset( $input['content_max_bytes'] );
+			if ( $offset > 0 && empty( $input['expected_content_hash'] ) ) {
+				return new WP_Error( 'content_identity_required', __( 'A resumed content read requires expected_content_hash from the previous response.', 'wp-ai-bridge' ) );
+			}
+			if ( isset( $input['expected_content_hash'] ) && ! hash_equals( $identity, (string) $input['expected_content_hash'] ) ) {
+				return new WP_Error( 'stale_content_conflict', __( 'The content changed while reading its windows; restart from offset zero.', 'wp-ai-bridge' ) );
+			}
+			$item = $this->format_post( $post, false );
+			if ( $windowed ) {
+				$limit  = isset( $input['content_max_bytes'] ) ? (int) $input['content_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
+				$window = Bounded_Payload::text_window( $content, $offset, $limit );
+				if ( is_wp_error( $window ) ) {
+					return $window;
+				}
+				$item['content']             = $window['content'];
+				$item['content_total_bytes'] = $window['total_bytes'];
+				$item['content_next_offset'] = $window['next_offset'];
+				$item['content_complete']    = $window['complete'];
+			} elseif ( strlen( $content ) <= Bounded_Payload::TEXT_WINDOW_BYTES ) {
+				$item['content']             = $content;
+				$item['content_total_bytes'] = strlen( $content );
+				$item['content_next_offset'] = strlen( $content );
+				$item['content_complete']    = true;
+			} else {
+				$item['content_total_bytes'] = strlen( $content );
+				$item['content_next_offset'] = 0;
+				$item['content_complete']    = false;
+			}
+			$result = array(
+				'items'       => array( $item ),
 				'page'        => 1,
 				'per_page'    => 1,
 				'total'       => 1,
 				'total_pages' => 1,
 			);
+			if ( Bounded_Payload::fits( $result ) ) {
+				return $result;
+			}
+			// The transport may escape multibyte characters; reduce the page until
+			// its *encoded* JSON fits. Never require a client to guess a byte window.
+			$limit = isset( $result['items'][0]['content'] ) ? strlen( $result['items'][0]['content'] ) : 0;
+			while ( $limit > 4 ) {
+				$limit  = max( 4, (int) floor( $limit / 2 ) );
+				$window = Bounded_Payload::text_window( $content, $windowed ? $offset : 0, $limit );
+				if ( is_wp_error( $window ) ) {
+					break;
+				}
+				$result['items'][0]['content']             = $window['content'];
+				$result['items'][0]['content_total_bytes'] = $window['total_bytes'];
+				$result['items'][0]['content_next_offset'] = $window['next_offset'];
+				$result['items'][0]['content_complete']    = $window['complete'];
+				if ( Bounded_Payload::fits( $result ) ) {
+					return $result;
+				}
+			}
+			return $this->oversized_content_error();
 		}
 
 		$type = isset( $input['post_type'] ) ? (string) $input['post_type'] : 'post';
@@ -336,17 +389,30 @@ final class Content_Abilities {
 		$items = array();
 		foreach ( $query->posts as $post ) {
 			if ( current_user_can( 'read_post', $post->ID ) ) {
-				$items[] = $this->format_post( $post, $include_content );
+				$item    = $this->format_post( $post, false );
+				$content = (string) $post->post_content;
+				if ( $include_content ) {
+					$item['content_total_bytes'] = strlen( $content );
+					$item['content_next_offset'] = 0;
+					$item['content_complete']    = false;
+					if ( strlen( $content ) <= Bounded_Payload::TEXT_WINDOW_BYTES ) {
+						$item['content']             = $content;
+						$item['content_next_offset'] = strlen( $content );
+						$item['content_complete']    = true;
+					}
+				}
+				$items[] = $item;
 			}
 		}
 
-		return array(
+		$result = array(
 			'items'       => $items,
 			'page'        => $page,
 			'per_page'    => $per_page,
 			'total'       => (int) $query->found_posts,
 			'total_pages' => (int) $query->max_num_pages,
 		);
+		return Bounded_Payload::fits( $result ) ? $result : $this->oversized_content_error();
 	}
 
 	/**
@@ -450,7 +516,7 @@ final class Content_Abilities {
 		}
 
 		$this->log->record( $ability, 'post', $id, true, '' );
-		return $this->format_post( get_post( $id ), true );
+		return $this->format_post_after_mutation( get_post( $id ) );
 	}
 
 	/**
@@ -528,7 +594,7 @@ final class Content_Abilities {
 			return $this->logged_error( $ability, 'revision_restore_failed', __( 'WordPress could not restore the requested revision.', 'wp-ai-bridge' ), $post_id );
 		}
 		$this->log->record( $ability, 'post', $post_id, true, '' );
-		return $this->format_post( get_post( $post_id ), true );
+		return $this->format_post_after_mutation( get_post( $post_id ) );
 	}
 
 	/**
@@ -666,6 +732,43 @@ final class Content_Abilities {
 	}
 
 	/**
+	 * A successful write returns bounded content plus an explicit completeness flag.
+	 *
+	 * @param object $post Saved content object.
+	 * @return array<string,mixed>
+	 */
+	private function format_post_after_mutation( $post ) {
+		$item                        = $this->format_post( $post, false );
+		$body                        = (string) $post->post_content;
+		$item['content_total_bytes'] = strlen( $body );
+		$limit                       = Bounded_Payload::TEXT_WINDOW_BYTES;
+		while ( $limit >= 4 ) {
+			$window = Bounded_Payload::text_window( $body, 0, $limit );
+			if ( is_wp_error( $window ) ) {
+				break;
+			}
+			$item['content']             = $window['content'];
+			$item['content_next_offset'] = $window['next_offset'];
+			$item['content_complete']    = $window['complete'];
+			if ( Bounded_Payload::fits( $item ) ) {
+				return $item;
+			}
+			$limit = (int) floor( $limit / 2 );
+		}
+		// The write has already succeeded: return recoverable identity rather
+		// than a misleading output-size failure.
+		$item['content']             = '';
+		$item['content_next_offset'] = 0;
+		$item['content_complete']    = false;
+		return $item;
+	}
+
+	/** @return WP_Error */
+	private function oversized_content_error() {
+		return new WP_Error( 'content_response_too_large', __( 'The requested content result exceeds the MCP response budget. Reduce per_page, disable include_content, or use content-read with content_offset and content_max_bytes.', 'wp-ai-bridge' ) );
+	}
+
+	/**
 	 * Formats one revision.
 	 *
 	 * @param object $revision        Revision object.
@@ -698,36 +801,50 @@ final class Content_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'action'          => array(
+				'action'                => array(
 					'type'    => 'string',
 					'enum'    => array( 'list', 'get' ),
 					'default' => 'list',
 				),
-				'post_type'       => array(
+				'post_type'             => array(
 					'type'    => 'string',
 					'default' => 'post',
 				),
-				'id'              => array(
+				'id'                    => array(
 					'type'    => 'integer',
 					'minimum' => 1,
 				),
-				'slug'            => array( 'type' => 'string' ),
-				'search'          => array( 'type' => 'string' ),
-				'status'          => array( 'type' => 'string' ),
-				'page'            => array(
+				'slug'                  => array( 'type' => 'string' ),
+				'search'                => array( 'type' => 'string' ),
+				'status'                => array( 'type' => 'string' ),
+				'page'                  => array(
 					'type'    => 'integer',
 					'minimum' => 1,
 					'default' => 1,
 				),
-				'per_page'        => array(
+				'per_page'              => array(
 					'type'    => 'integer',
 					'minimum' => 1,
 					'maximum' => 50,
 					'default' => 20,
 				),
-				'include_content' => array(
+				'include_content'       => array(
 					'type'    => 'boolean',
 					'default' => false,
+				),
+				'content_offset'        => array(
+					'type'    => 'integer',
+					'minimum' => 0,
+				),
+				'content_max_bytes'     => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+					'maximum' => Bounded_Payload::TEXT_WINDOW_BYTES,
+				),
+				'expected_content_hash' => array(
+					'type'      => 'string',
+					'minLength' => 64,
+					'maxLength' => 64,
 				),
 			),
 			'additionalProperties' => false,
@@ -833,20 +950,23 @@ final class Content_Abilities {
 	 */
 	private function item_schema( $content_required ) {
 		$properties = array(
-			'id'             => array( 'type' => 'integer' ),
-			'post_type'      => array( 'type' => 'string' ),
-			'status'         => array( 'type' => 'string' ),
-			'slug'           => array( 'type' => 'string' ),
-			'title'          => array( 'type' => 'string' ),
-			'excerpt'        => array( 'type' => 'string' ),
-			'modified_gmt'   => array( 'type' => 'string' ),
-			'parent_id'      => array( 'type' => 'integer' ),
-			'menu_order'     => array( 'type' => 'integer' ),
-			'template'       => array( 'type' => 'string' ),
-			'featured_media' => array( 'type' => 'integer' ),
-			'content_hash'   => array( 'type' => 'string' ),
-			'state_hash'     => array( 'type' => 'string' ),
-			'content'        => array( 'type' => 'string' ),
+			'id'                  => array( 'type' => 'integer' ),
+			'post_type'           => array( 'type' => 'string' ),
+			'status'              => array( 'type' => 'string' ),
+			'slug'                => array( 'type' => 'string' ),
+			'title'               => array( 'type' => 'string' ),
+			'excerpt'             => array( 'type' => 'string' ),
+			'modified_gmt'        => array( 'type' => 'string' ),
+			'parent_id'           => array( 'type' => 'integer' ),
+			'menu_order'          => array( 'type' => 'integer' ),
+			'template'            => array( 'type' => 'string' ),
+			'featured_media'      => array( 'type' => 'integer' ),
+			'content_hash'        => array( 'type' => 'string' ),
+			'state_hash'          => array( 'type' => 'string' ),
+			'content'             => array( 'type' => 'string' ),
+			'content_total_bytes' => array( 'type' => 'integer' ),
+			'content_next_offset' => array( 'type' => 'integer' ),
+			'content_complete'    => array( 'type' => 'boolean' ),
 		);
 		$required   = array( 'id', 'post_type', 'status', 'slug', 'title', 'excerpt', 'modified_gmt', 'parent_id', 'menu_order', 'template', 'featured_media', 'content_hash', 'state_hash' );
 		if ( $content_required ) {
