@@ -2,7 +2,7 @@
 
 The default runtime is intentionally small: **WordPress MCP Adapter + WP AI Bridge**. Optional plugins/themes remain normal site components, not additional AI infrastructure.
 
-The canonical integration policy is documented in [Architecture](./ARCHITECTURE.md#discovery-first-provider-architecture). In short, the Bridge discovers and reuses provider-owned Abilities first, uses a bounded public-API fallback only for a real gap, and otherwise reports the surface as unavailable. A newly installed plugin or theme that already exposes compatible public WordPress Abilities should normally require no Bridge source change.
+The canonical integration policy is documented in [Architecture](./ARCHITECTURE.md#discovery-and-reuse). The Bridge is an AI-facing WordPress administrator, **not** a replacement for the installed site's specialist feature plugins. It discovers and reuses provider-owned Abilities first; an existing bounded adapter is allowed only to call a real documented provider API when a suitable native Ability is absent, never to implement the provider's data model or business rules. A newly installed plugin or theme that already exposes compatible public WordPress Abilities should normally require no Bridge source change. To create new role definitions, install or author a role plugin and use its authorized public operations; Bridge's existing Core user upsert can assign a registered existing role. A missing provider API is not permission for Bridge to rewrite that plugin's storage or invent broad execution.
 
 ## Astra / Astra Pro
 

@@ -32,6 +32,8 @@ The plugin is the WordPress-side integration layer. The companion project may or
 
 Use the existing WordPress administration and extension systems rather than building a parallel administration platform.
 
+**Owner-defined feature ownership:** WP AI Bridge is an AI-facing WordPress administrator, not a replacement for WordPress feature plugins. Bridge owns connection/authentication, administrator delegation, secure extension install/update/source workflows, generic Core administration, and dynamic discovery/invocation of installed providers' supported operations. Domain features and their persisted business rules belong to WordPress Core or the owning plugin/theme, whether installed from a public source or a private ZIP of human/AI/vendor origin. To add a feature such as custom role definitions, form management, SEO, commerce, site-specific post types or backups, install and use an appropriate existing plugin or create/install a purpose-built plugin. Where necessary that plugin should expose a public WordPress Ability or supported REST/provider contract. Installing a plugin never automatically authorizes the AI to execute its operations; its real WordPress/provider permission checks and Bridge delegation still apply. An installed plugin's web-only UI does not magically become a machine-callable API. Do not turn a missing provider contract into a new Bridge-owned business engine or arbitrary WordPress function executor.
+
 ```text
 AI / MCP client
       |
@@ -42,7 +44,7 @@ Bridge authentication + administrator delegation policy
 Official MCP Adapter + WordPress Abilities
       |
       +-- compatible registered Core/provider operations
-      +-- thin typed fallbacks using WordPress/provider APIs
+      +-- thin typed adapters to existing documented WordPress/provider APIs
       |
       v
 The actual WordPress installation and its permission checks
@@ -54,8 +56,8 @@ For an operation, prefer in order:
 
 1. discover and reuse a suitable registered Core/provider Ability with its real schema and permission callback;
 2. where no suitable Ability exists, reuse a supported WordPress/provider public API, including a registered REST contract when appropriate, preserving its validation, authorization, and lifecycle;
-3. add a thin typed fallback only for coverage or normalization that the existing contract cannot supply;
-4. when public APIs cannot provide a required integrity/concurrency guarantee, use the smallest fixed-purpose internal persistence primitive bound to the already-authorized object/data model, with no caller-selected SQL/table/column/query/command fragments, focused tests, static confinement, and high-assurance review;
+3. add a narrow typed adapter to an existing documented public WordPress/provider API only for proven discoverability/coverage or normalization gaps; the underlying plugin must retain its domain logic, storage and authority;
+4. only for legitimate Bridge-owned infrastructure or already-authorized generic WordPress object/metadata operations (not provider-owned business or role-definition storage), where the public API cannot provide a required integrity/concurrency guarantee, use the smallest fixed-purpose internal persistence primitive bound to the existing object model, with no caller-selected SQL/table/column/query/command fragments, focused tests, static confinement, and high-assurance review;
 5. report a specific implementation or upstream-contract gap when no usable path exists, rather than inventing an API or disguising missing code as a disabled permission.
 
 A new compatible registered operation or a new target within an existing generic contract must not require a provider-specific Bridge source edit merely to be discovered and used after authorization. Prefer current WordPress registrations and supported schemas over hardcoded lists of plugin names, themes, object types, taxonomies, metadata keys, option names, or download origins.
@@ -125,7 +127,7 @@ The existing groups provide a starting structure, not a maximum capability list:
 | Group | Intended scope | Default |
 | --- | --- | --- |
 | Site Read | permitted environment and compact object/capability inspection | Enabled |
-| Builder Write | content, blocks, media, taxonomies, navigation, and Workspace authoring | Disabled |
+| Builder Write | content, blocks, media, taxonomies, navigation, and compatibility access to existing legacy Workspace authoring | Disabled |
 | Live Content | publishing and live-content/status changes | Disabled |
 | Site Configuration | authorized WordPress, theme, and provider configuration | Disabled |
 | Advanced Metadata | authorized generic object metadata; deletion also needs destructive access | Disabled |
@@ -172,7 +174,7 @@ Plan coverage across the complete WordPress administration surface from the star
 | Tools and maintenance | supported import/export, site health, updates, scheduled work, cache/maintenance operations, and backup/restore when WordPress or an installed provider supplies that workflow |
 | Provider administration | installed-provider business operations, including forms, fields, commerce, SEO, and other administration; not limited to named example plugins |
 | Multisite | site and network administration only under the corresponding actual site/Super Admin capabilities |
-| Persistent Workspace | private project documents, tasks, state, activity, export, and explicitly authorized lifecycle operations |
+| Legacy Workspace compatibility | preserve existing private documents/tasks, state, exports and authorized lifecycle without loss; separate future project-management functionality from Bridge's core connector responsibility through a compatibility-safe transition |
 
 Use the correct owning API for the operation. Generic storage mutation is not a shortcut around business validation, commerce/order storage, role mapping, settings sanitization, or provider lifecycle. An undocumented provider-private table requires investigation, not automatic database access.
 
@@ -208,23 +210,21 @@ Resolve the exact installed extension and relative file, verify real-path contai
 
 Recommend hooks, custom plugins, and child themes for routine customization because updates can replace vendor/parent-theme edits; this is guidance, not a permanent prohibition on an administrator-authorized source edit. Control-plane components, including the Bridge and Adapter, require a connection-loss warning and a proven recovery mechanism, not a hidden provider blacklist. Source/diff disclosure requires elevated source access and never belongs in ordinary lists or mutation logs. Executable-code consent is not a sandbox or transactional rollback of code side effects.
 
-## 11. Persistent Workspace
+## 11. Legacy Workspace compatibility and feature ownership
 
-Persistent Workspace provides durable project continuity inside WordPress, independent of conversation history.
+Earlier releases shipped private project documents, tasks, state, and WordPress administrator screens directly inside the Bridge. These existing records, public Workspace Abilities, and user workflows are a **compatibility and data-preservation obligation**, not permission to grow Bridge into a general project-management application.
 
-- Store documents and tasks in private Bridge-owned object types, excluded from generic content, Gutenberg, and metadata routes.
-- Provide their administration through the Workspace's own typed contracts; isolation must not mean permanently inaccessible to the authorized administrator.
-- Keep current state authoritative even when WordPress revisions are disabled or pruned.
-- Require version/state identity and stale-write rejection for updates.
-- Expose compact resume/orientation, documents, tasks, export, and explicit destructive lifecycle operations.
-- Reuse Dashboard, Documents, Tasks, Activity, and Settings views without a parallel project-management database.
-- Preserve durable content on uninstall unless an explicitly authorized destructive lifecycle action clears it.
+- Preserve existing private Workspace document/task identities, content, access controls, exports, current-state concurrency safeguards, and lifecycle until a tested compatible separation is delivered; ordinary content/metadata routes must not accidentally reveal them.
+- Prefer an optional purpose-built WordPress feature plugin to own any continuing document/task/project-management business model. Once the owning plugin exposes suitable public WordPress Abilities, the generic Bridge should discover/invoke them without hardcoded provider coupling.
+- Design and independently validate installation order, existing CPT/meta ownership, live/upgrade coexistence, old-client contract compatibility, multisite behavior, export, rollback, interrupted migration, and uninstall **before** changing legacy registrations or removing UI/Abilities.
+- No destructive migration, silent data cleanup, loss of stored records, or incompatible public contract removal is authorized merely by the architectural direction. A distinct owner-reviewed transition remains required.
+- Future specialist features are added to their own feature plugins, not as new Bridge Workspace models.
 
 ## 12. Optional providers
 
 No plugin or theme defines the outer scope of the product. Provider integrations are optional implementations of the same administrator-coverage goal and resolution order.
 
-Prefer compatible native Abilities; otherwise use supported public APIs. Isolate necessary fallbacks so upstream equivalents can replace them. Existing Astra, Gravity Forms, Code Snippets, WooCommerce, or other examples are not a supported-provider allowlist.
+Prefer compatible native Abilities; otherwise use supported public APIs. A narrow existing provider API adapter is permitted only to expose the provider's actual documented operations without reimplementing forms, snippets, commerce, SEO, roles, or other domain rules/storage inside Bridge. Isolate legacy fallbacks so upstream equivalents can safely replace them without breaking consumers. Existing Astra, Gravity Forms, Code Snippets, WooCommerce, or other examples are not a supported-provider allowlist.
 
 A form's fields and submissions, a commerce system's orders/customers/settings, a theme's presentation, or a code provider's managed snippets require the real provider lifecycle and permissions. Do not assume generic post metadata substitutes for provider-specific storage or business operations. Do not run submitted snippet code directly in Bridge code as a substitute for the provider lifecycle.
 
@@ -289,4 +289,4 @@ The administrator can reduce or revoke delegation without editing Bridge source.
 
 Coverage is measured against actual legitimate administration on the installation, not the number of shipped tools. Missing operations remain visible implementation gaps until addressed; partial delivery must not be described as full administrator parity.
 
-A future maintainer can derive the project's purpose and requirements from this file alone, then locate detailed documentation, current code/tests, active Issues/PRs, exact validation, and published state through the repository without any prior conversation. Persistent Workspace supports the same continuity for administration projects inside WordPress.
+A future maintainer can derive the project's purpose and requirements from this file alone, then locate detailed documentation, current code/tests, active Issues/PRs, exact validation, and published state through the repository without any prior conversation. Previously shipped Workspace records continue to support existing administration-project continuity until a proven, no-data-loss compatibility transition separates that domain feature from the core Bridge.
