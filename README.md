@@ -140,6 +140,8 @@ WP AI Bridge is intentionally not a general remote-administration shell. It comb
 - bounded mutation logging;
 - provider-native permission checks where integrations are used.
 
+For very large Gutenberg pages or text, use [bounded discovery and content windows](./docs/LARGE-PAYLOADS.md) rather than whole-tree or whole-file MCP responses. This does not change WordPress storage limits, native permissions, or binary upload policy.
+
 Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Authentication & Credentials, External Packages, Source Editing, Native Abilities, or destructive access on an important site.
 
 ## Documentation

@@ -10,13 +10,14 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `site-context` | Site Read | Bounded WordPress/theme/plugin/content-type context. |
 | `abilities-read` | Site Read | Paginated public Core/Bridge/provider contract list and exact named schema inspection; never executes target callbacks or grants permission. |
 | `integration-status` | Site Read | Optional-provider availability and observed Ability mode. |
-| `content-read` | Site Read | Read eligible posts/pages/custom post types. |
+| `content-read` | Site Read | Read eligible posts/pages/custom post types with bounded, content-hash-guarded UTF-8 windows for large bodies. |
 | `content-upsert` | Builder Write | Create/update eligible content; Live Content is additionally required for live status. |
 | `content-delete` | Users & Destructive | Trash/delete content with WordPress delete authority. |
 | `revisions-read` | Site Read | Read revisions for one content object. |
 | `revision-restore` | Builder Write | Restore a revision with stale-state checks. |
-| `blocks-read` | Site Read | Parse Gutenberg blocks for eligible content. |
-| `blocks-mutate` | Builder Write | Targeted Gutenberg append/insert/replace/remove with stale-state protection. |
+| `blocks-read` | Site Read | Read a small Gutenberg tree or a bounded subtree by numeric path and maximum depth. |
+| `blocks-find` | Site Read | Scan paginated/guarded batches to locate nested Gutenberg blocks by name, text, class or selected attribute without expanding the full tree. |
+| `blocks-mutate` | Builder Write | Targeted Gutenberg append/insert/replace/remove with stale-state protection and compact readback for large pages. |
 | `post-meta-read` | Advanced Metadata | Discover physical post-meta keys or read one exact physical key for a WordPress post object the connected user may edit. Values are returned only for an explicitly named key. |
 | `post-meta-update` | Advanced Metadata | Create/replace one single-value post-meta key with exact physical-row state identity and stale-write protection. Ambiguous or non-lossless cases fail closed. |
 | `post-meta-delete` | Advanced Metadata + Users & Destructive | Delete one single-value post-meta row with exact physical-row state identity and row-scoped stale-write protection. |
@@ -63,6 +64,8 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `workspace-resume` | Site Read | Return compact durable Workspace orientation. |
 | `workspace-document` | Site Read / Builder Write | List/read/create/update/archive private Workspace documents. |
 | `workspace-task` | Site Read / Builder Write | List/read/create/update/transition/archive private Workspace tasks. |
+
+For large content and transfer contracts, see [Large MCP payloads](./LARGE-PAYLOADS.md).
 
 ## External package installation boundary
 
