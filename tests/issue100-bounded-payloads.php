@@ -129,6 +129,42 @@ $first = $blocks->find(
 	)
 );
 wpai_issue100_assert( ! is_wp_error( $first ) && ! $first['complete'] && $first['scanned'] === 300 && empty( $first['items'] ), 'Initial bounded block scan must continue without expanding the tree.' );
+// Efficient resumable cursor: every continuation visits only the requested
+// new batch, even after thousands of preceding document nodes.
+$cursor = $first['next_cursor'];
+$cursor_found = null;
+$cursor_walked = 0;
+for ( $batch_number = 0; $batch_number < 11; ++$batch_number ) {
+	$cursor_batch = $blocks->find(
+		array(
+			'post_id'               => 100,
+			'after_path'            => $cursor,
+			'scan_limit'            => 300,
+			'block_name'            => 'core/button',
+			'expected_content_hash' => $first['content_hash'],
+		)
+	);
+	wpai_issue100_assert( ! is_wp_error( $cursor_batch ) && $cursor_batch['walked'] <= 301, 'A path continuation replayed already visited blocks.' );
+	$cursor_walked += $cursor_batch['walked'];
+	if ( ! empty( $cursor_batch['items'] ) ) {
+		$cursor_found = $cursor_batch['items'][0];
+		break;
+	}
+	$cursor = $cursor_batch['next_cursor'];
+}
+wpai_issue100_assert( is_array( $cursor_found ) && '2400.0' === $cursor_found['path'] && $cursor_walked <= 2600, 'Path cursor failed to find a late nested target without quadratic traversal.' );
+$bad_filters = $blocks->find( array( 'post_id' => 100, 'attribute_value_contains' => 'target' ) );
+wpai_issue100_assert( is_wp_error( $bad_filters ) && 'attribute_key_required' === $bad_filters->get_error_code(), 'Dependent attribute filter must not be silently ignored.' );
+$cursor_with_offset = $blocks->find( array( 'post_id' => 100, 'after_path' => $cursor, 'offset' => 1, 'expected_content_hash' => $first['content_hash'] ) );
+wpai_issue100_assert( is_wp_error( $cursor_with_offset ) && 'invalid_scan_cursor' === $cursor_with_offset->get_error_code(), 'Two conflicting continuation modes must be rejected.' );
+
+$parent_match = $blocks->find( array( 'post_id' => 100, 'block_name' => 'core/buttons', 'scan_limit' => 2000 ) );
+wpai_issue100_assert( ! is_wp_error( $parent_match ) && empty( $parent_match['items'] ), 'The container should be beyond the early search window.' );
+$parent_match = $blocks->find( array( 'post_id' => 100, 'block_name' => 'core/buttons', 'after_path' => $parent_match['next_cursor'], 'expected_content_hash' => $first['content_hash'] ) );
+wpai_issue100_assert( ! is_wp_error( $parent_match ) && true === $parent_match['items'][0]['hash_deferred'] && '' === $parent_match['items'][0]['block_hash'], 'Container fingerprint should be deferred until targeted inspection.' );
+$parent_read = $blocks->read( array( 'post_id' => 100, 'path' => '2400', 'max_depth' => 0 ) );
+wpai_issue100_assert( ! is_wp_error( $parent_read ) && 64 === strlen( $parent_read['blocks'][0]['block_hash'] ), 'A deferred container fingerprint must be available by path.' );
+
 $offset = $first['next_offset'];
 for ( $step = 0; $step < 10; ++$step ) {
 	$next = $blocks->find(
@@ -284,6 +320,45 @@ $stale_part         = $content->read(
 	)
 );
 wpai_issue100_assert( is_wp_error( $stale_part ) && 'stale_content_conflict' === $stale_part->get_error_code(), 'Windows must fail closed on stale content.' );
+
+// A 100 KiB title and excerpt are legitimate stored content, not reasons
+// to turn a committed write into an ambiguous downstream transport error.
+$post->post_content = $body;
+$post->post_title   = str_repeat( 'عنوان طولانی فارسی ', 8000 );
+$post->post_excerpt = str_repeat( 'خلاصه گسترده ', 9000 );
+$oversized_metadata = $content->read( array( 'action' => 'get', 'id' => 100, 'content_offset' => 0, 'content_max_bytes' => 4096 ) );
+wpai_issue100_assert( ! is_wp_error( $oversized_metadata ) && Bounded_Payload::fits( $oversized_metadata ) && ! empty( $oversized_metadata['items'][0]['projection_truncated'] ), 'A giant metadata projection must fall back to compact identity without blocking content windows.' );
+$compact_item = $oversized_metadata['items'][0];
+wpai_issue100_assert( $compact_item['content_hash'] === hash( 'sha256', $body ) && in_array( 'title', $compact_item['omitted_fields'], true ), 'Compact projection lost content identity or omitted-field metadata.' );
+$metadata_ack = new ReflectionMethod( Content_Abilities::class, 'format_post_after_mutation' );
+$committed_ack = $metadata_ack->invoke( $content, $post );
+wpai_issue100_assert( Bounded_Payload::fits( $committed_ack ) && ! empty( $committed_ack['projection_truncated'] ) && false === $committed_ack['content_complete'], 'A successful large-content write must have a bounded compact confirmation.' );
+wpai_issue100_assert( $committed_ack['state_hash'] === $compact_item['state_hash'] && $committed_ack['content_hash'] === hash( 'sha256', $body ), 'Committed identity must describe actual stored content and metadata.' );
+foreach ( array( 'title' => $post->post_title, 'excerpt' => $post->post_excerpt ) as $field => $expected_text ) {
+	$joined_field = '';
+	$field_offset = 0;
+	do {
+		$field_part = $content->read(
+			array(
+				'action'              => 'get',
+				'id'                  => 100,
+				'text_field'          => $field,
+				'text_offset'         => $field_offset,
+				'text_max_bytes'      => 4096,
+				'expected_state_hash' => $compact_item['state_hash'],
+			)
+		);
+		wpai_issue100_assert( ! is_wp_error( $field_part ) && Bounded_Payload::fits( $field_part ), 'Targeted metadata window exceeded the MCP bound.' );
+		$field_item = $field_part['items'][0];
+		wpai_issue100_assert( $field_item['text_next_offset'] > $field_offset && $field_item['text_hash'] === hash( 'sha256', $expected_text ), 'Targeted field continuation lacks monotonic progress or stable field identity.' );
+		$joined_field .= $field_item['text_chunk'];
+		$field_offset = $field_item['text_next_offset'];
+	} while ( ! $field_item['text_complete'] );
+	wpai_issue100_assert( $joined_field === $expected_text, 'Large title or excerpt could not be reconstructed byte for byte.' );
+}
+$bad_field_identity = $content->read( array( 'action' => 'get', 'id' => 100, 'text_field' => 'title', 'text_offset' => 4, 'expected_state_hash' => str_repeat( 'f', 64 ) ) );
+wpai_issue100_assert( is_wp_error( $bad_field_identity ) && 'stale_content_conflict' === $bad_field_identity->get_error_code(), 'Stale title/excerpt windows must fail closed.' );
+
 
 
 // Deeply nested fixture: the finder must remain iterative and the target read flat.

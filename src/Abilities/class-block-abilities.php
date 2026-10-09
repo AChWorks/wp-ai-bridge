@@ -191,26 +191,49 @@ final class Block_Abilities {
 		if ( ! $post || ! Content_Eligibility::supports_blocks( $post->post_type ) ) {
 			return new WP_Error( 'unsupported_block_target', __( 'The requested content type is not eligible for generic Gutenberg operations.', 'wp-ai-bridge' ) );
 		}
+		if ( isset( $input['attribute_value_contains'] ) && empty( $input['attribute_key'] ) ) {
+			return new WP_Error( 'attribute_key_required', __( 'attribute_key is required when attribute_value_contains is set.', 'wp-ai-bridge' ) );
+		}
 		$identity = $this->tree_identity( $post );
 		$offset   = isset( $input['offset'] ) ? (int) $input['offset'] : 0;
 		$limit    = isset( $input['limit'] ) ? (int) $input['limit'] : 25;
 		$scan     = isset( $input['scan_limit'] ) ? (int) $input['scan_limit'] : 1000;
-		if ( $offset > 0 && empty( $input['expected_content_hash'] ) ) {
+		$after    = isset( $input['after_path'] ) ? (string) $input['after_path'] : '';
+		if ( '' !== $after && $offset > 0 ) {
+			return new WP_Error( 'invalid_scan_cursor', __( 'Use either after_path or offset for block discovery, not both.', 'wp-ai-bridge' ) );
+		}
+		if ( ( $offset > 0 || '' !== $after ) && empty( $input['expected_content_hash'] ) ) {
 			return new WP_Error( 'content_identity_required', __( 'A continuation scan requires expected_content_hash from the previous response.', 'wp-ai-bridge' ) );
 		}
 		if ( isset( $input['expected_content_hash'] ) && ! hash_equals( $identity['content_hash'], (string) $input['expected_content_hash'] ) ) {
 			return new WP_Error( 'stale_content_conflict', __( 'The content changed after inspection; restart the block search.', 'wp-ai-bridge' ) );
 		}
 
+		$blocks = parse_blocks( (string) $post->post_content );
+		if ( '' !== $after ) {
+			$segments = $this->parse_path( $after );
+			if ( is_wp_error( $segments ) ) {
+				return $segments;
+			}
+			$previous = $this->get_block_at_path( $blocks, $segments );
+			if ( is_wp_error( $previous ) ) {
+				return $previous;
+			}
+		}
 		$result = $identity + array(
 			'items'       => array(),
 			'next_offset' => $offset,
+			'next_cursor' => $after,
 			'scanned'     => 0,
+			'walked'      => 0,
 			'complete'    => true,
 		);
-		$index  = 0;
-		foreach ( $this->walk_blocks( parse_blocks( (string) $post->post_content ) ) as $entry ) {
-			if ( $index++ < $offset ) {
+		$index = 0;
+		foreach ( $this->walk_blocks( $blocks, $after ) as $entry ) {
+			++$result['walked'];
+			// Older offset-only consumers continue to work; cursor consumers
+			// start at their path in O(depth), not at document node zero.
+			if ( '' === $after && $index++ < $offset ) {
 				continue;
 			}
 			if ( $result['scanned'] >= $scan || count( $result['items'] ) >= $limit ) {
@@ -219,16 +242,21 @@ final class Block_Abilities {
 			}
 			$block = $entry['block'];
 			if ( $this->matches_find_filters( $block, $input ) ) {
-				$summary             = $this->direct_block_summary( $block, 160 );
-				$item                = array(
+				$children = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
+				$deferred = ! empty( $children ) && empty( $input['include_container_hash'] );
+				$item = array(
 					'path'            => $entry['path'],
 					'name'            => isset( $block['blockName'] ) ? (string) $block['blockName'] : '',
-					'block_hash'      => hash( 'sha256', serialize_block( $block ) ),
-					'content_summary' => $summary,
-					'child_count'     => count( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array() ),
+					'block_hash'      => $deferred ? '' : hash( 'sha256', serialize_block( $block ) ),
+					'hash_deferred'   => $deferred,
+					'content_summary' => $this->direct_block_summary( $block, 160 ),
+					'child_count'     => count( $children ),
 				);
-				$proposed            = $result;
+				$proposed = $result;
 				$proposed['items'][] = $item;
+				$proposed['next_cursor'] = $entry['path'];
+				++$proposed['scanned'];
+				++$proposed['next_offset'];
 				if ( ! Bounded_Payload::fits( $proposed ) ) {
 					if ( empty( $result['items'] ) ) {
 						return $this->oversized_read_error();
@@ -240,18 +268,22 @@ final class Block_Abilities {
 			}
 			++$result['scanned'];
 			++$result['next_offset'];
+			$result['next_cursor'] = $entry['path'];
 		}
 
 		return $result;
 	}
 
 	/**
-	 * Traverse nested blocks in stable pre-order with memory proportional to depth.
+	 * Iterative pre-order traversal. A cursor initializes the traversal stack
+	 * directly at its numeric path: earlier siblings are never revisited.
+	 * WordPress still parses the full document before this walker is used.
 	 *
 	 * @param array<int,array<string,mixed>> $blocks Parsed blocks.
+	 * @param string                         $after  Last visited canonical path.
 	 * @return iterable<array<string,mixed>>
 	 */
-	private function walk_blocks( array $blocks ) {
+	private function walk_blocks( array $blocks, $after = '' ) {
 		$stack = array(
 			array(
 				'blocks' => $blocks,
@@ -259,6 +291,23 @@ final class Block_Abilities {
 				'prefix' => '',
 			),
 		);
+		if ( '' !== $after ) {
+			$prefix = '';
+			foreach ( explode( '.', $after ) as $part ) {
+				$index = (int) $part;
+				$top   = count( $stack ) - 1;
+				$block = $stack[ $top ]['blocks'][ $index ];
+				$stack[ $top ]['index'] = $index + 1;
+				$prefix = '' === $prefix ? (string) $index : $prefix . '.' . $index;
+				if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
+					$stack[] = array(
+						'blocks' => $block['innerBlocks'],
+						'index'  => 0,
+						'prefix' => $prefix,
+					);
+				}
+			}
+		}
 		while ( ! empty( $stack ) ) {
 			$top = count( $stack ) - 1;
 			if ( $stack[ $top ]['index'] >= count( $stack[ $top ]['blocks'] ) ) {
@@ -669,7 +718,7 @@ final class Block_Abilities {
 				'path'                  => array(
 					'type'      => 'string',
 					'minLength' => 1,
-					'maxLength' => 512,
+					'maxLength' => 2048,
 				),
 				'max_depth'             => array(
 					'type'    => 'integer',
@@ -723,6 +772,8 @@ final class Block_Abilities {
 					'type'      => 'string',
 					'maxLength' => 200,
 				),
+				'after_path'              => array( 'type' => 'string', 'minLength' => 1, 'maxLength' => 2048 ),
+				'include_container_hash'  => array( 'type' => 'boolean', 'default' => false ),
 				'offset'                   => array(
 					'type'    => 'integer',
 					'minimum' => 0,
@@ -762,6 +813,8 @@ final class Block_Abilities {
 				'modified_gmt' => array( 'type' => 'string' ),
 				'content_hash' => array( 'type' => 'string' ),
 				'next_offset'  => array( 'type' => 'integer' ),
+				'next_cursor'  => array( 'type' => 'string' ),
+				'walked'       => array( 'type' => 'integer' ),
 				'scanned'      => array( 'type' => 'integer' ),
 				'complete'     => array( 'type' => 'boolean' ),
 				'items'        => array(
@@ -772,6 +825,7 @@ final class Block_Abilities {
 							'path'            => array( 'type' => 'string' ),
 							'name'            => array( 'type' => 'string' ),
 							'block_hash'      => array( 'type' => 'string' ),
+							'hash_deferred'   => array( 'type' => 'boolean' ),
 							'content_summary' => array( 'type' => 'string' ),
 							'child_count'     => array( 'type' => 'integer' ),
 						),
@@ -780,7 +834,7 @@ final class Block_Abilities {
 					),
 				),
 			),
-			'required'             => array( 'post_id', 'modified_gmt', 'content_hash', 'next_offset', 'scanned', 'complete', 'items' ),
+			'required'             => array( 'post_id', 'modified_gmt', 'content_hash', 'next_offset', 'next_cursor', 'walked', 'scanned', 'complete', 'items' ),
 			'additionalProperties' => false,
 		);
 	}
@@ -805,7 +859,7 @@ final class Block_Abilities {
 				'path'                  => array( 'type' => 'string' ),
 				'response_mode'         => array(
 					'type'    => 'string',
-					'enum'    => array( 'auto', 'summary', 'full' ),
+					'enum'    => array( 'auto', 'summary' ),
 					'default' => 'auto',
 				),
 				'block_markup'          => array( 'type' => 'string' ),

@@ -100,17 +100,27 @@ try {
 	);
 	wpai_issue100_real_assert( ! is_wp_error( $target ) && $found['block_hash'] === $target['blocks'][0]['block_hash'], 'Target path/read hash did not agree with the finder.' );
 
-	$reply = $blocks_mutate->execute(
+
+	// Validate the real MCP Adapter response, not merely the direct WP_Ability.
+	$adapter_mutate = wp_get_ability( 'mcp-adapter/execute-ability' )->execute(
 		array(
-			'post_id'               => $post_id,
-			'action'                => 'replace',
-			'path'                  => $found['path'],
-			'block_markup'          => '<!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link">Changed Button</a></div><!-- /wp:button -->',
-			'expected_modified_gmt' => $target['modified_gmt'],
-			'expected_content_hash' => $target['content_hash'],
-			'expected_block_hash'   => $found['block_hash'],
+			'ability_name' => 'wp-ai-bridge/blocks-mutate',
+			'parameters'   => array(
+				'post_id'               => $post_id,
+				'action'                => 'replace',
+				'path'                  => $found['path'],
+				'block_markup'          => '<!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link">Changed Button</a></div><!-- /wp:button -->',
+				'expected_modified_gmt' => $target['modified_gmt'],
+				'expected_content_hash' => $target['content_hash'],
+				'expected_block_hash'   => $found['block_hash'],
+			),
 		)
 	);
+	wpai_issue100_real_assert(
+		! is_wp_error( $adapter_mutate ) && true === $adapter_mutate['success'] && Bounded_Payload::fits( $adapter_mutate ),
+		'MCP Adapter did not return a bounded successful block-write result.'
+	);
+	$reply = $adapter_mutate['data'];
 	wpai_issue100_real_assert( ! is_wp_error( $reply ) && ! empty( $reply['truncated'] ) && Bounded_Payload::fits( $reply ), 'Mutation was not acknowledged inside a bounded response.' );
 	wpai_issue100_real_assert( false !== strpos( get_post( $post_id )->post_content, 'Changed Button' ), 'Mutation was not persisted in WordPress.' );
 
@@ -142,23 +152,68 @@ try {
 	wpai_issue100_real_assert( ! is_wp_error( $part ) && Bounded_Payload::fits( $part ) && $part['items'][0]['content_next_offset'] > 0, 'Content byte windows were not exposed by Core WordPress.' );
 
 	// Confirm a successful large full-content mutation never emits oversized readback.
-	$huge_body       = str_repeat( 'سلام گوتنبرگ! ', 5000 );
-	$upsert          = wp_get_ability( 'wp-ai-bridge/content-upsert' );
-	$changed_content = $upsert->execute(
+
+	$huge_body = str_repeat( 'سلام گوتنبرگ! ', 5000 );
+	$huge_title = str_repeat( 'Really long saved WordPress title ', 5000 );
+	$huge_excerpt = str_repeat( 'Very large saved WordPress excerpt ', 5000 );
+	$adapter_content = wp_get_ability( 'mcp-adapter/execute-ability' )->execute(
 		array(
-			'action'                => 'update',
-			'id'                    => $post_id,
-			'content'               => $huge_body,
-			'expected_modified_gmt' => $meta['items'][0]['modified_gmt'],
-			'expected_state_hash'   => $meta['items'][0]['state_hash'],
+			'ability_name' => 'wp-ai-bridge/content-upsert',
+			'parameters'   => array(
+				'action'                => 'update',
+				'id'                    => $post_id,
+				'title'                 => $huge_title,
+				'excerpt'               => $huge_excerpt,
+				'content'               => $huge_body,
+				'expected_modified_gmt' => $meta['items'][0]['modified_gmt'],
+				'expected_state_hash'   => $meta['items'][0]['state_hash'],
+			),
 		)
 	);
 	wpai_issue100_real_assert(
-		! is_wp_error( $changed_content ) && false === $changed_content['content_complete'] &&
+		! is_wp_error( $adapter_content ) && true === $adapter_content['success'] && Bounded_Payload::fits( $adapter_content ),
+		'MCP Adapter did not acknowledge a committed large-metadata/content write inside its encoded bound.'
+	);
+	$changed_content = $adapter_content['data'];
+	wpai_issue100_real_assert(
+		false === $changed_content['content_complete'] &&
+		! empty( $changed_content['projection_truncated'] ) &&
 		Bounded_Payload::fits( $changed_content ) &&
 		hash( 'sha256', (string) get_post( $post_id )->post_content ) === $changed_content['content_hash'],
-		'Large content-update acknowledgment must remain bounded and identify the saved body.'
+		'The compact content-write acknowledgment did not identify the persisted state.'
 	);
+	wpai_issue100_real_assert(
+		$huge_title === get_post( $post_id )->post_title && $huge_excerpt === get_post( $post_id )->post_excerpt,
+		'WordPress did not persist the large title and excerpt used by the acknowledgment regression.'
+	);
+	$large_metadata = $content_read->execute( array( 'action' => 'get', 'id' => $post_id, 'content_offset' => 0, 'content_max_bytes' => 4096 ) );
+	wpai_issue100_real_assert(
+		! is_wp_error( $large_metadata ) &&
+		Bounded_Payload::fits( $large_metadata ) &&
+		! empty( $large_metadata['items'][0]['projection_truncated'] ) &&
+		$changed_content['state_hash'] === $large_metadata['items'][0]['state_hash'],
+		'Large metadata prevented a bounded and identity-consistent read.'
+	);
+	$title_chunk = wp_get_ability( 'mcp-adapter/execute-ability' )->execute(
+		array(
+			'ability_name' => 'wp-ai-bridge/content-read',
+			'parameters'   => array(
+				'action'              => 'get',
+				'id'                  => $post_id,
+				'text_field'          => 'title',
+				'text_offset'         => 0,
+				'text_max_bytes'      => 4096,
+				'expected_state_hash' => $changed_content['state_hash'],
+			),
+		)
+	);
+	wpai_issue100_real_assert(
+		! is_wp_error( $title_chunk ) && true === $title_chunk['success'] &&
+		Bounded_Payload::fits( $title_chunk ) &&
+		$title_chunk['data']['items'][0]['text_next_offset'] > 0,
+		'A large title is not available in bounded windows through the MCP Adapter.'
+	);
+
 	echo "PASS: native WordPress/Gutenberg large-payload discovery, mutation, and content windows.\n";
 } finally {
 	if ( $post_id && ! is_wp_error( $post_id ) ) {

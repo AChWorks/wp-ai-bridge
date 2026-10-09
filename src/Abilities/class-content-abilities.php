@@ -308,55 +308,12 @@ final class Content_Abilities {
 			if ( isset( $input['expected_content_hash'] ) && ! hash_equals( $identity, (string) $input['expected_content_hash'] ) ) {
 				return new WP_Error( 'stale_content_conflict', __( 'The content changed while reading its windows; restart from offset zero.', 'wp-ai-bridge' ) );
 			}
-			$item = $this->format_post( $post, false );
-			if ( $windowed ) {
-				$limit  = isset( $input['content_max_bytes'] ) ? (int) $input['content_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
-				$window = Bounded_Payload::text_window( $content, $offset, $limit );
-				if ( is_wp_error( $window ) ) {
-					return $window;
-				}
-				$item['content']             = $window['content'];
-				$item['content_total_bytes'] = $window['total_bytes'];
-				$item['content_next_offset'] = $window['next_offset'];
-				$item['content_complete']    = $window['complete'];
-			} elseif ( strlen( $content ) <= Bounded_Payload::TEXT_WINDOW_BYTES ) {
-				$item['content']             = $content;
-				$item['content_total_bytes'] = strlen( $content );
-				$item['content_next_offset'] = strlen( $content );
-				$item['content_complete']    = true;
-			} else {
-				$item['content_total_bytes'] = strlen( $content );
-				$item['content_next_offset'] = 0;
-				$item['content_complete']    = false;
+
+			if ( isset( $input['text_field'] ) ) {
+				return $this->read_text_field( $post, $input );
 			}
-			$result = array(
-				'items'       => array( $item ),
-				'page'        => 1,
-				'per_page'    => 1,
-				'total'       => 1,
-				'total_pages' => 1,
-			);
-			if ( Bounded_Payload::fits( $result ) ) {
-				return $result;
-			}
-			// The transport may escape multibyte characters; reduce the page until
-			// its *encoded* JSON fits. Never require a client to guess a byte window.
-			$limit = isset( $result['items'][0]['content'] ) ? strlen( $result['items'][0]['content'] ) : 0;
-			while ( $limit > 4 ) {
-				$limit  = max( 4, (int) floor( $limit / 2 ) );
-				$window = Bounded_Payload::text_window( $content, $windowed ? $offset : 0, $limit );
-				if ( is_wp_error( $window ) ) {
-					break;
-				}
-				$result['items'][0]['content']             = $window['content'];
-				$result['items'][0]['content_total_bytes'] = $window['total_bytes'];
-				$result['items'][0]['content_next_offset'] = $window['next_offset'];
-				$result['items'][0]['content_complete']    = $window['complete'];
-				if ( Bounded_Payload::fits( $result ) ) {
-					return $result;
-				}
-			}
-			return $this->oversized_content_error();
+
+			return $this->read_single_content( $post, $input, $content, $offset, $windowed );
 		}
 
 		$type = isset( $input['post_type'] ) ? (string) $input['post_type'] : 'post';
@@ -386,7 +343,8 @@ final class Content_Abilities {
 		}
 
 		$query = new \WP_Query( $args );
-		$items = array();
+		$items         = array();
+		$compact_items = array();
 		foreach ( $query->posts as $post ) {
 			if ( current_user_can( 'read_post', $post->ID ) ) {
 				$item    = $this->format_post( $post, false );
@@ -401,7 +359,14 @@ final class Content_Abilities {
 						$item['content_complete']    = true;
 					}
 				}
-				$items[] = $item;
+				$items[]         = $item;
+				$compact = $this->compact_post_identity( $post );
+				if ( $include_content ) {
+					$compact['content_total_bytes'] = strlen( $content );
+					$compact['content_next_offset'] = 0;
+					$compact['content_complete']    = '' === $content;
+				}
+				$compact_items[] = $compact;
 			}
 		}
 
@@ -412,6 +377,10 @@ final class Content_Abilities {
 			'total'       => (int) $query->found_posts,
 			'total_pages' => (int) $query->max_num_pages,
 		);
+		if ( Bounded_Payload::fits( $result ) ) {
+			return $result;
+		}
+		$result['items'] = $compact_items;
 		return Bounded_Payload::fits( $result ) ? $result : $this->oversized_content_error();
 	}
 
@@ -731,19 +700,190 @@ final class Content_Abilities {
 		return $item;
 	}
 
+
 	/**
-	 * A successful write returns bounded content plus an explicit completeness flag.
+	 * One complete or compact single-post response. Large metadata never
+	 * prevents a caller from resuming by content hash and exact field name.
 	 *
-	 * @param object $post Saved content object.
+	 * @param object              $post     Authorized post.
+	 * @param array<string,mixed> $input    Read input.
+	 * @param string              $content  Stored body.
+	 * @param int                 $offset   UTF-8 byte offset.
+	 * @param bool                $windowed Whether a byte window was requested.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private function read_single_content( $post, $input, $content, $offset, $windowed ) {
+		$item = $this->format_post( $post, false );
+		$limit = isset( $input['content_max_bytes'] ) ? (int) $input['content_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
+		$needs_content = $windowed || strlen( $content ) <= Bounded_Payload::TEXT_WINDOW_BYTES;
+		if ( $needs_content ) {
+			$window = Bounded_Payload::text_window( $content, $offset, $limit );
+			if ( is_wp_error( $window ) ) {
+				return $window;
+			}
+			$item['content']             = $window['content'];
+			$item['content_total_bytes'] = $window['total_bytes'];
+			$item['content_next_offset'] = $window['next_offset'];
+			$item['content_complete']    = $window['complete'];
+		} else {
+			$item['content_total_bytes'] = strlen( $content );
+			$item['content_next_offset'] = 0;
+			$item['content_complete']    = false;
+		}
+		$result = $this->single_item_result( $item );
+		if ( Bounded_Payload::fits( $result ) ) {
+			return $result;
+		}
+
+		// Shrink an included body before resorting to a compact metadata view.
+		if ( $needs_content ) {
+			for ( $size = (int) strlen( $item['content'] ); $size >= 4; $size = (int) floor( $size / 2 ) ) {
+				$window = Bounded_Payload::text_window( $content, $offset, $size );
+				if ( is_wp_error( $window ) ) {
+					break;
+				}
+				$item['content']             = $window['content'];
+				$item['content_next_offset'] = $window['next_offset'];
+				$item['content_complete']    = $window['complete'];
+				$result = $this->single_item_result( $item );
+				if ( Bounded_Payload::fits( $result ) ) {
+					return $result;
+				}
+				if ( 4 === $size ) {
+					break;
+				}
+			}
+		}
+
+		// The title/excerpt/slug/template may dwarf the body itself.
+		$item = $this->compact_post_identity( $post );
+		$item['content_total_bytes'] = strlen( $content );
+		$item['content_next_offset'] = $offset;
+		$item['content_complete'] = $offset === strlen( $content );
+		if ( $needs_content ) {
+			for ( $size = $limit; $size >= 4; $size = (int) floor( $size / 2 ) ) {
+				$window = Bounded_Payload::text_window( $content, $offset, $size );
+				if ( is_wp_error( $window ) ) {
+					return $window;
+				}
+				$item['content']             = $window['content'];
+				$item['content_next_offset'] = $window['next_offset'];
+				$item['content_complete']    = $window['complete'];
+				$result = $this->single_item_result( $item );
+				if ( Bounded_Payload::fits( $result ) ) {
+					return $result;
+				}
+				if ( 4 === $size ) {
+					break;
+				}
+			}
+		}
+		$result = $this->single_item_result( $item );
+		return Bounded_Payload::fits( $result ) ? $result : $this->oversized_content_error();
+	}
+
+	/**
+	 * Explicit byte windows for unbounded non-body metadata fields.
+	 * The full state hash guards continuations even if body content is unchanged.
+	 *
+	 * @param object              $post  Authorized post.
+	 * @param array<string,mixed> $input Requested field and continuation.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private function read_text_field( $post, $input ) {
+		$field = (string) $input['text_field'];
+		if ( ! in_array( $field, array( 'title', 'excerpt', 'slug', 'status', 'template' ), true ) ) {
+			return $this->oversized_content_error();
+		}
+		$offset = isset( $input['text_offset'] ) ? (int) $input['text_offset'] : 0;
+		$state_hash = $this->state_hash( $post );
+		if ( $offset > 0 && empty( $input['expected_state_hash'] ) ) {
+			return new WP_Error( 'content_identity_required', __( 'A resumed text-field read requires expected_state_hash from the previous response.', 'wp-ai-bridge' ) );
+		}
+		if ( isset( $input['expected_state_hash'] ) && ! hash_equals( $state_hash, (string) $input['expected_state_hash'] ) ) {
+			return new WP_Error( 'stale_content_conflict', __( 'The content state changed while reading the text field; restart at offset zero.', 'wp-ai-bridge' ) );
+		}
+		$values = array(
+			'title'    => (string) $post->post_title,
+			'excerpt'  => (string) $post->post_excerpt,
+			'slug'     => (string) $post->post_name,
+			'status'   => (string) $post->post_status,
+			'template' => function_exists( 'get_page_template_slug' ) ? (string) get_page_template_slug( $post->ID ) : '',
+		);
+		$value = $values[ $field ];
+		$item = $this->compact_post_identity( $post );
+		$item['text_field'] = $field;
+		$item['text_hash'] = hash( 'sha256', $value );
+		$limit = isset( $input['text_max_bytes'] ) ? (int) $input['text_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
+		for ( $size = $limit; $size >= 4; $size = (int) floor( $size / 2 ) ) {
+			$window = Bounded_Payload::text_window( $value, $offset, $size );
+			if ( is_wp_error( $window ) ) {
+				return $window;
+			}
+			$item['text_chunk'] = $window['content'];
+			$item['text_total_bytes'] = $window['total_bytes'];
+			$item['text_next_offset'] = $window['next_offset'];
+			$item['text_complete'] = $window['complete'];
+			$result = $this->single_item_result( $item );
+			if ( Bounded_Payload::fits( $result ) ) {
+				return $result;
+			}
+			if ( 4 === $size ) {
+				break;
+			}
+		}
+		return $this->oversized_content_error();
+	}
+
+	/**
+	 * Compact projection contains only fixed/bounded identity and simple IDs.
+	 * Names of intentionally omitted fields tell clients what to retrieve
+	 * through text_field windows; nothing is silently truncated.
+	 *
+	 * @param object $post WordPress post.
+	 * @return array<string,mixed>
+	 */
+	private function compact_post_identity( $post ) {
+		return array(
+			'id'                   => (int) $post->ID,
+			'post_type'            => (string) $post->post_type,
+			'modified_gmt'         => (string) $post->post_modified_gmt,
+			'parent_id'            => (int) $post->post_parent,
+			'menu_order'           => (int) $post->menu_order,
+			'featured_media'       => function_exists( 'get_post_thumbnail_id' ) ? (int) get_post_thumbnail_id( $post->ID ) : 0,
+			'content_hash'         => hash( 'sha256', (string) $post->post_content ),
+			'state_hash'           => $this->state_hash( $post ),
+			'projection_truncated' => true,
+			'omitted_fields'       => array( 'title', 'excerpt', 'slug', 'status', 'template' ),
+		);
+	}
+
+	/**
+	 * @param array<string,mixed> $item Single post item.
+	 * @return array<string,mixed>
+	 */
+	private function single_item_result( $item ) {
+		return array(
+			'items'       => array( $item ),
+			'page'        => 1,
+			'per_page'    => 1,
+			'total'       => 1,
+			'total_pages' => 1,
+		);
+	}
+
+	/**
+	 * Successful writes never return an unbounded post metadata projection.
+	 *
+	 * @param object $post Committed content.
 	 * @return array<string,mixed>
 	 */
 	private function format_post_after_mutation( $post ) {
-		$item                        = $this->format_post( $post, false );
-		$body                        = (string) $post->post_content;
+		$item = $this->format_post( $post, false );
+		$body = (string) $post->post_content;
 		$item['content_total_bytes'] = strlen( $body );
-		$limit                       = Bounded_Payload::TEXT_WINDOW_BYTES;
-		while ( $limit >= 4 ) {
-			$window = Bounded_Payload::text_window( $body, 0, $limit );
+		for ( $size = Bounded_Payload::TEXT_WINDOW_BYTES; $size >= 4; $size = (int) floor( $size / 2 ) ) {
+			$window = Bounded_Payload::text_window( $body, 0, $size );
 			if ( is_wp_error( $window ) ) {
 				break;
 			}
@@ -753,14 +893,35 @@ final class Content_Abilities {
 			if ( Bounded_Payload::fits( $item ) ) {
 				return $item;
 			}
-			$limit = (int) floor( $limit / 2 );
+			if ( 4 === $size ) {
+				break;
+			}
 		}
-		// The write has already succeeded: return recoverable identity rather
-		// than a misleading output-size failure.
-		$item['content']             = '';
+
+		// WordPress has ALREADY persisted the change. Return only bounded
+		// committed identities; never reattempt a destructive write.
+		$item = $this->compact_post_identity( $post );
+		$item['content'] = '';
+		$item['content_total_bytes'] = strlen( $body );
 		$item['content_next_offset'] = 0;
-		$item['content_complete']    = false;
-		return $item;
+		$item['content_complete'] = '' === $body;
+		if ( Bounded_Payload::fits( $item ) ) {
+			return $item;
+		}
+		// Only fixed-size identity fields survive this final defensive guard.
+		return array(
+			'id'                   => (int) $post->ID,
+			'post_type'            => (string) $post->post_type,
+			'modified_gmt'         => (string) $post->post_modified_gmt,
+			'content_hash'         => hash( 'sha256', $body ),
+			'state_hash'           => $this->state_hash( $post ),
+			'content'              => '',
+			'content_total_bytes'   => strlen( $body ),
+			'content_next_offset'   => 0,
+			'content_complete'      => '' === $body,
+			'projection_truncated' => true,
+			'omitted_fields'       => array( 'title', 'excerpt', 'slug', 'status', 'template', 'parent_id', 'menu_order', 'featured_media' ),
+		);
 	}
 
 	/** @return WP_Error */
@@ -846,6 +1007,10 @@ final class Content_Abilities {
 					'minLength' => 64,
 					'maxLength' => 64,
 				),
+				'text_field'            => array( 'type' => 'string', 'enum' => array( 'title', 'excerpt', 'slug', 'status', 'template' ) ),
+				'text_offset'           => array( 'type' => 'integer', 'minimum' => 0 ),
+				'text_max_bytes'        => array( 'type' => 'integer', 'minimum' => 4, 'maximum' => Bounded_Payload::TEXT_WINDOW_BYTES ),
+				'expected_state_hash'   => array( 'type' => 'string', 'minLength' => 64, 'maxLength' => 64 ),
 			),
 			'additionalProperties' => false,
 		);
@@ -967,8 +1132,16 @@ final class Content_Abilities {
 			'content_total_bytes' => array( 'type' => 'integer' ),
 			'content_next_offset' => array( 'type' => 'integer' ),
 			'content_complete'    => array( 'type' => 'boolean' ),
+			'projection_truncated' => array( 'type' => 'boolean' ),
+			'omitted_fields'       => array( 'type' => 'array', 'items' => array( 'type' => 'string' ) ),
+			'text_field'           => array( 'type' => 'string' ),
+			'text_chunk'           => array( 'type' => 'string' ),
+			'text_hash'            => array( 'type' => 'string' ),
+			'text_total_bytes'     => array( 'type' => 'integer' ),
+			'text_next_offset'     => array( 'type' => 'integer' ),
+			'text_complete'        => array( 'type' => 'boolean' ),
 		);
-		$required   = array( 'id', 'post_type', 'status', 'slug', 'title', 'excerpt', 'modified_gmt', 'parent_id', 'menu_order', 'template', 'featured_media', 'content_hash', 'state_hash' );
+		$required   = array( 'id', 'post_type', 'modified_gmt', 'content_hash', 'state_hash' );
 		if ( $content_required ) {
 			$required[] = 'content';
 		}

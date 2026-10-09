@@ -13,4 +13,8 @@ return array(
 	'The requested content window is outside the supported bounds.' => 'بخش درخواستی محتوا خارج از محدودهٔ مجاز است.',
 	'The content window must start at a UTF-8 character boundary.' => 'بخش محتوا باید از مرز معتبر یک نویسهٔ UTF-8 شروع شود.',
 	'The selected content cannot be represented as a UTF-8 window.' => 'محتوای انتخاب‌شده را نمی‌توان به‌صورت بخش معتبر UTF-8 ارائه کرد.',
+	'A resumed text-field read requires expected_state_hash from the previous response.' => 'برای ادامهٔ خواندن یک فیلد متنی، expected_state_hash پاسخ قبلی لازم است.',
+	'The content state changed while reading the text field; restart at offset zero.' => 'وضعیت محتوا هنگام خواندن فیلد متنی تغییر کرده است؛ خواندن را از offset صفر شروع کنید.',
+	'attribute_key is required when attribute_value_contains is set.' => 'وقتی attribute_value_contains مشخص شده است، باید attribute_key نیز مشخص شود.',
+	'Use either after_path or offset for block discovery, not both.' => 'برای ادامهٔ جستجوی بلوک‌ها فقط یکی از after_path یا offset را استفاده کنید.',
 );
