@@ -10,11 +10,40 @@ on:
 permissions:
   contents: read
 
+env:
+  # CI-only: Docker-published Official Images on the verified ECR Public namespace.
+  # Local compose keeps the original Docker Hub references unless explicitly overridden.
+  WPAI_CI_IMAGE_REGISTRY: public.ecr.aws/docker/library/
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
+  image-supply:
+    name: Official OCI image manifests / amd64
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Confirm expected official tags, architecture, and immutable digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for image in \
+            mariadb:lts \
+            wordpress:6.9-php8.4-apache \
+            wordpress:php8.4-apache \
+            wordpress:cli-php8.4; do
+            ref="${WPAI_CI_IMAGE_REGISTRY}${image}"
+            details="$(docker buildx imagetools inspect "$ref")"
+            if ! grep -Eq 'linux/amd64' <<< "$details"; then
+              echo "::error::Missing linux/amd64 manifest for ${ref}"
+              exit 1
+            fi
+            printf '%s\n' "$details" | sed -n '1,17p'
+            sleep 2
+          done
+
   quality:
     name: Quality / PHP 8.4
     if: ${{ github.event.pull_request.draft == false }}
@@ -46,6 +75,7 @@ jobs:
           retention-days: 7
 
   integration:
+    needs: image-supply
     name: Integration / ${{ matrix.wordpress_tag }}
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
@@ -74,6 +104,7 @@ jobs:
         run: bash bin/run-integration.sh '${{ matrix.wordpress_tag }}'
 
   specialized:
+    needs: image-supply
     name: ${{ matrix.name }} / ${{ matrix.wordpress_tag }}
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
