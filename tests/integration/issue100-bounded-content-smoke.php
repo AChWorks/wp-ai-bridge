@@ -168,6 +168,13 @@ try {
 		true
 	);
 	wpai_issue100_real_assert( ! is_wp_error( $seeded ), 'Could not seed large persisted post metadata.' );
+	$stored_before  = get_post( $post_id );
+	$stored_title   = (string) $stored_before->post_title;
+	$stored_excerpt = (string) $stored_before->post_excerpt;
+	wpai_issue100_real_assert(
+		strlen( $stored_title ) + strlen( $stored_excerpt ) > Bounded_Payload::RESPONSE_BYTES,
+		'Seeded WordPress metadata was not large enough to exercise compact acknowledgments.'
+	);
 	$pre_update = $content_read->execute( array( 'action' => 'get', 'id' => $post_id ) );
 	wpai_issue100_real_assert(
 		! is_wp_error( $pre_update ) && ! empty( $pre_update['items'][0]['projection_truncated'] ),
@@ -199,7 +206,7 @@ try {
 		'The compact content-write acknowledgment did not identify the persisted state.'
 	);
 	wpai_issue100_real_assert(
-		$huge_title === get_post( $post_id )->post_title && $huge_excerpt === get_post( $post_id )->post_excerpt,
+		$stored_title === get_post( $post_id )->post_title && $stored_excerpt === get_post( $post_id )->post_excerpt,
 		'WordPress did not persist the large title and excerpt used by the acknowledgment regression.'
 	);
 	$large_metadata = $content_read->execute( array( 'action' => 'get', 'id' => $post_id, 'content_offset' => 0, 'content_max_bytes' => 4096 ) );
