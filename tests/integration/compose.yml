@@ -1,6 +1,6 @@
 services:
   db:
-    image: mariadb:lts
+    image: ${WPAI_CI_IMAGE_REGISTRY:-}mariadb:lts
     environment:
       MARIADB_ROOT_PASSWORD: wordpress
       MARIADB_DATABASE: wordpress
@@ -15,7 +15,7 @@ services:
       - db-data:/var/lib/mysql
 
   wordpress:
-    image: wordpress:${WORDPRESS_TAG:-6.9-php8.4-apache}
+    image: ${WPAI_CI_IMAGE_REGISTRY:-}wordpress:${WORDPRESS_TAG:-6.9-php8.4-apache}
     depends_on:
       db:
         condition: service_healthy
@@ -30,7 +30,7 @@ services:
       - wordpress-data:/var/www/html
 
   cli:
-    image: wordpress:cli-php8.4
+    image: ${WPAI_CI_IMAGE_REGISTRY:-}wordpress:cli-php8.4
     entrypoint: ["wp"]
     user: "0:0"
     depends_on:
