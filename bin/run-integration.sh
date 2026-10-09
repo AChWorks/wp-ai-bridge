@@ -61,6 +61,7 @@ for test in \
     issue36-primary-identity-smoke.php \
     issue42-ability-catalog-smoke.php \
     issue110-site-context-smoke.php \
+    issue99-extension-authorization-smoke.php \
     issue44-native-ability-delegation-smoke.php \
     issue46-source-editing-smoke.php \
     issue3-content-block-smoke.php \
