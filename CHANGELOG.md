@@ -2,6 +2,12 @@
 
 All notable public changes are documented here.
 
+## Unreleased
+
+- Provide bounded Gutenberg discovery and targeted subtree reads for large/nested pages, with exact path and fingerprint interoperability; return compact committed identity after oversized block mutations rather than an ambiguous transport failure.
+- Add UTF-8-safe, hash-guarded raw content windows for large posts/pages and a shared encoded-response budget helper, with explicit completeness/continuation metadata.
+- Document native binary streaming boundaries and the remaining AI-local executable package ingress gap without introducing unbounded MCP payloads.
+
 ## 0.4.2
 
 - Make rotating OAuth refresh-token exchange recover deterministically from an ambiguous lost response using bounded client/resource/user/scope/revision-bound recovery state while preserving one-time rotation and replay rejection.

@@ -63,6 +63,7 @@ for test in \
     issue44-native-ability-delegation-smoke.php \
     issue46-source-editing-smoke.php \
     issue3-content-block-smoke.php \
+    issue100-bounded-content-smoke.php \
     issue3-safety-regressions.php \
     issue3-provider-smoke.php \
     issue4-core-admin-smoke.php \
