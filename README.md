@@ -16,7 +16,7 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 - Media Library read, upload, safe URL import, update, and delete operations.
 - Taxonomy and classic navigation management.
 - Bounded WordPress site settings.
-- WordPress.org plugin/theme lifecycle operations, separately authorized public HTTPS package installation, and Bridge-owned authenticated browser staging of private plugin/theme ZIPs with explicit hash-bound native installation (no automatic activation).
+- WordPress.org plugin/theme lifecycle operations and separately authorized public HTTPS package installation (no automatic activation). **No manual private-ZIP staging UI:** AI/client-to-WordPress private file transfer is a separate not-yet-delivered outcome ([#134](https://github.com/AChWorks/wp-ai-bridge/issues/134)).
 - Separately enabled installed plugin/theme source read, preview, apply, and conflict-safe recovery using native WordPress authority.
 - Filtered, bounded discovery of registered Core/provider REST routes and high-trust guarded native invocation, under independent default-off administrator grants and real provider permissions.
 - User lifecycle and assignment of **existing editable roles** behind explicit permission checks; creation/editing of role definitions belongs to the owning WordPress/plugin API, not a second role editor inside Bridge.
@@ -29,7 +29,7 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 ## Requirements
 
 - WordPress **6.9 or newer**.
-- The official [WordPress MCP Adapter](https://github.com/WordPress/mcp-adapter), installed as a separate WordPress plugin (not bundled). WP AI Bridge v0.5.0 has been exercised with MCP Adapter `0.6.1` and `0.7.0`; see the version-specific notes below.
+- The official [WordPress MCP Adapter](https://github.com/WordPress/mcp-adapter), installed as a separate WordPress plugin (not bundled). The supported CI lanes exercise MCP Adapter `0.6.1` and `0.7.0`; check the exact installed Bridge/Adapter builds and the version-specific notes below.
 - HTTPS and a publicly reachable WordPress REST API for direct ChatGPT Workspace App connections; other remote clients must be able to reach the endpoint over their supported transport.
 - A WordPress account with the capabilities required for the operations you enable.
 
@@ -174,6 +174,7 @@ Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Au
 - [Large and binary data exchange](./docs/LARGE-PAYLOADS.md)
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)
 - [Development and testing](./docs/DEVELOPMENT.md)
+- [Administrator capability audit](./docs/POST-PARITY-AUDIT.md) — dated source/live evidence and owners, not a guarantee for every installed site.
 - [Changelog](./CHANGELOG.md)
 
 ## License

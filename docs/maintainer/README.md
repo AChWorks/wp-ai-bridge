@@ -30,6 +30,7 @@ A future Master should not reconstruct live status from old reference documents.
 | Optional providers | [`INTEGRATIONS.md`](../INTEGRATIONS.md) |
 | Security model | [`SECURITY.md`](../SECURITY.md) |
 | Current architecture overview | [`ARCHITECTURE.md`](../ARCHITECTURE.md) |
+| Dated administrator capability evidence (not a task ledger) | [`POST-PARITY-AUDIT.md`](../POST-PARITY-AUDIT.md); live work/owners remain in linked GitHub Issues/PRs |
 | Troubleshooting | [`TROUBLESHOOTING.md`](../TROUBLESHOOTING.md) |
 | Development, validation, and release process | [`DEVELOPMENT.md`](../DEVELOPMENT.md) |
 | Published change history | [`CHANGELOG.md`](../../CHANGELOG.md) and GitHub Releases |
