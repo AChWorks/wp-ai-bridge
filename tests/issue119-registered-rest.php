@@ -23,6 +23,10 @@ function wpai119_check( $condition, $message ) {
 final class WP_AI_Bridge_Test_REST_Server {
 	public $routes = array();
 	public $callbacks_invoked = 0;
+	public $description_filter = null;
+	public $route_filter = null;
+	public $index_calls = 0;
+	public $last_inspected_routes = 0;
 
 	public function get_routes( $namespace = '' ) {
 		if ( '' === $namespace ) {
@@ -49,6 +53,22 @@ final class WP_AI_Bridge_Test_REST_Server {
 			$public[] = array( 'methods' => $names, 'args' => $handler['args'] );
 		}
 		return $public ? array( 'methods' => $methods, 'endpoints' => $public ) : null;
+	}
+
+	// Model WP_REST_Server::get_data_for_routes(), including the two public
+	// REST-index filters omitted by get_data_for_route().
+	public function get_data_for_routes( $routes, $context = 'view' ) {
+		++$this->index_calls;
+		$this->last_inspected_routes = count( $routes );
+		$available = array();
+		foreach ( $routes as $route => $handlers ) {
+			$entry = $this->get_data_for_route( $route, $handlers, $context );
+			if ( empty( $entry ) ) {
+				continue;
+			}
+			$available[ $route ] = $this->description_filter ? call_user_func( $this->description_filter, $entry ) : $entry;
+		}
+		return $this->route_filter ? call_user_func( $this->route_filter, $available, $routes ) : $available;
 	}
 }
 
@@ -121,6 +141,55 @@ wpai119_check( is_wp_error( $provider->read( array( 'action' => 'list', 'unknown
 $GLOBALS['wpai119_rest']->routes['/acme/v1/' . str_repeat( 'X', 600 )] = array( $handler );
 $large = $provider->read( array( 'action' => 'get', 'route' => '/acme/v1/' . str_repeat( 'X', 600 ) ) );
 wpai119_check( is_wp_error( $large ), 'Oversize routes must be explicit errors, not silent clipping.' );
+
+// Simulate native index redaction rather than changing the raw route registry.
+$GLOBALS['wpai119_rest']->description_filter = static function ( $entry ) {
+	if ( isset( $entry['endpoints'] ) ) {
+		foreach ( $entry['endpoints'] as &$endpoint ) {
+			unset( $endpoint['args']['secret'] );
+		}
+		unset( $endpoint );
+	}
+	if ( in_array( 'POST', $entry['methods'], true ) ) {
+		$entry['methods'] = array( 'GET' );
+	}
+	return $entry;
+};
+$GLOBALS['wpai119_rest']->route_filter = static function ( $available, $routes ) {
+	unset( $available['/acme/v1/item-001'] );
+	// Index filters may append keys, but they are not native registered routes.
+	$available['/acme/v1/synthetic'] = array( 'methods' => array( 'GET' ), 'endpoints' => array() );
+	// Even adding metadata for a private registered route cannot override
+	// its Core show_in_index=false setting.
+	$available['/acme/v1/private'] = array( 'methods' => array( 'GET' ), 'endpoints' => array() );
+	return $available;
+};
+$redacted = $provider->read( array( 'action' => 'get', 'route' => '/wp/v2/posts/(?P<id>[\d]+)' ) );
+wpai119_check( ! is_wp_error( $redacted ) && array( 'GET' ) === $redacted['items'][0]['methods'], 'Public index method redaction was bypassed.' );
+wpai119_check( 1 === count( $redacted['items'][0]['endpoints'][0]['arguments'] ) && 'id' === $redacted['items'][0]['endpoints'][0]['arguments'][0]['name'], 'Native public index argument redaction was bypassed.' );
+wpai119_check( array( 'GET' ) === $redacted['items'][0]['endpoints'][0]['methods'], 'Removed route-level methods leaked through endpoint details.' );
+$filtered_page = $provider->read( array( 'action' => 'list', 'namespace' => 'acme/v1', 'per_page' => 25 ) );
+wpai119_check( ! is_wp_error( $filtered_page ) && 49 === $filtered_page['total'], 'Aggregate public route removal, hidden-route exclusion or synthetic-route rejection failed.' );
+wpai119_check( ! in_array( '/acme/v1/item-001', array_column( $filtered_page['items'], 'route' ), true ), 'Removed native index route was resurrected.' );
+wpai119_check( is_wp_error( $provider->read( array( 'action' => 'get', 'route' => '/acme/v1/item-001' ) ) ), 'Exact get resurrected a route removed by rest_route_data.' );
+wpai119_check( is_wp_error( $provider->read( array( 'action' => 'get', 'route' => '/acme/v1/private' ) ) ), 'Filtered injection exposed a show_in_index=false route.' );
+wpai119_check( is_wp_error( $provider->read( array( 'action' => 'get', 'route' => '/acme/v1/synthetic' ) ) ), 'Synthetic public-index route without a registration was accepted.' );
+
+// A small output page must not launch unbounded schema normalization.
+// Exact get and a small native namespace remain usable despite a heavy site.
+for ( $i = 0; $i <= Registered_REST_Abilities::MAX_INDEX_ROUTES; $i++ ) {
+	$GLOBALS['wpai119_rest']->routes[ '/heavy/v1/item-' . $i ] = array( $handler );
+}
+$before_index_calls = $GLOBALS['wpai119_rest']->index_calls;
+$too_heavy = $provider->read( array( 'action' => 'list', 'per_page' => 1 ) );
+wpai119_check( is_wp_error( $too_heavy ) && 'rest_routes_narrowing_required' === $too_heavy->get_error_code(), 'Oversized registry should request narrowing, not scan provider schemas or truncate totals.' );
+wpai119_check( $before_index_calls === $GLOBALS['wpai119_rest']->index_calls, 'Large registry triggered public-index schema materialization despite work ceiling.' );
+$small_namespace = $provider->read( array( 'action' => 'list', 'namespace' => 'wp/v2', 'per_page' => 1 ) );
+wpai119_check( ! is_wp_error( $small_namespace ) && 1 === $small_namespace['total'] && $GLOBALS['wpai119_rest']->last_inspected_routes <= 1, 'Namespace filtering did not constrain the real index conversion.' );
+$single_on_heavy = $provider->read( array( 'action' => 'get', 'route' => '/wp/v2/posts/(?P<id>[\d]+)' ) );
+wpai119_check( ! is_wp_error( $single_on_heavy ) && 1 === $GLOBALS['wpai119_rest']->last_inspected_routes, 'Exact get normalized more than its one registered route schema.' );
+$heavy_namespace = $provider->read( array( 'action' => 'list', 'namespace' => 'heavy/v1', 'per_page' => 1 ) );
+wpai119_check( is_wp_error( $heavy_namespace ) && 'rest_routes_narrowing_required' === $heavy_namespace->get_error_code(), 'Over-budget namespace must fail closed with narrowing guidance.' );
 
 $defs[ Settings::GROUP_REST_DISCOVERY ] = 0;
 update_option( Settings::OPTION_NAME, $defs, false );
