@@ -279,7 +279,35 @@ try {
 } finally {
 	update_option( \WP_AI_Bridge\Support\Settings::OPTION_NAME, $settings_before_rest, false );
 }
-echo "Direct ChatGPT-compatible OAuth/MCP registered REST invocation: PASS\n";
+$revoked_rest = wpai_issue6_direct_tools_request(
+	'POST',
+	$token,
+	array(
+		'jsonrpc' => '2.0',
+		'id'      => 7,
+		'method'  => 'tools/call',
+		'params'  => array(
+			'name'      => 'mcp-adapter-execute-ability',
+			'arguments' => array(
+				'ability_name' => 'wp-ai-bridge/rest-route-invoke',
+				'parameters'   => array(
+					'route'  => '/wpai119direct/v1/probe',
+					'path'   => '/wpai119direct/v1/probe',
+					'method' => 'GET',
+				),
+			),
+		),
+	),
+	$session_id
+);
+$revoked_rest_data = wpai_issue6_direct_tools_data( $revoked_rest );
+wpai_issue6_direct_tools_assert(
+	200 === $revoked_rest->get_status()
+	&& true === ( $revoked_rest_data['result']['isError'] ?? false )
+	&& 1 === $direct_rest_calls,
+	'An already authenticated ChatGPT bearer/MCP session executed generic REST despite revoking its high-trust Bridge grant.'
+);
+echo "Direct ChatGPT-compatible OAuth/MCP registered REST invocation and same-session revocation: PASS\n";
 
 $delete = wpai_issue6_direct_tools_request( 'DELETE', $token, array(), $session_id );
 wpai_issue6_direct_tools_assert( in_array( $delete->get_status(), array( 200, 204 ), true ), 'Direct OAuth MCP session termination failed.' );
