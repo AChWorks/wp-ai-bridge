@@ -141,6 +141,27 @@ $server->routes = array(
 	'/acme/v1/credentials' => array( $handler ),
 	'/batch/v1' => array( $handler ),
 	'/acme/v1/batch' => array( $handler ),
+	'/acme/v1/config' => array(
+		array(
+			'show_in_index' => true,
+			'methods'       => array( 'POST' => true ),
+			'args'          => array( 'value' => array( 'type' => 'string' ) ),
+		),
+	),
+	'/acme/v1/manage' => array(
+		array(
+			'show_in_index' => true,
+			'methods'       => array( 'POST' => true ),
+			'args'          => array( 'payload' => array( 'type' => 'string' ) ),
+		),
+	),
+	'/acme/v1/process' => array(
+		array(
+			'show_in_index' => true,
+			'methods'       => array( 'POST' => true ),
+			'args'          => array( 'data' => array( 'type' => 'string' ) ),
+		),
+	),
 );
 $req = array( 'route' => '/acme/v1/data', 'path' => '/acme/v1/data', 'method' => 'GET', 'query' => array( 'page' => 2 ) );
 wpai119invoke_assert( is_wp_error( $provider->invoke( $req ) ), 'Direct callback must deny without high-trust grant.' );
@@ -149,6 +170,42 @@ update_option( Settings::OPTION_NAME, $defaults, false );
 $GLOBALS['wpai_test']['capabilities']['manage_options'] = false;
 wpai119invoke_assert( ! $provider->can_invoke(), 'Native administrative capability is also mandatory.' );
 $GLOBALS['wpai_test']['capabilities']['manage_options'] = true;
+$before_protected_calls = count( $GLOBALS['wpai119invoke_calls'] );
+foreach (
+	array(
+		array( '/acme/v1/config', 'value' ), // Represents opaque credential lifecycle.
+		array( '/acme/v1/manage', 'payload' ), // Represents opaque source-code writes.
+		array( '/acme/v1/process', 'data' ), // Represents opaque executable package ingress.
+	) as $opaque_fixture
+) {
+	$forbidden = $provider->invoke(
+		array(
+			'route'  => $opaque_fixture[0],
+			'path'   => $opaque_fixture[0],
+			'method' => 'POST',
+			'body'   => array( $opaque_fixture[1] => 'opaque-value' ),
+		)
+	);
+	wpai119invoke_assert( is_wp_error( $forbidden ) && 'rest_invocation_protected_consent_required' === $forbidden->get_error_code(), 'A generic/innocuous provider shape bypassed independent protected lifecycle grants.' );
+}
+wpai119invoke_assert( $before_protected_calls === count( $GLOBALS['wpai119invoke_calls'] ), 'Innocuous route/parameter names executed protected effects without purpose-specific consents.' );
+
+// Explicit highest-trust mode requires separately switched-on specialized
+// groups plus the native WordPress capability set. No single REST grant
+// silently confers any of these independent authority categories.
+foreach ( $settings->groups() as $group => $definition ) {
+	$defaults[ $group ] = 1;
+}
+foreach (
+	array(
+		'edit_posts', 'upload_files', 'publish_posts', 'activate_plugins',
+		'install_plugins', 'edit_plugins', 'edit_themes', 'moderate_comments',
+		'delete_users',
+	) as $capability
+) {
+	$GLOBALS['wpai_test']['capabilities'][ $capability ] = true;
+}
+update_option( Settings::OPTION_NAME, $defaults, false );
 
 $result = $provider->invoke( $req );
 wpai119invoke_assert( ! is_wp_error( $result ) && 'reported_success' === $result['outcome'] && 200 === $result['status'], 'Authorized GET should use the native REST dispatcher.' );
@@ -194,6 +251,31 @@ $server->hidden_endpoint_methods = array();
 wpai119invoke_assert( is_wp_error( $provider->invoke( array( 'route' => '/acme/v1/item/(?P<id>[\\d]+)', 'path' => '/acme/v1/item/24', 'method' => 'GET', 'query' => array( 'id' => 99 ) ) ) ), 'Query parameter cannot override a route capture used for native object authorization.' );
 
 $server->visible_methods = array();
+
+// Core dispatch selects the first same-route/method handler regardless
+// of show_in_index. Neither hidden-first nor disjoint schemas may dispatch.
+$hidden_handler = $handler;
+$hidden_handler['show_in_index'] = false;
+$first_public = $handler;
+$first_public['methods'] = array( 'GET' => true );
+$server->routes['/acme/v1/hidden-first'] = array( $hidden_handler, $first_public );
+$before = count( $GLOBALS['wpai119invoke_calls'] );
+wpai119invoke_assert( is_wp_error( $provider->invoke( array( 'route' => '/acme/v1/hidden-first', 'path' => '/acme/v1/hidden-first', 'method' => 'GET' ) ) ), 'Hidden first same-method handler must not become executable via a later public handler.' );
+wpai119invoke_assert( $before === count( $GLOBALS['wpai119invoke_calls'] ), 'Hidden first handler dispatched despite Core-selection ambiguity.' );
+unset( $server->routes['/acme/v1/hidden-first'] );
+
+$public_a = array( 'show_in_index' => true, 'methods' => array( 'GET' => true ), 'args' => array( 'value' => array( 'type' => 'string' ) ) );
+$public_b = array( 'show_in_index' => true, 'methods' => array( 'GET' => true ), 'args' => array( 'payload' => array( 'type' => 'string' ) ) );
+$server->routes['/acme/v1/public-variants'] = array( $public_a, $public_b );
+wpai119invoke_assert( is_wp_error( $provider->invoke( array( 'route' => '/acme/v1/public-variants', 'path' => '/acme/v1/public-variants', 'method' => 'GET', 'query' => array( 'payload' => 'later' ) ) ) ), 'Later public handler arguments must not be unioned into first Core-selected method.' );
+wpai119invoke_assert( $before === count( $GLOBALS['wpai119invoke_calls'] ), 'Ambiguous same-method route bypassed handler-specific validation.' );
+unset( $server->routes['/acme/v1/public-variants'] );
+
+$server->routes['/acme/v1/filtered-selected'] = array( $public_a );
+$server->removed[] = '/acme/v1/filtered-selected';
+wpai119invoke_assert( is_wp_error( $provider->invoke( array( 'route' => '/acme/v1/filtered-selected', 'path' => '/acme/v1/filtered-selected', 'method' => 'GET' ) ) ), 'Filtered Core-selected endpoint was reconstructed despite public-index removal.' );
+$server->removed = array();
+unset( $server->routes['/acme/v1/filtered-selected'] );
 
 $server->routes['/acme/v1/(?P<slug>[a-z]+)'] = array( $handler );
 wpai119invoke_assert( is_wp_error( $provider->invoke( $req ) ), 'Overlapping routes must fail closed, not dispatch the wrong native handler.' );
@@ -261,6 +343,29 @@ $GLOBALS['wpai119invoke_on_dispatch'] = static function () use ( $provider, $req
 $result = $provider->invoke( $req );
 wpai119invoke_assert( ! is_wp_error( $result ), 'Outer request should remain valid when nested invocation is rejected.' );
 $GLOBALS['wpai119invoke_on_dispatch'] = null;
+
+// Revoking any independent protected grant immediately blocks further
+// generic execution even while rest_invocation remains enabled.
+$before = count( $GLOBALS['wpai119invoke_calls'] );
+foreach (
+	array(
+		Settings::GROUP_AUTHENTICATION,
+		Settings::GROUP_SOURCE_EDITING,
+		Settings::GROUP_EXTERNAL_PACKAGES,
+		Settings::GROUP_CODE_EXTENSIONS,
+		Settings::GROUP_USERS_DESTRUCTIVE,
+	) as $missing_grant
+) {
+	$defaults[ $missing_grant ] = 0;
+	update_option( Settings::OPTION_NAME, $defaults, false );
+	wpai119invoke_assert( is_wp_error( $provider->invoke( $req ) ), 'Revoking a specialized consent must deny generic REST.' );
+	$defaults[ $missing_grant ] = 1;
+}
+update_option( Settings::OPTION_NAME, $defaults, false );
+wpai119invoke_assert( $before === count( $GLOBALS['wpai119invoke_calls'] ), 'One missing protected lifecycle grant still allowed dispatch.' );
+$GLOBALS['wpai_test']['capabilities']['install_plugins'] = false;
+wpai119invoke_assert( is_wp_error( $provider->invoke( $req ) ), 'A WordPress native package capability denial must remain effective despite all Bridge groups.' );
+$GLOBALS['wpai_test']['capabilities']['install_plugins'] = true;
 
 $defaults[ Settings::GROUP_REST_INVOCATION ] = 0;
 update_option( Settings::OPTION_NAME, $defaults, false );
