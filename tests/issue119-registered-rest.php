@@ -24,8 +24,17 @@ final class WP_AI_Bridge_Test_REST_Server {
 	public $routes = array();
 	public $callbacks_invoked = 0;
 
-	public function get_routes() {
-		return $this->routes;
+	public function get_routes( $namespace = '' ) {
+		if ( '' === $namespace ) {
+			return $this->routes;
+		}
+		$filtered = array();
+		foreach ( $this->routes as $route => $handlers ) {
+			if ( 0 === strpos( $route, '/' . $namespace . '/' ) ) {
+				$filtered[ $route ] = $handlers;
+			}
+		}
+		return $filtered;
 	}
 
 	public function get_data_for_route( $route, $handlers, $context = 'view' ) {
@@ -87,7 +96,7 @@ for ( $i = 0; $i < 50; $i++ ) {
 }
 
 $page = $provider->read( array( 'action' => 'list', 'namespace' => 'acme/v1', 'per_page' => 10, 'page' => 2 ) );
-wpai119_check( ! is_wp_error( $page ) && 51 === $page['total'], 'Provider routes were not enumerated dynamically.' );
+wpai119_check( ! is_wp_error( $page ) && 50 === $page['total'], 'Provider routes were not enumerated dynamically.' );
 wpai119_check( 10 === count( $page['items'] ) && $page['has_more'], 'Page must be bounded and continue honestly.' );
 wpai119_check( 'not_evaluated' === $page['execution_permission'], 'Catalog cannot claim executable permission.' );
 wpai119_check( ! str_contains( wp_json_encode( $page ), 'test-private-credential' ), 'Public metadata must never dump defaults.' );
@@ -102,7 +111,9 @@ wpai119_check( ! str_contains( wp_json_encode( $detail ), 'test-private-credenti
 wpai119_check( ! str_contains( wp_json_encode( $detail ), 'Confidential memo' ), 'Provider descriptions must be omitted.' );
 
 $hidden = $provider->read( array( 'action' => 'get', 'route' => '/acme/v1/private' ) );
-wpai119_check( ! is_wp_error( $hidden ) && false === $hidden['items'][0]['indexed'] && 'not_returned' === $hidden['items'][0]['contract_detail'], 'Hidden native contract must not be fabricated.' );
+wpai119_check( is_wp_error( $hidden ) && 'rest_route_not_found' === $hidden->get_error_code(), 'Hidden registered routes must be indistinguishable from unknown routes.' );
+$hidden_list = $provider->read( array( 'action' => 'list', 'namespace' => 'acme/v1' ) );
+wpai119_check( ! is_wp_error( $hidden_list ) && 50 === $hidden_list['total'], 'Hidden native REST routes must not appear in catalog totals.' );
 wpai119_check( is_wp_error( $provider->read( array( 'action' => 'get', 'route' => '/acme/v1/missing' ) ) ), 'Only exact registered routes can be inspected.' );
 wpai119_check( is_wp_error( $provider->read( array( 'action' => 'list', 'page' => PHP_INT_MAX, 'per_page' => 10 ) ) ), 'Overflowing pagination must be rejected.' );
 wpai119_check( is_wp_error( $provider->read( array( 'action' => 'list', 'unknown' => true ) ) ), 'Unknown input must not pass direct callback.' );
