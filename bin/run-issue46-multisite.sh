@@ -59,6 +59,8 @@ PHP
 chown -R www-data:www-data /var/www/html/wp-content/plugins/wpai-network-source
 chmod 0666 /var/www/html/wp-content/plugins/wpai-network-source/wpai-network-source.php
 '
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue108-multisite-smoke.php --user=1 --allow-root
+
 "${wp[@]}" plugin activate wpai-network-source --network --allow-root >/dev/null
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue46-network-active-smoke.php --user=1 --allow-root
 "${wp[@]}" plugin deactivate wpai-network-source --network --allow-root >/dev/null

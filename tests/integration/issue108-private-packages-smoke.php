@@ -170,6 +170,34 @@ try {
 		$second = $store->install( $id, $meta['sha256'], $kind, $client );
 		wpai108_live_check( is_wp_error( $second ) && 'private_package_not_staged' === $second->get_error_code(), 'Replay must not begin second native install.' );
 	}
+
+	// A second ZIP targeting an already installed plugin must never be silently
+	// retried after the native Upgrader reports an uncertain/failed outcome.
+	$collision_id                            = bin2hex( random_bytes( 24 ) );
+	$fixture_ids[]                           = $collision_id;
+	list( $collision_meta, $collision_file ) = wpai108_live_stage( $store, 'plugin', $collision_id, $client, $plugin_root );
+	$fixture_files[]                         = $collision_file;
+	$failed_install                          = $store->install( $collision_id, $collision_meta['sha256'], 'plugin', $client );
+	wpai108_live_check( is_wp_error( $failed_install ) && 'private_package_recovery_required' === $failed_install->get_error_code(), 'Native destination conflict must become a bounded recovery-required outcome.' );
+	$failed_record = $store->inspect( $collision_id, $client );
+	wpai108_live_check( ! is_wp_error( $failed_record ) && 'outcome_unknown' === $failed_record['status'], 'Ambiguous Core failure must persist an unretryable outcome.' );
+	wpai108_live_check( is_wp_error( $store->install( $collision_id, $collision_meta['sha256'], 'plugin', $client ) ), 'A failed/ambiguous native install must reject replay.' );
+	wpai108_live_check( isset( get_plugins()[ $plugin_key ] ) && ! is_plugin_active( $plugin_key ), 'Failed second installation must not modify/activate the original fixture.' );
+	$recent_failure = ( new Mutation_Log() )->recent( 1 );
+	wpai108_live_check( ! empty( $recent_failure ) && false === $recent_failure[0]['success'] && 'private_package_recovery_required' === $recent_failure[0]['error_code'], 'Uncertain Core effect must leave a bounded audit record.' );
+
+	// Expiry must retire bytes while retaining only a short-lived metadata
+	// record. The expiry path does not need to execute or unpack the archive.
+	$expired_id                          = bin2hex( random_bytes( 24 ) );
+	$fixture_ids[]                       = $expired_id;
+	list( $expired_meta, $expired_file ) = wpai108_live_stage( $store, 'theme', $expired_id, $client, 'wpai108-expired-theme' );
+	$fixture_files[]                     = $expired_file;
+	$expired_meta['expires']             = time() - 2;
+	update_option( Private_Package_Store::OPTION_PREFIX . $expired_id, $expired_meta, false );
+	$store->cleanup_expired();
+	wpai108_live_check( ! is_file( $expired_file ), 'Expired private ZIP must be retired by bounded Core-owned cleanup.' );
+	$expired_review = $store->inspect( $expired_id, $client );
+	wpai108_live_check( ! is_wp_error( $expired_review ) && 'expired' === $expired_review['status'], 'Expired artifact must never be reported staged.' );
 } finally {
 	$mcp_client_context->setValue( null, '' );
 	update_option( Mutation_Log::OPTION_NAME, $original_log, false );

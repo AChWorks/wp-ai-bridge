@@ -415,10 +415,12 @@ fi
 if [[ ! -f "$private_package_store" ||
       "$(grep -cF '$wpdb->get_col(' "$private_package_store" || true)" != "1" ||
       "$(grep -cF '$wpdb->esc_like(' "$private_package_store" || true)" != "1" ||
-      "$(grep -cF '$wpdb->get_var(' "$private_package_store" || true)" != "2" ||
-      "$(grep -cF '$wpdb->prepare(' "$private_package_store" || true)" != "3" ||
+      "$(grep -cF '$wpdb->get_var(' "$private_package_store" || true)" != "4" ||
+      "$(grep -cF '$wpdb->prepare(' "$private_package_store" || true)" != "4" ||
       "$(grep -cF 'SELECT GET_LOCK(%s, %d)' "$private_package_store" || true)" != "1" ||
       "$(grep -cF 'SELECT RELEASE_LOCK(%s)' "$private_package_store" || true)" != "1" ||
+      "$(grep -cF 'SELECT IS_USED_LOCK(%s)' "$private_package_store" || true)" != "1" ||
+      "$(grep -cF 'SELECT CONNECTION_ID()' "$private_package_store" || true)" != "1" ||
       "$(grep -cF 'SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s ORDER BY option_id DESC LIMIT %d' "$private_package_store" || true)" != "1" ]]; then
     echo "ERROR: private ZIP staging lost its single bounded option-name query." >&2
     exit 1

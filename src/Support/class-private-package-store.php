@@ -244,6 +244,19 @@ final class Private_Package_Store {
 		return 1 === (int) $result;
 	}
 
+	/** Fail closed if the WordPress DB connection changed after acquiring the quota lock. */
+	private function stage_lock_is_owned( $name ) {
+		global $wpdb;
+		if ( '' === $name || ! isset( $wpdb ) || ! is_object( $wpdb ) ) {
+			return false;
+		}
+		$owner   = $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Read fixed MySQL lock ownership only.
+			$wpdb->prepare( 'SELECT IS_USED_LOCK(%s)', $name ) // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Prepared named lock lookup.
+		);
+		$current = $wpdb->get_var( 'SELECT CONNECTION_ID()' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Fixed connection identity query.
+		return (int) $owner > 0 && (int) $owner === (int) $current;
+	}
+
 	/** Release the exact request-owned lock, even after staging validation failures. */
 	private function release_stage_lock( $name ) {
 		global $wpdb;
@@ -321,6 +334,10 @@ final class Private_Package_Store {
 				'expires'         => time() + self::STAGE_TTL,
 				'status'          => 'staged',
 			);
+			if ( ! $this->stage_lock_is_owned( $lock_name ) ) {
+				wp_delete_file( $path );
+				return new WP_Error( 'private_package_busy', __( 'Private package staging is temporarily unavailable; retry after the current upload finishes.', 'wp-ai-bridge' ) );
+			}
 			if ( ! add_option( self::OPTION_PREFIX . $id, $meta, '', false ) ) {
 				wp_delete_file( $path );
 				return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );

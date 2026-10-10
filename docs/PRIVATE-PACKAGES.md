@@ -24,6 +24,8 @@ Both default-off **Code & Extensions** and **External Packages** grants, `manage
 - Structural review: PHP ZipArchive required; deny path traversal, symlinks/special types, duplicate/colliding entries, inconsistent roots, unreadable/encrypted entries, absent plugin/theme headers, and invalid theme layouts; WordPress Core remains the package validation authority.
 - Staging: 1-hour TTL, at most 4 open records per user and 24 per blog; a bounded per-blog MySQL/MariaDB advisory lock serializes quota allocation across concurrent WordPress workers and fails closed if unavailable. WordPress cron retires expired files and bounded outcome records.
 
+**Multi-node deployment boundary:** the quota lock is database-wide, but ZIP bytes reside in a per-PHP-host private temporary directory. A WordPress installation spread across independent PHP hosts without shared private staging/sticky routing cannot yet promise that an artifact uploaded on one host will be installable from another. This candidate does not silently claim distributed file-storage support.
+
 AI-visible responses contain metadata only. They never contain uploaded bytes, token values or local paths. Successful Core installs and recovery-required outcomes also produce bounded, credential-free entries in the existing Bridge mutation log.
 
 ## Installation, recovery and release boundary

@@ -319,6 +319,7 @@ wpai_issue6_oauth_assert( 'invalid_grant' === ( wpai_issue6_oauth_data( $bad_pkc
 wp_set_current_user( 0 );
 $missing_request = new WP_REST_Request( 'POST', OAuth_Server::MCP_REQUEST_ROUTE );
 wpai_issue6_oauth_assert( false === $oauth->authenticate_mcp_request( $missing_request ), 'Direct MCP transport accepted a request without a Bearer token.' );
+wpai_issue6_oauth_assert( '' === OAuth_Server::authenticated_mcp_client_id(), 'Missing MCP bearer request must not retain an authenticated client context.' );
 $challenge_response = $oauth->add_mcp_authentication_challenge( new WP_REST_Response( array( 'code' => 'rest_forbidden' ), 403 ), rest_get_server(), $missing_request );
 $challenge_headers  = $challenge_response->get_headers();
 wpai_issue6_oauth_assert( 401 === $challenge_response->get_status(), 'Missing Bearer token did not produce HTTP 401.' );
@@ -332,6 +333,7 @@ wpai_issue6_oauth_assert( false === $oauth->authenticate_mcp_request( $invalid_r
 $authorized_request = new WP_REST_Request( 'POST', OAuth_Server::MCP_REQUEST_ROUTE );
 $authorized_request->set_header( 'Authorization', 'Bearer ' . $access );
 wpai_issue6_oauth_assert( true === $oauth->authenticate_mcp_request( $authorized_request ), 'Valid resource-bound access token did not authenticate the WordPress user.' );
+wpai_issue6_oauth_assert( OAuth_Server::CHATGPT_CLIENT_ID === OAuth_Server::authenticated_mcp_client_id(), 'Authenticated MCP client identity must match the resource-bound token rather than an Ability argument.' );
 wpai_issue6_oauth_assert( get_current_user_id() === $authenticated_user_id, 'Bearer token did not restore the authorized WordPress user identity.' );
 
 $initialize = new WP_REST_Request( 'POST', OAuth_Server::MCP_REQUEST_ROUTE );
@@ -416,6 +418,7 @@ wpai_issue6_oauth_assert( 'no-store' === ( $revoke_response->get_headers()['Cach
 $revoked_request = new WP_REST_Request( 'POST', OAuth_Server::MCP_REQUEST_ROUTE );
 $revoked_request->set_header( 'Authorization', 'Bearer ' . $new_access );
 wpai_issue6_oauth_assert( false === $oauth->authenticate_mcp_request( $revoked_request ), 'Revoked access token remained valid.' );
+wpai_issue6_oauth_assert( '' === OAuth_Server::authenticated_mcp_client_id(), 'Rejected bearer authentication must clear the previously authenticated MCP client.' );
 
 $store->revoke( $access );
 $store->revoke( $new_refresh );

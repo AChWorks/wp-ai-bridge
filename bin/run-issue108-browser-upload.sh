@@ -109,6 +109,43 @@ $grants[\WP_AI_Bridge\Support\Settings::GROUP_EXTERNAL_PACKAGES] = 1;
 update_option(\WP_AI_Bridge\Support\Settings::OPTION_NAME, $grants, false);
 ' --user=1 --allow-root >/dev/null
 
+# Cross-process quota lock: a second authenticated worker must not bypass a
+# reservation held by a different PHP/MySQL connection.
+run_wp eval '
+$settings = new \WP_AI_Bridge\Support\Settings();
+$store = new \WP_AI_Bridge\Support\Private_Package_Store( new \WP_AI_Bridge\Support\Permissions( $settings ) );
+$method = new ReflectionMethod( $store, "stage_lock_name" );
+$name = $method->invoke( $store );
+global $wpdb;
+$owned = (int) $wpdb->get_var( $wpdb->prepare( "SELECT GET_LOCK(%s, %d)", $name, 1 ) );
+if ( 1 !== $owned ) { throw new RuntimeException( "Could not hold the real quota lock." ); }
+echo "LOCK_ACQUIRED\n";
+flush();
+sleep(9);
+$wpdb->get_var( $wpdb->prepare( "SELECT RELEASE_LOCK(%s)", $name ) );
+' --user=1 --allow-root >"$tmp/quota-lock" 2>&1 &
+holder_pid=$!
+found_lock=0
+for attempt in $(seq 1 45); do
+    if grep -q 'LOCK_ACQUIRED' "$tmp/quota-lock"; then
+        found_lock=1
+        break
+    fi
+    sleep 0.2
+done
+if [[ "$found_lock" != 1 ]]; then
+    wait "$holder_pid" || true
+    echo 'ERROR: Concurrent WordPress DB quota lock was not acquired.' >&2
+    exit 1
+fi
+http -b "$tmp/cookies" -c "$tmp/cookies" -o "$tmp/quota-denied" -D "$tmp/quota-denied-headers"     -F 'action=wpai_private_zip_upload' -F "_wpnonce=$nonce" -F 'kind=plugin'     -F 'client_id=https://chatgpt.com/oauth/client.json' -F "wpai_private_zip=@$tmp/plugin.zip;type=application/zip"     "$origin/wp-admin/admin-post.php"
+wait "$holder_pid"
+if ! grep -q 'error=private_package_busy' "$tmp/quota-denied-headers"; then
+    echo 'ERROR: Concurrent authenticated upload bypassed the per-blog staging lock.' >&2
+    exit 1
+fi
+echo 'PASS: Issue #108 cross-worker bounded quota lock and deny-before-stage.'
+
 for kind in plugin theme; do
     http -b "$tmp/cookies" -c "$tmp/cookies" -o "$tmp/upload-$kind" -D "$tmp/headers-$kind" \
         -F 'action=wpai_private_zip_upload' -F "_wpnonce=$nonce" -F "kind=$kind" \

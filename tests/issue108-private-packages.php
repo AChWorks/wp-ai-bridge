@@ -189,5 +189,68 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$zip->close();
 	wpai108_assert( ! is_wp_error( $store->inspect_zip( $path, 'theme' ) ), 'A bounded block-theme ZIP must pass structural inspection.' );
 	unlink( $path );
+
+	// Keep adversarial ZIP tests in the reproducible repository suite rather than
+	// relying on an ephemeral one-off local probe.
+	$plugin_header = "<?php\n/*\nPlugin Name: Test ZIP\n*/\n";
+	$bad_archives  = array(
+		'case-folded sibling' => array(
+			'safe-plugin/main.php'   => $plugin_header,
+			'safe-plugin/readme.txt' => 'first',
+			'safe-plugin/README.txt' => 'second',
+		),
+		'file before child'   => array(
+			'safe-plugin/main.php'       => $plugin_header,
+			'safe-plugin/part'           => 'file',
+			'safe-plugin/part/child.txt' => 'child',
+		),
+		'child before file'   => array(
+			'safe-plugin/main.php'       => $plugin_header,
+			'safe-plugin/part/child.txt' => 'child',
+			'safe-plugin/part'           => 'file',
+		),
+		'multiple roots'      => array(
+			'safe-plugin/main.php' => $plugin_header,
+			'other/file.txt'       => 'unexpected',
+		),
+		'compression bomb'    => array(
+			'safe-plugin/main.php' => $plugin_header,
+			'safe-plugin/blob.txt' => str_repeat( 'A', 524288 ),
+		),
+	);
+	foreach ( $bad_archives as $label => $entries ) {
+		$zip->open( $path, ZipArchive::CREATE | ZipArchive::OVERWRITE );
+		foreach ( $entries as $entry_name => $contents ) {
+			$zip->addFromString( $entry_name, $contents );
+		}
+		$zip->close();
+		wpai108_assert( is_wp_error( $store->inspect_zip( $path, 'plugin' ) ), 'Untrusted ZIP must be denied: ' . $label );
+		unlink( $path );
+	}
+
+	$zip->open( $path, ZipArchive::CREATE | ZipArchive::OVERWRITE );
+	$zip->addFromString( 'safe-plugin/main.php', $plugin_header );
+	$zip->addFromString( 'safe-plugin/link', 'unsafe' );
+	wpai108_assert( $zip->setExternalAttributesName( 'safe-plugin/link', ZipArchive::OPSYS_UNIX, 0120777 << 16 ), 'ZIP fixture could not encode a symbolic link.' );
+	$zip->close();
+	wpai108_assert( is_wp_error( $store->inspect_zip( $path, 'plugin' ) ), 'UNIX symbolic link ZIP entries must be denied.' );
+	unlink( $path );
+
+	$zip->open( $path, ZipArchive::CREATE | ZipArchive::OVERWRITE );
+	$zip->addFromString( 'safe-plugin/main.php', $plugin_header );
+	$zip->close();
+	$bytes = file_get_contents( $path );
+	file_put_contents( $path, substr( $bytes, 0, intdiv( strlen( $bytes ), 2 ) ) );
+	wpai108_assert( is_wp_error( $store->inspect_zip( $path, 'plugin' ) ), 'Incomplete/truncated ZIPs must be rejected.' );
+	unlink( $path );
+
+	if ( method_exists( ZipArchive::class, 'setEncryptionName' ) ) {
+		$zip->open( $path, ZipArchive::CREATE | ZipArchive::OVERWRITE );
+		$zip->addFromString( 'safe-plugin/main.php', $plugin_header );
+		wpai108_assert( $zip->setEncryptionName( 'safe-plugin/main.php', ZipArchive::EM_AES_256, 'fixture-only-password' ), 'ZIP fixture could not encode an encrypted entry.' );
+		$zip->close();
+		wpai108_assert( is_wp_error( $store->inspect_zip( $path, 'plugin' ) ), 'Encrypted/unreadable plugin ZIP entries must be denied.' );
+		unlink( $path );
+	}
 }
 echo 'PASS: Issue #108 private package contract (' . $count . " assertions).\n";
