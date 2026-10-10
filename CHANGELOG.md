@@ -4,6 +4,8 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.5.0
+
 - Provide bounded Gutenberg discovery and targeted subtree reads for large/nested pages, with exact path and fingerprint interoperability; return compact committed identity after oversized block mutations rather than an ambiguous transport failure.
 - Add UTF-8-safe, hash-guarded raw content windows for large posts/pages and a shared encoded-response budget helper, with explicit completeness/continuation metadata.
 - Add bounded and pageable site-context discovery, including current-principal capability flags, for provider-heavy WordPress installations (#110).
