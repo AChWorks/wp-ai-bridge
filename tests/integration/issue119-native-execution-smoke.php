@@ -164,6 +164,30 @@ try {
 	}
 	wpai119execute_check( 3 === $calls, 'Filtered-out route was dispatched.' );
 
+	$redact_arg = static function ( $contract ) {
+		if ( 'wpai119exec/v1' === ( $contract['namespace'] ?? '' ) && isset( $contract['endpoints'] ) ) {
+			foreach ( $contract['endpoints'] as &$endpoint ) {
+				unset( $endpoint['args']['title'] );
+			}
+			unset( $endpoint );
+		}
+		return $contract;
+	};
+	add_filter( 'rest_endpoints_description', $redact_arg, 10, 1 );
+	try {
+		$public = $server->get_data_for_routes( array( $route => $server->get_routes()[ $route ] ), 'view' );
+		wpai119execute_check( ! isset( $public[ $route ]['endpoints'][1]['args']['title'] ), 'Native endpoint filter fixture did not redact title.' );
+		wpai119execute_check( is_wp_error( $ability->execute( $mutate ) ), 'Invocation bypassed redacted public-index argument names.' );
+	} finally {
+		remove_filter( 'rest_endpoints_description', $redact_arg, 10 );
+	}
+	wpai119execute_check( 3 === $calls, 'Redacted argument was dispatched anyway.' );
+	wpai119execute_check(
+		is_wp_error( $ability->execute( array( 'route' => $route, 'path' => $path, 'method' => 'GET', 'query' => array( 'id' => 999 ) ) ) ),
+		'Query parameters must not override the Core native path capture identity.'
+	);
+
+
 	$large = $ability->execute( array( 'route' => '/wpai119exec/v1/oversized', 'path' => '/wpai119exec/v1/oversized', 'method' => 'POST' ) );
 	wpai119execute_check( ! is_wp_error( $large ) && 'outcome_unknown' === $large['outcome'], 'Post-callback oversized result must expose only uncertainty, not imply rollback.' );
 	wpai119execute_check( 4 === $calls, 'Oversize fixture did not execute before response limitation.' );
