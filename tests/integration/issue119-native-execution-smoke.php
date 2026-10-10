@@ -17,6 +17,7 @@ function wpai119execute_check( $condition, $message ) {
 $settings = new Settings();
 $original = get_option( Settings::OPTION_NAME, $settings->defaults() );
 $user_id  = get_current_user_id();
+$core_post_id = 0;
 $calls    = 0;
 $permissions_called = 0;
 
@@ -110,6 +111,34 @@ try {
 	$enabled = $defaults;
 	$enabled[ Settings::GROUP_REST_INVOCATION ] = 1;
 	update_option( Settings::OPTION_NAME, $enabled, false );
+
+	// Exercise a real WordPress Core route and native edit_posts/read_post
+	// mapping, not only a controlled third-party-like provider callback.
+	$core_post_id = wp_insert_post(
+		array(
+			'post_type'    => 'post',
+			'post_status'  => 'draft',
+			'post_title'   => 'WP AI Bridge registered REST Core contract fixture',
+			'post_content' => 'Core route read under the current administrator.',
+	),
+		true
+	);
+	wpai119execute_check( ! is_wp_error( $core_post_id ) && is_int( $core_post_id ) && $core_post_id > 0, 'Could not create isolated Core REST fixture.' );
+	$core_result = $ability->execute(
+		array(
+			'route'  => '/wp/v2/posts/(?P<id>[\\d]+)',
+			'path'   => '/wp/v2/posts/' . $core_post_id,
+			'method' => 'GET',
+		)
+	);
+	wpai119execute_check(
+		! is_wp_error( $core_result ) &&
+		200 === $core_result['status'] &&
+		'reported_success' === $core_result['outcome'] &&
+		$core_post_id === ( $core_result['data']['id'] ?? 0 ),
+		'Authorized native WordPress Core post route could not be read using the generic Ability.'
+	);
+	wpai119execute_check( Bounded_Payload::fits( $core_result ), 'Core route native response exceeded the bounded MCP envelope.' );
 
 	$first = $ability->execute( $read );
 	wpai119execute_check( ! is_wp_error( $first ) && 200 === $first['status'] && 'reported_success' === $first['outcome'] && 7 === $first['data']['id'], 'Native GET failed under explicit high-trust grant.' );
@@ -223,4 +252,7 @@ try {
 } finally {
 	wp_set_current_user( $user_id );
 	update_option( Settings::OPTION_NAME, $original, false );
+	if ( is_int( $core_post_id ) && $core_post_id > 0 ) {
+		wp_delete_post( $core_post_id, true );
+	}
 }
