@@ -16,11 +16,11 @@ use WP_Error;
  * Registry discovery only. This class deliberately cannot dispatch REST requests.
  */
 final class Registered_REST_Abilities {
-	const MAX_PAGE_SIZE   = 25;
+	const MAX_PAGE_SIZE    = 25;
 	const MAX_INDEX_ROUTES = 1024;
-	const MAX_ROUTE_BYTES = 512;
-	const MAX_ENDPOINTS   = 16;
-	const MAX_ARGUMENTS   = 80;
+	const MAX_ROUTE_BYTES  = 512;
+	const MAX_ENDPOINTS    = 16;
+	const MAX_ARGUMENTS    = 80;
 
 	/** @var Permissions */
 	private $permissions;
