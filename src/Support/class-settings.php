@@ -129,7 +129,7 @@ final class Settings {
 			),
 			self::GROUP_REST_INVOCATION   => array(
 				'label'       => __( 'High-Trust Registered REST Invocation', 'wp-ai-bridge' ),
-				'description' => __( 'Allow the current WordPress administrator to invoke bounded native registered REST routes, including mutations, under native provider permission. Sensitive Bridge and credential control paths remain excluded. This is high trust, not a sandbox.', 'wp-ai-bridge' ),
+				'description' => __( 'Allow guarded registered REST execution only after every protected lifecycle Bridge consent and corresponding WordPress capability is separately enabled. Generic provider effects are unclassified and require full administrator-equivalent trust; this is not a sandbox.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
