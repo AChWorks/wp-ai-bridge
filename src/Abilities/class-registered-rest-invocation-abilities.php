@@ -85,6 +85,18 @@ final class Registered_REST_Invocation_Abilities {
 		if ( $this->in_flight ) {
 			return $this->error( 'rest_invocation_recursive', __( 'Nested generic REST invocation is not allowed.', 'wp-ai-bridge' ) );
 		}
+		// Provider route-index filters are executable hooks too: guard the
+		// entire preflight and dispatch, not only the final Core callback.
+		$this->in_flight = true;
+		try {
+			return $this->invoke_registered( $input );
+		} finally {
+			$this->in_flight = false;
+		}
+	}
+
+	/** @param mixed $input Bound native route execution input. @return array<string,mixed>|WP_Error */
+	private function invoke_registered( $input ) {
 		if ( ! is_array( $input ) || array_diff( array_keys( $input ), array( 'route', 'path', 'method', 'query', 'body' ) ) ) {
 			return $this->invalid();
 		}
@@ -108,21 +120,6 @@ final class Registered_REST_Invocation_Abilities {
 			return $this->invalid();
 		}
 
-		// Real WordPress always accepts a concrete request path. The selected
-		// regex is used only as an independent registry identity assertion.
-		$path_matches   = array();
-		$selected_match = preg_match( '@^' . $route . '$@i', $path, $path_matches );
-		if ( 1 !== $selected_match ) {
-			return $this->invalid();
-		}
-		// Route captures are authoritative. A query/body parameter with the
-		// same name could override the Core-decoded URL parameter on some
-		// WordPress request paths, changing the resource being authorized.
-		foreach ( $path_matches as $name => $value ) {
-			if ( is_string( $name ) && ( array_key_exists( $name, $query ) || array_key_exists( $name, $body ) ) ) {
-				return $this->invalid();
-			}
-		}
 		if ( array_intersect_key( $query, $body ) ) {
 			return $this->invalid();
 		}
@@ -152,6 +149,22 @@ final class Registered_REST_Invocation_Abilities {
 		}
 		if ( ! isset( $routes[ $route ] ) || ! is_array( $routes[ $route ] ) ) {
 			return $this->not_found();
+		}
+
+		// Real WordPress always accepts a concrete request path. The selected
+		// regex is used only as an independent registry identity assertion.
+		$path_matches   = array();
+		$selected_match = preg_match( '@^' . $route . '$@i', $path, $path_matches );
+		if ( 1 !== $selected_match ) {
+			return $this->invalid();
+		}
+		// Route captures are authoritative. A query/body parameter with the
+		// same name could override the Core-decoded URL parameter on some
+		// WordPress request paths, changing the resource being authorized.
+		foreach ( $path_matches as $name => $value ) {
+			if ( is_string( $name ) && ( array_key_exists( $name, $query ) || array_key_exists( $name, $body ) ) ) {
+				return $this->invalid();
+			}
 		}
 
 		// A deliberately non-public REST handler is not a generic entry point.
@@ -246,44 +259,43 @@ final class Registered_REST_Invocation_Abilities {
 			$request->set_header( 'Content-Type', 'application/json' );
 			$request->set_body( $body_json );
 		}
-		$mutating        = 'GET' !== $method;
-		$this->in_flight = true;
+		// A provider may attach side effects even to GET. All post-dispatch
+		// failures and truncation are potentially ambiguous, and no method is
+		// treated as safe for automatic replay.
 		try {
 			$response = rest_do_request( $request );
 			if ( is_wp_error( $response ) || ! is_object( $response ) || ! method_exists( $response, 'get_status' ) || ! method_exists( $response, 'get_data' ) ) {
-				return $this->unavailable_result( $mutating );
+				return $this->unavailable_result();
 			}
 			$status = $response->get_status();
 			if ( ! is_int( $status ) || $status < 100 || $status > 599 ) {
-				return $this->unavailable_result( $mutating );
+				return $this->unavailable_result();
 			}
 			if ( $status < 200 || $status >= 300 ) {
 				return array(
 					'status'  => $status,
-					'outcome' => $mutating ? 'outcome_unknown' : 'failed',
+					'outcome' => 'outcome_unknown',
 					'error'   => __( 'WordPress did not report a successful REST operation. Review current state before retrying a mutation.', 'wp-ai-bridge' ),
 				);
 			}
 
 			$data = $response->get_data();
 			if ( ! $this->safe_tree( $data ) ) {
-				return $this->unavailable_result( $mutating );
+				return $this->unavailable_result();
 			}
 			$result = array(
 				'status'  => $status,
-				'outcome' => $mutating ? 'reported_success' : 'succeeded',
+				'outcome' => 'reported_success',
 				'data'    => $data,
 			);
 			if ( ! Bounded_Payload::fits( $result ) ) {
-				return $this->unavailable_result( $mutating );
+				return $this->unavailable_result();
 			}
 			return $result;
 		} catch ( \Throwable $throwable ) {
 			// Callback errors can follow a committed mutation. Suppress native
 			// exception messages and never imply that retrying is safe.
-			return $this->unavailable_result( $mutating );
-		} finally {
-			$this->in_flight = false;
+			return $this->unavailable_result();
 		}
 	}
 
@@ -365,16 +377,13 @@ final class Registered_REST_Invocation_Abilities {
 		return 1 === preg_match( '/(?:^|_)(?:nonce|authorization|cookies?|oauth|tokens?|secrets?|credentials?|passwords?|private_keys?|sessions?)(?:_|$)/', $normalized );
 	}
 
-	/** @param bool $mutating Was this a potentially mutating native method. @return array<string,mixed>|WP_Error */
-	private function unavailable_result( $mutating ) {
-		if ( $mutating ) {
-			return array(
-				'status'  => 0,
-				'outcome' => 'outcome_unknown',
-				'error'   => __( 'The REST operation outcome cannot be confirmed. Inspect provider state before retrying.', 'wp-ai-bridge' ),
-			);
-		}
-		return $this->error( 'rest_invocation_result_unavailable', __( 'The REST response cannot be returned safely within the data limit.', 'wp-ai-bridge' ) );
+	/** @return array<string,mixed> Ambiguous outcome; no method is safe to retry blindly. */
+	private function unavailable_result() {
+		return array(
+			'status'  => 0,
+			'outcome' => 'outcome_unknown',
+			'error'   => __( 'The REST operation outcome cannot be confirmed. Inspect provider state before retrying.', 'wp-ai-bridge' ),
+		);
 	}
 
 	/** @return WP_Error */
@@ -433,7 +442,7 @@ final class Registered_REST_Invocation_Abilities {
 				'status'  => array( 'type' => 'integer' ),
 				'outcome' => array(
 					'type' => 'string',
-					'enum' => array( 'succeeded', 'reported_success', 'failed', 'outcome_unknown' ),
+					'enum' => array( 'reported_success', 'outcome_unknown' ),
 				),
 				'data'    => array( 'type' => array( 'object', 'array', 'string', 'integer', 'number', 'boolean', 'null' ) ),
 				'error'   => array( 'type' => 'string' ),
