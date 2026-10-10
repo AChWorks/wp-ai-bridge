@@ -414,14 +414,17 @@ fi
 # read another WordPress table, or become a general options interface.
 if [[ ! -f "$private_package_store" ||
       "$(grep -cF '$wpdb->get_col(' "$private_package_store" || true)" != "1" ||
-      "$(grep -cF '$wpdb->prepare(' "$private_package_store" || true)" != "1" ||
       "$(grep -cF '$wpdb->esc_like(' "$private_package_store" || true)" != "1" ||
+      "$(grep -cF '$wpdb->get_var(' "$private_package_store" || true)" != "2" ||
+      "$(grep -cF '$wpdb->prepare(' "$private_package_store" || true)" != "3" ||
+      "$(grep -cF 'SELECT GET_LOCK(%s, %d)' "$private_package_store" || true)" != "1" ||
+      "$(grep -cF 'SELECT RELEASE_LOCK(%s)' "$private_package_store" || true)" != "1" ||
       "$(grep -cF 'SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s ORDER BY option_id DESC LIMIT %d' "$private_package_store" || true)" != "1" ]]; then
     echo "ERROR: private ZIP staging lost its single bounded option-name query." >&2
     exit 1
 fi
 if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$private_package_store" |
-    grep -vE '\$wpdb->(options|esc_like|get_col|prepare)([^A-Za-z0-9_]|$)'; then
+    grep -vE '\$wpdb->(options|prefix|esc_like|get_col|get_var|prepare)([^A-Za-z0-9_]|$)'; then
     echo "ERROR: private ZIP staging introduced another SQL capability." >&2
     exit 1
 fi

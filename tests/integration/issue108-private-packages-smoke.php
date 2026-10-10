@@ -8,6 +8,7 @@
  */
 
 use WP_AI_Bridge\Auth\OAuth_Server;
+use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Private_Package_Store;
 use WP_AI_Bridge\Support\Settings;
@@ -81,6 +82,9 @@ $fixture_ids                                 = array();
 $fixture_files                               = array();
 $installed_plugin                            = false;
 $installed_theme                             = false;
+$original_log                                = get_option( Mutation_Log::OPTION_NAME, array() );
+$mcp_client_context                          = new ReflectionProperty( OAuth_Server::class, 'authenticated_mcp_client_id' );
+$mcp_client_context->setValue( null, '' );
 
 require_once ABSPATH . 'wp-admin/includes/plugin.php';
 require_once ABSPATH . 'wp-admin/includes/theme.php';
@@ -96,6 +100,7 @@ wpai108_live_check( ! $store->allowed( 'plugin' ), 'Default-off consent must den
 
 try {
 	update_option( Settings::OPTION_NAME, $grants, false );
+	$mcp_client_context->setValue( null, $client );
 	foreach ( array(
 		'plugin' => $plugin_root,
 		'theme'  => $theme_root,
@@ -109,6 +114,28 @@ try {
 		list( $meta, $path ) = wpai108_live_stage( $store, $kind, $id, $client, $root );
 		$fixture_files[]     = $path;
 
+		$inspector = wp_get_ability( 'wp-ai-bridge/private-packages-read' );
+		$details   = $inspector->execute(
+			array(
+				'action'      => 'get',
+				'artifact_id' => $id,
+			)
+		);
+		wpai108_live_check( ! is_wp_error( $details ) && ( $details['item']['sha256'] ?? '' ) === $meta['sha256'], 'Real Core WordPress Ability must expose exact reviewed metadata.' );
+		wpai108_live_check( false === strpos( wp_json_encode( $details ), $path ), 'Native Ability must not expose staging path.' );
+		$adapter = wp_get_ability( 'mcp-adapter/execute-ability' );
+		wpai108_live_check( $adapter instanceof WP_Ability, 'Official MCP Adapter execute wrapper is unavailable.' );
+		$wrapped = $adapter->execute(
+			array(
+				'ability_name' => 'wp-ai-bridge/private-packages-read',
+				'parameters'   => array(
+					'action'      => 'get',
+					'artifact_id' => $id,
+				),
+			)
+		);
+		wpai108_live_check( ! is_wp_error( $wrapped ) && true === ( $wrapped['success'] ?? false ), 'Official MCP Adapter must preserve bounded private ZIP inspection.' );
+
 		$bad = $store->install( $id, str_repeat( '0', 64 ), $kind, $client );
 		wpai108_live_check( is_wp_error( $bad ) && 'private_package_hash_mismatch' === $bad->get_error_code(), 'Wrong SHA must be rejected before claim.' );
 
@@ -119,7 +146,14 @@ try {
 		$grants[ Settings::GROUP_EXTERNAL_PACKAGES ] = 1;
 		update_option( Settings::OPTION_NAME, $grants, false );
 
-		$ok = $store->install( $id, $meta['sha256'], $kind, $client );
+		$installer = wp_get_ability( 'wp-ai-bridge/private-package-install' );
+		$ok        = $installer->execute(
+			array(
+				'artifact_id' => $id,
+				'sha256'      => $meta['sha256'],
+				'kind'        => $kind,
+			)
+		);
 		wpai108_live_check( ! is_wp_error( $ok ) && true === $ok['installed'] && false === $ok['activated'], 'Native Core must install without activating the extension.' );
 		if ( 'plugin' === $kind ) {
 			$installed_plugin = true;
@@ -131,10 +165,14 @@ try {
 			wpai108_live_check( get_stylesheet() !== $theme_root, 'Private theme install silently switched active theme.' );
 		}
 		wpai108_live_check( ! is_file( $path ), 'Native successful install left staged executable ZIP.' );
+		$recent = ( new Mutation_Log() )->recent( 1 );
+		wpai108_live_check( ! empty( $recent ) && 'wp-ai-bridge/private-package-install' === $recent[0]['ability'] && true === $recent[0]['success'], 'Successful Core install must produce a secret-free audit entry.' );
 		$second = $store->install( $id, $meta['sha256'], $kind, $client );
 		wpai108_live_check( is_wp_error( $second ) && 'private_package_not_staged' === $second->get_error_code(), 'Replay must not begin second native install.' );
 	}
 } finally {
+	$mcp_client_context->setValue( null, '' );
+	update_option( Mutation_Log::OPTION_NAME, $original_log, false );
 	update_option( Settings::OPTION_NAME, $original, false );
 	if ( $installed_plugin && isset( get_plugins()[ $plugin_key ] ) && ! is_plugin_active( $plugin_key ) ) {
 		delete_plugins( array( $plugin_key ) );

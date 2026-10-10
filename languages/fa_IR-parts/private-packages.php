@@ -23,6 +23,7 @@ return array(
 	'Private package storage is unavailable.' => 'فضای ذخیره‌سازی خصوصی بسته در دسترس نیست.',
 	'The ZIP package failed bounded structural review.' => 'فایل ZIP از بررسی ساختاری محدود و امن عبور نکرد.',
 	'The private ZIP upload was incomplete or exceeded the size limit.' => 'بارگذاری ZIP خصوصی ناقص بوده یا از حد اندازه تجاوز کرده است.',
+	'Private package staging is temporarily unavailable; retry after the current upload finishes.' => 'ذخیره‌سازی موقت بسته مشغول است. پس از پایان بارگذاری جاری دوباره تلاش کنید.',
 	'The private package staging quota has been reached.' => 'سهمیهٔ نگهداری موقت بسته‌های خصوصی تکمیل شده است.',
 	'The requested private package is unavailable.' => 'بستهٔ خصوصی درخواستی در دسترس نیست.',
 	'Private package integrity confirmation did not match.' => 'تأیید یکپارچگی بسته با هش ذخیره‌شده مطابقت ندارد.',

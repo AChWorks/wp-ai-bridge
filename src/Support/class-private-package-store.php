@@ -23,6 +23,7 @@ final class Private_Package_Store {
 	const MAX_USER_STAGES = 4;
 	const STAGE_TTL       = 3600;
 	const RECORD_TTL      = 86400;
+	const STAGE_LOCK_WAIT = 5;
 
 	/** @var Permissions */
 	private $permissions;
@@ -107,6 +108,8 @@ final class Private_Package_Store {
 			$has_header  = false;
 			$has_content = false;
 			$seen_paths  = array();
+			$file_paths  = array();
+			$dir_paths   = array();
 			foreach ( range( 0, $entry_count - 1 ) as $index ) {
 				$stats = $zip->statIndex( $index );
 				if ( ! is_array( $stats ) || ! isset( $stats['name'], $stats['size'], $stats['comp_size'] ) ) {
@@ -116,7 +119,7 @@ final class Private_Package_Store {
 				if ( ! is_string( $name ) || '' === $name || strlen( $name ) > 512 || str_contains( $name, '\\' ) || preg_match( '/[\x00-\x1f\x7f]/', $name ) || str_starts_with( $name, '/' ) || str_contains( $name, '//' ) ) {
 					return $this->invalid_archive();
 				}
-				$canonical = strtolower( $name );
+				$canonical = strtolower( rtrim( $name, '/' ) );
 				if ( isset( $seen_paths[ $canonical ] ) ) {
 					return $this->invalid_archive();
 				}
@@ -136,7 +139,28 @@ final class Private_Package_Store {
 				if ( $root !== $segments[0] ) {
 					return $this->invalid_archive();
 				}
-				$directory  = str_ends_with( $name, '/' );
+				$directory = str_ends_with( $name, '/' );
+				// WordPress may extract ZIPs on case-insensitive filesystems. Reject
+				// file/directory and implicit-parent collisions before Core sees them.
+				$parent = '';
+				foreach ( array_slice( $segments, 0, -1 ) as $part ) {
+					$parent = '' === $parent ? strtolower( $part ) : $parent . '/' . strtolower( $part );
+					if ( isset( $file_paths[ $parent ] ) ) {
+						return $this->invalid_archive();
+					}
+					$dir_paths[ $parent ] = true;
+				}
+				if ( $directory ) {
+					if ( isset( $file_paths[ $canonical ] ) ) {
+						return $this->invalid_archive();
+					}
+					$dir_paths[ $canonical ] = true;
+				} else {
+					if ( isset( $dir_paths[ $canonical ] ) ) {
+						return $this->invalid_archive();
+					}
+					$file_paths[ $canonical ] = true;
+				}
 				$original   = (int) $stats['size'];
 				$compressed = (int) $stats['comp_size'];
 				if ( $original < 0 || $compressed < 0 || $original > self::MAX_BYTES || ( $original > 0 && ( 0 === $compressed || $original > $compressed * 200 ) ) ) {
@@ -199,6 +223,38 @@ final class Private_Package_Store {
 		return new WP_Error( 'private_package_invalid_archive', __( 'The ZIP package failed bounded structural review.', 'wp-ai-bridge' ) );
 	}
 
+	/** Serialize staging/quota reservation across web workers and application servers. */
+	private function stage_lock_name() {
+		global $wpdb;
+		if ( ! isset( $wpdb ) || ! is_object( $wpdb ) || ! isset( $wpdb->prefix ) ) {
+			return '';
+		}
+		return 'wpai_zip_' . substr( hash( 'sha256', (string) $wpdb->prefix . '|' . (string) get_current_blog_id() ), 0, 40 );
+	}
+
+	/** @return bool Only a database-owned advisory lock is acceptable; never assume a process-local lock is global. */
+	private function acquire_stage_lock( $name ) {
+		global $wpdb;
+		if ( '' === $name || ! isset( $wpdb ) || ! is_object( $wpdb ) ) {
+			return false;
+		}
+		$result = $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fixed MySQL/MariaDB advisory lock serializes staging quota across concurrent workers.
+			$wpdb->prepare( 'SELECT GET_LOCK(%s, %d)', $name, self::STAGE_LOCK_WAIT ) // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Fully prepared fixed SQL with no dynamic identifiers.
+		);
+		return 1 === (int) $result;
+	}
+
+	/** Release the exact request-owned lock, even after staging validation failures. */
+	private function release_stage_lock( $name ) {
+		global $wpdb;
+		if ( '' === $name || ! isset( $wpdb ) || ! is_object( $wpdb ) ) {
+			return;
+		}
+		$wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fixed advisory lock release in finally.
+			$wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $name ) // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Fully prepared fixed SQL with no dynamic identifiers.
+		);
+	}
+
 	/** @return array<string,mixed>|WP_Error A real PHP multipart upload, never a caller-supplied local path. */
 	public function stage_browser_upload( $upload, $kind, $client_id ) {
 		if ( ! $this->allowed( $kind ) || ! ( new Approved_OAuth_Clients() )->is_approved( $client_id ) ) {
@@ -211,50 +267,68 @@ final class Private_Package_Store {
 			! is_uploaded_file( $upload['tmp_name'] ) ) {
 			return new WP_Error( 'private_package_invalid_upload', __( 'The private ZIP upload was incomplete or exceeded the size limit.', 'wp-ai-bridge' ) );
 		}
-		$count = $this->stage_counts();
-		if ( $count['site'] >= self::MAX_SITE_STAGES || $count['user'] >= self::MAX_USER_STAGES ) {
-			return new WP_Error( 'private_package_quota', __( 'The private package staging quota has been reached.', 'wp-ai-bridge' ) );
+		$lock_name = $this->stage_lock_name();
+		if ( ! $this->acquire_stage_lock( $lock_name ) ) {
+			return new WP_Error( 'private_package_busy', __( 'Private package staging is temporarily unavailable; retry after the current upload finishes.', 'wp-ai-bridge' ) );
 		}
-		$directory = $this->directory();
-		if ( is_wp_error( $directory ) ) {
-			return $directory;
+		try {
+			$count = $this->stage_counts();
+			if ( $count['site'] >= self::MAX_SITE_STAGES || $count['user'] >= self::MAX_USER_STAGES ) {
+				return new WP_Error( 'private_package_quota', __( 'The private package staging quota has been reached.', 'wp-ai-bridge' ) );
+			}
+			$directory = $this->directory();
+			if ( is_wp_error( $directory ) ) {
+				return $directory;
+			}
+			$id   = bin2hex( random_bytes( 24 ) );
+			$path = $this->archive_path( $directory, $id );
+			if ( ! move_uploaded_file( $upload['tmp_name'], $path ) ) {
+				return new WP_Error( 'private_package_invalid_upload', __( 'The private ZIP upload was incomplete or exceeded the size limit.', 'wp-ai-bridge' ) );
+			}
+			// A successful move is not enough: the filesystem must enforce private
+			// mode, even when the PHP upload's original mode was more permissive.
+			if ( ! chmod( $path, 0600 ) ) {
+				wp_delete_file( $path );
+				return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
+			}
+			clearstatcache( true, $path );
+			if ( is_link( $path ) || 0 !== ( (int) fileperms( $path ) & 0077 ) ) {
+				wp_delete_file( $path );
+				return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
+			}
+			$inspection = $this->inspect_zip( $path, $kind );
+			if ( is_wp_error( $inspection ) || ! $this->allowed( $kind ) || ! ( new Approved_OAuth_Clients() )->is_approved( $client_id ) ) {
+				wp_delete_file( $path );
+				return is_wp_error( $inspection ) ? $inspection : new WP_Error( 'private_package_permission_denied', __( 'Private package authorization is not available.', 'wp-ai-bridge' ) );
+			}
+			$sha = hash_file( 'sha256', $path );
+			if ( ! is_string( $sha ) || (int) filesize( $path ) !== (int) $upload['size'] ) {
+				wp_delete_file( $path );
+				return $this->invalid_archive();
+			}
+			$meta = array(
+				'id'              => $id,
+				'kind'            => $kind,
+				'user_id'         => get_current_user_id(),
+				'blog_id'         => get_current_blog_id(),
+				'client_id'       => $client_id,
+				'client_revision' => ( new Approved_OAuth_Clients() )->artifact_revision( $client_id ),
+				'filename'        => substr( sanitize_file_name( $upload['name'] ), 0, 120 ),
+				'sha256'          => $sha,
+				'bytes'           => (int) $upload['size'],
+				'root'            => $inspection['root'],
+				'created'         => time(),
+				'expires'         => time() + self::STAGE_TTL,
+				'status'          => 'staged',
+			);
+			if ( ! add_option( self::OPTION_PREFIX . $id, $meta, '', false ) ) {
+				wp_delete_file( $path );
+				return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
+			}
+			return $this->public_meta( $meta );
+		} finally {
+			$this->release_stage_lock( $lock_name );
 		}
-		$id   = bin2hex( random_bytes( 24 ) );
-		$path = $this->archive_path( $directory, $id );
-		if ( ! move_uploaded_file( $upload['tmp_name'], $path ) ) {
-			return new WP_Error( 'private_package_invalid_upload', __( 'The private ZIP upload was incomplete or exceeded the size limit.', 'wp-ai-bridge' ) );
-		}
-		chmod( $path, 0600 );
-		$inspection = $this->inspect_zip( $path, $kind );
-		if ( is_wp_error( $inspection ) || ! $this->allowed( $kind ) || ! ( new Approved_OAuth_Clients() )->is_approved( $client_id ) ) {
-			wp_delete_file( $path );
-			return is_wp_error( $inspection ) ? $inspection : new WP_Error( 'private_package_permission_denied', __( 'Private package authorization is not available.', 'wp-ai-bridge' ) );
-		}
-		$sha = hash_file( 'sha256', $path );
-		if ( ! is_string( $sha ) || (int) filesize( $path ) !== (int) $upload['size'] ) {
-			wp_delete_file( $path );
-			return $this->invalid_archive();
-		}
-		$meta = array(
-			'id'              => $id,
-			'kind'            => $kind,
-			'user_id'         => get_current_user_id(),
-			'blog_id'         => get_current_blog_id(),
-			'client_id'       => $client_id,
-			'client_revision' => ( new Approved_OAuth_Clients() )->artifact_revision( $client_id ),
-			'filename'        => substr( sanitize_file_name( $upload['name'] ), 0, 120 ),
-			'sha256'          => $sha,
-			'bytes'           => (int) $upload['size'],
-			'root'            => $inspection['root'],
-			'created'         => time(),
-			'expires'         => time() + self::STAGE_TTL,
-			'status'          => 'staged',
-		);
-		if ( ! add_option( self::OPTION_PREFIX . $id, $meta, '', false ) ) {
-			wp_delete_file( $path );
-			return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
-		}
-		return $this->public_meta( $meta );
 	}
 
 	/** @return array<string,mixed>|WP_Error Exact identity and approved-client binding. */
@@ -337,9 +411,18 @@ final class Private_Package_Store {
 
 	/** @return array<string,int> */
 	private function stage_counts() {
-		$site = 0;
-		$user = 0;
-		foreach ( $this->option_names( 100 ) as $name ) {
+		$site  = 0;
+		$user  = 0;
+		$names = $this->option_names( 101 );
+		if ( ! is_array( $names ) || count( $names ) > 100 ) {
+			// Never grant extra quota because an old page of metadata hid
+			// still-live entries; scheduled cleanup must first reduce backlog.
+			return array(
+				'site' => self::MAX_SITE_STAGES,
+				'user' => self::MAX_USER_STAGES,
+			);
+		}
+		foreach ( $names as $name ) {
 			$meta = get_option( $name, false );
 			if ( ! is_array( $meta ) || 'staged' !== ( $meta['status'] ?? '' ) || (int) ( $meta['expires'] ?? 0 ) <= time() ) {
 				continue;
@@ -431,6 +514,17 @@ final class Private_Package_Store {
 		$meta['target'] = $success && $deleted ? $target : '';
 		update_option( self::OPTION_PREFIX . $id, $meta, false );
 		if ( ! $success || ! $deleted ) {
+			try {
+				( new Mutation_Log() )->record( 'wp-ai-bridge/private-package-install', $kind, 0, false, 'private_package_recovery_required' );
+			} catch ( \Throwable $error ) {
+				// Never disclose a private archive or Core diagnostics while reporting recovery.
+			}
+			return new WP_Error( 'private_package_recovery_required', __( 'Private package installation needs administrator recovery before any retry.', 'wp-ai-bridge' ) );
+		}
+		try {
+			( new Mutation_Log() )->record( 'wp-ai-bridge/private-package-install', $kind, 0, true, '' );
+		} catch ( \Throwable $error ) {
+			// Once Core has committed, audit failure cannot safely be retried.
 			return new WP_Error( 'private_package_recovery_required', __( 'Private package installation needs administrator recovery before any retry.', 'wp-ai-bridge' ) );
 		}
 		return array(
