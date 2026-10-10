@@ -9,6 +9,7 @@ namespace WP_AI_Bridge\Abilities;
 
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Extension_Install_Lock;
 use WP_AI_Bridge\Support\Settings;
 use WP_Error;
 
@@ -171,9 +172,27 @@ final class Extension_Abilities {
 		}
 
 		$this->load_admin_files( true );
-		$result = 'plugin' === $kind ? $this->mutate_plugin( $action, $target ) : $this->mutate_theme( $action, $target );
-		if ( is_wp_error( $result ) ) {
-			return $result;
+		// Core updates/deletes mutate the same extension directories as installs.
+		// Cover those overlapping Bridge-owned filesystem transitions as well.
+		$lock = in_array( $action, array( 'update', 'delete' ), true ) ? new Extension_Install_Lock() : null;
+		if ( $lock && ! $lock->acquire() ) {
+			return new WP_Error( 'extension_install_busy', __( 'Another extension installation is in progress. Retry this request after it finishes.', 'wp-ai-bridge' ) );
+		}
+		try {
+			if ( $lock && ( ! $this->can_mutate( $input ) || ! $lock->is_owned() ) ) {
+				return new WP_Error( 'extension_permission_denied', __( 'Extension installation authorization is unavailable.', 'wp-ai-bridge' ) );
+			}
+			$result = 'plugin' === $kind ? $this->mutate_plugin( $action, $target ) : $this->mutate_theme( $action, $target );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			if ( $lock && ! $lock->is_owned() ) {
+				return new WP_Error( 'extension_install_recovery_required', __( 'Extension installation needs administrator recovery before a retry.', 'wp-ai-bridge' ) );
+			}
+		} finally {
+			if ( $lock ) {
+				$lock->release();
+			}
 		}
 		$this->log->record( 'wp-ai-bridge/extension-lifecycle', $kind, 0, true, '' );
 		return array(
@@ -195,63 +214,83 @@ final class Extension_Abilities {
 	private function install( $kind, $slug ) {
 		$this->load_admin_files( true );
 		global $wp_filesystem;
-		if ( 'plugin' === $kind ) {
-			$api = plugins_api(
-				'plugin_information',
+		$lock = new Extension_Install_Lock();
+		if ( ! $lock->acquire() ) {
+			return new WP_Error( 'extension_install_busy', __( 'Another extension installation is in progress. Retry this request after it finishes.', 'wp-ai-bridge' ) );
+		}
+		try {
+			if ( ! $this->can_mutate(
 				array(
+					'kind'   => $kind,
+					'action' => 'install',
 					'slug'   => $slug,
-					'fields' => array(
-						'sections'       => false,
-						'language_packs' => false,
-					),
 				)
+			) ) {
+				return new WP_Error( 'extension_permission_denied', __( 'Extension installation authorization is unavailable.', 'wp-ai-bridge' ) );
+			}
+			if ( 'plugin' === $kind ) {
+				$api = plugins_api(
+					'plugin_information',
+					array(
+						'slug'   => $slug,
+						'fields' => array(
+							'sections'       => false,
+							'language_packs' => false,
+						),
+					)
+				);
+				if ( is_wp_error( $api ) ) {
+					return $api;
+				}
+				if ( empty( $api->download_link ) ) {
+					return new WP_Error( 'plugin_package_missing', __( 'WordPress.org did not return an install package for that plugin slug.', 'wp-ai-bridge' ) );
+				}
+				$skin     = new \Automatic_Upgrader_Skin();
+				$upgrader = new \Plugin_Upgrader( $skin );
+				$ok       = $upgrader->install( $api->download_link );
+				$target   = $upgrader->plugin_info();
+			} else {
+				$api = themes_api(
+					'theme_information',
+					array(
+						'slug'   => $slug,
+						'fields' => array(
+							'sections'     => false,
+							'downloadlink' => true,
+						),
+					)
+				);
+				if ( is_wp_error( $api ) ) {
+					return $api;
+				}
+				if ( empty( $api->download_link ) ) {
+					return new WP_Error( 'theme_package_missing', __( 'WordPress.org did not return an install package for that theme slug.', 'wp-ai-bridge' ) );
+				}
+				$skin     = new \Automatic_Upgrader_Skin();
+				$upgrader = new \Theme_Upgrader( $skin );
+				$ok       = $upgrader->install( $api->download_link );
+				$target   = $slug;
+			}
+			if ( is_wp_error( $ok ) ) {
+				return $ok;
+			}
+			if ( ! $ok ) {
+				return $this->filesystem_error( $wp_filesystem );
+			}
+			if ( ! $lock->is_owned() ) {
+				return new WP_Error( 'extension_install_recovery_required', __( 'Extension installation needs administrator recovery before a retry.', 'wp-ai-bridge' ) );
+			}
+			$this->log->record( 'wp-ai-bridge/extension-lifecycle', $kind, 0, true, '' );
+			return array(
+				'kind'                              => $kind,
+				'action'                            => 'install',
+				'target'                            => (string) $target,
+				'success'                           => true,
+				'requires_manual_filesystem_access' => false,
 			);
-			if ( is_wp_error( $api ) ) {
-				return $api;
-			}
-			if ( empty( $api->download_link ) ) {
-				return new WP_Error( 'plugin_package_missing', __( 'WordPress.org did not return an install package for that plugin slug.', 'wp-ai-bridge' ) );
-			}
-			$skin     = new \Automatic_Upgrader_Skin();
-			$upgrader = new \Plugin_Upgrader( $skin );
-			$ok       = $upgrader->install( $api->download_link );
-			$target   = $upgrader->plugin_info();
-		} else {
-			$api = themes_api(
-				'theme_information',
-				array(
-					'slug'   => $slug,
-					'fields' => array(
-						'sections'     => false,
-						'downloadlink' => true,
-					),
-				)
-			);
-			if ( is_wp_error( $api ) ) {
-				return $api;
-			}
-			if ( empty( $api->download_link ) ) {
-				return new WP_Error( 'theme_package_missing', __( 'WordPress.org did not return an install package for that theme slug.', 'wp-ai-bridge' ) );
-			}
-			$skin     = new \Automatic_Upgrader_Skin();
-			$upgrader = new \Theme_Upgrader( $skin );
-			$ok       = $upgrader->install( $api->download_link );
-			$target   = $slug;
+		} finally {
+			$lock->release();
 		}
-		if ( is_wp_error( $ok ) ) {
-			return $ok;
-		}
-		if ( ! $ok ) {
-			return $this->filesystem_error( $wp_filesystem );
-		}
-		$this->log->record( 'wp-ai-bridge/extension-lifecycle', $kind, 0, true, '' );
-		return array(
-			'kind'                              => $kind,
-			'action'                            => 'install',
-			'target'                            => (string) $target,
-			'success'                           => true,
-			'requires_manual_filesystem_access' => false,
-		);
 	}
 
 	/**
@@ -386,35 +425,49 @@ final class Extension_Abilities {
 			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-ai-bridge' ) );
 		}
 
-		$state['install_started'] = true;
-		$skin                     = new \Automatic_Upgrader_Skin();
-		if ( 'plugin' === $kind ) {
-			$upgrader = new \Plugin_Upgrader( $skin );
-			$ok       = $upgrader->install( $temp_file );
-			$target   = $upgrader->plugin_info();
-		} else {
-			$upgrader = new \Theme_Upgrader( $skin );
-			$ok       = $upgrader->install( $temp_file );
-			$theme    = $upgrader->theme_info();
-			$target   = is_object( $theme ) && method_exists( $theme, 'get_stylesheet' ) ? $theme->get_stylesheet() : '';
+		$lock = new Extension_Install_Lock();
+		if ( ! $lock->acquire() ) {
+			return $this->external_package_error( $kind, 'external_package_busy', __( 'Another extension installation is in progress. Retry this request after it finishes.', 'wp-ai-bridge' ) );
 		}
+		try {
+			if ( ! $this->can_mutate( $input ) || ! $lock->is_owned() ) {
+				return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-ai-bridge' ) );
+			}
+			$state['install_started'] = true;
+			$skin                     = new \Automatic_Upgrader_Skin();
+			if ( 'plugin' === $kind ) {
+				$upgrader = new \Plugin_Upgrader( $skin );
+				$ok       = $upgrader->install( $temp_file );
+				$target   = $upgrader->plugin_info();
+			} else {
+				$upgrader = new \Theme_Upgrader( $skin );
+				$ok       = $upgrader->install( $temp_file );
+				$theme    = $upgrader->theme_info();
+				$target   = is_object( $theme ) && method_exists( $theme, 'get_stylesheet' ) ? $theme->get_stylesheet() : '';
+			}
 
-		if ( is_wp_error( $ok ) || ! $ok ) {
-			// Once Core installation begins, a failure can leave extension state that this Bridge cannot prove absent.
-			throw new \RuntimeException( 'Core package installation did not complete with a verifiable success state.' );
-		}
-		if ( ! is_string( $target ) || '' === $target ) {
-			throw new \RuntimeException( 'Installed extension identity was unavailable after Core reported success.' );
-		}
+			if ( is_wp_error( $ok ) || ! $ok ) {
+				// Once Core installation begins, a failure can leave extension state that this Bridge cannot prove absent.
+				throw new \RuntimeException( 'Core package installation did not complete with a verifiable success state.' );
+			}
+			if ( ! is_string( $target ) || '' === $target ) {
+				throw new \RuntimeException( 'Installed extension identity was unavailable after Core reported success.' );
+			}
 
-		$state['installed_target'] = $target;
-		return array(
-			'kind'                              => $kind,
-			'action'                            => 'install',
-			'target'                            => $target,
-			'success'                           => true,
-			'requires_manual_filesystem_access' => false,
-		);
+			if ( ! $lock->is_owned() ) {
+				throw new \RuntimeException( 'Native Core install lock was lost before durable outcome.' );
+			}
+			$state['installed_target'] = $target;
+			return array(
+				'kind'                              => $kind,
+				'action'                            => 'install',
+				'target'                            => $target,
+				'success'                           => true,
+				'requires_manual_filesystem_access' => false,
+			);
+		} finally {
+			$lock->release();
+		}
 	}
 
 	/**

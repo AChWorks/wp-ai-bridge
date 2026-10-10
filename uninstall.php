@@ -9,6 +9,12 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/src/Support/class-private-package-lifecycle.php';
+
+if ( ! \WP_AI_Bridge\Support\Private_Package_Lifecycle::cleanup_sites( is_multisite() ) ) {
+	wp_die( 'WP AI Bridge private ZIP cleanup could not finish safely. No uninstall state was removed.' );
+}
+
 /**
  * Deletes only disposable Bridge settings, activity, lock, and OAuth metadata.
  *

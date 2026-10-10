@@ -30,8 +30,10 @@ services:
       WORDPRESS_DB_NAME: wordpress
     ports:
       - "127.0.0.1::80"
+      - "127.0.0.1::443"
     volumes:
       - wordpress-data:/var/www/html
+      - wpai-private-test-tmp:/tmp
 
   cli:
     image: ${WPAI_CI_IMAGE_REGISTRY:-}wordpress:cli-php8.4
@@ -51,7 +53,31 @@ services:
       WORDPRESS_DB_NAME: wordpress
     volumes:
       - wordpress-data:/var/www/html
+      - wpai-private-test-tmp:/tmp
+
+  # Same WordPress DB/files, but a distinct physical /tmp storage domain.
+  cli-unshared:
+    image: ${WPAI_CI_IMAGE_REGISTRY:-}wordpress:cli-php8.4
+    # CI uses preloaded, digest-verified images; local development pulls normally.
+    pull_policy: ${WPAI_CI_PULL_POLICY:-missing}
+    entrypoint: ["wp"]
+    user: "0:0"
+    depends_on:
+      wordpress:
+        condition: service_started
+      db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: root
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wordpress-data:/var/www/html
+      - wpai-private-unshared-test-tmp:/tmp
 
 volumes:
   db-data: {}
   wordpress-data: {}
+  wpai-private-test-tmp: {}
+  wpai-private-unshared-test-tmp: {}

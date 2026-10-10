@@ -46,6 +46,14 @@ final class OAuth_Server {
 	/** @var string */
 	private $auth_state = 'none';
 
+	/** Authenticated MCP request identity; never derived from an Ability parameter. */
+	private static $authenticated_mcp_client_id = '';
+
+	/** @return string Exact authenticated MCP client ID, or empty outside OAuth/MCP. */
+	public static function authenticated_mcp_client_id() {
+		return self::$authenticated_mcp_client_id;
+	}
+
 	/**
 	 * Creates the OAuth service.
 	 *
@@ -221,7 +229,8 @@ final class OAuth_Server {
 	 * @return bool Whether transport access is authorized.
 	 */
 	public function authenticate_mcp_request( $request ) {
-		$this->auth_state = 'missing';
+		self::$authenticated_mcp_client_id = '';
+		$this->auth_state                  = 'missing';
 		if ( ! $this->is_https_ready() || ! $request instanceof \WP_REST_Request ) {
 			$this->auth_state = 'invalid';
 			return false;
@@ -265,7 +274,8 @@ final class OAuth_Server {
 			return false;
 		}
 		wp_set_current_user( (int) $claims['user_id'] );
-		$this->auth_state = 'authenticated';
+		self::$authenticated_mcp_client_id = $client_id;
+		$this->auth_state                  = 'authenticated';
 		return true;
 	}
 

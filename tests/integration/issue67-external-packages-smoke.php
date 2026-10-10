@@ -141,7 +141,19 @@ try {
 	wpnb67_integration_assert( $unsafe_calls === $calls && 0 === $unexpected_calls, 'Unsafe package URL reached fixture HTTP.' );
 
 	$result = $ability->execute( $plugin_input );
-	wpnb67_integration_assert( ! is_wp_error( $result ) && true === $result['success'], 'External plugin package install failed.' );
+	$failure_code = is_wp_error( $result ) ? $result->get_error_code() : 'unexpected_result';
+	$failure_detail = '';
+	if ( 'external_package_busy' === $failure_code ) {
+		$lock_path = realpath( WP_CONTENT_DIR ) . '/.wpai-extension-native-mutation.lock';
+		$failure_detail = sprintf(
+			' [lock_file=%d readable=%d symlink=%d content_writable=%d]',
+			is_file( $lock_path ) ? 1 : 0,
+			is_readable( $lock_path ) ? 1 : 0,
+			is_link( $lock_path ) ? 1 : 0,
+			is_writable( WP_CONTENT_DIR ) ? 1 : 0
+		);
+	}
+	wpnb67_integration_assert( ! is_wp_error( $result ) && true === $result['success'], 'External plugin package install failed (' . sanitize_key( $failure_code ) . ')' . $failure_detail . '.' );
 	$installed_plugin = (string) $result['target'];
 	wpnb67_integration_assert( isset( get_plugins()[ $installed_plugin ] ), 'Installed plugin target is not present in Core plugin inventory.' );
 	wpnb67_integration_assert( ! is_plugin_active( $installed_plugin ), 'External plugin install activated code implicitly.' );
@@ -151,7 +163,8 @@ try {
 	wpnb67_integration_assert( false === strpos( json_encode( get_option( Mutation_Log::OPTION_NAME, array() ) ), 'PRIVATE_PACKAGE_MARKER' ), 'Successful plugin audit leaked package URL secret.' );
 
 	$result = $ability->execute( $theme_input );
-	wpnb67_integration_assert( ! is_wp_error( $result ) && true === $result['success'], 'External theme package install failed.' );
+	$theme_failure_code = is_wp_error( $result ) ? $result->get_error_code() : 'unexpected_result';
+	wpnb67_integration_assert( ! is_wp_error( $result ) && true === $result['success'], 'External theme package install failed (' . sanitize_key( $theme_failure_code ) . ').' );
 	$installed_theme = (string) $result['target'];
 	wpnb67_integration_assert( wp_get_theme( $installed_theme )->exists(), 'Installed theme target is not present in Core theme inventory.' );
 	wpnb67_integration_assert( get_stylesheet() !== $installed_theme, 'External theme install activated the theme implicitly.' );

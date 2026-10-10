@@ -109,6 +109,8 @@ Only **Site Read** is enabled by default.
 
 `wp-ai-bridge/extension-lifecycle` keeps the existing WordPress.org slug installation path under **Code & Extensions**. For a non-WordPress.org source, an administrator must additionally enable **External Packages** and the connected WordPress user must have the native plugin/theme install capability. The caller supplies one exact public HTTPS package URL; the Bridge does not accept local package paths, HTTP/FTP sources, URL credentials, caller-supplied request headers/cookies, or generic transport configuration. The package is streamed into a Bridge-owned temporary file with TLS/redirect/SSRF checks and a maximum of the smaller of the current WordPress upload limit and **100 MiB**, then handed to the native WordPress Core Upgrader. The temporary package is retired and verified before success is returned. Installation does not activate the plugin/theme automatically, and package code has normal WordPress runtime authority once later activated. See [External package installation](./docs/EXTERNAL-PACKAGES.md).
 
+Source-agnostic private/local plugin/theme ZIPs have a separate Bridge-owned browser upload, staged metadata review, and explicit SHA-256-bound native WordPress installation path in **current source**. The staging is private, expiring and scoped to a user/site/approved OAuth client. AI/Gateway Ability JSON is not a binary upload transport; this is not evidence the current published release includes the feature. See [Private ZIP package workflow](./docs/PRIVATE-PACKAGES.md).
+
 Source Editing remains a separate administrator-level trust boundary and is not enabled by Code & Extensions or External Packages alone. The Bridge does **not** expose a generic HTTP client, arbitrary package request credentials, shell commands, generic SQL, unrestricted filesystem access, arbitrary WordPress options, or generic credential retrieval. WordPress Application Passwords are available only through the separate default-off purpose-specific lifecycle described above.
 
 ## Canonical identity
@@ -150,6 +152,7 @@ Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Au
 - [User guide](./docs/USER-GUIDE.md)
 - [Ability reference](./docs/ABILITIES.md)
 - [External package installation](./docs/EXTERNAL-PACKAGES.md)
+- [Private ZIP package workflow](./docs/PRIVATE-PACKAGES.md)
 - [Application Password boundary](./docs/ABILITIES.md#application-password-boundary)
 - [Integrations](./docs/INTEGRATIONS.md)
 - [Security](./docs/SECURITY.md)

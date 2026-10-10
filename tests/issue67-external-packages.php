@@ -23,6 +23,46 @@ use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Settings;
 
+// This DB fixture models only the four WordPress installation-lock SQL shapes.
+final class WP_AI_Bridge_67_Test_DB {
+    public $base_prefix = 'wp_';
+    private $held = false;
+    public function prepare( $sql, ...$values ) {
+        return vsprintf( $sql, array_map( static function ( $value ) {
+            return is_string( $value ) ? "'" . addslashes( $value ) . "'" : $value;
+        }, $values ) );
+    }
+    public function get_var( $sql ) {
+        if ( str_starts_with( $sql, 'SELECT GET_LOCK(' ) ) {
+            if ( 'lock_busy' === ( $GLOBALS['wpnb67']['mode'] ?? '' ) || $this->held ) {
+                return 0;
+            }
+            $this->held = true;
+            return 1;
+        }
+        if ( str_starts_with( $sql, 'SELECT IS_USED_LOCK(' ) ) {
+            return $this->held ? 123 : null;
+        }
+        if ( 'SELECT CONNECTION_ID()' === $sql ) {
+            return 123;
+        }
+        if ( str_starts_with( $sql, 'SELECT RELEASE_LOCK(' ) ) {
+            $this->held = false;
+            return 1;
+        }
+        throw new RuntimeException( 'Unexpected install-lock SQL in isolated test.' );
+    }
+}
+$GLOBALS['wpdb'] = new WP_AI_Bridge_67_Test_DB();
+
+// The dependency-free fixture has no WordPress wp-content directory. Use a
+// random, test-owned directory for the real PHP flock API, not a stubbed lock.
+$wpai67_lock_dir = sys_get_temp_dir() . '/wpai67-lock-' . bin2hex( random_bytes( 8 ) );
+if ( ! mkdir( $wpai67_lock_dir, 0700 ) ) {
+	throw new RuntimeException( 'Could not create isolated extension lock directory.' );
+}
+define( 'WP_CONTENT_DIR', $wpai67_lock_dir );
+
 $checks = 0;
 function wpnb67_assert( $condition, $message ) {
 	++$GLOBALS['checks'];
@@ -220,6 +260,12 @@ try {
 	wpnb67_assert( false === strpos( json_encode( get_option( Mutation_Log::OPTION_NAME ) ), 'PRIVATE_PACKAGE_MARKER' ), 'Successful audit leaked package URL secrets.' );
 
 	wpnb67_reset();
+	$GLOBALS['wpnb67']['mode'] = 'lock_busy';
+	wpnb67_error( $ability->mutate( $package ), 'external_package_busy' );
+	wpnb67_assert( 0 === $GLOBALS['wpnb67']['installs'], 'Lock contention must not call native Core.' );
+	wpnb67_no_files();
+
+	wpnb67_reset();
 	$theme = $ability->mutate( array_replace( $package, array( 'kind' => 'theme' ) ) );
 	wpnb67_assert( ! is_wp_error( $theme ) && 'wpai-external-theme' === $theme['target'], 'Synthetic external theme install failed.' );
 	wpnb67_no_files();
@@ -272,6 +318,11 @@ try {
 	foreach ( $GLOBALS['wpnb67']['files'] ?? array() as $file ) {
 		if ( is_file( $file ) ) { unlink( $file ); }
 	}
+	$wpai67_lock_file = $wpai67_lock_dir . '/.wpai-extension-native-mutation.lock';
+	if ( is_file( $wpai67_lock_file ) ) {
+		unlink( $wpai67_lock_file );
+	}
+	rmdir( $wpai67_lock_dir );
 }
 
 echo 'PASS: Issue #67 external package boundary (' . $checks . " assertions).\n";
