@@ -28,25 +28,31 @@ Administrator parity means the authority WordPress actually permits for the auth
 
 The plugin is the WordPress-side integration layer. The companion project may orchestrate workflows, but this repository owns its product and must remain usable and recoverable independently of that companion and of chat history.
 
+The Bridge is fundamentally an **authenticated access, delegation, discovery, and data-exchange layer**, comparable in purpose to a deliberately scoped WordPress API credential, not a builder or a parallel implementation of WordPress business features. A connected AI may plan or produce changes, but the owning WordPress Core/plugin/theme API or a separately installed feature plugin executes the actual feature workflow. Creating role definitions, commerce rules, forms, CPT schemas, SEO behavior, or page designs is not a new Bridge-owned product domain. The Bridge **does** own its necessary connection infrastructure, bounded transfer/recovery mechanisms, permission policy, activity metadata, and private Persistent Workspace for cross-conversation continuity.
+
+Administrator-equivalent coverage must include legitimate registered WordPress REST API operations available to the authenticated principal, not only operations for which a Bridge developer has already written a dedicated Ability. A WordPress admin-screen-only function without an exposed supported API is not automatically a REST operation: use a verified Core/provider contract, an explicitly authorized extension/source workflow, or report the actual interface gap. Full access is always subject to the principal's real capabilities and administrator delegation.
+
 ## 2. Architecture and simplicity
 
 Use the existing WordPress administration and extension systems rather than building a parallel administration platform.
 
 ```text
-AI / MCP client
+AI / compatible MCP client
       |
-      v
-Bridge authentication + administrator delegation policy
-      |
-      v
-Official MCP Adapter + WordPress Abilities
-      |
-      +-- compatible registered Core/provider operations
-      +-- thin typed fallbacks using WordPress/provider APIs
-      |
-      v
-The actual WordPress installation and its permission checks
+      +-- direct connection --+
+      +-- optional Gateway --+--> Bridge identity + delegation + data boundary
+                                      |
+                                      +-- official MCP Adapter / registered Abilities
+                                      +-- authorized registered WordPress REST contracts
+                                      +-- narrow Core/provider API fallbacks when required
+                                      +-- private Workspace and controlled file transfer
+                                      |
+                                      v
+                         WordPress Core / installed plugins / themes
+                         (native permissions, validation, side effects)
 ```
+
+This is the **required target architecture**, not a claim that every branch (especially generic REST execution and private binary upload) already ships.
 
 Reuse the Bridge's existing authentication, settings, permission service, discovery, and execution paths. Prefer one coherent policy boundary and a small reusable execution/discovery layer over separate permission engines or adapters for each provider. A generic layer must still execute an identified supported operation; it is not a raw function-call or arbitrary command endpoint.
 
@@ -57,6 +63,8 @@ For an operation, prefer in order:
 3. add a thin typed fallback only for coverage or normalization that the existing contract cannot supply;
 4. when public APIs cannot provide a required integrity/concurrency guarantee, use the smallest fixed-purpose internal persistence primitive bound to the already-authorized object/data model, with no caller-selected SQL/table/column/query/command fragments, focused tests, static confinement, and high-assurance review;
 5. report a specific implementation or upstream-contract gap when no usable path exists, rather than inventing an API or disguising missing code as a disabled permission.
+
+Registered WordPress REST operations are a first-class generic access family. Provide bounded discovery of actually registered route/method/schema contracts and a reusable path for authorized invocation, without adding Bridge source for each provider route. Prefer the native REST dispatcher/validation/permission callback (or an equally verified native REST authentication path); never accept arbitrary external URLs, PHP callable names, SQL, filesystem paths, or arbitrary request headers as a substitute. A broad REST delegation surface is materially elevated and requires its own explicit administrator consent and native target/provider authorization. It cannot silently inherit Site Read, bypass an explicit provider denial, grant new WordPress capabilities, change Bridge delegation itself, or surface credentials by a generic read. It must classify side effects conservatively and handle exact target/output/ambiguous mutation outcomes. Preserve existing purpose-specific Bridge security/lifecycle paths where ordinary generic REST would bypass their guarantees.
 
 A new compatible registered operation or a new target within an existing generic contract must not require a provider-specific Bridge source edit merely to be discovered and used after authorization. Prefer current WordPress registrations and supported schemas over hardcoded lists of plugin names, themes, object types, taxonomies, metadata keys, option names, or download origins.
 
@@ -142,7 +150,7 @@ The AI must be able to ask what it can do on this installation without guessing 
 
 Discovery must make the following information available where authorized:
 
-- exact operation identity and provider, purpose, real input/output schema, and target requirements;
+- exact operation identity and provider, purpose, real input/output schema, and target requirements; for registered REST operations, the actual site-local route, supported HTTP method and native registered argument contract;
 - required Bridge delegation and WordPress/provider authority, including target-dependent checks that cannot be decided without input;
 - material side effects such as live change, deletion, executable code, external requests, or sensitive data;
 - whether the operation is usable, implemented but disabled, denied for the current principal/target, missing from the Bridge, or unavailable because of an upstream/environment condition;
@@ -171,6 +179,7 @@ Plan coverage across the complete WordPress administration surface from the star
 | Comments | discovery, moderation, replies, status changes, and deletion |
 | Tools and maintenance | supported import/export, site health, updates, scheduled work, cache/maintenance operations, and backup/restore when WordPress or an installed provider supplies that workflow |
 | Provider administration | installed-provider business operations, including forms, fields, commerce, SEO, and other administration; not limited to named example plugins |
+| Registered REST API | dynamic discovery and authorized invocation of the installation's legitimate Core/provider REST endpoints under exact WordPress permissions and deliberately granted Bridge access, without per-route Bridge adapters |
 | Multisite | site and network administration only under the corresponding actual site/Super Admin capabilities |
 | Persistent Workspace | private project documents, tasks, state, activity, export, and explicitly authorized lifecycle operations |
 
@@ -208,6 +217,18 @@ Resolve the exact installed extension and relative file, verify real-path contai
 
 Recommend hooks, custom plugins, and child themes for routine customization because updates can replace vendor/parent-theme edits; this is guidance, not a permanent prohibition on an administrator-authorized source edit. Control-plane components, including the Bridge and Adapter, require a connection-loss warning and a proven recovery mechanism, not a hidden provider blacklist. Source/diff disclosure requires elevated source access and never belongs in ordinary lists or mutation logs. Executable-code consent is not a sandbox or transactional rollback of code side effects.
 
+### Content-aware exchange and transfer
+
+The Bridge must classify *what* is being transferred as well as its size and operation: bounded structured JSON; long UTF-8 text or markup/source; large paginated collections and trees; opaque images/audio/video/documents/archives; executable plugin/theme packages; and operation status or partial/unknown outcomes. Different classes need different safe presentations and transfer paths, not one ever-increasing MCP response limit.
+
+- Small structured responses stay inline. Large structured data uses server-owned selectors, projection, filtering, pagination or a truthful continuation bound to a stable target/state identity; do not present a cut JSON object as complete or fabricate a resumable cursor.
+- Long text uses bounded UTF-8-safe windows, byte offsets, content length/hash and revision identity, with rechecks on every continuation. Preserve Markdown/HTML/Gutenberg/source semantics and ensure a post-write result identifies committed state even when the full body is too large to return.
+- Binary payloads use approved, authenticated bounded HTTP streaming/multipart or native WordPress media/installer transfer, with MIME/format verification, exact byte length, integrity digest, ownership, expiry, quota, cleanup and recovery. Return bounded metadata/preview/handle through MCP; never make giant base64 arguments a universal transfer path. An executable ZIP additionally requires separate review and explicit installation authority, not automatic activation.
+- Read, write, export, upload and execute responses distinguish complete versus partial/truncated, unsupported continuation, stale state, known failure versus ambiguous committed outcome, and genuine retry safety. File/object handles are short-lived, scoped and reauthorized, not standalone permissions or public downloadable secrets.
+- Exchange contracts must work both directly and through a connector-neutral MCP Gateway: share WordPress-side semantics, not credentials or client-specific behavior. A Gateway may need its own real binary transport and bounded response mapping; do not advertise it before the corresponding client-to-Gateway-to-Bridge path is implemented and tested. Preserve compatibility where current transports cannot carry a new mode.
+
+Keep fast common-case latency, CPU/memory allocations and metadata enumeration proportional to the requested work. Use WordPress's owning API, lazy discovery, finite response/transfer budgets, and measured optimizations rather than a mandatory worker, queue, daemon or second database. Validate representative small, large, concurrent and degraded workflows, including the full direct and Gateway routes where relevant.
+
 ## 11. Persistent Workspace
 
 Persistent Workspace provides durable project continuity inside WordPress, independent of conversation history.
@@ -240,6 +261,8 @@ Verify each client's current official remote-MCP discovery, OAuth/client-authent
 
 Verify version-sensitive client and Adapter requirements before modifying transport. Do not add a proxy, tunnel, independent identity platform, or second MCP stack merely for completeness. Connection/delegation revocation and relevant policy changes must affect subsequent execution rather than only a cached discovery response.
 
+Two connection topologies are first-class: **AI client -> Bridge directly** and **AI client -> MCP Gateway -> Bridge Target**. The Gateway is an independently approved OAuth client with its own bound credentials and Target/user permissions; it must not impersonate the built-in ChatGPT client or replace the WordPress principal's Bridge delegation. WordPress-specific payload contracts remain owned here; Gateway routing/transport implementation remains owned by that separate project. Introducing an operation with an existing bounded JSON Ability contract need not change Gateway, while a genuinely new binary transfer or protocol feature needs an explicit cross-project compatibility decision and end-to-end validation. Additional AI vendors remain unclaimed until their current client protocols are proven compatible.
+
 ## 14. Logging and privacy
 
 Use bounded metadata-oriented activity logs: operation identity, actor, target identity when appropriate, outcome, and a safe error code. Never log credentials, bearer tokens, passwords, source/diffs, metadata keys/values, file bodies, signed URLs, arbitrary content bodies, or complete request/response payloads.
@@ -254,6 +277,7 @@ Return only information necessary for the authorized operation. Separate broad d
 - Remove artificial provider/object/key/origin restrictions through generic validated contracts and administrator policy, not by deleting authorization checks.
 - Treat broader targets of a supported generic contract differently from materially new risky operations requiring consent.
 - Prefer extending existing mechanisms over a new framework, store, service, or integration dependency.
+- Optimize against measured end-to-end request cost and response correctness on representative WordPress site sizes; keep ordinary small reads inexpensive, avoid full registry/content scans when a targeted query suffices, and do not cache authorization across revocation or identity changes. Preserve existing source/tests and introduce a new subsystem only when an actual required contract justifies it.
 - Public docs describe implemented behavior; this specification defines required product behavior. Record and close gaps without misrepresenting either.
 - Preserve current verified ChatGPT OAuth/MCP functionality during client-neutral wording and future compatible-client extensions; do not present planned direct client integrations as shipped.
 
