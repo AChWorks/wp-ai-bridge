@@ -47,6 +47,31 @@ final class Permissions {
 	}
 
 	/**
+	 * Checks a full explicit high-trust grant set from one fresh snapshot.
+	 *
+	 * Avoids repeated option/group normalization for every protected
+	 * lifecycle and never caches across an invocation or a grant revocation.
+	 *
+	 * @param array<int,array{0:string,1:string}> $requirements Explicit group/capability pairs.
+	 * @return bool
+	 */
+	public function allowed_all( array $requirements ) {
+		$enabled = $this->settings->all();
+		foreach ( $requirements as $requirement ) {
+			if (
+				! is_array( $requirement ) || 2 !== count( $requirement ) ||
+				! isset( $requirement[0], $requirement[1] ) ||
+				! is_string( $requirement[0] ) || ! is_string( $requirement[1] ) ||
+				'' === $requirement[1] || empty( $enabled[ $requirement[0] ] ) ||
+				! current_user_can( $requirement[1] )
+			) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * Creates a reusable ability permission callback.
 	 *
 	 * @param string $group      Access-group key.
