@@ -75,9 +75,9 @@ The Bridge does not accept server filesystem paths.
 
 ## Plugin/theme installation fails
 
-Installation accepts WordPress.org slugs only. The connected user needs the matching Core install/update/activate capability and **Code & Extensions** must be enabled.
+`wp-ai-bridge/extension-lifecycle` installs a plugin/theme by **WordPress.org slug** or, with separate **External Packages** consent, from an explicitly supplied safe **public HTTPS ZIP URL** (`package_url`). Both paths require **Code & Extensions**, the action-specific native WordPress install/activate/update capability, and filesystem/deployment policy that permits that operation; installation does not automatically activate the extension. A private/local ZIP from any creator is **not yet a supported binary-upload path**; the separately authenticated staged package workflow is tracked by [#108](https://github.com/AChWorks/wp-ai-bridge/issues/108). Do not disguise an inability to upload a private ZIP as a disabled existing public-HTTPS install.
 
-If WordPress requires interactive filesystem credentials, the Bridge reports that manual filesystem setup is required rather than collecting those credentials.
+For a public HTTPS ZIP install, confirm **External Packages** and the source's HTTPS accessibility/safe redirect rules in addition to the native install capability; see [External packages](./EXTERNAL-PACKAGES.md). If the installed Bridge build includes the newer read-only `extension-authorization` Ability, query the exact `kind`/`action` (and `install_source: public_https` where applicable) before executing: it reports required Bridge/native grants **without proving target/filesystem/upgrader success**. Older deployed versions, including v0.4.2, may not have this preflight; check the actual installed version, not only repository `main`. If WordPress requires interactive filesystem credentials, the Bridge reports that manual filesystem setup is required rather than collecting those credentials.
 
 
 ## Installed plugin/theme source editing is denied or requires recovery

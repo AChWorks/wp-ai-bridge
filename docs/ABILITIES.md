@@ -2,7 +2,7 @@
 
 Bridge-owned Ability names use the `wp-ai-bridge/` namespace.
 
-The baseline installation registers the core Bridge surfaces below. Optional Gravity Forms and Code Snippets fallbacks are registered only when their supported provider APIs are available. Astra and other suitable provider Abilities are reused rather than duplicated.
+The baseline installation registers the core Bridge surfaces below. Optional Gravity Forms and Code Snippets fallbacks are registered only when their supported provider APIs are available. Astra and other suitable provider Abilities are reused rather than duplicated. **This reference follows current maintained source; a deployed release may be older.** For an actual site, check its `bridge-info` plugin version and then discover available Abilities through its authenticated MCP Adapter/Gateway route. Listing an Ability does not establish executable WordPress/provider permission.
 
 | Ability | Primary access group | Purpose |
 | --- | --- | --- |
