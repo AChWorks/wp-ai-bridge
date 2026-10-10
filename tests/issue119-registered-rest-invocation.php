@@ -52,9 +52,13 @@ final class WP_AI_Bridge_REST_Invocation_Test_Server {
 	public $removed = array();
 	public $visible_methods = array();
 	public $removed_args = array();
+	public $before_index = null;
 	public $hidden_endpoint_methods = array();
 	public function get_routes() { return $this->routes; }
 	public function get_data_for_routes( $routes, $context = 'view' ) {
+		if ( is_callable( $this->before_index ) ) {
+			call_user_func( $this->before_index );
+		}
 		$output = array();
 		foreach ( $routes as $route => $handlers ) {
 			if ( in_array( $route, $this->removed, true ) ) {
@@ -143,7 +147,7 @@ wpai119invoke_assert( ! $provider->can_invoke(), 'Native administrative capabili
 $GLOBALS['wpai_test']['capabilities']['manage_options'] = true;
 
 $result = $provider->invoke( $req );
-wpai119invoke_assert( ! is_wp_error( $result ) && 'succeeded' === $result['outcome'] && 200 === $result['status'], 'Authorized GET should use the native REST dispatcher.' );
+wpai119invoke_assert( ! is_wp_error( $result ) && 'reported_success' === $result['outcome'] && 200 === $result['status'], 'Authorized GET should use the native REST dispatcher.' );
 wpai119invoke_assert( 1 === count( $GLOBALS['wpai119invoke_calls'] ) && array( 'page' => 2 ) === $GLOBALS['wpai119invoke_calls'][0]->query, 'Native request must preserve query parameters without external HTTP.' );
 wpai119invoke_assert( ! isset( $GLOBALS['wpai119invoke_calls'][0]->headers['authorization'] ), 'No custom Authorization header can be injected.' );
 wpai119invoke_assert( ! is_wp_error( $provider->invoke( array( 'route' => '/acme/v1/item/(?P<id>[\d]+)', 'path' => '/acme/v1/item/24', 'method' => 'GET' ) ) ), 'Exact registered regex with concrete matching path should be supported.' );
@@ -211,6 +215,24 @@ $result = $provider->invoke( $mutate );
 wpai119invoke_assert( ! is_wp_error( $result ) && 'outcome_unknown' === $result['outcome'], 'Large native output after mutation must signal uncertainty, not retry safety.' );
 
 $GLOBALS['wpai119invoke_response'] = new WP_REST_Response( array( 'ok' => true ), 200 );
+// Even a GET handler may have side effects. A thrown or truncated result
+// must never be represented as a safe/idempotent read that can be replayed.
+$GLOBALS['wpai119invoke_response'] = new \RuntimeException( 'confidential-read-side-effect' );
+$get_unknown = $provider->invoke( $req );
+wpai119invoke_assert( ! is_wp_error( $get_unknown ) && 'outcome_unknown' === $get_unknown['outcome'] && ! str_contains( wp_json_encode( $get_unknown ), 'confidential' ), 'Generic GET exceptions must preserve the same unknown mutation outcome.' );
+$GLOBALS['wpai119invoke_response'] = new WP_REST_Response( array( 'ok' => true ), 200 );
+$server->before_index = static function () use ( $provider, $req ) {
+	$nested = $provider->invoke( $req );
+	wpai119invoke_assert( is_wp_error( $nested ) && 'rest_invocation_recursive' === $nested->get_error_code(), 'Public-index preflight must reject nested execution.' );
+};
+$index_ok = $provider->invoke( $req );
+wpai119invoke_assert( ! is_wp_error( $index_ok ) && 'reported_success' === $index_ok['outcome'], 'Outer route survives a refused nested preflight call.' );
+$server->before_index = static function () {
+	throw new RuntimeException( 'private-provider-index-message' );
+};
+$index_error = $provider->invoke( $req );
+wpai119invoke_assert( ! is_wp_error( $index_error ) && 'outcome_unknown' === $index_error['outcome'] && ! str_contains( wp_json_encode( $index_error ), 'private-provider-index-message' ), 'Provider public-index exception must be safely redacted.' );
+$server->before_index = null;
 $GLOBALS['wpai119invoke_on_dispatch'] = static function () use ( $provider, $req ) {
 	$nested = $provider->invoke( $req );
 	wpai119invoke_assert( is_wp_error( $nested ) && 'rest_invocation_recursive' === $nested->get_error_code(), 'Provider reentrancy must fail closed.' );
