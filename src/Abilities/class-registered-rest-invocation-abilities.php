@@ -248,7 +248,7 @@ final class Registered_REST_Invocation_Abilities {
 
 	/** @param string $path Concrete local path. @return bool */
 	private function contains_path_traversal( $path ) {
-		foreach ( explode( '/', $path ) as $segment ) {
+		foreach ( explode( '/', ltrim( $path, '/' ) ) as $segment ) {
 			if ( '' === $segment || '.' === $segment || '..' === $segment ) {
 				return true;
 			}
