@@ -102,7 +102,7 @@ final class Registrar {
 		$this->integration_abilities       = new Integration_Abilities( $this->resolver, $this->permissions );
 		$this->site_config_abilities       = new Site_Config_Abilities( $this->permissions, $mutation_log );
 		$this->extension_abilities         = new Extension_Abilities( $this->permissions, $mutation_log );
-		$this->private_package_abilities  = $private_package_abilities ? $private_package_abilities : new Private_Package_Abilities( $this->permissions );
+		$this->private_package_abilities   = $private_package_abilities ? $private_package_abilities : new Private_Package_Abilities( $this->permissions );
 		$this->source_editing_abilities    = new Source_Editing_Abilities( $this->permissions, $mutation_log );
 		$this->user_abilities              = new User_Abilities( $this->permissions, $mutation_log );
 		$this->app_password_abilities      = new Secure_Application_Password_Abilities( $this->permissions, $mutation_log );

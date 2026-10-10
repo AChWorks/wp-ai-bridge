@@ -230,7 +230,7 @@ final class OAuth_Server {
 	 */
 	public function authenticate_mcp_request( $request ) {
 		self::$authenticated_mcp_client_id = '';
-		$this->auth_state = 'missing';
+		$this->auth_state                  = 'missing';
 		if ( ! $this->is_https_ready() || ! $request instanceof \WP_REST_Request ) {
 			$this->auth_state = 'invalid';
 			return false;
@@ -275,7 +275,7 @@ final class OAuth_Server {
 		}
 		wp_set_current_user( (int) $claims['user_id'] );
 		self::$authenticated_mcp_client_id = $client_id;
-		$this->auth_state = 'authenticated';
+		$this->auth_state                  = 'authenticated';
 		return true;
 	}
 
