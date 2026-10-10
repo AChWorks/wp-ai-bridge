@@ -52,6 +52,7 @@ final class WP_AI_Bridge_REST_Invocation_Test_Server {
 	public $removed = array();
 	public $visible_methods = array();
 	public $removed_args = array();
+	public $hidden_endpoint_methods = array();
 	public function get_routes() { return $this->routes; }
 	public function get_data_for_routes( $routes, $context = 'view' ) {
 		$output = array();
@@ -64,6 +65,7 @@ final class WP_AI_Bridge_REST_Invocation_Test_Server {
 			foreach ( $handlers as $handler ) {
 				if ( ! empty( $handler['show_in_index'] ) ) {
 					$handler_methods = array_keys( $handler['methods'] );
+					$handler_methods = array_values( array_diff( $handler_methods, $this->hidden_endpoint_methods[ $route ] ?? array() ) );
 					$methods         = array_merge( $methods, $handler_methods );
 					$args            = isset( $handler['args'] ) ? $handler['args'] : array();
 					foreach ( $this->removed_args[ $route ] ?? array() as $name ) {
@@ -176,6 +178,9 @@ wpai119invoke_assert( is_wp_error( $provider->invoke( array( 'route' => '/acme/v
 $server->removed_args['/acme/v1/data'] = array( 'title' );
 wpai119invoke_assert( is_wp_error( $provider->invoke( array( 'route' => '/acme/v1/data', 'path' => '/acme/v1/data', 'method' => 'POST', 'body' => array( 'title' => 'hidden' ) ) ) ), 'Provider public-index redaction must prevent hidden argument injection.' );
 $server->removed_args = array();
+$server->hidden_endpoint_methods['/acme/v1/data'] = array( 'POST' );
+wpai119invoke_assert( is_wp_error( $provider->invoke( array( 'route' => '/acme/v1/data', 'path' => '/acme/v1/data', 'method' => 'POST' ) ) ), 'A removed public endpoint method must not reappear from the aggregate route method list.' );
+$server->hidden_endpoint_methods = array();
 wpai119invoke_assert( is_wp_error( $provider->invoke( array( 'route' => '/acme/v1/item/(?P<id>[\\d]+)', 'path' => '/acme/v1/item/24', 'method' => 'GET', 'query' => array( 'id' => 99 ) ) ) ), 'Query parameter cannot override a route capture used for native object authorization.' );
 
 $server->visible_methods = array();
