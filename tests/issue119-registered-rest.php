@@ -141,6 +141,8 @@ wpai119_check( is_wp_error( $provider->read( array( 'action' => 'list', 'unknown
 $GLOBALS['wpai119_rest']->routes['/acme/v1/' . str_repeat( 'X', 600 )] = array( $handler );
 $large = $provider->read( array( 'action' => 'get', 'route' => '/acme/v1/' . str_repeat( 'X', 600 ) ) );
 wpai119_check( is_wp_error( $large ), 'Oversize routes must be explicit errors, not silent clipping.' );
+// The oversized-route probe must not pollute subsequent filtered-index totals.
+unset( $GLOBALS['wpai119_rest']->routes[ '/acme/v1/' . str_repeat( 'X', 600 ) ] );
 
 // Simulate native index redaction rather than changing the raw route registry.
 $GLOBALS['wpai119_rest']->description_filter = static function ( $entry ) {
