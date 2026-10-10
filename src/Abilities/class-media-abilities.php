@@ -260,7 +260,7 @@ final class Media_Abilities {
 	 * @return array<string,mixed>|WP_Error Uploaded attachment or error.
 	 */
 	public function upload( $input ) {
-		if ( array_key_exists( 'operation_id', $input ) ) {
+		if ( is_array( $input ) && array_key_exists( 'operation_id', $input ) ) {
 			return \WP_AI_Bridge\Support\Create_Claim::run(
 				'media-upload',
 				$input,
@@ -664,7 +664,7 @@ final class Media_Abilities {
 	 * @return array<string,mixed>|WP_Error Attachment summary or a redacted error.
 	 */
 	public function import_url( $input ) {
-		if ( array_key_exists( 'operation_id', $input ) ) {
+		if ( is_array( $input ) && array_key_exists( 'operation_id', $input ) ) {
 			return \WP_AI_Bridge\Support\Create_Claim::run(
 				'media-import-url',
 				$input,

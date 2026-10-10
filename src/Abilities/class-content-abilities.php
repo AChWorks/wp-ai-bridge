@@ -433,7 +433,7 @@ final class Content_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function upsert( $input ) {
-		if ( 'create' === ( $input['action'] ?? '' ) && array_key_exists( 'operation_id', $input ) ) {
+		if ( is_array( $input ) && 'create' === ( $input['action'] ?? '' ) && array_key_exists( 'operation_id', $input ) ) {
 			return \WP_AI_Bridge\Support\Create_Claim::run(
 				'content-create',
 				$input,
@@ -447,7 +447,7 @@ final class Content_Abilities {
 				}
 			);
 		}
-		if ( array_key_exists( 'operation_id', $input ) ) {
+		if ( is_array( $input ) && array_key_exists( 'operation_id', $input ) ) {
 			return new WP_Error( 'create_claim_invalid', __( 'operation_id is only supported for create.', 'wp-ai-bridge' ) );
 		}
 		$ability = 'wp-ai-bridge/content-upsert';

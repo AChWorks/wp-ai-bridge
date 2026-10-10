@@ -303,7 +303,8 @@ final class Site_Health_Abilities {
 				continue;
 			}
 			if ( ! is_array( $handler['callback'] ) || ! isset( $handler['callback'][0], $handler['callback'][1] ) ||
-				! $handler['callback'][0] instanceof \WP_REST_Site_Health_Controller ||
+				! is_object( $handler['callback'][0] ) ||
+				\WP_REST_Site_Health_Controller::class !== get_class( $handler['callback'][0] ) ||
 				$handler['callback'][1] !== $method ) {
 				return new WP_Error( 'site_health_unavailable', __( 'Native Site Health REST handler was not verified.', 'wp-ai-bridge' ) );
 			}

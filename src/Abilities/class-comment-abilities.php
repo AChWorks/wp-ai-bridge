@@ -324,7 +324,7 @@ final class Comment_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function reply( $input ) {
-		if ( array_key_exists( 'operation_id', $input ) ) {
+		if ( is_array( $input ) && array_key_exists( 'operation_id', $input ) ) {
 			return \WP_AI_Bridge\Support\Create_Claim::run(
 				'comment-reply',
 				$input,
