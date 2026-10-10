@@ -72,7 +72,6 @@ final class Site_Config_Abilities {
 			)
 		);
 
-
 		$registered[] = wp_register_ability(
 			'wp-ai-bridge/core-update-status',
 			array(
@@ -167,8 +166,8 @@ final class Site_Config_Abilities {
 					foreach ( $updates as $update ) {
 						if ( ! is_object( $update ) || ! isset( $update->response, $update->current ) || ! is_string( $update->response ) || ! is_string( $update->current ) ) {
 							$valid_offers = false;
-							$offers = array();
-							$total  = 0;
+							$offers       = array();
+							$total        = 0;
 							break;
 						}
 						++$total;
@@ -194,17 +193,17 @@ final class Site_Config_Abilities {
 		}
 
 		return array(
-			'installed_version'           => $installed_version,
-			'status'                      => $status,
-			'cache_state'                 => $cache_state,
-			'last_checked_utc'            => $valid_check ? gmdate( 'c', $checked ) : '',
-			'check_age_seconds'           => $age,
-			'offers'                      => $offers,
-			'offer_count'                 => $total,
-			'offers_truncated'            => $total > count( $offers ),
-			'native_update_core_allowed'  => current_user_can( 'update_core' ),
-			'file_modifications_allowed'  => function_exists( 'wp_is_file_mod_allowed' ) ? (bool) wp_is_file_mod_allowed( 'core' ) : ! ( defined( 'DISALLOW_FILE_MODS' ) && DISALLOW_FILE_MODS ),
-			'automatic_updater_disabled'  => defined( 'AUTOMATIC_UPDATER_DISABLED' ) && AUTOMATIC_UPDATER_DISABLED,
+			'installed_version'            => $installed_version,
+			'status'                       => $status,
+			'cache_state'                  => $cache_state,
+			'last_checked_utc'             => $valid_check ? gmdate( 'c', $checked ) : '',
+			'check_age_seconds'            => $age,
+			'offers'                       => $offers,
+			'offer_count'                  => $total,
+			'offers_truncated'             => $total > count( $offers ),
+			'native_update_core_allowed'   => current_user_can( 'update_core' ),
+			'file_modifications_allowed'   => function_exists( 'wp_is_file_mod_allowed' ) ? (bool) wp_is_file_mod_allowed( 'core' ) : ! ( defined( 'DISALLOW_FILE_MODS' ) && DISALLOW_FILE_MODS ),
+			'automatic_updater_disabled'   => defined( 'AUTOMATIC_UPDATER_DISABLED' ) && AUTOMATIC_UPDATER_DISABLED,
 			'upgrade_execution_via_bridge' => false,
 		);
 	}
@@ -215,8 +214,14 @@ final class Site_Config_Abilities {
 			'type'                 => 'object',
 			'properties'           => array(
 				'installed_version'            => array( 'type' => 'string' ),
-				'status'                       => array( 'type' => 'string', 'enum' => array( 'update_available', 'no_update_offered', 'unknown_or_stale' ) ),
-				'cache_state'                  => array( 'type' => 'string', 'enum' => array( 'fresh', 'stale', 'missing_or_invalid' ) ),
+				'status'                       => array(
+					'type' => 'string',
+					'enum' => array( 'update_available', 'no_update_offered', 'unknown_or_stale' ),
+				),
+				'cache_state'                  => array(
+					'type' => 'string',
+					'enum' => array( 'fresh', 'stale', 'missing_or_invalid' ),
+				),
 				'last_checked_utc'             => array( 'type' => 'string' ),
 				'check_age_seconds'            => array( 'type' => 'integer' ),
 				'offers'                       => array(

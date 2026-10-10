@@ -303,8 +303,8 @@ final class Settings_Page {
 	 */
 	public function render_settings() {
 		$this->require_admin();
-		$values          = $this->settings->all();
-		$notice          = isset( $_GET['wpai_notice'] ) ? sanitize_key( wp_unslash( $_GET['wpai_notice'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Redirect status notice only.
+		$values = $this->settings->all();
+		$notice = isset( $_GET['wpai_notice'] ) ? sanitize_key( wp_unslash( $_GET['wpai_notice'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Redirect status notice only.
 		?>
 		<div class="wrap">
 			<h1><?php echo esc_html__( 'WP AI Bridge Settings', 'wp-ai-bridge' ); ?></h1>
@@ -421,7 +421,10 @@ final class Settings_Page {
 		?>
 		<table class="widefat striped" style="max-width: 900px"><tbody>
 			<tr><th scope="row"><?php echo esc_html__( 'WordPress', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( $this->environment->wordpress_version() ); ?>
-				<?php if ( ! $wordpress_supported ) : ?> — <?php echo esc_html__( 'WordPress 6.9 or newer is required.', 'wp-ai-bridge' ); ?><?php endif; ?></td></tr>
+				<?php
+				if ( ! $wordpress_supported ) :
+					?>
+					— <?php echo esc_html__( 'WordPress 6.9 or newer is required.', 'wp-ai-bridge' ); ?><?php endif; ?></td></tr>
 			<tr><th scope="row"><?php echo esc_html__( 'Abilities API', 'wp-ai-bridge' ); ?></th><td><?php echo $abilities_available ? esc_html__( 'Available', 'wp-ai-bridge' ) : esc_html__( 'Unavailable: check WordPress version and Abilities API loading.', 'wp-ai-bridge' ); ?></td></tr>
 			<tr><th scope="row"><?php echo esc_html__( 'MCP Adapter', 'wp-ai-bridge' ); ?></th><td>
 				<?php
