@@ -106,7 +106,7 @@ jobs:
 
   integration:
     needs: image-supply
-    name: Integration / ${{ matrix.wordpress_tag }}
+    name: Integration / ${{ matrix.wordpress_tag }} / MCP Adapter ${{ matrix.mcp_adapter_version }}
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
     strategy:
@@ -115,8 +115,16 @@ jobs:
         include:
           - wordpress_tag: 6.9-php8.4-apache
             optional_providers: '0'
+            mcp_adapter_version: '0.6.1'
           - wordpress_tag: php8.4-apache
             optional_providers: '1'
+            mcp_adapter_version: '0.6.1'
+          - wordpress_tag: 6.9-php8.4-apache
+            optional_providers: '0'
+            mcp_adapter_version: '0.7.0'
+          - wordpress_tag: php8.4-apache
+            optional_providers: '0'
+            mcp_adapter_version: '0.7.0'
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -147,6 +155,8 @@ jobs:
       - name: Run isolated WordPress integration suite
         env:
           RUN_OPTIONAL_PROVIDERS: '${{ matrix.optional_providers }}'
+          MCP_ADAPTER_EXPECTED_VERSION: '${{ matrix.mcp_adapter_version }}'
+          MCP_ADAPTER_URL: https://github.com/WordPress/mcp-adapter/releases/download/v${{ matrix.mcp_adapter_version }}/mcp-adapter.zip
         run: bash bin/run-integration.sh '${{ matrix.wordpress_tag }}'
 
   specialized:

@@ -1,6 +1,6 @@
 <?php
 /**
- * Live WordPress REST-dispatch smoke for MCP Adapter v0.6.1 HTTP session behavior.
+ * Live WordPress REST-dispatch smoke for MCP Adapter 2025-11-25 HTTP session behavior.
  *
  * Run with:
  * wp eval-file tests/integration/issue6-http-transport-smoke.php --user=<administrator>
@@ -27,6 +27,7 @@ function wpai_issue6_http_request( $method, array $payload = array(), $session_i
 	}
 	if ( '' !== $session_id ) {
 		$request->set_header( 'Mcp-Session-Id', $session_id );
+		$request->set_header( 'MCP-Protocol-Version', '2025-11-25' );
 	}
 	return rest_do_request( $request );
 }

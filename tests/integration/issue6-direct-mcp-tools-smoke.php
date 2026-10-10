@@ -45,6 +45,7 @@ function wpai_issue6_direct_tools_request( $method, $access_token, array $payloa
 	}
 	if ( '' !== $session_id ) {
 		$request->set_header( 'Mcp-Session-Id', $session_id );
+		$request->set_header( 'MCP-Protocol-Version', '2025-11-25' );
 	}
 	return rest_do_request( $request );
 }
