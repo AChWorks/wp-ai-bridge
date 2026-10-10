@@ -8,6 +8,7 @@ $messages = array_merge(
 	require __DIR__ . '/fa_IR-parts/part-6.php',
 	require __DIR__ . '/fa_IR-parts/ability-catalog.php',
 	require __DIR__ . '/fa_IR-parts/rest-discovery.php',
+	require __DIR__ . '/fa_IR-parts/rest-invocation.php',
 	require __DIR__ . '/fa_IR-parts/extension-authorization.php',
 	require __DIR__ . '/fa_IR-parts/ai-clients.php',
 	require __DIR__ . '/fa_IR-parts/large-payloads.php',
