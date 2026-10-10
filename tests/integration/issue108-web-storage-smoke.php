@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/../../src/Support/class-private-package-storage.php';
+require_once __DIR__ . '/../../src/Support/class-private-package-store.php';
 
 use WP_AI_Bridge\Support\Private_Package_Storage;
 use WP_AI_Bridge\Support\Private_Package_Store;
