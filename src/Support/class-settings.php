@@ -120,7 +120,7 @@ final class Settings {
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_REST_DISCOVERY     => array(
+			self::GROUP_REST_DISCOVERY    => array(
 				'label'       => __( 'Registered REST Discovery', 'wp-ai-bridge' ),
 				'description' => __( 'Allow WordPress administrators to inspect bounded registered REST route contracts. This does not authorize executing REST routes.', 'wp-ai-bridge' ),
 				'default'     => false,
