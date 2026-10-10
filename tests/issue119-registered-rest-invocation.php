@@ -139,6 +139,8 @@ $server->routes = array(
 	'/wp/v2/settings' => array( $handler ),
 	'/wp/v2/users/(?P<id>[\d]+)' => array( $handler ),
 	'/acme/v1/credentials' => array( $handler ),
+	'/batch/v1' => array( $handler ),
+	'/acme/v1/batch' => array( $handler ),
 );
 $req = array( 'route' => '/acme/v1/data', 'path' => '/acme/v1/data', 'method' => 'GET', 'query' => array( 'page' => 2 ) );
 wpai119invoke_assert( is_wp_error( $provider->invoke( $req ) ), 'Direct callback must deny without high-trust grant.' );
@@ -169,6 +171,8 @@ foreach ( array(
 	array( 'route' => '/wp/v2/settings', 'path' => '/wp/v2/settings', 'method' => 'GET' ),
 	array( 'route' => '/wp/v2/users/(?P<id>[\d]+)', 'path' => '/wp/v2/users/1', 'method' => 'POST' ),
 	array( 'route' => '/acme/v1/credentials', 'path' => '/acme/v1/credentials', 'method' => 'GET' ),
+	array( 'route' => '/batch/v1', 'path' => '/batch/v1', 'method' => 'POST', 'body' => array( 'requests' => array( array( 'path' => '/wp/v2/settings', 'method' => 'POST' ) ) ) ),
+	array( 'route' => '/acme/v1/batch', 'path' => '/acme/v1/batch', 'method' => 'POST' ),
 ) as $invalid ) {
 	wpai119invoke_assert( is_wp_error( $provider->invoke( $invalid ) ), 'Malicious/unrepresentable REST request passed boundary: ' . wp_json_encode( $invalid ) );
 }
