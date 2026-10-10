@@ -47,6 +47,7 @@ tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \
     | "${compose[@]}" exec -T wordpress tar -xf - -C /var/www/html/wp-content/plugins/wp-ai-bridge
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue135-no-private-packages-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue130-141-multisite-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-128-multisite-smoke.php --user=1 --allow-root
 
 "${compose[@]}" exec -T wordpress sh -lc '
 set -eu

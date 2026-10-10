@@ -27,7 +27,8 @@ AI / MCP client
 | Bridge delegation settings | `src/Support/class-settings.php`, `class-permissions.php`, `class-native-ability-delegation.php` | Small default-off groups plus actual WordPress/provider authority, checked at execution. |
 | Typed administration | Existing providers under `src/Abilities/` | Object-specific inputs, capabilities, lifecycle, error and integrity behavior. |
 | Exact metadata persistence | `src/Support/class-post-meta-store.php`, `class-term-meta-store.php` | Fixed-purpose, fixed-schema row identity/CAS; not a generic database API. |
-| Persistent Workspace | `src/Workspace/class-store.php`, Workspace abilities and admin screens | Private native storage, version/hash concurrency, dedicated administration. |
+| Persistent Workspace | src/Workspace/class-store.php, Workspace abilities and admin screens | Private native storage with version/hash concurrency. PR #143 additionally scopes optional project references, bounded pages and guarded text windows; no separate tenant ACL. |
+| Duplicate-safe create (PR #143 candidate) | src/Support/class-create-claim.php and class-create-claim-store.php | Optional stable operation ID on six Bridge-owned creates only; DB-unique INSERT IGNORE before effect, conditional option receipt CAS and explicit no-replay uncertainty. No generic provider execution or cross-repository change. |
 | Activity | `src/Support/class-mutation-log.php` | Bounded identity/outcome metadata, never request bodies or secrets. |
 
 Production requires the official Adapter and this Bridge, not Composer, Docker, Node.js, a daemon, another database, or an external identity platform. Build and integration tooling remain development-only.

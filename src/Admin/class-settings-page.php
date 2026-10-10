@@ -130,6 +130,10 @@ final class Settings_Page {
 	public function render_dashboard() {
 		$this->require_admin();
 		$resume = $this->workspace->resume();
+		if ( is_wp_error( $resume ) ) {
+			echo '<div class="notice notice-error"><p>' . esc_html( $resume->get_error_message() ) . '</p></div>';
+			return;
+		}
 		?>
 		<div class="wrap">
 			<h1><?php echo esc_html__( 'WP AI Bridge', 'wp-ai-bridge' ); ?></h1>
@@ -165,6 +169,10 @@ final class Settings_Page {
 		$status           = isset( $_GET['workspace_status'] ) ? sanitize_key( wp_unslash( $_GET['workspace_status'] ) ) : 'active'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only list filter.
 		$include_archived = in_array( $status, array( 'all', 'archived' ), true );
 		$documents        = $this->workspace->list_documents( $include_archived );
+		if ( is_wp_error( $documents ) ) {
+			echo '<div class="notice notice-error"><p>' . esc_html( $documents->get_error_message() ) . '</p></div>';
+			return;
+		}
 		if ( 'archived' === $status ) {
 			$documents = array_values(
 				array_filter(
@@ -227,6 +235,10 @@ final class Settings_Page {
 			'delivery'         => isset( $_GET['delivery'] ) ? sanitize_key( wp_unslash( $_GET['delivery'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only list filter.
 		);
 		$tasks   = $this->workspace->list_tasks( $filters );
+		if ( is_wp_error( $tasks ) ) {
+			echo '<div class="notice notice-error"><p>' . esc_html( $tasks->get_error_message() ) . '</p></div>';
+			return;
+		}
 		$view_id = isset( $_GET['task'] ) ? absint( $_GET['task'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only record selection.
 		$view    = $view_id ? $this->workspace->get_task( $view_id ) : null;
 		?>
@@ -361,6 +373,9 @@ final class Settings_Page {
 		$this->require_admin();
 		check_admin_referer( 'wpai_workspace_export' );
 		$snapshot = $this->workspace->export_snapshot();
+		if ( is_wp_error( $snapshot ) ) {
+			wp_die( esc_html( $snapshot->get_error_message() ) );
+		}
 		$filename = 'wp-ai-bridge-workspace-' . gmdate( 'Y-m-d-His' ) . '.json';
 		nocache_headers();
 		header( 'Content-Type: application/json; charset=utf-8' );
