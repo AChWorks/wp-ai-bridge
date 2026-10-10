@@ -242,6 +242,11 @@ $settings_before_rest = get_option( \WP_AI_Bridge\Support\Settings::OPTION_NAME,
 $grant_settings      = new \WP_AI_Bridge\Support\Settings();
 $with_rest_grant     = $grant_settings->all();
 $with_rest_grant[ \WP_AI_Bridge\Support\Settings::GROUP_REST_INVOCATION ] = 1;
+// Generic provider effects are unclassified: the operator has to enable
+// every independent protected lifecycle in the isolated full-trust fixture.
+foreach ( $grant_settings->groups() as $group => $description ) {
+	$with_rest_grant[ $group ] = 1;
+}
 update_option( \WP_AI_Bridge\Support\Settings::OPTION_NAME, $with_rest_grant, false );
 try {
 	$direct_rest = wpai_issue6_direct_tools_request(
