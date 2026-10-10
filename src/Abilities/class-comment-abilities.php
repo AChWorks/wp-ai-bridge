@@ -65,15 +65,20 @@ final class Comment_Abilities {
 				'input_schema'        => array(
 					'type'                 => 'object',
 					'properties'           => array(
-						'post'    => array(
+						'post'         => array(
 							'type'    => 'integer',
 							'minimum' => 1,
 						),
-						'parent'  => array(
+						'parent'       => array(
 							'type'    => 'integer',
 							'minimum' => 1,
 						),
-						'content' => array(
+						'operation_id' => array(
+							'type'      => 'string',
+							'minLength' => 8,
+							'maxLength' => 128,
+						),
+						'content'      => array(
 							'type'      => 'string',
 							'minLength' => 1,
 							'maxLength' => 20000,
@@ -319,6 +324,23 @@ final class Comment_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function reply( $input ) {
+		if ( array_key_exists( 'operation_id', $input ) ) {
+			return \WP_AI_Bridge\Support\Create_Claim::run(
+				'comment-reply',
+				$input,
+				function ( $clean ) {
+					return $this->can_reply() && ! empty( $clean['post'] ); },
+				function ( $clean ) {
+					return $this->reply( $clean ); },
+				function ( $id ) {
+					if ( ! current_user_can( 'edit_comment', $id ) ) {
+						return null;
+					}
+					$result = $this->dispatch( 'GET', '/wp/v2/comments/' . $id, array( 'context' => 'edit' ) );
+					return ! is_wp_error( $result ) ? $this->normalize_item( $result['data'] ) : null;
+				}
+			);
+		}
 		if ( ! $this->can_reply() ) {
 			return new WP_Error( 'comment_reply_denied', __( 'Comments access is required to reply to comments.', 'wp-ai-bridge' ) );
 		}

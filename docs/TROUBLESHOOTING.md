@@ -112,3 +112,14 @@ Replacing the plugin ZIP normally preserves settings and OAuth state. If the App
 ## Check WordPress Core updates without installing them
 
 The core-update-status read-only Ability projects **cached** native Core update offers under the default-off **Site Configuration** grant and native manage_options (or multisite manage_network_options). A status of unknown_or_stale means the last native cache check is missing, malformed, for another installed Core version, or over 24 hours old; it must not be represented as up to date. The native_update_core_allowed, file_modifications_allowed, and automatic_updater_disabled flags are distinct observations, not installation permission. Bridge does not run Core update checks, downloads, or upgrades. Use WordPress or the host's approved update tooling outside Bridge for actual upgrades.
+
+
+## Site Health via the AI Bridge
+
+In builds including Site Health, the Site Configuration group (default off) and current native view_site_health_checks are required. action=list only discovers and describes tests. action=run executes one supported Core test with native REST/controller checks. Provider PHP callbacks are not automatically executable, and an HTTP Authorization-header check that needs real inbound network behavior is left to Tools > Site Health. Native health tests cannot prove a direct OAuth or Gateway client session.
+
+## Large or multi-project Workspace and uncertain create
+
+Use exact project_ref in resume/list when several unrelated projects share one WordPress site; a mixed-site resume intentionally provides no global current project. If workspace_pagination_required is returned, list view=summary with limit and before_id, then read one ID. For long document content or task notes, use version/hash-protected UTF-8 windows with next_offset and complete. An invalid/corrupt or over-quota record is reported as incomplete/overflow, not silently skipped or exported as complete.
+
+After create_claim_outcome_unknown, workspace_key_outcome_unknown, create_claim_partial or create_claim_expired, do NOT invent a new operation_id and blindly retry. Inspect current WordPress object and authority, or request administrative reconciliation if a claim is stranded. create_claim_conflict means one ID was reused for different payloads. Recovery is limited to 30 days; expired and unknown keys remain reserved, and a site has a 2,048-claim safety limit. Legacy requests without operation_id are not duplicate-safe. Workspace Clear does not erase separate operation receipts/canonical-key claims.

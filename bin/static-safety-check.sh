@@ -407,7 +407,15 @@ if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comme
     echo "ERROR: one or more bounded database stores are missing." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" || true)"
+create_claim_store='src/Support/class-create-claim-store.php'
+if [[ ! -f "$create_claim_store" ||
+      "$(grep -cF '$wpdb->update(' "$create_claim_store" || true)" != "1" ||
+      "$(grep -cF '$wpdb->get_var(' "$create_claim_store" || true)" != "1" ||
+      "$(grep -cF '$wpdb->prepare(' "$create_claim_store" || true)" != "1" ]]; then
+    echo "ERROR: create receipt store must retain one conditional update and one prepared capacity query." >&2
+    exit 1
+fi
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2

@@ -68,6 +68,7 @@ for test in \
     issue110-site-context-smoke.php \
     issue99-extension-authorization-smoke.php \
     issue130-141-diagnostics-smoke.php \
+    issue140-site-health-smoke.php \
     issue119-registered-rest-smoke.php \
     issue119-native-execution-smoke.php \
     issue44-native-ability-delegation-smoke.php \
@@ -84,6 +85,8 @@ for test in \
     issue6-direct-oauth-negative-smoke.php \
     issue6-direct-mcp-tools-smoke.php \
     issue6-i18n-smoke.php \
+    issue126-128-workspace-smoke.php \
+    issue128-native-creates-smoke.php \
     issue8-workspace-smoke.php
 do
     echo "== ${test} =="
