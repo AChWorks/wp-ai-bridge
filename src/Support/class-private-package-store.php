@@ -49,35 +49,9 @@ final class Private_Package_Store {
 		);
 	}
 
-	/** Locate a 0700 private directory outside the document root; never return it to a caller. */
+	/** One durable storage domain across WordPress web, cron and CLI workers. */
 	private function directory() {
-		$temp = realpath( sys_get_temp_dir() );
-		$web  = realpath( ABSPATH );
-		if ( false === $temp || false === $web ) {
-			return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
-		}
-		$temp = rtrim( $temp, '/\\' );
-		foreach ( array( $web, defined( 'WP_CONTENT_DIR' ) ? realpath( WP_CONTENT_DIR ) : false, ! empty( $_SERVER['DOCUMENT_ROOT'] ) ? realpath( $_SERVER['DOCUMENT_ROOT'] ) : false ) as $public ) {
-			if ( false !== $public && ( rtrim( $public, '/\\' ) === $temp || 0 === strpos( $temp . '/', rtrim( $public, '/\\' ) . '/' ) ) ) {
-				return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
-			}
-		}
-		$site_key = hash( 'sha256', $web . '|' . (string) get_current_blog_id() );
-		$path     = $temp . '/wpai-private-zip-' . substr( $site_key, 0, 24 );
-		if ( is_link( $path ) ) {
-			return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
-		}
-		if ( ! is_dir( $path ) && ! wp_mkdir_p( $path ) ) {
-			return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
-		}
-		if ( ! is_dir( $path ) || is_link( $path ) || ! chmod( $path, 0700 ) || ! is_writable( $path ) ) {
-			return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
-		}
-		clearstatcache( true, $path );
-		if ( 0 !== ( (int) fileperms( $path ) & 0077 ) ) {
-			return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
-		}
-		return $path;
+		return Private_Package_Storage::stage_directory();
 	}
 
 	/** Stable path composed only from a validated server-generated opaque identity. */
@@ -382,14 +356,15 @@ final class Private_Package_Store {
 			$status = 'outcome_unknown';
 		}
 		return array(
-			'artifact_id'  => $meta['id'],
-			'kind'         => $meta['kind'],
-			'filename'     => $meta['filename'],
-			'sha256'       => $meta['sha256'],
-			'bytes'        => $meta['bytes'],
-			'package_root' => $meta['root'],
-			'expires'      => gmdate( 'c', (int) $meta['expires'] ),
-			'status'       => time() >= (int) $meta['expires'] && 'staged' === $status ? 'expired' : $status,
+			'artifact_id'      => $meta['id'],
+			'kind'             => $meta['kind'],
+			'filename'         => $meta['filename'],
+			'sha256'           => $meta['sha256'],
+			'bytes'            => $meta['bytes'],
+			'package_root'     => $meta['root'],
+			'expires'          => gmdate( 'c', (int) $meta['expires'] ),
+			'status'           => time() >= (int) $meta['expires'] && 'staged' === $status ? 'expired' : $status,
+			'cleanup_required' => ! empty( $meta['cleanup_required'] ),
 		);
 	}
 
@@ -532,14 +507,16 @@ final class Private_Package_Store {
 			}
 			$meta['status'] = 'installing';
 			if ( ! $this->persist_install_state( $id, $meta ) ) {
-				// Claim already committed; Core MUST NOT run without durable
-				// pre-install state. Keep the one-way claim, retire ZIP bytes
-				// and attempt a bounded recovery tombstone.
-				$meta['status'] = 'outcome_unknown';
-				$this->persist_install_state( $id, $meta );
-				if ( is_file( $path ) ) {
+				// No Core execution after an uncommitted installing transition.
+				// Verify byte retirement, then persist an explicit recovery
+				// indicator if the filesystem refuses deletion.
+				if ( is_file( $path ) && ! is_link( $path ) ) {
 					wp_delete_file( $path );
 				}
+				clearstatcache( true, $path );
+				$meta['status']           = 'outcome_unknown';
+				$meta['cleanup_required'] = is_file( $path ) || is_link( $path );
+				$this->persist_install_state( $id, $meta );
 				try {
 					( new Mutation_Log() )->record( 'wp-ai-bridge/private-package-install', $kind, 0, false, 'private_package_recovery_required' );
 				} catch ( \Throwable $error ) {
@@ -648,6 +625,17 @@ final class Private_Package_Store {
 					continue;
 				}
 				$path = $this->archive_path( $directory, $meta['id'] );
+				if ( $claimed && ! empty( $meta['cleanup_required'] ) ) {
+					if ( is_file( $path ) && ! is_link( $path ) ) {
+						wp_delete_file( $path );
+					}
+					clearstatcache( true, $path );
+					if ( ! is_file( $path ) && ! is_link( $path ) ) {
+						$meta['cleanup_required'] = false;
+						$this->persist_install_state( $meta['id'], $meta );
+					}
+					continue;
+				}
 				if ( is_file( $path ) && ! is_link( $path ) ) {
 					wp_delete_file( $path );
 				}

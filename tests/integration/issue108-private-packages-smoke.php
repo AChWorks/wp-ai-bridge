@@ -263,6 +263,42 @@ try {
 	wpai108_live_check( ! is_file( $post_path ), 'Post-Core metadata failure must retire private executable ZIP bytes.' );
 	wpai108_live_check( is_wp_error( $store->install( $post_id, $post_meta['sha256'], 'plugin', $client ) ), 'Post-Core metadata failure must never allow a replay.' );
 
+	// N2: reject BOTH pre-Core status persistence and ZIP deletion. Core must
+	// never execute; the one-way claim and explicit cleanup_required state
+	// survive until the ordinary cron cleanup successfully retires the bytes.
+	$deletion_root                         = 'wpai108-deletion-failure';
+	$deletion_key                          = $deletion_root . '/' . $deletion_root . '.php';
+	$deletion_id                           = bin2hex( random_bytes( 24 ) );
+	$fixture_ids[]                         = $deletion_id;
+	list( $deletion_meta, $deletion_path ) = wpai108_live_stage( $store, 'plugin', $deletion_id, $client, $deletion_root );
+	$fixture_files[]                       = $deletion_path;
+	$deletion_state_refusal                = static function ( $value, $old ) {
+		return 'installing' === ( $value['status'] ?? '' ) ? $old : $value;
+	};
+	$deletion_file_refusal                 = static function ( $file ) use ( $deletion_path ) {
+		return $deletion_path === $file ? '' : $file;
+	};
+	add_filter( 'pre_update_option_' . Private_Package_Store::OPTION_PREFIX . $deletion_id, $deletion_state_refusal, 10, 2 );
+	add_filter( 'wp_delete_file', $deletion_file_refusal );
+	try {
+		$deletion_result = $store->install( $deletion_id, $deletion_meta['sha256'], 'plugin', $client );
+	} finally {
+		remove_filter( 'wp_delete_file', $deletion_file_refusal );
+		remove_filter( 'pre_update_option_' . Private_Package_Store::OPTION_PREFIX . $deletion_id, $deletion_state_refusal, 10 );
+	}
+	wpai108_live_check( is_wp_error( $deletion_result ) && 'private_package_recovery_required' === $deletion_result->get_error_code(), 'N2 must fail closed after interrupted metadata and filesystem writes.' );
+	wpai108_live_check( ! isset( get_plugins()[ $deletion_key ] ), 'N2 must not invoke native Core on pre-install persistence failure.' );
+	wpai108_live_check( is_file( $deletion_path ), 'N2 deletion refusal did not preserve the original ZIP as expected.' );
+	$deletion_record = $store->inspect( $deletion_id, $client );
+	wpai108_live_check( ! is_wp_error( $deletion_record ) && 'outcome_unknown' === $deletion_record['status'] && true === $deletion_record['cleanup_required'], 'N2 must expose a bounded cleanup-required recovery state.' );
+	wpai108_live_check( false !== get_option( Private_Package_Store::CLAIM_PREFIX . $deletion_id, false ), 'N2 must preserve the once-only install claim.' );
+	wpai108_live_check( is_wp_error( $store->install( $deletion_id, $deletion_meta['sha256'], 'plugin', $client ) ), 'N2 must not replay the claimed ZIP.' );
+	$store->cleanup_expired();
+	wpai108_live_check( ! is_file( $deletion_path ), 'N2 normal cron cleanup must retire the abandoned executable ZIP.' );
+	$deletion_recovered = $store->inspect( $deletion_id, $client );
+	wpai108_live_check( ! is_wp_error( $deletion_recovered ) && false === $deletion_recovered['cleanup_required'], 'N2 must clear cleanup-required only after verifying byte retirement.' );
+	wpai108_live_check( false !== get_option( Private_Package_Store::CLAIM_PREFIX . $deletion_id, false ), 'N2 cleanup must not erase the one-way install claim.' );
+
 	// Expiry must retire bytes while retaining only a short-lived metadata
 	// record. The expiry path does not need to execute or unpack the archive.
 	$expired_id                          = bin2hex( random_bytes( 24 ) );

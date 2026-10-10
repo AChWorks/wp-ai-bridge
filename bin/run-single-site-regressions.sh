@@ -95,6 +95,54 @@ run_eval issue108-private-packages-smoke.php
 
 bash "$root/bin/run-issue108-browser-upload.sh"
 
+# N1: Real web multipart staged ZIPs are on the shared web/CLI /tmp volume.
+# A separate CLI runs with the SAME DB/WordPress filesystem but another /tmp.
+run_web_storage() {
+    local mode="$1"
+    "${compose[@]}" run --rm -e "WPAI108_WEB_STORAGE_MODE=$mode" cli         eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue108-web-storage-smoke.php         --user=1 --allow-root
+}
+run_web_storage staged
+"${compose[@]}" run --rm cli-unshared eval '
+require_once WP_PLUGIN_DIR . "/wp-ai-bridge/src/Support/class-private-package-storage.php";
+if ( ! is_wp_error( \WP_AI_Bridge\Support\Private_Package_Storage::existing_directory() ) ) {
+    throw new RuntimeException( "An independent private tmp mount incorrectly matched the web storage identity." );
+}
+echo "PASS: separate physical PHP tmp storage was rejected.\n";
+' --user=1 --allow-root
+set +e
+"${compose[@]}" run --rm cli-unshared plugin deactivate wp-ai-bridge --allow-root > /tmp/wpai108-unshared-single-site.log 2>&1
+different_root_result=$?
+set -e
+if [[ "$different_root_result" == 0 ]] ||
+   ! grep -q 'Private package files could not be retired safely' /tmp/wpai108-unshared-single-site.log ||
+   ! "${wp[@]}" plugin is-active wp-ai-bridge --allow-root; then
+    echo 'ERROR: independent CLI tmp storage falsely completed WordPress deactivation.' >&2
+    tail -n 18 /tmp/wpai108-unshared-single-site.log >&2
+    exit 1
+fi
+run_web_storage staged
+# Execute the actual uninstall.php early lifecycle boundary from the
+# mismatched CLI too; it must abort BEFORE ordinary Bridge state removal.
+set +e
+"${compose[@]}" run --rm cli-unshared eval '
+define( "WP_UNINSTALL_PLUGIN", "wp-ai-bridge/wp-ai-bridge.php" );
+require WP_PLUGIN_DIR . "/wp-ai-bridge/uninstall.php";
+' --allow-root > /tmp/wpai108-unshared-single-uninstall.log 2>&1
+different_uninstall_result=$?
+set -e
+if [[ "$different_uninstall_result" == 0 ]] ||
+   ! grep -q 'private ZIP cleanup could not finish safely' /tmp/wpai108-unshared-single-uninstall.log ||
+   ! "${wp[@]}" plugin is-active wp-ai-bridge --allow-root; then
+    echo 'ERROR: mismatched CLI uninstall falsely completed or removed active plugin state.' >&2
+    tail -n 18 /tmp/wpai108-unshared-single-uninstall.log >&2
+    exit 1
+fi
+run_web_storage staged
+"${wp[@]}" plugin deactivate wp-ai-bridge --allow-root
+run_web_storage retired
+"${wp[@]}" plugin activate wp-ai-bridge --allow-root >/dev/null
+echo 'PASS: Issue #108 N1 real web ZIPs survive mismatched CLI tmp and retire under the verified original root.'
+
 # Actual plugin deactivation, activation and uninstall; WP-CLI preserves
 # the fixture source during test-owned uninstall using --skip-delete.
 run_lifecycle() {

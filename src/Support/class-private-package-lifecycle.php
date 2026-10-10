@@ -8,6 +8,7 @@
 namespace WP_AI_Bridge\Support;
 
 require_once __DIR__ . '/class-extension-install-lock.php';
+require_once __DIR__ . '/class-private-package-storage.php';
 
 /**
  * Retire only Bridge-owned inert ZIPs and disposable options. A claimed or
@@ -21,7 +22,43 @@ final class Private_Package_Lifecycle {
 
 	/** @return bool Return false rather than asserting success after I/O uncertainty. */
 	public static function cleanup_current_blog() {
-		if ( ! self::remove_private_files() ) {
+		// The current SAPI must prove that it sees the SAME private byte
+		// store previously bound by the web uploader, not merely its own /tmp.
+		$directory = Private_Package_Storage::existing_directory();
+		if ( is_wp_error( $directory ) ) {
+			return false;
+		}
+		if ( null === $directory ) {
+			// A previous correct deactivation may have retired the directory
+			// while intentionally preserving NON-EXECUTABLE one-way recovery
+			// tombstones. Only those exact tombstones may remain unbound.
+			// Any staged/unknown-byte legacy record means storage cannot be
+			// proved empty from the current PHP temp root: fail closed.
+			$inert          = static function ( $id ) {
+				$meta = get_option( self::META_PREFIX . $id, false );
+				return is_array( $meta ) &&
+					'outcome_unknown' === ( $meta['status'] ?? '' ) &&
+					0 === (int) ( $meta['bytes'] ?? -1 ) &&
+					'' === (string) ( $meta['filename'] ?? '-' ) &&
+					! ( $meta['cleanup_required'] ?? false ) &&
+					false !== get_option( self::CLAIM_PREFIX . $id, false );
+			};
+			$no_live_meta   = self::walk_options(
+				self::META_PREFIX,
+				static function ( $option_name, $id ) use ( $inert ) {
+					return $inert( $id );
+				}
+			);
+			$no_live_claims = self::walk_options(
+				self::CLAIM_PREFIX,
+				static function ( $option_name, $id ) use ( $inert ) {
+					return $inert( $id );
+				}
+			);
+			if ( ! $no_live_meta || ! $no_live_claims ) {
+				return false;
+			}
+		} elseif ( ! self::remove_private_files( $directory ) ) {
 			return false;
 		}
 		// A claimed in-flight/unknown install must stay blocked after reinstall.
@@ -34,20 +71,21 @@ final class Private_Package_Lifecycle {
 					in_array( $meta['status'] ?? '', array( 'installing', 'outcome_unknown' ), true ) ) ) {
 					// Preserve only the recovery identity, hash, and ownership.
 					$minimal = array(
-						'id'              => $id,
-						'kind'            => in_array( $meta['kind'] ?? '', array( 'plugin', 'theme' ), true ) ? $meta['kind'] : '',
-						'user_id'         => (int) ( $meta['user_id'] ?? 0 ),
-						'blog_id'         => (int) ( $meta['blog_id'] ?? 0 ),
-						'client_id'       => substr( (string) ( $meta['client_id'] ?? '' ), 0, 256 ),
-						'client_revision' => (int) ( $meta['client_revision'] ?? 0 ),
-						'filename'        => '',
-						'sha256'          => preg_match( '/^[0-9a-f]{64}$/D', (string) ( $meta['sha256'] ?? '' ) ) ? $meta['sha256'] : '',
-						'bytes'           => 0,
-						'root'            => substr( (string) ( $meta['root'] ?? '' ), 0, 128 ),
-						'created'         => (int) ( $meta['created'] ?? time() ),
-						'expires'         => (int) ( $meta['expires'] ?? time() ),
-						'status'          => 'outcome_unknown',
-						'target'          => substr( (string) ( $meta['target'] ?? '' ), 0, 256 ),
+						'id'               => $id,
+						'kind'             => in_array( $meta['kind'] ?? '', array( 'plugin', 'theme' ), true ) ? $meta['kind'] : '',
+						'user_id'          => (int) ( $meta['user_id'] ?? 0 ),
+						'blog_id'          => (int) ( $meta['blog_id'] ?? 0 ),
+						'client_id'        => substr( (string) ( $meta['client_id'] ?? '' ), 0, 256 ),
+						'client_revision'  => (int) ( $meta['client_revision'] ?? 0 ),
+						'filename'         => '',
+						'sha256'           => preg_match( '/^[0-9a-f]{64}$/D', (string) ( $meta['sha256'] ?? '' ) ) ? $meta['sha256'] : '',
+						'bytes'            => 0,
+						'root'             => substr( (string) ( $meta['root'] ?? '' ), 0, 128 ),
+						'created'          => (int) ( $meta['created'] ?? time() ),
+						'expires'          => (int) ( $meta['expires'] ?? time() ),
+						'status'           => 'outcome_unknown',
+						'cleanup_required' => false,
+						'target'           => substr( (string) ( $meta['target'] ?? '' ), 0, 256 ),
 					);
 					if ( $minimal === $meta ) {
 						return true;
@@ -77,7 +115,10 @@ final class Private_Package_Lifecycle {
 			return false;
 		}
 		wp_unschedule_hook( self::CRON_HOOK );
-		return ! wp_next_scheduled( self::CRON_HOOK );
+		if ( wp_next_scheduled( self::CRON_HOOK ) ) {
+			return false;
+		}
+		return null === $directory || Private_Package_Storage::retire_directory( $directory );
 	}
 
 	/** @return bool Deactivation/uninstall must not race a native Core install. */
@@ -148,30 +189,14 @@ final class Private_Package_Lifecycle {
 		return true;
 	}
 
-	/** Remove only valid opaque ZIP filenames under our non-symlink private directory. */
-	private static function remove_private_files() {
-		$temp = realpath( sys_get_temp_dir() );
-		$web  = realpath( ABSPATH );
-		if ( false === $temp || false === $web ) {
-			return false;
-		}
-		$site_key = hash( 'sha256', rtrim( $web, '/\\' ) . '|' . (string) get_current_blog_id() );
-		$path     = rtrim( $temp, '/\\' ) . '/wpai-private-zip-' . substr( $site_key, 0, 24 );
-		if ( is_link( $path ) ) {
-			return false;
-		}
-		if ( ! file_exists( $path ) ) {
-			return true;
-		}
-		if ( ! is_dir( $path ) ) {
-			return false;
-		}
+	/** Retire ZIP bytes only from a verified, durably bound storage domain. */
+	private static function remove_private_files( $path ) {
 		$files = glob( $path . '/*.zip' );
 		if ( ! is_array( $files ) ) {
 			return false;
 		}
 		foreach ( $files as $file ) {
-			if ( 1 !== preg_match( '/^[0-9a-f]{48}\.zip$/D', basename( $file ) ) || is_link( $file ) || ! is_file( $file ) ) {
+			if ( 1 !== preg_match( '/^[0-9a-f]{48}\\.zip$/D', basename( $file ) ) || is_link( $file ) || ! is_file( $file ) ) {
 				return false;
 			}
 			wp_delete_file( $file );
@@ -180,13 +205,6 @@ final class Private_Package_Lifecycle {
 				return false;
 			}
 		}
-		// WordPress's non-recursive direct filesystem API removes only our empty
-		// directory. Unknown files are never deleted to make this step succeed.
-		require_once ABSPATH . 'wp-admin/includes/class-wp-filesystem-base.php';
-		require_once ABSPATH . 'wp-admin/includes/class-wp-filesystem-direct.php';
-		$filesystem = new \WP_Filesystem_Direct( false );
-		$filesystem->rmdir( $path );
-		clearstatcache( true, $path );
-		return ! is_dir( $path );
+		return true;
 	}
 }

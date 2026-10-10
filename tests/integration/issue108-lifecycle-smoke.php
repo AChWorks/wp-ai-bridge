@@ -19,7 +19,7 @@ $site_ids = $network && is_multisite() ? get_sites(
 		'number' => 0,
 	)
 ) : array( get_current_blog_id() );
-if ( ! $site_ids || ! in_array( $mode, array( 'setup', 'verify', 'cleanup' ), true ) ) {
+if ( ! $site_ids || ! in_array( $mode, array( 'setup', 'verify', 'verify-staged', 'cleanup' ), true ) ) {
 	throw new RuntimeException( 'Invalid isolated private package lifecycle fixture.' );
 }
 require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -39,10 +39,13 @@ foreach ( $site_ids as $site_id ) {
 			$grants   = $settings->defaults();
 			$grants[ \WP_AI_Bridge\Support\Settings::GROUP_CODE_EXTENSIONS ] = 1;
 			update_option( \WP_AI_Bridge\Support\Settings::OPTION_NAME, $grants, false );
-			if ( ! is_dir( $directory ) && ! wp_mkdir_p( $directory ) ) {
-				throw new RuntimeException( 'Could not create fixture private staging directory.' );
+			$store = new \WP_AI_Bridge\Support\Private_Package_Store(
+				new \WP_AI_Bridge\Support\Permissions( new \WP_AI_Bridge\Support\Settings() )
+			);
+			$bound = ( new ReflectionMethod( $store, 'directory' ) )->invoke( $store );
+			if ( is_wp_error( $bound ) || $bound !== $directory ) {
+				throw new RuntimeException( 'Could not bind the exact shared private storage domain.' );
 			}
-			chmod( $directory, 0700 );
 			foreach ( $ids as $name => $id ) {
 				$path = $directory . '/' . $id . '.zip';
 				$zip  = new ZipArchive();
@@ -83,6 +86,24 @@ foreach ( $site_ids as $site_id ) {
 			if ( ! wp_next_scheduled( \WP_AI_Bridge\Support\Private_Package_Lifecycle::CRON_HOOK ) ) {
 				throw new RuntimeException( 'Private ZIP cleanup cron fixture missing.' );
 			}
+		} elseif ( 'verify-staged' === $mode ) {
+			$bound = \WP_AI_Bridge\Support\Private_Package_Storage::existing_directory();
+			if ( is_wp_error( $bound ) || $bound !== $directory ) {
+				throw new RuntimeException( 'Network isolation test lost the original private storage binding.' );
+			}
+			foreach ( $ids as $name => $id ) {
+				$path = $directory . '/' . $id . '.zip';
+				if ( ! is_file( $path ) ) {
+					throw new RuntimeException( 'Mismatched CLI lifecycle deleted private ZIP from its true storage domain: ' . $name );
+				}
+				if ( 'orphan' !== $name && ! is_array( get_option( \WP_AI_Bridge\Support\Private_Package_Lifecycle::META_PREFIX . $id, false ) ) ) {
+					throw new RuntimeException( 'Mismatched CLI lifecycle discarded durable artifact metadata.' );
+				}
+			}
+			if ( false === get_option( \WP_AI_Bridge\Support\Private_Package_Lifecycle::CLAIM_PREFIX . $ids['claimed'], false ) ||
+				! wp_next_scheduled( \WP_AI_Bridge\Support\Private_Package_Lifecycle::CRON_HOOK ) ) {
+				throw new RuntimeException( 'Mismatched CLI lifecycle discarded a claimed install or its scheduled recovery.' );
+			}
 		} elseif ( 'verify' === $mode ) {
 			foreach ( $ids as $name => $id ) {
 				if ( is_file( $directory . '/' . $id . '.zip' ) || is_link( $directory . '/' . $id . '.zip' ) ) {
@@ -99,6 +120,9 @@ foreach ( $site_ids as $site_id ) {
 					false !== get_option( \WP_AI_Bridge\Support\Private_Package_Lifecycle::CLAIM_PREFIX . $id, false ) ) {
 					throw new RuntimeException( 'Disposable package metadata or claim survived cleanup.' );
 				}
+			}
+			if ( false !== get_option( \WP_AI_Bridge\Support\Private_Package_Storage::DOMAIN_OPTION, false ) ) {
+				throw new RuntimeException( 'Durable private storage identity survived completed lifecycle cleanup.' );
 			}
 			if ( is_dir( $directory ) || wp_next_scheduled( \WP_AI_Bridge\Support\Private_Package_Lifecycle::CRON_HOOK ) ) {
 				throw new RuntimeException( 'Private staging directory/cron survived plugin lifecycle.' );
