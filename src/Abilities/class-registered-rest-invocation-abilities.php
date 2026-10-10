@@ -110,7 +110,7 @@ final class Registered_REST_Invocation_Abilities {
 
 		// Real WordPress always accepts a concrete request path. The selected
 		// regex is used only as an independent registry identity assertion.
-		$path_matches  = array();
+		$path_matches   = array();
 		$selected_match = preg_match( '@^' . $route . '$@i', $path, $path_matches );
 		if ( 1 !== $selected_match ) {
 			return $this->invalid();
@@ -197,7 +197,7 @@ final class Registered_REST_Invocation_Abilities {
 				continue;
 			}
 			$visible_endpoint = true;
-			$arguments = isset( $endpoint['args'] ) ? $endpoint['args'] : array();
+			$arguments        = isset( $endpoint['args'] ) ? $endpoint['args'] : array();
 			if ( ! is_array( $arguments ) ) {
 				return $this->not_found();
 			}
