@@ -25,6 +25,7 @@ final class Settings {
 	const GROUP_EXTERNAL_PACKAGES = 'external_packages';
 	const GROUP_SOURCE_EDITING    = 'source_editing';
 	const GROUP_NATIVE_ABILITIES  = 'native_abilities';
+	const GROUP_REST_DISCOVERY    = 'rest_discovery';
 	const GROUP_COMMENTS          = 'comments';
 	const GROUP_USERS_DESTRUCTIVE = 'users_destructive';
 
@@ -116,6 +117,12 @@ final class Settings {
 			self::GROUP_NATIVE_ABILITIES  => array(
 				'label'       => __( 'Native Abilities', 'wp-ai-bridge' ),
 				'description' => __( 'Allow registered Core and provider Abilities to execute through WP AI Bridge when their own WordPress/provider permission checks also allow it. This is broad registered-operation trust, not a sandbox.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_REST_DISCOVERY     => array(
+				'label'       => __( 'Registered REST Discovery', 'wp-ai-bridge' ),
+				'description' => __( 'Allow WordPress administrators to inspect bounded registered REST route contracts. This does not authorize executing REST routes.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
