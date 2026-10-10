@@ -13,16 +13,16 @@ add_action(
 			wp_send_json( array( 'error' => 'unauthorized' ), 403 );
 		}
 		check_admin_referer( \WP_AI_Bridge\Abilities\Private_Package_Abilities::NONCE_ACTION );
-		$mode        = isset( $_POST['mode'] ) && is_string( $_POST['mode'] ) ? sanitize_key( wp_unslash( $_POST['mode'] ) ) : '';
-		$root        = 'wpai108-race-plugin';
-		$marker      = rtrim( sys_get_temp_dir(), '/\\' ) . '/wpai108-race-core-entered';
-		$ids         = array(
+		$mode      = isset( $_POST['mode'] ) && is_string( $_POST['mode'] ) ? sanitize_key( wp_unslash( $_POST['mode'] ) ) : '';
+		$root      = 'wpai108-race-plugin';
+		$marker    = rtrim( sys_get_temp_dir(), '/\\' ) . '/wpai108-race-core-entered';
+		$ids       = array(
 			'a' => str_repeat( 'a', 48 ),
 			'b' => str_repeat( 'b', 48 ),
 		);
-		$client      = \WP_AI_Bridge\Auth\OAuth_Server::CHATGPT_CLIENT_ID;
-		$store       = new \WP_AI_Bridge\Support\Private_Package_Store( new \WP_AI_Bridge\Support\Permissions( new \WP_AI_Bridge\Support\Settings() ) );
-		$directory   = ( new ReflectionMethod( $store, 'directory' ) )->invoke( $store );
+		$client    = \WP_AI_Bridge\Auth\OAuth_Server::CHATGPT_CLIENT_ID;
+		$store     = new \WP_AI_Bridge\Support\Private_Package_Store( new \WP_AI_Bridge\Support\Permissions( new \WP_AI_Bridge\Support\Settings() ) );
+		$directory = ( new ReflectionMethod( $store, 'directory' ) )->invoke( $store );
 		if ( is_wp_error( $directory ) ) {
 			wp_send_json( array( 'error' => 'directory_unavailable' ), 500 );
 		}
@@ -108,7 +108,13 @@ add_action(
 		}
 		if ( 'public-while-locked' === $mode ) {
 			$extensions = new \WP_AI_Bridge\Abilities\Extension_Abilities( new \WP_AI_Bridge\Support\Permissions( new \WP_AI_Bridge\Support\Settings() ), new \WP_AI_Bridge\Support\Mutation_Log() );
-			$result     = $extensions->mutate( array( 'kind' => 'plugin', 'action' => 'install', 'slug' => 'wpai108-race-fake' ) );
+			$result     = $extensions->mutate(
+				array(
+					'kind'   => 'plugin',
+					'action' => 'install',
+					'slug'   => 'wpai108-race-fake',
+				)
+			);
 			wp_send_json( array( 'code' => is_wp_error( $result ) ? $result->get_error_code() : 'unexpected_success' ) );
 		}
 		if ( 'verify' === $mode ) {
@@ -117,7 +123,7 @@ add_action(
 			sort( $files );
 			wp_send_json(
 				array(
-					'exact_tree' => array( '.', '..', 'a.marker', 'main.php' ) === $files &&
+					'exact_tree'  => array( '.', '..', 'a.marker', 'main.php' ) === $files &&
 						'a' === (string) @file_get_contents( $installed_root . '/a.marker' ) &&
 						! is_file( $installed_root . '/b.marker' ),
 					'b_unclaimed' => false === get_option( \WP_AI_Bridge\Support\Private_Package_Store::CLAIM_PREFIX . $ids['b'], false ),
@@ -139,6 +145,16 @@ add_action(
 			}
 			if ( is_file( $marker ) ) {
 				wp_delete_file( $marker );
+			}
+			if ( is_dir( WP_PLUGIN_DIR . '/' . $root ) || is_file( $marker ) ) {
+				wp_send_json( array( 'error' => 'cleanup_tree_or_marker_remains' ), 500 );
+			}
+			foreach ( $ids as $id ) {
+				if ( is_file( $directory . '/' . $id . '.zip' ) ||
+					false !== get_option( \WP_AI_Bridge\Support\Private_Package_Store::OPTION_PREFIX . $id, false ) ||
+					false !== get_option( \WP_AI_Bridge\Support\Private_Package_Store::CLAIM_PREFIX . $id, false ) ) {
+					wp_send_json( array( 'error' => 'cleanup_artifact_remains' ), 500 );
+				}
 			}
 			wp_send_json( array( 'cleaned' => true ) );
 		}

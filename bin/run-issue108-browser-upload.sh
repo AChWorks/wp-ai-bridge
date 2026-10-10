@@ -265,13 +265,23 @@ echo 'PASS: Issue #108 real WordPress login/cookie/nonce, denied/allowed multipa
 # A holds the actual native Upgrader boundary; B must fail BEFORE its claim.
 run_compose exec -T wordpress mkdir -p /var/www/html/wp-content/mu-plugins
 run_compose cp "$root/tests/fixtures/issue108-install-race-mu.php" wordpress:/var/www/html/wp-content/mu-plugins/wpai108-install-race.php
+# Docker cp preserves restrictive source mode on some runners. Only this
+# isolated MU test fixture must be readable by the Apache PHP worker.
+run_compose exec -T -u root wordpress chmod 0644 /var/www/html/wp-content/mu-plugins/wpai108-install-race.php
 race_url="$origin/wp-admin/admin-post.php"
 race() {
-    http -b "$tmp/cookies" -F 'action=wpai108_install_race' -F "_wpnonce=$nonce" -F "mode=$1" "$race_url"
+    local budget=15
+    # This real HTTP response is intentionally held inside native Core for
+    # 22 seconds. The ordinary 15-second HTTP ceiling would fail the test
+    # client before the PHP worker finishes, not reveal a locking defect.
+    if [[ "$1" == 'install-a-disconnect' ]]; then budget=55; fi
+    http --max-time "$budget" -b "$tmp/cookies"         -F 'action=wpai108_install_race' -F "_wpnonce=$nonce"         -F "mode=$1" "$race_url"
 }
 race setup > "$tmp/race-setup.json"
 if ! grep -q '"setup":true' "$tmp/race-setup.json"; then
     echo 'ERROR: Could not initialize two distinct reviewed ZIP artifacts.' >&2
+    head -c 500 "$tmp/race-setup.json" >&2 || true
+    echo >&2
     exit 1
 fi
 race install-a > "$tmp/race-a.json" &
@@ -317,7 +327,6 @@ if ! grep -q '"cleaned":true' "$tmp/race-cleanup.json"; then
     echo 'ERROR: Race fixture cleanup did not succeed.' >&2
     exit 1
 fi
-run_compose exec -T wordpress rm -f /var/www/html/wp-content/mu-plugins/wpai108-install-race.php
 echo 'PASS: Issue #108 two different ZIP IDs versus one native destination, no claim/core overlap, exact final filesystem tree and shared WordPress.org lock.'
 
 # B1 + R1: terminate A's MySQL named-lock session from an independent DB
@@ -327,6 +336,8 @@ echo 'PASS: Issue #108 two different ZIP IDs versus one native destination, no c
 race setup > "$tmp/lost-db-setup.json"
 if ! grep -q '"setup":true' "$tmp/lost-db-setup.json"; then
     echo 'ERROR: Could not reinitialize genuine two-artifact DB-disconnect fixture.' >&2
+    head -c 500 "$tmp/lost-db-setup.json" >&2 || true
+    echo >&2
     exit 1
 fi
 race install-a-disconnect > "$tmp/lost-db-a.json" &
@@ -411,4 +422,5 @@ if ! grep -q '"cleaned":true' "$tmp/lost-db-cleanup.json"; then
     echo 'ERROR: Could not clean the isolated killed-DB-session fixture.' >&2
     exit 1
 fi
+run_compose exec -T wordpress rm -f /var/www/html/wp-content/mu-plugins/wpai108-install-race.php
 echo 'PASS: Issue #108 native Upgrader DB session KILLED, PHP worker ALIVE, losing ZIP unclaimed, lifecycle/staging/slug excluded, exact Core tree and deterministic recovery.'

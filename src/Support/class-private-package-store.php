@@ -622,42 +622,55 @@ final class Private_Package_Store {
 
 	/** Dispose only expired, Bridge-owned metadata and private files. */
 	public function cleanup_expired() {
-		$directory = $this->directory();
-		if ( is_wp_error( $directory ) ) {
+		// Cron retention must not delete bytes or metadata while Core, staging,
+		// or deactivation holds the PHP-lifetime filesystem coordinator.
+		$lock = new Extension_Install_Lock();
+		if ( ! $lock->acquire() ) {
 			return;
 		}
-		foreach ( $this->option_names( 64 ) as $name ) {
-			$meta = get_option( $name, false );
-			if ( ! is_array( $meta ) || ! isset( $meta['id'], $meta['expires'] ) || ! preg_match( '/^[0-9a-f]{48}$/D', $meta['id'] ) ) {
-				continue;
+		try {
+			if ( ! $lock->is_owned() ) {
+				return;
 			}
-			$claimed = false !== get_option( self::CLAIM_PREFIX . $meta['id'], false );
-			$expired = ! $claimed && 'staged' === ( $meta['status'] ?? null ) && time() > (int) $meta['expires'];
-			$old     = time() > (int) $meta['expires'] + self::RECORD_TTL;
-			if ( ! $expired && ! $old ) {
-				continue;
+			$directory = $this->directory();
+			if ( is_wp_error( $directory ) ) {
+				return;
 			}
-			$path = $this->archive_path( $directory, $meta['id'] );
-			if ( is_file( $path ) && ! is_link( $path ) ) {
-				wp_delete_file( $path );
+			foreach ( $this->option_names( 64 ) as $name ) {
+				$meta = get_option( $name, false );
+				if ( ! is_array( $meta ) || ! isset( $meta['id'], $meta['expires'] ) || ! preg_match( '/^[0-9a-f]{48}$/D', $meta['id'] ) ) {
+					continue;
+				}
+				$claimed = false !== get_option( self::CLAIM_PREFIX . $meta['id'], false );
+				$expired = ! $claimed && 'staged' === ( $meta['status'] ?? null ) && time() > (int) $meta['expires'];
+				$old     = time() > (int) $meta['expires'] + self::RECORD_TTL;
+				if ( ! $expired && ! $old ) {
+					continue;
+				}
+				$path = $this->archive_path( $directory, $meta['id'] );
+				if ( is_file( $path ) && ! is_link( $path ) ) {
+					wp_delete_file( $path );
+				}
+				if ( is_file( $path ) ) {
+					continue;
+				}
+				if ( $old ) {
+					delete_option( $name );
+					delete_option( self::CLAIM_PREFIX . $meta['id'] );
+				}
 			}
-			if ( is_file( $path ) ) {
-				continue;
+			// Aborted PHP requests before DB registration can leave an inert ZIP.
+			$files = glob( $directory . '/*.zip' );
+			foreach ( array_slice( is_array( $files ) ? $files : array(), 0, 64 ) as $path ) {
+				$basename = basename( $path, '.zip' );
+				if ( preg_match( '/^[0-9a-f]{48}$/D', $basename ) && ! is_link( $path ) &&
+					! get_option( self::OPTION_PREFIX . $basename, false ) &&
+					time() - (int) filemtime( $path ) > self::STAGE_TTL ) {
+					wp_delete_file( $path );
+				}
 			}
-			if ( $old ) {
-				delete_option( $name );
-				delete_option( self::CLAIM_PREFIX . $meta['id'] );
-			}
-		}
-		// Aborted PHP requests before DB registration can leave an inert ZIP.
-		$files = glob( $directory . '/*.zip' );
-		foreach ( array_slice( is_array( $files ) ? $files : array(), 0, 64 ) as $path ) {
-			$basename = basename( $path, '.zip' );
-			if ( preg_match( '/^[0-9a-f]{48}$/D', $basename ) && ! is_link( $path ) &&
-				! get_option( self::OPTION_PREFIX . $basename, false ) &&
-				time() - (int) filemtime( $path ) > self::STAGE_TTL ) {
-				wp_delete_file( $path );
-			}
+		} finally {
+			$lock->release();
 		}
 	}
 }
