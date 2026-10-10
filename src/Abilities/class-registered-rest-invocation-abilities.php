@@ -44,7 +44,7 @@ final class Registered_REST_Invocation_Abilities {
 			'wp-ai-bridge/rest-route-invoke',
 			array(
 				'label'               => __( 'Invoke Registered REST Route', 'wp-ai-bridge' ),
-				'description'         => __( 'Invokes one bounded, public-index-visible local WordPress REST route using native permissions. Requires separate high-trust grant. Can mutate data and is not idempotent.', 'wp-ai-bridge' ),
+				'description'         => __( 'Invokes one bounded local registered WordPress REST route under native provider permissions and separately enabled protected lifecycle grants. Unknown effects require full administrator trust and are not idempotent.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->input_schema(),
 				'output_schema'       => $this->output_schema(),
