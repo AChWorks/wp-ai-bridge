@@ -44,11 +44,13 @@ wp=("${compose[@]}" run --rm cli)
 "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration
 "${compose[@]}" cp "$root/tests/integration/issue58-user-meta-multisite-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue58-user-meta-multisite-smoke.php
 "${compose[@]}" cp "$root/tests/integration/issue61-application-passwords-multisite-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue61-application-passwords-multisite-smoke.php
+"${compose[@]}" cp "$root/tests/integration/issue119-rest-multisite-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue119-rest-multisite-smoke.php
 
 actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
 actual_php="$("${wp[@]}" eval 'echo PHP_VERSION;' --allow-root | tail -n 1)"
 echo "Issue #58 multisite baseline: WordPress ${actual_wp}; PHP ${actual_php}; image ${wordpress_tag}"
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue58-user-meta-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue61-application-passwords-multisite-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue119-rest-multisite-smoke.php --user=1 --allow-root
 
 echo "PASS: user/auth multisite regression suite for ${wordpress_tag}."
