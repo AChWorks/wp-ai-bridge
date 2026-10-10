@@ -15,4 +15,5 @@ return array(
 	'The REST response cannot be returned safely within the data limit.' => 'بازگرداندن پاسخ REST در محدودیت ایمن داده ممکن نیست.',
 	'Specify one exact registered route, a matching local path, an allowed method and bounded JSON parameters.' => 'یک مسیر ثبت‌شده دقیق، مسیر محلی متناظر، متد مجاز و پارامترهای JSON محدود ارائه کنید.',
 	'The requested public registered REST route and method are not available.' => 'مسیر REST ثبت‌شده عمومی و متد درخواستی در دسترس نیست.',
+	'Generic REST execution needs independently enabled protected lifecycle permissions.' => 'برای اجرای عمومی REST همه مجوزهای مستقل مربوط به چرخه‌های حساس باید فعال باشند.',
 );
