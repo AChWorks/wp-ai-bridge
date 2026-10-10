@@ -89,6 +89,97 @@ try {
 			),
 		)
 	);
+	// Innocuous provider route/argument names can conceal credentials,
+	// executable source writes or package ingress. These isolated fixtures
+	// never touch actual credentials/files/packages; they only count calls.
+	$sensitive_calls = 0;
+	foreach (
+		array(
+			array( '/wpai119exec/v1/config', 'value' ),
+			array( '/wpai119exec/v1/manage', 'payload' ),
+			array( '/wpai119exec/v1/process', 'data' ),
+		) as $opaque_fixture
+	) {
+		$server->register_route(
+			'wpai119exec/v1',
+			$opaque_fixture[0],
+			array(
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => static function () use ( &$sensitive_calls ) {
+						++$sensitive_calls;
+						return array( 'ok' => true );
+					},
+					'permission_callback' => $permission,
+					'args'                => array( $opaque_fixture[1] => array( 'type' => 'string' ) ),
+				),
+			)
+		);
+	}
+
+	$hidden_dispatches = 0;
+	$public_dispatches = 0;
+	$server->register_route(
+		'wpai119exec/v1',
+		'/wpai119exec/v1/same-method-hidden-first',
+		array(
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'show_in_index'       => false,
+				'callback'            => static function () use ( &$hidden_dispatches ) {
+					++$hidden_dispatches;
+					return array( 'private' => true );
+				},
+				'permission_callback' => $permission,
+			),
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => static function () use ( &$public_dispatches ) {
+					++$public_dispatches;
+					return array( 'public' => true );
+				},
+				'permission_callback' => $permission,
+			),
+		)
+	);
+	$server->register_route(
+		'wpai119exec/v1',
+		'/wpai119exec/v1/same-method-schema-variants',
+		array(
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => static function () use ( &$public_dispatches ) {
+					++$public_dispatches;
+					return array( 'public' => 'first' );
+				},
+				'permission_callback' => $permission,
+				'args'                => array( 'value' => array( 'type' => 'string' ) ),
+			),
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => static function () use ( &$public_dispatches ) {
+					++$public_dispatches;
+					return array( 'public' => 'later' );
+				},
+				'permission_callback' => $permission,
+				'args'                => array( 'payload' => array( 'type' => 'string' ) ),
+			),
+		)
+	);
+	$server->register_route(
+		'wpai119exec/v1',
+		'/wpai119exec/v1/filtered-selected',
+		array(
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => static function () use ( &$public_dispatches ) {
+					++$public_dispatches;
+					return array( 'public' => true );
+				},
+				'permission_callback' => $permission,
+			),
+		)
+	);
 	$server->register_route(
 		'wpai119exec/v1',
 		'/wpai119exec/v1/oversized',
@@ -110,6 +201,33 @@ try {
 
 	$enabled = $defaults;
 	$enabled[ Settings::GROUP_REST_INVOCATION ] = 1;
+	update_option( Settings::OPTION_NAME, $enabled, false );
+	$before_sensitive = $sensitive_calls;
+	foreach (
+		array(
+			array( '/wpai119exec/v1/config', 'value' ),
+			array( '/wpai119exec/v1/manage', 'payload' ),
+			array( '/wpai119exec/v1/process', 'data' ),
+		) as $opaque_fixture
+	) {
+		$attempt = $ability->execute(
+			array(
+				'route'  => $opaque_fixture[0],
+				'path'   => $opaque_fixture[0],
+				'method' => 'POST',
+				'body'   => array( $opaque_fixture[1] => 'opaque-value' ),
+			)
+		);
+		wpai119execute_check( is_wp_error( $attempt ), 'REST-only grant bypassed a semantic credential/source/package consent with innocuous field names.' );
+	}
+	wpai119execute_check( $before_sensitive === $sensitive_calls, 'Protected provider operation executed with generic REST grant only.' );
+
+	// Full administrator-equivalent mode is a separate explicit opt-in to
+	// every purpose-specific Bridge group. Core/provider capabilities still
+	// run through current_user_can before WordPress native dispatch.
+	foreach ( $settings->groups() as $group => $definition ) {
+		$enabled[ $group ] = 1;
+	}
 	update_option( Settings::OPTION_NAME, $enabled, false );
 
 	// Exercise a real WordPress Core route and native edit_posts/read_post
@@ -234,6 +352,88 @@ try {
 		'Query parameters must not override the Core native path capture identity.'
 	);
 
+
+	// Core chooses the first same-route method handler irrespective of
+	// show_in_index. A later public handler must not expose a hidden first.
+	$initial_methods = $server->get_data_for_routes(
+		array(
+			'/wpai119exec/v1/same-method-hidden-first' => $server->get_routes()['/wpai119exec/v1/same-method-hidden-first'],
+		),
+		'view'
+	);
+	wpai119execute_check(
+		isset( $initial_methods['/wpai119exec/v1/same-method-hidden-first'] ) &&
+		in_array( 'GET', $initial_methods['/wpai119exec/v1/same-method-hidden-first']['methods'], true ),
+		'Hidden-first fixture does not advertise the later public GET handler.'
+	);
+	$hidden_first = $ability->execute(
+		array(
+			'route'  => '/wpai119exec/v1/same-method-hidden-first',
+			'path'   => '/wpai119exec/v1/same-method-hidden-first',
+			'method' => 'GET',
+		)
+	);
+	wpai119execute_check( is_wp_error( $hidden_first ) && 0 === $hidden_dispatches && 0 === $public_dispatches, 'Hidden first Core handler was exposed by a later public method.' );
+	$adapter_denied = $adapter->execute(
+		array(
+			'ability_name' => 'wp-ai-bridge/rest-route-invoke',
+			'parameters'   => array(
+				'route'  => '/wpai119exec/v1/same-method-hidden-first',
+				'path'   => '/wpai119exec/v1/same-method-hidden-first',
+				'method' => 'GET',
+			),
+		)
+	);
+	wpai119execute_check( ( is_wp_error( $adapter_denied ) || empty( $adapter_denied['success'] ) ) && 0 === $hidden_dispatches, 'Official Adapter re-exposed a hidden-first handler.' );
+
+	$schema_variants = $ability->execute(
+		array(
+			'route'  => '/wpai119exec/v1/same-method-schema-variants',
+			'path'   => '/wpai119exec/v1/same-method-schema-variants',
+			'method' => 'GET',
+			'query'  => array( 'payload' => 'later-only' ),
+		)
+	);
+	wpai119execute_check( is_wp_error( $schema_variants ) && 0 === $public_dispatches, 'Disjoint same-method public argument schemas were incorrectly merged for Core first-handler validation.' );
+	$filtered = static function ( $contract ) {
+		if ( 'wpai119exec/v1' === ( $contract['namespace'] ?? '' ) && isset( $contract['endpoints'] ) ) {
+			foreach ( $contract['endpoints'] as &$endpoint ) {
+				$endpoint['methods'] = array();
+			}
+			unset( $endpoint );
+		}
+		return $contract;
+	};
+	add_filter( 'rest_endpoints_description', $filtered, 10, 1 );
+	try {
+		wpai119execute_check(
+			is_wp_error(
+				$ability->execute(
+					array(
+						'route' => '/wpai119exec/v1/filtered-selected',
+						'path' => '/wpai119exec/v1/filtered-selected',
+						'method' => 'GET',
+					)
+				)
+			) && 0 === $public_dispatches,
+			'Filtered Core-selected endpoint was executed despite public-index removal.'
+		);
+	} finally {
+		remove_filter( 'rest_endpoints_description', $filtered, 10 );
+	}
+	$revoked = $enabled;
+	$revoked[ Settings::GROUP_AUTHENTICATION ] = 0;
+	update_option( Settings::OPTION_NAME, $revoked, false );
+	wpai119execute_check( is_wp_error( $ability->execute( $read ) ), 'Specialized credential grant revocation was bypassed by generic REST.' );
+	$revoked = $enabled;
+	$revoked[ Settings::GROUP_SOURCE_EDITING ] = 0;
+	update_option( Settings::OPTION_NAME, $revoked, false );
+	wpai119execute_check( is_wp_error( $ability->execute( $read ) ), 'Specialized source editing grant revocation was bypassed by generic REST.' );
+	$revoked = $enabled;
+	$revoked[ Settings::GROUP_EXTERNAL_PACKAGES ] = 0;
+	update_option( Settings::OPTION_NAME, $revoked, false );
+	wpai119execute_check( is_wp_error( $ability->execute( $read ) ), 'Specialized package installation grant revocation was bypassed by generic REST.' );
+	update_option( Settings::OPTION_NAME, $enabled, false );
 
 	$large = $ability->execute( array( 'route' => '/wpai119exec/v1/oversized', 'path' => '/wpai119exec/v1/oversized', 'method' => 'POST' ) );
 	wpai119execute_check( ! is_wp_error( $large ) && 'outcome_unknown' === $large['outcome'], 'Post-callback oversized result must expose only uncertainty, not imply rollback.' );
