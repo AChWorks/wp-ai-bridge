@@ -218,6 +218,69 @@ $workspace_structured = wpai_issue6_direct_tools_structured_content( $workspace_
 wpai_issue6_direct_tools_assert( true === ( $workspace_structured['success'] ?? false ), 'Direct OAuth MCP Workspace resume execution did not succeed.' );
 wpai_issue6_direct_tools_assert( isset( $workspace_structured['data']['counts'] ), 'Direct OAuth MCP Workspace resume did not return compact counts.' );
 
+// The exact ChatGPT-compatible OAuth bearer + MCP session must also carry
+// high-trust, provider-neutral registered REST execution, not merely direct
+// native WP_Ability or CLI Adapter calls.
+$direct_rest_calls = 0;
+rest_get_server()->register_route(
+	'wpai119direct/v1',
+	'/wpai119direct/v1/probe',
+	array(
+		array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => static function () use ( &$direct_rest_calls ) {
+				++$direct_rest_calls;
+				return array( 'probe' => 'provider-authorized-direct-mcp' );
+			},
+			'permission_callback' => static function () {
+				return current_user_can( 'manage_options' );
+			},
+		),
+	)
+);
+$settings_before_rest = get_option( \WP_AI_Bridge\Support\Settings::OPTION_NAME, array() );
+$grant_settings      = new \WP_AI_Bridge\Support\Settings();
+$with_rest_grant     = $grant_settings->all();
+$with_rest_grant[ \WP_AI_Bridge\Support\Settings::GROUP_REST_INVOCATION ] = 1;
+update_option( \WP_AI_Bridge\Support\Settings::OPTION_NAME, $with_rest_grant, false );
+try {
+	$direct_rest = wpai_issue6_direct_tools_request(
+		'POST',
+		$token,
+		array(
+			'jsonrpc' => '2.0',
+			'id'      => 6,
+			'method'  => 'tools/call',
+			'params'  => array(
+				'name'      => 'mcp-adapter-execute-ability',
+				'arguments' => array(
+					'ability_name' => 'wp-ai-bridge/rest-route-invoke',
+					'parameters'   => array(
+						'route'  => '/wpai119direct/v1/probe',
+						'path'   => '/wpai119direct/v1/probe',
+						'method' => 'GET',
+					),
+				),
+			),
+		),
+		$session_id
+	);
+	wpai_issue6_direct_tools_assert( 200 === $direct_rest->get_status(), 'ChatGPT-compatible bearer direct REST invocation did not return MCP HTTP success.' );
+	$direct_rest_data       = wpai_issue6_direct_tools_data( $direct_rest );
+	$direct_rest_structured = wpai_issue6_direct_tools_structured_content( $direct_rest_data );
+	wpai_issue6_direct_tools_assert(
+		true === ( $direct_rest_structured['success'] ?? false )
+		&& 'reported_success' === ( $direct_rest_structured['data']['outcome'] ?? '' )
+		&& 200 === ( $direct_rest_structured['data']['status'] ?? 0 )
+		&& 'provider-authorized-direct-mcp' === ( $direct_rest_structured['data']['data']['probe'] ?? '' ),
+		'Direct ChatGPT OAuth/MCP failed a dynamically registered provider REST callback or altered its native result.'
+	);
+	wpai_issue6_direct_tools_assert( 1 === $direct_rest_calls, 'Direct OAuth/MCP must dispatch one provider callback, not replay or skip it.' );
+} finally {
+	update_option( \WP_AI_Bridge\Support\Settings::OPTION_NAME, $settings_before_rest, false );
+}
+echo "Direct ChatGPT-compatible OAuth/MCP registered REST invocation: PASS\n";
+
 $delete = wpai_issue6_direct_tools_request( 'DELETE', $token, array(), $session_id );
 wpai_issue6_direct_tools_assert( in_array( $delete->get_status(), array( 200, 204 ), true ), 'Direct OAuth MCP session termination failed.' );
 wpai_issue6_direct_tools_assert( $store->revoke( $token ), 'Direct OAuth MCP test access token could not be revoked.' );
