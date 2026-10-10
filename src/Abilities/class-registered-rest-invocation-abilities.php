@@ -259,10 +259,22 @@ final class Registered_REST_Invocation_Abilities {
 			}
 		}
 
-		// Recheck grant immediately before dispatch. No WordPress principal, site
-		// context or OAuth client identity is changed inside this Ability.
+		// Core/provider callbacks do not declare trustworthy effect classes.
+		// Even a GET may perform credential, source or package operations with
+		// innocuous route/parameter names. For an unclassified generic route,
+		// require EACH independent purpose-specific Bridge consent and its
+		// native mapped capability. An administrator who did not explicitly
+		// opt into all protected lifecycles cannot use REST to bypass any one
+		// of them. This is a conservative, revocable super-trust policy, not
+		// a claim that caller-supplied method/name proves harmlessness.
+		if ( ! $this->protected_lifecycle_consent() ) {
+			return $this->error( 'rest_invocation_protected_consent_required', __( 'Generic REST execution needs independently enabled protected lifecycle permissions.', 'wp-ai-bridge' ) );
+		}
+		// Recheck all grants after provider index filters and before dispatch.
+		// No WordPress principal, blog context or OAuth identity is changed.
 		if (
 			! $this->can_invoke() ||
+			! $this->protected_lifecycle_consent() ||
 			get_current_user_id() !== $principal_id ||
 			( function_exists( 'get_current_blog_id' ) ? get_current_blog_id() : 0 ) !== $site_id
 		) {
@@ -319,6 +331,39 @@ final class Registered_REST_Invocation_Abilities {
 			// exception messages and never imply that retrying is safe.
 			return $this->unavailable_result();
 		}
+	}
+
+	/**
+	 * Unclassified provider/Core REST effects can perform ANY protected
+	 * lifecycle. Requiring every corresponding explicit Bridge grant and
+	 * native capability preserves the same policy even for innocuous
+	 * provider names and opaque data keys. No caller-provided effect claim
+	 * can weaken this conservative authorization. A future server-owned
+	 * auditable effect registry may narrow these requirements.
+	 *
+	 * @return bool
+	 */
+	private function protected_lifecycle_consent() {
+		$requirements = array(
+			array( Settings::GROUP_BUILDER_WRITE, 'edit_posts' ),
+			array( Settings::GROUP_REMOTE_MEDIA, 'upload_files' ),
+			array( Settings::GROUP_LIVE_CONTENT, 'publish_posts' ),
+			array( Settings::GROUP_SITE_CONFIG, 'manage_options' ),
+			array( Settings::GROUP_ADVANCED_METADATA, 'manage_options' ),
+			array( Settings::GROUP_AUTHENTICATION, 'manage_options' ),
+			array( Settings::GROUP_CODE_EXTENSIONS, 'activate_plugins' ),
+			array( Settings::GROUP_EXTERNAL_PACKAGES, 'install_plugins' ),
+			array( Settings::GROUP_SOURCE_EDITING, 'edit_plugins' ),
+			array( Settings::GROUP_SOURCE_EDITING, 'edit_themes' ),
+			array( Settings::GROUP_COMMENTS, 'moderate_comments' ),
+			array( Settings::GROUP_USERS_DESTRUCTIVE, 'delete_users' ),
+		);
+		foreach ( $requirements as $requirement ) {
+			if ( ! $this->permissions->allowed( $requirement[0], $requirement[1] ) ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** @param string $path Local REST route/path. @return bool */
