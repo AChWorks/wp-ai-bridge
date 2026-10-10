@@ -280,71 +280,82 @@ final class Private_Package_Store {
 			! is_uploaded_file( $upload['tmp_name'] ) ) {
 			return new WP_Error( 'private_package_invalid_upload', __( 'The private ZIP upload was incomplete or exceeded the size limit.', 'wp-ai-bridge' ) );
 		}
-		$lock_name = $this->stage_lock_name();
-		if ( ! $this->acquire_stage_lock( $lock_name ) ) {
+		// Deactivation/uninstall retires the same private bytes. Stage under the
+		// native mutation guard as well, so a concurrent deactivation cannot
+		// remove an in-flight ZIP and leave a post-deactivation orphan.
+		$install_guard = new Extension_Install_Lock();
+		if ( ! $install_guard->acquire() ) {
 			return new WP_Error( 'private_package_busy', __( 'Private package staging is temporarily unavailable; retry after the current upload finishes.', 'wp-ai-bridge' ) );
 		}
 		try {
-			$count = $this->stage_counts();
-			if ( $count['site'] >= self::MAX_SITE_STAGES || $count['user'] >= self::MAX_USER_STAGES ) {
-				return new WP_Error( 'private_package_quota', __( 'The private package staging quota has been reached.', 'wp-ai-bridge' ) );
-			}
-			$directory = $this->directory();
-			if ( is_wp_error( $directory ) ) {
-				return $directory;
-			}
-			$id   = bin2hex( random_bytes( 24 ) );
-			$path = $this->archive_path( $directory, $id );
-			if ( ! move_uploaded_file( $upload['tmp_name'], $path ) ) {
-				return new WP_Error( 'private_package_invalid_upload', __( 'The private ZIP upload was incomplete or exceeded the size limit.', 'wp-ai-bridge' ) );
-			}
-			// A successful move is not enough: the filesystem must enforce private
-			// mode, even when the PHP upload's original mode was more permissive.
-			if ( ! chmod( $path, 0600 ) ) {
-				wp_delete_file( $path );
-				return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
-			}
-			clearstatcache( true, $path );
-			if ( is_link( $path ) || 0 !== ( (int) fileperms( $path ) & 0077 ) ) {
-				wp_delete_file( $path );
-				return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
-			}
-			$inspection = $this->inspect_zip( $path, $kind );
-			if ( is_wp_error( $inspection ) || ! $this->allowed( $kind ) || ! ( new Approved_OAuth_Clients() )->is_approved( $client_id ) ) {
-				wp_delete_file( $path );
-				return is_wp_error( $inspection ) ? $inspection : new WP_Error( 'private_package_permission_denied', __( 'Private package authorization is not available.', 'wp-ai-bridge' ) );
-			}
-			$sha = hash_file( 'sha256', $path );
-			if ( ! is_string( $sha ) || (int) filesize( $path ) !== (int) $upload['size'] ) {
-				wp_delete_file( $path );
-				return $this->invalid_archive();
-			}
-			$meta = array(
-				'id'              => $id,
-				'kind'            => $kind,
-				'user_id'         => get_current_user_id(),
-				'blog_id'         => get_current_blog_id(),
-				'client_id'       => $client_id,
-				'client_revision' => ( new Approved_OAuth_Clients() )->artifact_revision( $client_id ),
-				'filename'        => substr( sanitize_file_name( $upload['name'] ), 0, 120 ),
-				'sha256'          => $sha,
-				'bytes'           => (int) $upload['size'],
-				'root'            => $inspection['root'],
-				'created'         => time(),
-				'expires'         => time() + self::STAGE_TTL,
-				'status'          => 'staged',
-			);
-			if ( ! $this->stage_lock_is_owned( $lock_name ) ) {
-				wp_delete_file( $path );
+			$lock_name = $this->stage_lock_name();
+			if ( ! $this->acquire_stage_lock( $lock_name ) ) {
 				return new WP_Error( 'private_package_busy', __( 'Private package staging is temporarily unavailable; retry after the current upload finishes.', 'wp-ai-bridge' ) );
 			}
-			if ( ! add_option( self::OPTION_PREFIX . $id, $meta, '', false ) ) {
-				wp_delete_file( $path );
-				return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
+			try {
+				$count = $this->stage_counts();
+				if ( $count['site'] >= self::MAX_SITE_STAGES || $count['user'] >= self::MAX_USER_STAGES ) {
+					return new WP_Error( 'private_package_quota', __( 'The private package staging quota has been reached.', 'wp-ai-bridge' ) );
+				}
+				$directory = $this->directory();
+				if ( is_wp_error( $directory ) ) {
+					return $directory;
+				}
+				$id   = bin2hex( random_bytes( 24 ) );
+				$path = $this->archive_path( $directory, $id );
+				if ( ! move_uploaded_file( $upload['tmp_name'], $path ) ) {
+					return new WP_Error( 'private_package_invalid_upload', __( 'The private ZIP upload was incomplete or exceeded the size limit.', 'wp-ai-bridge' ) );
+				}
+				// A successful move is not enough: the filesystem must enforce private
+				// mode, even when the PHP upload's original mode was more permissive.
+				if ( ! chmod( $path, 0600 ) ) {
+					wp_delete_file( $path );
+					return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
+				}
+				clearstatcache( true, $path );
+				if ( is_link( $path ) || 0 !== ( (int) fileperms( $path ) & 0077 ) ) {
+					wp_delete_file( $path );
+					return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
+				}
+				$inspection = $this->inspect_zip( $path, $kind );
+				if ( is_wp_error( $inspection ) || ! $this->allowed( $kind ) || ! ( new Approved_OAuth_Clients() )->is_approved( $client_id ) ) {
+					wp_delete_file( $path );
+					return is_wp_error( $inspection ) ? $inspection : new WP_Error( 'private_package_permission_denied', __( 'Private package authorization is not available.', 'wp-ai-bridge' ) );
+				}
+				$sha = hash_file( 'sha256', $path );
+				if ( ! is_string( $sha ) || (int) filesize( $path ) !== (int) $upload['size'] ) {
+					wp_delete_file( $path );
+					return $this->invalid_archive();
+				}
+				$meta = array(
+					'id'              => $id,
+					'kind'            => $kind,
+					'user_id'         => get_current_user_id(),
+					'blog_id'         => get_current_blog_id(),
+					'client_id'       => $client_id,
+					'client_revision' => ( new Approved_OAuth_Clients() )->artifact_revision( $client_id ),
+					'filename'        => substr( sanitize_file_name( $upload['name'] ), 0, 120 ),
+					'sha256'          => $sha,
+					'bytes'           => (int) $upload['size'],
+					'root'            => $inspection['root'],
+					'created'         => time(),
+					'expires'         => time() + self::STAGE_TTL,
+					'status'          => 'staged',
+				);
+				if ( ! $this->stage_lock_is_owned( $lock_name ) || ! $install_guard->is_owned() ) {
+					wp_delete_file( $path );
+					return new WP_Error( 'private_package_busy', __( 'Private package staging is temporarily unavailable; retry after the current upload finishes.', 'wp-ai-bridge' ) );
+				}
+				if ( ! add_option( self::OPTION_PREFIX . $id, $meta, '', false ) ) {
+					wp_delete_file( $path );
+					return new WP_Error( 'private_package_storage_unavailable', __( 'Private package storage is unavailable.', 'wp-ai-bridge' ) );
+				}
+				return $this->public_meta( $meta );
+			} finally {
+				$this->release_stage_lock( $lock_name );
 			}
-			return $this->public_meta( $meta );
 		} finally {
-			$this->release_stage_lock( $lock_name );
+			$install_guard->release();
 		}
 	}
 

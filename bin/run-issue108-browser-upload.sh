@@ -108,8 +108,10 @@ if [[ ! "$private_dir" =~ ^/tmp/wpai-private-zip-[0-9a-f]{24}$ ]]; then
     exit 1
 fi
 run_compose exec -T -u root wordpress chown -R www-data:www-data "$private_dir"
-run_compose exec -T -u root wordpress chown -R www-data:www-data /var/www/html/wp-content/plugins
-run_compose exec -T -u root wordpress chown www-data:www-data /var/www/html/wp-content
+# The prior native WP-CLI fixtures also created root-owned Core upgrader temp
+# trees below wp-content/upgrade. Real HTTP Core installs must be able to
+# unpack the ZIP before their upgrader_pre_install hook can be reached.
+run_compose exec -T -u root wordpress chown -R www-data:www-data /var/www/html/wp-content
 
 
 http -c "$tmp/cookies" -o "$tmp/login" "$origin/wp-login.php"
@@ -285,10 +287,17 @@ done
 if [[ "$entered" != 1 ]]; then
     wait "$install_pid" || true
     echo 'ERROR: First native Core installation never reached held Upgrader boundary.' >&2
+    if [[ -s "$tmp/race-a.json" ]]; then
+        echo 'B1 isolated fixture returned the following bounded result:' >&2
+        cat "$tmp/race-a.json" >&2
+    fi
     exit 1
 fi
 race install-b > "$tmp/race-b.json"
 race public-while-locked > "$tmp/race-public.json"
+# A concurrent private ZIP staging request must not outlive plugin
+# deactivation: the same global mutation lock also guards lifecycle cleanup.
+http -b "$tmp/cookies" -o "$tmp/race-stage" -D "$tmp/race-stage-headers"     -F 'action=wpai_private_zip_upload' -F "_wpnonce=$nonce" -F 'kind=plugin'     -F 'client_id=https://chatgpt.com/oauth/client.json'     -F "wpai_private_zip=@$tmp/plugin.zip;type=application/zip"     "$origin/wp-admin/admin-post.php"
 wait "$install_pid"
 race verify > "$tmp/race-verify.json"
 if ! grep -q '"ok":true' "$tmp/race-a.json" ||
@@ -296,6 +305,7 @@ if ! grep -q '"ok":true' "$tmp/race-a.json" ||
    ! grep -q '"unclaimed":true' "$tmp/race-b.json" ||
    ! grep -q '"still_staged":true' "$tmp/race-b.json" ||
    ! grep -q '"code":"extension_install_busy"' "$tmp/race-public.json" ||
+   ! grep -q 'error=private_package_busy' "$tmp/race-stage-headers" ||
    ! grep -q '"exact_tree":true' "$tmp/race-verify.json" ||
    ! grep -q '"b_unclaimed":true' "$tmp/race-verify.json"; then
     echo 'ERROR: Different-artifact Core install race or cross-path lock was not correctly rejected.' >&2
