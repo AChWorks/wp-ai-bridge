@@ -140,6 +140,24 @@ try {
 	wpai119execute_check( ! is_wp_error( $denied ) && 403 === $denied['status'] && 'outcome_unknown' === $denied['outcome'], 'Provider-native permission denial must remain authoritative.' );
 	wpai119execute_check( 3 === $calls, 'Provider permission denial nonetheless invoked callback.' );
 
+	wpai119execute_check( isset( $server->get_routes()['/batch/v1'] ), 'WordPress Core /batch/v1 route is absent from this supported integration fixture.' );
+	$batch = $ability->execute(
+		array(
+			'route'  => '/batch/v1',
+			'path'   => '/batch/v1',
+			'method' => 'POST',
+			'body'   => array(
+				'requests' => array(
+					array(
+						'method' => 'POST',
+						'path'   => '/wp/v2/settings',
+						'body'   => array( 'title' => 'blocked' ),
+					),
+				),
+			),
+		)
+	);
+	wpai119execute_check( is_wp_error( $batch ), 'WordPress Core batch fan-out must not bypass specialized Bridge controls.' );
 	foreach ( array(
 		array( 'route' => $route, 'path' => '/wpai119exec/v1/item/7?foo=1', 'method' => 'GET' ),
 		array( 'route' => $route, 'path' => '/wpai119exec/v1/item/../7', 'method' => 'GET' ),
