@@ -232,18 +232,18 @@ final class Registered_REST_Abilities {
 	 * a handler, provider callback, default, private schema or raw registry data.
 	 *
 	 * @param string $route  Exact registered route regex.
-	 * @param mixed  $public Core's post-filter public index data for this route.
+	 * @param mixed  $index_data Core's post-filter public index data for this route.
 	 * @param bool   $detail Include bounded index argument metadata.
 	 * @return array<string,mixed>|WP_Error|null Null means not public.
 	 */
-	private function contract( $route, $public, $detail ) {
+	private function contract( $route, $index_data, $detail ) {
 		if ( strlen( $route ) > self::MAX_ROUTE_BYTES ) {
 			return $this->unrepresentable();
 		}
-		if ( ! is_array( $public ) || ! isset( $public['methods'] ) || ! is_array( $public['methods'] ) ) {
+		if ( ! is_array( $index_data ) || ! isset( $index_data['methods'] ) || ! is_array( $index_data['methods'] ) ) {
 			return null;
 		}
-		$methods = array_values( array_filter( $public['methods'], 'is_string' ) );
+		$methods = array_values( array_filter( $index_data['methods'], 'is_string' ) );
 		if ( ! $methods ) {
 			return null;
 		}
@@ -258,7 +258,7 @@ final class Registered_REST_Abilities {
 		if ( ! $detail ) {
 			return $item;
 		}
-		$endpoints = isset( $public['endpoints'] ) ? $public['endpoints'] : array();
+		$endpoints = isset( $index_data['endpoints'] ) ? $index_data['endpoints'] : array();
 		if ( ! is_array( $endpoints ) || count( $endpoints ) > self::MAX_ENDPOINTS ) {
 			return $this->unrepresentable();
 		}
