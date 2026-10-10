@@ -329,6 +329,13 @@ final class Site_Health_Abilities {
 	private function safe_label( $label ) {
 		$text = is_scalar( $label ) ? wp_strip_all_tags( (string) $label ) : '';
 		$text = wp_check_invalid_utf8( $text, true );
-		return strlen( $text ) > 256 ? mb_strcut( $text, 0, 256, 'UTF-8' ) : $text;
+		if ( strlen( $text ) <= 256 ) {
+			return $text;
+		}
+		$prefix = substr( $text, 0, 256 );
+		while ( '' !== $prefix && 1 !== preg_match( '//u', $prefix ) ) {
+			$prefix = substr( $prefix, 0, -1 );
+		}
+		return $prefix;
 	}
 }
