@@ -110,8 +110,20 @@ final class Registered_REST_Invocation_Abilities {
 
 		// Real WordPress always accepts a concrete request path. The selected
 		// regex is used only as an independent registry identity assertion.
-		$selected_match = preg_match( '@^' . $route . '$@i', $path );
+		$path_matches  = array();
+		$selected_match = preg_match( '@^' . $route . '$@i', $path, $path_matches );
 		if ( 1 !== $selected_match ) {
+			return $this->invalid();
+		}
+		// Route captures are authoritative. A query/body parameter with the
+		// same name could override the Core-decoded URL parameter on some
+		// WordPress request paths, changing the resource being authorized.
+		foreach ( $path_matches as $name => $value ) {
+			if ( is_string( $name ) && ( array_key_exists( $name, $query ) || array_key_exists( $name, $body ) ) ) {
+				return $this->invalid();
+			}
+		}
+		if ( array_intersect_key( $query, $body ) ) {
 			return $this->invalid();
 		}
 		if ( ! $this->safe_tree( $query ) || ! $this->safe_tree( $body ) ) {
@@ -165,6 +177,38 @@ final class Registered_REST_Invocation_Abilities {
 			! in_array( $method, $indexed[ $route ]['methods'], true )
 		) {
 			return $this->not_found();
+		}
+
+		// The filtered public index is also the caller-visible parameter
+		// contract. A provider can redact parameter names from the index;
+		// invocation must not reconstruct or accept those hidden names from
+		// raw handler schemas or from guessed inputs.
+		$visible_args = array();
+		$endpoints = isset( $indexed[ $route ]['endpoints'] ) ? $indexed[ $route ]['endpoints'] : null;
+		if ( ! is_array( $endpoints ) ) {
+			return $this->not_found();
+		}
+		foreach ( $endpoints as $endpoint ) {
+			if (
+				! is_array( $endpoint ) || ! isset( $endpoint['methods'] ) ||
+				! is_array( $endpoint['methods'] ) || ! in_array( $method, $endpoint['methods'], true )
+			) {
+				continue;
+			}
+			$arguments = isset( $endpoint['args'] ) ? $endpoint['args'] : array();
+			if ( ! is_array( $arguments ) ) {
+				return $this->not_found();
+			}
+			foreach ( array_keys( $arguments ) as $name ) {
+				if ( is_string( $name ) ) {
+					$visible_args[ $name ] = true;
+				}
+			}
+		}
+		foreach ( array_keys( $query + $body ) as $name ) {
+			if ( ! is_string( $name ) || ! isset( $visible_args[ $name ] ) ) {
+				return $this->invalid();
+			}
 		}
 
 		// WordPress may register overlapping regexes. Never claim to invoke the
