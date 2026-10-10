@@ -43,6 +43,7 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `classic-navigation-mutate` | Builder Write | Create/update/reorder classic navigation; permanent item removal is destructive. |
 | `site-settings-read` | Site Read | Read the bounded site-settings allowlist. |
 | `site-settings-update` | Site Configuration | Update bounded site settings. |
+| `core-update-status` | Site Configuration + native administrator capability (network administrator on multisite) | Read only cached Core update offers, their age, and native policy signals. Never triggers an update check, download, or upgrade. Missing/stale cache is unknown. |
 | `extensions-read` | Site Read | Read installed plugin/theme metadata. |
 | `extension-authorization` | Site Read | Read-only per-kind/action/group/native-capability preflight. Execution permission, target and environment are not evaluated. |
 | `extension-lifecycle` | Code & Extensions; External Packages additionally for external HTTPS install | Preserve WordPress.org slug install/update/activate/deactivate and separately allow one public-HTTPS package install when additionally authorized; deletion is destructive. |

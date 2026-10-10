@@ -304,9 +304,6 @@ final class Settings_Page {
 	public function render_settings() {
 		$this->require_admin();
 		$values          = $this->settings->all();
-		$mcp_available   = $this->environment->mcp_adapter_available();
-		$https_ready     = $this->oauth_server->is_https_ready();
-		$direct_endpoint = $this->oauth_server->mcp_endpoint_url();
 		$notice          = isset( $_GET['wpai_notice'] ) ? sanitize_key( wp_unslash( $_GET['wpai_notice'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Redirect status notice only.
 		?>
 		<div class="wrap">
@@ -317,21 +314,9 @@ final class Settings_Page {
 				<div class="notice notice-success is-dismissible"><p><?php echo esc_html__( 'Workspace documents and tasks were cleared.', 'wp-ai-bridge' ); ?></p></div><?php endif; ?>
 
 			<h2><?php echo esc_html__( 'AI/MCP client connections', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'This HTTPS MCP endpoint serves the built-in ChatGPT connection and other compatible OAuth clients explicitly approved by an administrator. Use the ChatGPT instructions below, or configure an independent client under WP AI Bridge → OAuth Clients. Compatibility depends on the supported OAuth/MCP contract of each client.', 'wp-ai-bridge' ); ?></p>
-			<table class="widefat striped" style="max-width: 900px"><tbody>
-				<tr><th scope="row"><?php echo esc_html__( 'WordPress', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( $this->environment->wordpress_version() ); ?></td></tr>
-				<tr><th scope="row"><?php echo esc_html__( 'Abilities API', 'wp-ai-bridge' ); ?></th><td><?php echo $this->environment->abilities_api_available() ? esc_html__( 'Available', 'wp-ai-bridge' ) : esc_html__( 'Unavailable', 'wp-ai-bridge' ); ?></td></tr>
-				<tr><th scope="row"><?php echo esc_html__( 'MCP Adapter', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( $mcp_available ? sprintf( __( 'Available (%s)', 'wp-ai-bridge' ), $this->environment->mcp_adapter_version() ) : __( 'Unavailable', 'wp-ai-bridge' ) ); // phpcs:ignore WordPress.WP.I18n.MissingTranslatorsComment -- Existing short version placeholder. ?></td></tr>
-				<tr><th scope="row"><?php echo esc_html__( 'Public HTTPS', 'wp-ai-bridge' ); ?></th><td><?php echo $https_ready ? esc_html__( 'Ready', 'wp-ai-bridge' ) : esc_html__( 'Not ready — endpoint is not HTTPS', 'wp-ai-bridge' ); ?></td></tr>
-				<tr><th scope="row"><?php echo esc_html__( 'MCP endpoint', 'wp-ai-bridge' ); ?></th><td><code><?php echo esc_html( $direct_endpoint ); ?></code></td></tr>
-				<tr><th scope="row"><?php echo esc_html__( 'OAuth protected-resource metadata', 'wp-ai-bridge' ); ?></th><td><code><?php echo esc_html( $this->oauth_server->protected_resource_metadata_url() ); ?></code></td></tr>
-				<tr><th scope="row"><?php echo esc_html__( 'OAuth authorization-server metadata', 'wp-ai-bridge' ); ?></th><td><code><?php echo esc_html( $this->oauth_server->authorization_server_metadata_url() ); ?></code></td></tr>
-			</tbody></table>
-			<?php if ( $mcp_available && $https_ready ) : ?>
-				<p><strong><?php echo esc_html__( 'ChatGPT setup:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html__( 'In Workspace settings, open Apps, create a custom App, enter the MCP endpoint above, choose OAuth, and run Scan Tools. Sign in to WordPress in the browser window and approve the connection.', 'wp-ai-bridge' ); ?></p>
-			<?php else : ?>
-				<p><strong><?php echo esc_html__( 'Connection is not ready yet.', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html__( 'The official MCP Adapter must be active and the WordPress endpoint reachable by the client over HTTPS. Direct ChatGPT apps require a publicly reachable endpoint.', 'wp-ai-bridge' ); ?></p>
-			<?php endif; ?>
+			<p><?php echo esc_html__( 'These are local configuration observations, not a live client connection check. Configure a compatible authenticated OAuth/MCP client using the endpoint shown below.', 'wp-ai-bridge' ); ?></p>
+			<?php $this->render_connection_diagnostics(); ?>
+			<p><strong><?php echo esc_html__( 'Client setup:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html__( 'After resolving local prerequisites, configure the MCP URL in your client, choose OAuth, authenticate with WordPress, then rescan its tools. Successful OAuth does not grant WordPress or Bridge permissions.', 'wp-ai-bridge' ); ?></p>
 
 			<h2><?php echo esc_html__( 'Access groups', 'wp-ai-bridge' ); ?></h2>
 			<p><?php echo esc_html__( 'An enabled group only makes matching bridge abilities technically available. The connected WordPress user must also have the required WordPress capabilities. OAuth authorization does not bypass these checks.', 'wp-ai-bridge' ); ?></p>
@@ -417,11 +402,61 @@ final class Settings_Page {
 	private function render_connection_summary() {
 		?>
 		<h2><?php echo esc_html__( 'Connection', 'wp-ai-bridge' ); ?></h2>
+		<?php
+		$this->render_connection_diagnostics();
+	}
+
+	/**
+	 * Reports only local facts on both dashboard and settings screens.
+	 * It never probes external networks, OAuth clients, or Site Health itself.
+	 *
+	 * @return void
+	 */
+	private function render_connection_diagnostics() {
+		$wordpress_supported = $this->environment->wordpress_supported();
+		$abilities_available = $this->environment->abilities_api_available();
+		$adapter_available   = $this->environment->mcp_adapter_available();
+		$adapter_version     = $this->environment->mcp_adapter_version();
+		$https_configured    = $this->oauth_server->is_https_ready(); // Only checks the configured URL scheme.
+		?>
 		<table class="widefat striped" style="max-width: 900px"><tbody>
-			<tr><th scope="row"><?php echo esc_html__( 'WordPress', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( $this->environment->wordpress_version() ); ?></td></tr>
-			<tr><th scope="row"><?php echo esc_html__( 'MCP Adapter', 'wp-ai-bridge' ); ?></th><td><?php echo $this->environment->mcp_adapter_available() ? esc_html__( 'Available', 'wp-ai-bridge' ) : esc_html__( 'Unavailable', 'wp-ai-bridge' ); ?></td></tr>
-			<tr><th scope="row"><?php echo esc_html__( 'Public HTTPS', 'wp-ai-bridge' ); ?></th><td><?php echo $this->oauth_server->is_https_ready() ? esc_html__( 'Ready', 'wp-ai-bridge' ) : esc_html__( 'Not ready — endpoint is not HTTPS', 'wp-ai-bridge' ); ?></td></tr>
+			<tr><th scope="row"><?php echo esc_html__( 'WordPress', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( $this->environment->wordpress_version() ); ?>
+				<?php if ( ! $wordpress_supported ) : ?> — <?php echo esc_html__( 'WordPress 6.9 or newer is required.', 'wp-ai-bridge' ); ?><?php endif; ?></td></tr>
+			<tr><th scope="row"><?php echo esc_html__( 'Abilities API', 'wp-ai-bridge' ); ?></th><td><?php echo $abilities_available ? esc_html__( 'Available', 'wp-ai-bridge' ) : esc_html__( 'Unavailable: check WordPress version and Abilities API loading.', 'wp-ai-bridge' ); ?></td></tr>
+			<tr><th scope="row"><?php echo esc_html__( 'MCP Adapter', 'wp-ai-bridge' ); ?></th><td>
+				<?php
+				if ( $adapter_available ) {
+					echo esc_html( '' !== $adapter_version ? sprintf( /* translators: %s: MCP Adapter version. */ __( 'Available (%s)', 'wp-ai-bridge' ), $adapter_version ) : __( 'Available (version not reported)', 'wp-ai-bridge' ) );
+				} else {
+					echo esc_html__( 'Unavailable: install or activate the official MCP Adapter.', 'wp-ai-bridge' );
+				}
+				?>
+			</td></tr>
+			<tr><th scope="row"><?php echo esc_html__( 'MCP URL scheme', 'wp-ai-bridge' ); ?></th><td><?php echo $https_configured ? esc_html__( 'HTTPS configured; public reachability not verified', 'wp-ai-bridge' ) : esc_html__( 'HTTPS not configured for this MCP URL', 'wp-ai-bridge' ); ?></td></tr>
+			<tr><th scope="row"><?php echo esc_html__( 'MCP endpoint', 'wp-ai-bridge' ); ?></th><td><code><?php echo esc_html( $this->oauth_server->mcp_endpoint_url() ); ?></code></td></tr>
+			<tr><th scope="row"><?php echo esc_html__( 'OAuth protected-resource metadata', 'wp-ai-bridge' ); ?></th><td><code><?php echo esc_html( $this->oauth_server->protected_resource_metadata_url() ); ?></code></td></tr>
+			<tr><th scope="row"><?php echo esc_html__( 'OAuth authorization-server metadata', 'wp-ai-bridge' ); ?></th><td><code><?php echo esc_html( $this->oauth_server->authorization_server_metadata_url() ); ?></code><p class="description"><?php echo esc_html__( 'Metadata URLs are generated locally; remote fetching and routing have not been checked.', 'wp-ai-bridge' ); ?></p></td></tr>
+			<tr><th scope="row"><?php echo esc_html__( 'External client connection', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html__( 'Not verified here: an authenticated client must confirm connection.', 'wp-ai-bridge' ); ?></td></tr>
 		</tbody></table>
+		<p><strong><?php echo esc_html__( 'Next diagnostic steps:', 'wp-ai-bridge' ); ?></strong></p>
+		<ul class="ul-disc" style="max-width: 900px">
+			<?php if ( ! $wordpress_supported || ! $abilities_available ) : ?>
+				<li><?php echo esc_html__( 'Use supported WordPress and verify that the native Abilities API is loaded.', 'wp-ai-bridge' ); ?></li>
+			<?php endif; ?>
+			<?php if ( ! $adapter_available ) : ?>
+				<li><a href="<?php echo esc_url( 'https://github.com/WordPress/mcp-adapter/releases/latest' ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html__( 'Install or activate the compatible official MCP Adapter', 'wp-ai-bridge' ); ?></a></li>
+			<?php endif; ?>
+			<?php if ( ! $https_configured ) : ?>
+				<li><?php echo esc_html__( 'Check WordPress Site URL, REST URL, and reverse-proxy HTTPS configuration.', 'wp-ai-bridge' ); ?></li>
+			<?php endif; ?>
+			<?php if ( current_user_can( 'view_site_health_checks' ) ) : ?>
+				<li><a href="<?php echo esc_url( admin_url( 'site-health.php' ) ); ?>"><?php echo esc_html__( 'Open Tools → Site Health', 'wp-ai-bridge' ); ?></a> — <?php echo esc_html__( 'Run native HTTPS, REST, loopback, and Authorization-header diagnostics where available.', 'wp-ai-bridge' ); ?></li>
+			<?php else : ?>
+				<li><?php echo esc_html__( 'Site Health diagnostics cannot be verified from this account; ask an authorized administrator to check them if available.', 'wp-ai-bridge' ); ?></li>
+			<?php endif; ?>
+			<li><?php echo esc_html__( 'If remote discovery fails, inspect /.well-known/ routing, firewall, CDN/proxy rules, and client network access. A local HTTPS URL proves none of these.', 'wp-ai-bridge' ); ?></li>
+			<li><?php echo esc_html__( 'After connecting, check the exact WordPress user capability and Bridge access group for denied operations; rescan stale tools. Diagnose Gateway routing separately from direct MCP.', 'wp-ai-bridge' ); ?></li>
+		</ul>
 		<?php
 	}
 
