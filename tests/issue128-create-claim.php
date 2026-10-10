@@ -47,6 +47,9 @@ class WPAI_Claim_Fake_DB {
 		return 1;
 	}
 	public function get_var( $sql ) {
+		if ( ! empty( $GLOBALS['wpai_test']['force_capacity_full'] ) ) {
+			return Create_Claim::MAX_CLAIMS;
+		}
 		return count( array_filter( array_keys( $GLOBALS['wpai_test']['options'] ), static function ( $name ) {
 			return 0 === strpos( $name, Create_Claim::PREFIX );
 		} ) );
@@ -156,5 +159,36 @@ $GLOBALS['wpai_test']['simulate_insert_error'] = true;
 $storage = Create_Claim::run( 'content-create', wpai128_create_input( 'claim-fail-128' ), $permission, $perform, $recover );
 wpai128_assert( is_wp_error( $storage ) && 'create_claim_outcome_unknown' === $storage->get_error_code() && 5 === $writes, 'Failed atomic storage must stop all effects.' );
 $GLOBALS['wpai_test']['simulate_insert_error'] = false;
+$GLOBALS['wpai_test']['force_capacity_full'] = true;
+$full = Create_Claim::run( 'content-create', wpai128_create_input( 'capacity-limit-128' ), $permission, $perform, $recover );
+wpai128_assert( is_wp_error( $full ) && 'create_claim_capacity' === $full->get_error_code() && 5 === $writes, 'Saturated durable receipt store did not fail closed.' );
+$GLOBALS['wpai_test']['force_capacity_full'] = false;
+// A fully known original result remains non-replayable after retention:
+$old_key = Create_Claim::PREFIX . hash( 'sha256', wp_json_encode( array( 1, 1, '', 'content-create', 'example-key-102' ) ) );
+$receipt = json_decode( $GLOBALS['wpai_test']['options'][ $old_key ], true );
+$receipt['created_at'] = time() - Create_Claim::RECOVERY_SECONDS - 1;
+$GLOBALS['wpai_test']['options'][ $old_key ] = wp_json_encode( $receipt );
+$expired = Create_Claim::run( 'content-create', wpai128_create_input( 'example-key-102' ), $permission, $perform, $recover );
+wpai128_assert( is_wp_error( $expired ) && 'create_claim_expired' === $expired->get_error_code() && 5 === $writes, 'Expired operation key was silently replayed.' );
+wpai128_assert( 'expired' === json_decode( $GLOBALS['wpai_test']['options'][ $old_key ], true )['state'], 'Expired claim was not compacted into a durable tombstone.' );
 wpai128_assert( 5 === $writes, 'Validation/recovery unexpectedly repeated a create.' );
+// Only the current authenticated OAuth client binds an operation receipt.
+// Two distinct clients using the same textual ID cannot adopt each other.
+$client_property = new ReflectionProperty( \WP_AI_Bridge\Auth\OAuth_Server::class, 'authenticated_mcp_client_id' );
+$original_client = $client_property->getValue();
+try {
+	$client_property->setValue( null, 'client-A' );
+	$client_a = Create_Claim::run( 'content-create', wpai128_create_input( 'client-isolation-128' ), $permission, $perform, $recover );
+	$client_property->setValue( null, 'client-B' );
+	$client_b = Create_Claim::run( 'content-create', wpai128_create_input( 'client-isolation-128' ), $permission, $perform, $recover );
+	wpai128_assert( is_array( $client_a ) && is_array( $client_b ) &&
+		$client_a['id'] !== $client_b['id'] && 7 === $writes,
+		'Distinct authenticated clients shared one operation receipt.' );
+	$client_property->setValue( null, 'client-A' );
+	$client_a_again = Create_Claim::run( 'content-create', wpai128_create_input( 'client-isolation-128' ), $permission, $perform, $recover );
+	wpai128_assert( is_array( $client_a_again ) && $client_a_again['id'] === $client_a['id'] &&
+		7 === $writes, 'Returning authenticated client did not recover its own object.' );
+} finally {
+	$client_property->setValue( null, $original_client );
+}
 echo "PASS: #128 durable keyed-create safety ({$assertions} assertions).\n";

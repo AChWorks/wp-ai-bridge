@@ -107,6 +107,12 @@ do
     fi
 done
 
+# Exercise the Workspace 200-item ceiling and unexpected corruption in one
+# representative lane, instead of repeating 200 writes in all four lanes.
+if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-quotas-corruption-smoke.php --user=1 --allow-root
+fi
+
 # Two independent PHP workers race for one native database claim.
 # Runs against the already bootstrapped disposable WordPress/MariaDB stack.
 bash "$root/bin/run-issue128-atomic-race.sh"
