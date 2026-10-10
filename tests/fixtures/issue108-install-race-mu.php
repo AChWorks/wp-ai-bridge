@@ -75,20 +75,25 @@ add_action(
 			wp_send_json( array( 'setup' => true ) );
 		}
 
-		if ( 'install-a' === $mode ) {
+		if ( in_array( $mode, array( 'install-a', 'install-a-disconnect' ), true ) ) {
 			add_filter(
 				'upgrader_pre_install',
-				static function ( $result ) use ( $marker ) {
-					file_put_contents( $marker, 'entered' );
-					sleep( 8 );
+				static function ( $result ) use ( $marker, $mode ) {
+					global $wpdb;
+					$db_session = (int) $wpdb->get_var( 'SELECT CONNECTION_ID()' );
+					// A separate worker terminates this *actual* session while
+					// the original PHP worker continues inside native Core.
+					file_put_contents( $marker, 'DBID:' . $db_session );
+					clearstatcache( true, $marker );
+					sleep( 'install-a-disconnect' === $mode ? 22 : 8 );
 					return $result;
 				},
 				10,
 				1
 			);
 		}
-		if ( in_array( $mode, array( 'install-a', 'install-b' ), true ) ) {
-			$id     = $ids[ 'install-a' === $mode ? 'a' : 'b' ];
+		if ( in_array( $mode, array( 'install-a', 'install-a-disconnect', 'install-b' ), true ) ) {
+			$id     = $ids[ 'install-b' !== $mode ? 'a' : 'b' ];
 			$meta   = get_option( \WP_AI_Bridge\Support\Private_Package_Store::OPTION_PREFIX . $id, false );
 			$result = is_array( $meta ) ? $store->install( $id, $meta['sha256'], 'plugin', $client ) : new WP_Error( 'fixture_missing' );
 			$code   = is_wp_error( $result ) ? $result->get_error_code() : '';

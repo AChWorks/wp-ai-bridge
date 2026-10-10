@@ -8,9 +8,12 @@ forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eva
 # The private ZIP lifecycle may invoke exactly one non-recursive WordPress Core
 # filesystem-directory removal. All other execution/filesystem primitives remain forbidden.
 unexpected_primitives="$(grep -R -nE "$forbidden" src --include='*.php' --exclude='class-media-abilities.php' --exclude='class-source-editing-abilities.php' |
-    grep -vE '^src/Support/class-private-package-lifecycle.php:[0-9]+:[[:space:]]+[$]filesystem->rmdir[(] [$]path [)];$' || true)"
+    grep -vE '^src/Support/class-private-package-lifecycle.php:[0-9]+:[[:space:]]+[$]filesystem->rmdir[(] [$]path [)];$' |
+    grep -vE "^src/Support/class-extension-install-lock.php:[0-9]+:[[:space:]]+[$]handle = @fopen[(] [$]path, '[xr]' [)];" || true)"
 if [[ -n "$unexpected_primitives" ||
-      "$(grep -cF '$filesystem->rmdir( $path );' src/Support/class-private-package-lifecycle.php || true)" != "1" ]]; then
+      "$(grep -cF '$filesystem->rmdir( $path );' src/Support/class-private-package-lifecycle.php || true)" != "1" ||
+      "$(grep -cF "@fopen( \$path, 'x' );" src/Support/class-extension-install-lock.php || true)" != "1" ||
+      "$(grep -cF "@fopen( \$path, 'r' );" src/Support/class-extension-install-lock.php || true)" != "1" ]]; then
     printf '%s\n' "$unexpected_primitives"
     echo "ERROR: forbidden direct execution/filesystem primitive found in production source." >&2
     exit 1

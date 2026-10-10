@@ -319,3 +319,96 @@ if ! grep -q '"cleaned":true' "$tmp/race-cleanup.json"; then
 fi
 run_compose exec -T wordpress rm -f /var/www/html/wp-content/mu-plugins/wpai108-install-race.php
 echo 'PASS: Issue #108 two different ZIP IDs versus one native destination, no claim/core overlap, exact final filesystem tree and shared WordPress.org lock.'
+
+# B1 + R1: terminate A's MySQL named-lock session from an independent DB
+# connection WHILE A stays alive inside actual WordPress Plugin_Upgrader.
+# Linux/PHP flock on the shared extension filesystem must continue excluding
+# B, legacy WordPress.org installs, browser staging and lifecycle teardown.
+race setup > "$tmp/lost-db-setup.json"
+if ! grep -q '"setup":true' "$tmp/lost-db-setup.json"; then
+    echo 'ERROR: Could not reinitialize genuine two-artifact DB-disconnect fixture.' >&2
+    exit 1
+fi
+race install-a-disconnect > "$tmp/lost-db-a.json" &
+disconnect_pid=$!
+entered=0
+for attempt in $(seq 1 70); do
+    if run_compose exec -T wordpress test -f /tmp/wpai108-race-core-entered; then
+        entered=1
+        break
+    fi
+    sleep 0.2
+done
+if [[ "$entered" != 1 ]]; then
+    wait "$disconnect_pid" || true
+    echo 'ERROR: Disconnect fixture did not enter the live native Upgrader.' >&2
+    exit 1
+fi
+db_thread="$(run_compose exec -T wordpress cat /tmp/wpai108-race-core-entered | sed -n 's/^DBID:\([0-9][0-9]*\)$/\1/p' | head -n 1)"
+if [[ ! "$db_thread" =~ ^[1-9][0-9]{0,9}$ ]]; then
+    echo 'ERROR: Native Upgrader did not disclose its actual bounded test DB connection ID.' >&2
+    exit 1
+fi
+run_wp eval "
+global \$wpdb;
+\$lock = new \\WP_AI_Bridge\\Support\\Extension_Install_Lock();
+\$method = new ReflectionMethod( \$lock, 'lock_name' );
+\$name = \$method->invoke( \$lock );
+\$thread = (int) $db_thread;
+\$db_owner = (int) \$wpdb->get_var( \$wpdb->prepare( 'SELECT IS_USED_LOCK(%s)', \$name ) );
+if ( \$db_owner !== \$thread || \$thread === (int) \$wpdb->get_var( 'SELECT CONNECTION_ID()' ) ) {
+    throw new RuntimeException( 'Native Upgrader DB ownership mismatch before isolated session termination.' );
+}
+if ( false === \$wpdb->query( 'KILL CONNECTION ' . \$thread ) ) {
+    throw new RuntimeException( 'Independent DB connection could not terminate Core worker session.' );
+}
+\$remaining = \$wpdb->get_var( \$wpdb->prepare( 'SELECT IS_USED_LOCK(%s)', \$name ) );
+if ( null !== \$remaining ) {
+    throw new RuntimeException( 'Killed named lock was not released by MariaDB.' );
+}
+echo 'DB_LOCK_SESSION_KILLED\n';
+" --user=1 --allow-root > "$tmp/lost-db-kill.log"
+if ! grep -q 'DB_LOCK_SESSION_KILLED' "$tmp/lost-db-kill.log"; then
+    echo 'ERROR: Real MariaDB DB-session termination proof is missing.' >&2
+    exit 1
+fi
+race install-b > "$tmp/lost-db-b.json"
+race public-while-locked > "$tmp/lost-db-public.json"
+http -b "$tmp/cookies" -o "$tmp/lost-db-stage" -D "$tmp/lost-db-stage-headers" \
+    -F 'action=wpai_private_zip_upload' -F "_wpnonce=$nonce" -F 'kind=plugin' \
+    -F 'client_id=https://chatgpt.com/oauth/client.json' \
+    -F "wpai_private_zip=@$tmp/plugin.zip;type=application/zip" \
+    "$origin/wp-admin/admin-post.php"
+
+# Uninstall/deactivation must fail BEFORE deleting any staging bytes while
+# another PHP worker is alive and mutating the Core extension filesystem.
+set +e
+run_wp plugin deactivate wp-ai-bridge --allow-root > "$tmp/lost-db-deactivation.log" 2>&1
+deactivate_status=$?
+set -e
+if [[ "$deactivate_status" == 0 ]] || ! grep -q 'Private package files could not be retired safely' "$tmp/lost-db-deactivation.log"; then
+    echo 'ERROR: Deactivation raced with active Core after DB-session death.' >&2
+    tail -n 18 "$tmp/lost-db-deactivation.log" >&2
+    exit 1
+fi
+
+wait "$disconnect_pid"
+race verify > "$tmp/lost-db-verify.json"
+if ! grep -q '"code":"private_package_recovery_required"' "$tmp/lost-db-a.json" ||
+   ! grep -q '"code":"private_package_install_busy"' "$tmp/lost-db-b.json" ||
+   ! grep -q '"unclaimed":true' "$tmp/lost-db-b.json" ||
+   ! grep -q '"still_staged":true' "$tmp/lost-db-b.json" ||
+   ! grep -q '"code":"extension_install_busy"' "$tmp/lost-db-public.json" ||
+   ! grep -q 'error=private_package_busy' "$tmp/lost-db-stage-headers" ||
+   ! grep -q '"exact_tree":true' "$tmp/lost-db-verify.json" ||
+   ! grep -q '"b_unclaimed":true' "$tmp/lost-db-verify.json"; then
+    echo 'ERROR: Named-lock session loss broke the process/filesystem lifetime exclusion.' >&2
+    cat "$tmp/lost-db-a.json" "$tmp/lost-db-b.json" "$tmp/lost-db-public.json" "$tmp/lost-db-verify.json" >&2
+    exit 1
+fi
+race cleanup > "$tmp/lost-db-cleanup.json"
+if ! grep -q '"cleaned":true' "$tmp/lost-db-cleanup.json"; then
+    echo 'ERROR: Could not clean the isolated killed-DB-session fixture.' >&2
+    exit 1
+fi
+echo 'PASS: Issue #108 native Upgrader DB session KILLED, PHP worker ALIVE, losing ZIP unclaimed, lifecycle/staging/slug excluded, exact Core tree and deterministic recovery.'

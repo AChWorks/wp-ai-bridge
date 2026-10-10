@@ -475,6 +475,19 @@ final class Private_Package_Store {
 		);
 	}
 
+	/**
+	 * Persist a material transition and verify the exact bounded option state.
+	 * A false WordPress update_option() result is not proof of durability.
+	 *
+	 * @param string $id Artifact ID.
+	 * @param array  $meta Fixed Bridge-owned metadata only.
+	 * @return bool
+	 */
+	private function persist_install_state( $id, $meta ) {
+		$option = self::OPTION_PREFIX . $id;
+		return true === update_option( $option, $meta, false ) && get_option( $option, false ) === $meta;
+	}
+
 	/** @return array<string,mixed>|WP_Error Claim once atomically; never guess after native Core effects. */
 	public function install( $id, $expected_sha, $kind, $client_id ) {
 		$meta = $this->load( $id, $client_id );
@@ -518,7 +531,22 @@ final class Private_Package_Store {
 				return new WP_Error( 'private_package_not_staged', __( 'This private package is expired or has already been submitted for installation.', 'wp-ai-bridge' ) );
 			}
 			$meta['status'] = 'installing';
-			update_option( self::OPTION_PREFIX . $id, $meta, false );
+			if ( ! $this->persist_install_state( $id, $meta ) ) {
+				// Claim already committed; Core MUST NOT run without durable
+				// pre-install state. Keep the one-way claim, retire ZIP bytes
+				// and attempt a bounded recovery tombstone.
+				$meta['status'] = 'outcome_unknown';
+				$this->persist_install_state( $id, $meta );
+				if ( is_file( $path ) ) {
+					wp_delete_file( $path );
+				}
+				try {
+					( new Mutation_Log() )->record( 'wp-ai-bridge/private-package-install', $kind, 0, false, 'private_package_recovery_required' );
+				} catch ( \Throwable $error ) {
+					// No untrusted paths or Core internals escape this boundary.
+				}
+				return new WP_Error( 'private_package_recovery_required', __( 'Private package installation needs administrator recovery before any retry.', 'wp-ai-bridge' ) );
+			}
 			$target  = '';
 			$success = false;
 			try {
@@ -552,8 +580,15 @@ final class Private_Package_Store {
 			$success        = $success && $lock->is_owned();
 			$meta['status'] = $success && $deleted ? 'installed' : 'outcome_unknown';
 			$meta['target'] = $success && $deleted ? $target : '';
-			update_option( self::OPTION_PREFIX . $id, $meta, false );
-			if ( ! $success || ! $deleted ) {
+			$persisted      = $this->persist_install_state( $id, $meta );
+			if ( ! $persisted ) {
+				// Even if Core completed, uncommitted outcome state must not be
+				// represented as a successful completed installation.
+				$meta['status'] = 'outcome_unknown';
+				$meta['target'] = '';
+				$this->persist_install_state( $id, $meta );
+			}
+			if ( ! $success || ! $deleted || ! $persisted ) {
 				try {
 					( new Mutation_Log() )->record( 'wp-ai-bridge/private-package-install', $kind, 0, false, 'private_package_recovery_required' );
 				} catch ( \Throwable $error ) {
@@ -566,7 +601,7 @@ final class Private_Package_Store {
 					// Native Core already committed. Preserve one-way claim and a
 					// recovery-visible outcome when the audit did not persist.
 					$meta['status'] = 'outcome_unknown';
-					update_option( self::OPTION_PREFIX . $id, $meta, false );
+					$this->persist_install_state( $id, $meta );
 					return new WP_Error( 'private_package_recovery_required', __( 'Private package installation needs administrator recovery before any retry.', 'wp-ai-bridge' ) );
 				}
 			} catch ( \Throwable $error ) {

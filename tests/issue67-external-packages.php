@@ -55,6 +55,14 @@ final class WP_AI_Bridge_67_Test_DB {
 }
 $GLOBALS['wpdb'] = new WP_AI_Bridge_67_Test_DB();
 
+// The dependency-free fixture has no WordPress wp-content directory. Use a
+// random, test-owned directory for the real PHP flock API, not a stubbed lock.
+$wpai67_lock_dir = sys_get_temp_dir() . '/wpai67-lock-' . bin2hex( random_bytes( 8 ) );
+if ( ! mkdir( $wpai67_lock_dir, 0700 ) ) {
+	throw new RuntimeException( 'Could not create isolated extension lock directory.' );
+}
+define( 'WP_CONTENT_DIR', $wpai67_lock_dir );
+
 $checks = 0;
 function wpnb67_assert( $condition, $message ) {
 	++$GLOBALS['checks'];
@@ -310,6 +318,11 @@ try {
 	foreach ( $GLOBALS['wpnb67']['files'] ?? array() as $file ) {
 		if ( is_file( $file ) ) { unlink( $file ); }
 	}
+	$wpai67_lock_file = $wpai67_lock_dir . '/.wpai-extension-native-mutation.lock';
+	if ( is_file( $wpai67_lock_file ) ) {
+		unlink( $wpai67_lock_file );
+	}
+	rmdir( $wpai67_lock_dir );
 }
 
 echo 'PASS: Issue #67 external package boundary (' . $checks . " assertions).\n";

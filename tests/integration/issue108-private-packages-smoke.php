@@ -213,6 +213,56 @@ try {
 	wpai108_live_check( ! is_file( $audit_path ), 'Audit failure must not retain private executable ZIP bytes.' );
 	wpai108_live_check( ( new Mutation_Log() )->record( 'wp-ai-bridge/private-package-test', 'plugin', 0, true, '' ), 'Normal durable audit must still succeed when the test failure injection is removed.' );
 
+	// R4-A: refusing the pre-Core installing status must stop Core entirely.
+	// A one-way claim persists, but private executable ZIP bytes are retired.
+	$pre_root                    = 'wpai108-prestate-failure';
+	$pre_key                     = $pre_root . '/' . $pre_root . '.php';
+	$pre_id                      = bin2hex( random_bytes( 24 ) );
+	$fixture_ids[]               = $pre_id;
+	list( $pre_meta, $pre_path ) = wpai108_live_stage( $store, 'plugin', $pre_id, $client, $pre_root );
+	$fixture_files[]             = $pre_path;
+	$pre_state_refusal           = static function ( $value, $old ) {
+		return 'installing' === ( $value['status'] ?? '' ) ? $old : $value;
+	};
+	add_filter( 'pre_update_option_' . Private_Package_Store::OPTION_PREFIX . $pre_id, $pre_state_refusal, 10, 2 );
+	try {
+		$pre_result = $store->install( $pre_id, $pre_meta['sha256'], 'plugin', $client );
+	} finally {
+		remove_filter( 'pre_update_option_' . Private_Package_Store::OPTION_PREFIX . $pre_id, $pre_state_refusal, 10 );
+	}
+	wpai108_live_check( is_wp_error( $pre_result ) && 'private_package_recovery_required' === $pre_result->get_error_code(), 'Pre-Core state persistence refusal must return recovery-required.' );
+	wpai108_live_check( ! isset( get_plugins()[ $pre_key ] ), 'Pre-Core metadata failure must never begin native installation.' );
+	$pre_record = $store->inspect( $pre_id, $client );
+	wpai108_live_check( ! is_wp_error( $pre_record ) && 'outcome_unknown' === $pre_record['status'], 'Pre-Core state refusal must leave a bounded recovery tombstone.' );
+	wpai108_live_check( false !== get_option( Private_Package_Store::CLAIM_PREFIX . $pre_id, false ), 'Pre-Core metadata refusal must preserve one-way claim.' );
+	wpai108_live_check( ! is_file( $pre_path ), 'Pre-Core metadata refusal must retire private ZIP bytes.' );
+	wpai108_live_check( is_wp_error( $store->install( $pre_id, $pre_meta['sha256'], 'plugin', $client ) ), 'Pre-Core state refusal must never permit retry.' );
+
+	// R4-B: Core may commit successfully while WordPress refuses the final
+	// installed-state option update. The result must never claim installed=true.
+	$post_root                     = 'wpai108-poststate-failure';
+	$post_key                      = $post_root . '/' . $post_root . '.php';
+	$post_id                       = bin2hex( random_bytes( 24 ) );
+	$fixture_ids[]                 = $post_id;
+	list( $post_meta, $post_path ) = wpai108_live_stage( $store, 'plugin', $post_id, $client, $post_root );
+	$fixture_files[]               = $post_path;
+	$post_state_refusal            = static function ( $value, $old ) {
+		return 'installed' === ( $value['status'] ?? '' ) ? $old : $value;
+	};
+	add_filter( 'pre_update_option_' . Private_Package_Store::OPTION_PREFIX . $post_id, $post_state_refusal, 10, 2 );
+	try {
+		$post_result = $store->install( $post_id, $post_meta['sha256'], 'plugin', $client );
+	} finally {
+		remove_filter( 'pre_update_option_' . Private_Package_Store::OPTION_PREFIX . $post_id, $post_state_refusal, 10 );
+	}
+	wpai108_live_check( is_wp_error( $post_result ) && 'private_package_recovery_required' === $post_result->get_error_code(), 'Post-Core durable installed-state refusal must never report success.' );
+	wpai108_live_check( isset( get_plugins()[ $post_key ] ) && ! is_plugin_active( $post_key ), 'Post-Core refusal must retain the real installed inactive plugin for manual reconciliation.' );
+	$post_record = $store->inspect( $post_id, $client );
+	wpai108_live_check( ! is_wp_error( $post_record ) && 'outcome_unknown' === $post_record['status'], 'Post-Core metadata failure must retain a bounded recoverable uncertain outcome.' );
+	wpai108_live_check( false !== get_option( Private_Package_Store::CLAIM_PREFIX . $post_id, false ), 'Post-Core metadata failure must retain one-way claim.' );
+	wpai108_live_check( ! is_file( $post_path ), 'Post-Core metadata failure must retire private executable ZIP bytes.' );
+	wpai108_live_check( is_wp_error( $store->install( $post_id, $post_meta['sha256'], 'plugin', $client ) ), 'Post-Core metadata failure must never allow a replay.' );
+
 	// Expiry must retire bytes while retaining only a short-lived metadata
 	// record. The expiry path does not need to execute or unpack the archive.
 	$expired_id                          = bin2hex( random_bytes( 24 ) );
@@ -234,6 +284,9 @@ try {
 	}
 	if ( isset( $audit_key ) && isset( get_plugins()[ $audit_key ] ) && ! is_plugin_active( $audit_key ) ) {
 		delete_plugins( array( $audit_key ) );
+	}
+	if ( isset( $post_key ) && isset( get_plugins()[ $post_key ] ) && ! is_plugin_active( $post_key ) ) {
+		delete_plugins( array( $post_key ) );
 	}
 	if ( $installed_theme && wp_get_theme( $theme_root )->exists() && get_stylesheet() !== $theme_root ) {
 		delete_theme( $theme_root );
