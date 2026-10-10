@@ -51,6 +51,7 @@ final class WP_AI_Bridge_REST_Invocation_Test_Server {
 	public $routes = array();
 	public $removed = array();
 	public $visible_methods = array();
+	public $removed_args = array();
 	public function get_routes() { return $this->routes; }
 	public function get_data_for_routes( $routes, $context = 'view' ) {
 		$output = array();
@@ -58,17 +59,24 @@ final class WP_AI_Bridge_REST_Invocation_Test_Server {
 			if ( in_array( $route, $this->removed, true ) ) {
 				continue;
 			}
-			$methods = array();
+			$methods   = array();
+			$endpoints = array();
 			foreach ( $handlers as $handler ) {
 				if ( ! empty( $handler['show_in_index'] ) ) {
-					$methods = array_merge( $methods, array_keys( $handler['methods'] ) );
+					$handler_methods = array_keys( $handler['methods'] );
+					$methods         = array_merge( $methods, $handler_methods );
+					$args            = isset( $handler['args'] ) ? $handler['args'] : array();
+					foreach ( $this->removed_args[ $route ] ?? array() as $name ) {
+						unset( $args[ $name ] );
+					}
+					$endpoints[] = array( 'methods' => $handler_methods, 'args' => $args );
 				}
 			}
 			if ( isset( $this->visible_methods[ $route ] ) ) {
 				$methods = $this->visible_methods[ $route ];
 			}
 			if ( $methods ) {
-				$output[ $route ] = array( 'methods' => $methods );
+				$output[ $route ] = array( 'methods' => $methods, 'endpoints' => $endpoints );
 			}
 		}
 		return $output;
@@ -105,7 +113,15 @@ wpai119invoke_assert( false === $ability['meta']['annotations']['readonly'] && t
 wpai119invoke_assert( false === $ability['input_schema']['additionalProperties'], 'REST input contract must be closed.' );
 wpai119invoke_assert( ! $provider->can_invoke(), 'Native Abilities/Site Read/Discovery are not implicit broad REST grants.' );
 
-$handler = array( 'show_in_index' => true, 'methods' => array( 'GET' => true, 'POST' => true ) );
+$handler = array(
+	'show_in_index' => true,
+	'methods'       => array( 'GET' => true, 'POST' => true ),
+	'args'          => array(
+		'page'  => array( 'type' => 'integer' ),
+		'title' => array( 'type' => 'string' ),
+		'id'    => array( 'type' => 'integer' ),
+	),
+);
 $server = $GLOBALS['wpai119invoke_server'];
 $server->routes = array(
 	'/acme/v1/data' => array( $handler ),
@@ -157,6 +173,11 @@ wpai119invoke_assert( is_wp_error( $provider->invoke( $req ) ), 'Public index fi
 $server->removed = array();
 $server->visible_methods['/acme/v1/data'] = array( 'GET' );
 wpai119invoke_assert( is_wp_error( $provider->invoke( array( 'route' => '/acme/v1/data', 'path' => '/acme/v1/data', 'method' => 'POST' ) ) ), 'Public index filter removed POST; REST invocation cannot revive it.' );
+$server->removed_args['/acme/v1/data'] = array( 'title' );
+wpai119invoke_assert( is_wp_error( $provider->invoke( array( 'route' => '/acme/v1/data', 'path' => '/acme/v1/data', 'method' => 'POST', 'body' => array( 'title' => 'hidden' ) ) ) ), 'Provider public-index redaction must prevent hidden argument injection.' );
+$server->removed_args = array();
+wpai119invoke_assert( is_wp_error( $provider->invoke( array( 'route' => '/acme/v1/item/(?P<id>[\\d]+)', 'path' => '/acme/v1/item/24', 'method' => 'GET', 'query' => array( 'id' => 99 ) ) ) ), 'Query parameter cannot override a route capture used for native object authorization.' );
+
 $server->visible_methods = array();
 
 $server->routes['/acme/v1/(?P<slug>[a-z]+)'] = array( $handler );
