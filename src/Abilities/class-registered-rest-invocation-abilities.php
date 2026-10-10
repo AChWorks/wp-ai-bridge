@@ -101,6 +101,8 @@ final class Registered_REST_Invocation_Abilities {
 
 	/** @param mixed $input Bound native route execution input. @return array<string,mixed>|WP_Error */
 	private function invoke_registered( $input ) {
+		$principal_id = get_current_user_id();
+		$site_id      = function_exists( 'get_current_blog_id' ) ? get_current_blog_id() : 0;
 		if ( ! is_array( $input ) || array_diff( array_keys( $input ), array( 'route', 'path', 'method', 'query', 'body' ) ) ) {
 			return $this->invalid();
 		}
@@ -247,7 +249,11 @@ final class Registered_REST_Invocation_Abilities {
 
 		// Recheck grant immediately before dispatch. No WordPress principal, site
 		// context or OAuth client identity is changed inside this Ability.
-		if ( ! $this->can_invoke() ) {
+		if (
+			! $this->can_invoke() ||
+			get_current_user_id() !== $principal_id ||
+			( function_exists( 'get_current_blog_id' ) ? get_current_blog_id() : 0 ) !== $site_id
+		) {
 			return $this->error( 'rest_invocation_denied', __( 'Registered REST invocation requires a separate enabled Bridge grant and WordPress administration permission.', 'wp-ai-bridge' ) );
 		}
 
