@@ -12,6 +12,10 @@ Confirm:
 - the WordPress REST API is reachable from the Internet;
 - a security/CDN plugin is not blocking `/.well-known/` or the Bridge REST route.
 
+The Dashboard and Settings screens report only local dependency state and the **configured MCP URL scheme**. A configured HTTPS URL does not prove Internet reachability, remote TLS/proxy behavior, OAuth metadata retrieval, or successful authenticated connection. **External client connection: Not verified here** is intentional until the client confirms its authenticated route.
+
+Where available, use **Tools → Site Health** as an authorized administrator for native HTTPS, REST, loopback and Authorization-header checks. These are not equivalent to a verified external client. If remote discovery fails, inspect CDN/proxy/firewall routing and the OAuth well-known metadata paths, and whether the client uses direct Bridge or separate Gateway. Rescan tools after changing access. OAuth success is distinct from the exact WordPress principal capability and Bridge group.
+
 Opening the MCP endpoint without authentication should return an authentication challenge, not a normal HTML page.
 
 ## OAuth opens WordPress but authorization does not finish
@@ -103,3 +107,8 @@ That is intentional. Workspace documents/tasks are private internal objects and 
 ## Reconnecting after an update
 
 Replacing the plugin ZIP normally preserves settings and OAuth state. If the App tool list does not reflect new abilities after an update, use ChatGPT's App rescan/reconnect flow.
+
+
+## Check WordPress Core updates without installing them
+
+The core-update-status read-only Ability projects **cached** native Core update offers under the default-off **Site Configuration** grant and native manage_options (or multisite manage_network_options). A status of unknown_or_stale means the last native cache check is missing, malformed, for another installed Core version, or over 24 hours old; it must not be represented as up to date. The native_update_core_allowed, file_modifications_allowed, and automatic_updater_disabled flags are distinct observations, not installation permission. Bridge does not run Core update checks, downloads, or upgrades. Use WordPress or the host's approved update tooling outside Bridge for actual upgrades.
