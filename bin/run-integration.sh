@@ -107,6 +107,10 @@ do
     fi
 done
 
+# Two independent PHP workers race for one native database claim.
+# Runs against the already bootstrapped disposable WordPress/MariaDB stack.
+bash "$root/bin/run-issue128-atomic-race.sh"
+
 echo "== Issue #46 web-user direct filesystem denial =="
 wp_web=("${compose[@]}" run --rm --user 33:33 -e WP_CLI_CACHE_DIR=/tmp/wp-cli-cache cli)
 "${wp_web[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue46-filesystem-denial-smoke.php --user=1

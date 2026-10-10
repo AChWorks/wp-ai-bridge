@@ -83,11 +83,15 @@ final class Create_Claim {
 		if ( self::claim_count() >= self::MAX_CLAIMS ) {
 			return new WP_Error( 'create_claim_capacity', __( 'Create recovery capacity is full. No new create was attempted; administrative reconciliation is required.', 'wp-ai-bridge' ) );
 		}
-		if ( ! add_option( $name, $initial, '', false ) ) {
-			$winner = self::fresh_option( $name );
-			return false !== $winner
-				? self::adopt( $name, $winner, $fingerprint, $allowed, $clean, $recover )
-				: new WP_Error( 'create_claim_outcome_unknown', __( 'Could not establish a durable exclusive create claim; do not blindly retry.', 'wp-ai-bridge' ) );
+		$reserved = Create_Claim_Store::try_claim( $name, $initial );
+		if ( 'acquired' !== $reserved ) {
+			if ( 'existing' === $reserved ) {
+				$winner = self::fresh_option( $name );
+				if ( false !== $winner ) {
+					return self::adopt( $name, $winner, $fingerprint, $allowed, $clean, $recover );
+				}
+			}
+			return new WP_Error( 'create_claim_outcome_unknown', __( 'Could not establish a durable exclusive create claim; do not blindly retry.', 'wp-ai-bridge' ) );
 		}
 
 		try {
@@ -154,7 +158,10 @@ final class Create_Claim {
 				'id'          => 0,
 			)
 		);
-		if ( ! is_string( $initial ) || ! add_option( $name, $initial, '', false ) ) {
+		if ( ! is_string( $initial ) ) {
+			return new WP_Error( 'workspace_key_invalid', __( 'Document key cannot be represented.', 'wp-ai-bridge' ) );
+		}
+		if ( 'acquired' !== Create_Claim_Store::try_claim( $name, $initial ) ) {
 			return new WP_Error( 'workspace_key_reserved', __( 'Another create owns this project document key; do not retry blindly.', 'wp-ai-bridge' ) );
 		}
 		return array(
@@ -227,10 +234,8 @@ final class Create_Claim {
 			}
 			return new WP_Error( 'create_claim_expired', __( 'The recovery window expired; the key is permanently reserved and cannot be reused.', 'wp-ai-bridge' ) );
 		}
-		if ( 'partial' === $state['state'] ) {
-			return new WP_Error( 'create_claim_partial', __( 'The object was created with an incomplete follow-up effect. Inspect its current ID before repairing manually.', 'wp-ai-bridge' ), array( 'id' => (int) $state['id'] ) );
-		}
-		if ( 'committed' !== $state['state'] || empty( $state['id'] ) ) {
+		if ( ! in_array( $state['state'], array( 'partial', 'committed' ), true ) || empty( $state['id'] ) ||
+			! is_numeric( $state['id'] ) || (int) $state['id'] < 1 ) {
 			return new WP_Error( 'create_claim_outcome_unknown', __( 'An earlier create may still be in progress or have an uncertain outcome. Do not replay.', 'wp-ai-bridge' ) );
 		}
 		try {
@@ -238,9 +243,17 @@ final class Create_Claim {
 		} catch ( \Throwable $error ) {
 			$result = null;
 		}
-		return ! is_wp_error( $result ) && is_array( $result )
-			? $result
-			: new WP_Error( 'create_claim_outcome_unknown', __( 'The created object no longer has a verifiable authorized readback; do not replay.', 'wp-ai-bridge' ) );
+		if ( is_wp_error( $result ) || ! is_array( $result ) ) {
+			return new WP_Error( 'create_claim_outcome_unknown', __( 'The created object no longer has a verifiable authorized readback; do not replay.', 'wp-ai-bridge' ) );
+		}
+		$read_id = isset( $result['id'] ) ? $result['id'] : ( $result['items'][0]['id'] ?? 0 );
+		if ( (int) $read_id !== (int) $state['id'] ) {
+			return new WP_Error( 'create_claim_outcome_unknown', __( 'The created object no longer has a verifiable authorized readback; do not replay.', 'wp-ai-bridge' ) );
+		}
+		if ( 'partial' === $state['state'] ) {
+			return new WP_Error( 'create_claim_partial', __( 'The object was created with an incomplete follow-up effect. Inspect its current ID before repairing manually.', 'wp-ai-bridge' ), array( 'id' => (int) $state['id'] ) );
+		}
+		return $result;
 	}
 
 	/** @param mixed $value JSON-compatible input. @return mixed */

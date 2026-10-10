@@ -411,8 +411,10 @@ create_claim_store='src/Support/class-create-claim-store.php'
 if [[ ! -f "$create_claim_store" ||
       "$(grep -cF '$wpdb->update(' "$create_claim_store" || true)" != "1" ||
       "$(grep -cF '$wpdb->get_var(' "$create_claim_store" || true)" != "1" ||
-      "$(grep -cF '$wpdb->prepare(' "$create_claim_store" || true)" != "1" ]]; then
-    echo "ERROR: create receipt store must retain one conditional update and one prepared capacity query." >&2
+      "$(grep -cF '$wpdb->prepare(' "$create_claim_store" || true)" != "2" ||
+      "$(grep -cF '$wpdb->query(' "$create_claim_store" || true)" != "1" ||
+      "$(grep -cF 'INSERT IGNORE INTO ' "$create_claim_store" || true)" != "1" ]]; then
+    echo "ERROR: create receipt store must retain one conditional update, one exclusive insert, and one prepared capacity query." >&2
     exit 1
 fi
 unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" || true)"
