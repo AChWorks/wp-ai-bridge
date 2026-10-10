@@ -103,7 +103,7 @@ Only **Site Read** is enabled by default.
 
 ## Uploads and extension installation
 
-`wp-ai-bridge/media-upload` accepts file bytes plus a filename and hands them to WordPress Media Library handling. The maximum payload is the smaller of the WordPress upload limit and **20 MiB**. The caller cannot choose a server filesystem path.
+`wp-ai-bridge/media-upload` accepts Base64-encoded file bytes plus a filename and hands them to WordPress Media Library handling. Its **Bridge-side** payload cap is the smaller of the WordPress upload limit and **20 MiB**; this does **not** guarantee an AI client or MCP Gateway can transfer that much data in one tool request. Actual inline capacity may be lower, and generic authenticated streaming/private binary transfer is **not yet shipped**. Use [type-appropriate data exchange](./docs/LARGE-PAYLOADS.md) rather than relying on a large JSON/Base64 upload. The caller cannot choose a server filesystem path.
 
 `wp-ai-bridge/media-import-url` accepts a public HTTP(S) URL and a filename, streams it within the current WordPress upload limit, and creates a normal attachment. It requires explicit **Remote Media** plus **Builder Write** access; upgrades do not enable it automatically. See [URL media import](./docs/ABILITIES.md#url-media-import).
 
