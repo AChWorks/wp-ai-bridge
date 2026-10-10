@@ -37,8 +37,8 @@ function wpnb67_fixture_zip( $kind ) {
 $settings      = new Settings();
 $original      = get_option( Settings::OPTION_NAME, $settings->defaults() );
 $original_log  = get_option( Mutation_Log::OPTION_NAME, array() );
-$plugin_source = 'https://s.w.org/wpai-external-plugin.zip?signature=PRIVATE_PACKAGE_MARKER';
-$theme_source  = 'https://s.w.org/wpai-external-theme.zip?signature=PRIVATE_PACKAGE_MARKER';
+$plugin_source = 'https://s.w.org/wpai-external-plugin.zip?signature=SENSITIVE_PACKAGE_MARKER';
+$theme_source  = 'https://s.w.org/wpai-external-theme.zip?signature=SENSITIVE_PACKAGE_MARKER';
 $plugin_bytes  = wpnb67_fixture_zip( 'plugin' );
 $theme_bytes   = wpnb67_fixture_zip( 'theme' );
 $enabled       = $settings->defaults();
@@ -75,14 +75,14 @@ $mock = static function ( $pre, $args, $url ) use ( &$calls, &$unexpected_calls,
 		try {
 			$hooks->dispatch( 'requests.before_redirect', array( &$location, &$headers, &$data, &$options, $response ) );
 		} catch ( \WpOrg\Requests\Exception $error ) {
-			return new WP_Error( 'http_request_failed', 'PRIVATE_PACKAGE_MARKER redirect refused' );
+			return new WP_Error( 'http_request_failed', 'SENSITIVE_PACKAGE_MARKER redirect refused' );
 		}
 		++$redirect_forwarded;
 	}
 
 	$body = $url === $theme_source ? $theme_bytes : $plugin_bytes;
 	if ( 'invalid_package' === $mode ) {
-		$body = 'PRIVATE_PACKAGE_MARKER not a zip';
+		$body = 'SENSITIVE_PACKAGE_MARKER not a zip';
 	}
 	if ( 'oversized' === $mode ) {
 		$body = str_repeat( 'x', $args['limit_response_size'] );
@@ -94,10 +94,10 @@ $mock = static function ( $pre, $args, $url ) use ( &$calls, &$unexpected_calls,
 		update_option( Settings::OPTION_NAME, $access, false );
 	}
 	if ( 'http_throw' === $mode ) {
-		throw new RuntimeException( 'PRIVATE_PACKAGE_MARKER ' . $url . ' ' . $args['filename'] );
+		throw new RuntimeException( 'SENSITIVE_PACKAGE_MARKER ' . $url . ' ' . $args['filename'] );
 	}
 	if ( 'http_error' === $mode ) {
-		return new WP_Error( 'PRIVATE_PACKAGE_MARKER', $url . ' ' . $args['filename'] );
+		return new WP_Error( 'SENSITIVE_PACKAGE_MARKER', $url . ' ' . $args['filename'] );
 	}
 	return array(
 		'response' => array( 'code' => 200, 'message' => 'Fixture' ),
@@ -160,7 +160,7 @@ try {
 	foreach ( $staging as $file ) {
 		wpnb67_integration_assert( ! is_file( $file ), 'Successful plugin install retained staging package.' );
 	}
-	wpnb67_integration_assert( false === strpos( json_encode( get_option( Mutation_Log::OPTION_NAME, array() ) ), 'PRIVATE_PACKAGE_MARKER' ), 'Successful plugin audit leaked package URL secret.' );
+	wpnb67_integration_assert( false === strpos( json_encode( get_option( Mutation_Log::OPTION_NAME, array() ) ), 'SENSITIVE_PACKAGE_MARKER' ), 'Successful plugin audit leaked package URL secret.' );
 
 	$result = $ability->execute( $theme_input );
 	$theme_failure_code = is_wp_error( $result ) ? $result->get_error_code() : 'unexpected_result';
@@ -178,8 +178,8 @@ try {
 		$result   = $ability->execute( $plugin_input );
 		$expected = 'http_error' === $failure ? 'external_package_http_failed' : 'external_package_recovery_required';
 		wpnb67_integration_assert( is_wp_error( $result ) && $expected === $result->get_error_code(), 'External package transport failure crossed the wrong boundary.' );
-		wpnb67_integration_assert( false === strpos( $result->get_error_message(), 'PRIVATE_PACKAGE_MARKER' ), 'Transport failure leaked secret-bearing diagnostics.' );
-		wpnb67_integration_assert( false === strpos( json_encode( get_option( Mutation_Log::OPTION_NAME, array() ) ), 'PRIVATE_PACKAGE_MARKER' ), 'Transport failure audit leaked secret-bearing diagnostics.' );
+		wpnb67_integration_assert( false === strpos( $result->get_error_message(), 'SENSITIVE_PACKAGE_MARKER' ), 'Transport failure leaked secret-bearing diagnostics.' );
+		wpnb67_integration_assert( false === strpos( json_encode( get_option( Mutation_Log::OPTION_NAME, array() ) ), 'SENSITIVE_PACKAGE_MARKER' ), 'Transport failure audit leaked secret-bearing diagnostics.' );
 	}
 
 	$mode = 'revoke_http';
@@ -209,7 +209,7 @@ try {
 	update_option( Settings::OPTION_NAME, $enabled, false );
 	$result = $ability->execute( $plugin_input );
 	wpnb67_integration_assert( is_wp_error( $result ) && 'external_package_recovery_required' === $result->get_error_code(), 'Core package rejection was not converted to a bounded recovery result.' );
-	wpnb67_integration_assert( false === strpos( $result->get_error_message(), 'PRIVATE_PACKAGE_MARKER' ), 'Core package failure leaked package diagnostics.' );
+	wpnb67_integration_assert( false === strpos( $result->get_error_message(), 'SENSITIVE_PACKAGE_MARKER' ), 'Core package failure leaked package diagnostics.' );
 
 	$mode = 'oversized';
 	update_option( Settings::OPTION_NAME, $enabled, false );

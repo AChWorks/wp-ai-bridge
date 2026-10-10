@@ -182,14 +182,14 @@ try {
         wpnb39_integration_assert( is_wp_error( $ability->execute( array_replace( $input, array( 'filename' => $filename ) ) ) ), 'Invalid or executable filename was accepted.' );
     }
     foreach ( array( 'http://169.254.169.254/media', 'http://100.64.0.1/media', 'http://192.0.2.1/media' ) as $target ) {
-        $native_redirect_denied = false;
-        try { WP_Http::validate_redirects( $target ); }
-        catch ( \WpOrg\Requests\Exception $error ) { $native_redirect_denied = true; }
         $calls = 0; $redirect_forwarded = 0; $redirect_target = $target;
         $before_hooks = has_action( 'requests-requests.before_redirect' );
         $denied = $ability->execute( $input );
-        $expected_redirect_error = $native_redirect_denied ? 'media_import_http_failed' : 'unsafe_media_import_url';
-        wpnb39_integration_assert( is_wp_error( $denied ) && $expected_redirect_error === $denied->get_error_code(), 'Reserved redirect did not fail at the expected native/Bridge boundary.' );
+        // WordPress' native redirect validation can vary by supported Core
+        // version and address resolution. The security guarantee is that either
+        // Bridge preflight or Core refuses the destination and NEVER forwards it.
+        $code = is_wp_error( $denied ) ? $denied->get_error_code() : gettype( $denied );
+        wpnb39_integration_assert( in_array( $code, array( 'media_import_http_failed', 'unsafe_media_import_url' ), true ), 'Reserved redirect was not safely refused: ' . $code );
         wpnb39_integration_assert( 1 === $calls && 0 === $redirect_forwarded && 0 === $unexpected_calls, 'An unsafe redirect passed the real native hook boundary.' );
         wpnb39_integration_assert( $before_hooks === has_action( 'requests-requests.before_redirect' ), 'Import redirect guard was not removed after refusal.' );
         foreach ( $staging as $file ) { wpnb39_integration_assert( ! is_file( $file ), 'Rejected redirect retained staging.' ); }

@@ -38,7 +38,7 @@ Independent review and green CI remain evidence, not authorization. HIGH-risk in
 - **Advanced Metadata** — protected/private post, term, user, and comment metadata for exact WordPress objects the connected user may edit; disabled by default and intentionally separate from ordinary Site Read/Builder Write access. Authentication/authorization/session/credential state remains excluded from the generic user-meta surface.
 - **Authentication & Credentials** — default-off purpose-specific WordPress Application Password lifecycle through fixed Core REST routes. The generated plaintext credential is returned only once on successful create; stored hashes and reusable credentials are never exposed later.
 - **Code & Extensions** — managed snippets and extension lifecycle.
-- **External Packages** — default-off consent for public HTTPS plugin/theme package installation and the separate Bridge-owned private ZIP staging/installation flow in current source. It additionally requires Code & Extensions plus exact native plugin/theme installation authority; no generic HTTP/package proxy, local package path, caller-supplied request credentials or automatic activation.
+- **External Packages** — default-off consent for public HTTPS plugin/theme package installation . It additionally requires Code & Extensions plus exact native plugin/theme installation authority; no generic HTTP/package proxy, local package path, caller-supplied request credentials or automatic activation.
 - **Registered REST Discovery** — default-off bounded inspection of filtered public WordPress REST registrations, requiring native `manage_options`; contract presence never implies execution authority.
 - **High-Trust Registered REST Invocation** — distinct default-off native REST dispatch, requiring native `manage_options` and *all* protected groups and their mapped native capabilities under the current conservative unknown-effects policy. A GET method is not assumed read-only.
 - **Source Editing** — separately enabled installed plugin/theme source read/preview/apply/recovery; executable PHP is administrator-level code trust, not a sandbox.
@@ -203,7 +203,7 @@ The Bridge does not expose:
 - arbitrary `wp_options` access;
 - arbitrary user-meta administration;
 - credential, session, OAuth-secret, private-key, security-token, or Application Password retrieval;
-- unrestricted plugin ZIP/PHP upload, arbitrary server-file paths or Base64 package execution (bounded, consented, hash-bound private plugin/theme ZIP staging and explicit native install are integrated into **current source** under [#108](https://github.com/AChWorks/wp-ai-bridge/issues/108), absent from historical v0.4.2 packages; verify the installed release);
+- unrestricted plugin ZIP/PHP upload, arbitrary server-file paths or Base64 package execution (authorized public HTTPS installer inputs remain supported; general bidirectional external-client file exchange is tracked separately by [#134](https://github.com/AChWorks/wp-ai-bridge/issues/134));
 - direct provider-table administration.
 
 ## OAuth storage

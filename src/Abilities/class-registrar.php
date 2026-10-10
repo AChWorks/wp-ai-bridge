@@ -54,8 +54,6 @@ final class Registrar {
 	private $site_config_abilities;
 	/** @var Extension_Abilities */
 	private $extension_abilities;
-	/** @var Private_Package_Abilities */
-	private $private_package_abilities;
 	/** @var Source_Editing_Abilities */
 	private $source_editing_abilities;
 	/** @var User_Abilities */
@@ -82,7 +80,7 @@ final class Registrar {
 	 * @param Store|null                      $workspace                 Optional shared Workspace store.
 	 * @param Native_Ability_Delegation|null $native_ability_delegation Authoritative Bridge provenance service.
 	 */
-	public function __construct( Environment $environment, Settings $settings, Permissions $permissions, ?Store $workspace = null, ?Native_Ability_Delegation $native_ability_delegation = null, ?Private_Package_Abilities $private_package_abilities = null ) {
+	public function __construct( Environment $environment, Settings $settings, Permissions $permissions, ?Store $workspace = null, ?Native_Ability_Delegation $native_ability_delegation = null ) {
 		$this->environment                 = $environment;
 		$this->settings                    = $settings;
 		$this->permissions                 = $permissions;
@@ -102,7 +100,6 @@ final class Registrar {
 		$this->integration_abilities       = new Integration_Abilities( $this->resolver, $this->permissions );
 		$this->site_config_abilities       = new Site_Config_Abilities( $this->permissions, $mutation_log );
 		$this->extension_abilities         = new Extension_Abilities( $this->permissions, $mutation_log );
-		$this->private_package_abilities   = $private_package_abilities ? $private_package_abilities : new Private_Package_Abilities( $this->permissions );
 		$this->source_editing_abilities    = new Source_Editing_Abilities( $this->permissions, $mutation_log );
 		$this->user_abilities              = new User_Abilities( $this->permissions, $mutation_log );
 		$this->app_password_abilities      = new Secure_Application_Password_Abilities( $this->permissions, $mutation_log );
@@ -212,7 +209,6 @@ final class Registrar {
 			$this->integration_abilities,
 			$this->site_config_abilities,
 			$this->extension_abilities,
-			$this->private_package_abilities,
 			new Extension_Authorization_Abilities( $this->extension_abilities, $this->permissions, $this->settings ),
 			$this->source_editing_abilities,
 			$this->user_abilities,

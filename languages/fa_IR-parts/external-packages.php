@@ -13,4 +13,7 @@ return array(
 	'The downloaded external package is empty or exceeds the permitted package size.' => 'بستهٔ خارجی دریافت‌شده خالی است یا حجم آن از سقف مجاز بسته بیشتر است.',
 	'The downloaded external package length does not match the complete response.' => 'اندازهٔ بستهٔ خارجی دریافت‌شده با پاسخ کامل مطابقت ندارد.',
 	'The external package install could not finish safely. Inspect installed extensions and temporary storage before retrying.' => 'نصب بستهٔ خارجی به‌صورت ایمن کامل نشد. پیش از تلاش دوباره، افزونه‌ها/پوسته‌های نصب‌شده و محل ذخیرهٔ موقت را بررسی کنید.',
+	'Another extension installation is in progress. Retry this request after it finishes.' => 'نصب افزونه یا پوستهٔ دیگری در جریان است. پس از پایان آن دوباره تلاش کنید.',
+	'Extension installation authorization is unavailable.' => 'مجوز لازم برای نصب افزونه یا پوسته در دسترس نیست.',
+	'Extension installation needs administrator recovery before a retry.' => 'نصب افزونه یا پوسته پیش از تلاش دوباره نیازمند بررسی مدیر است.',
 );
