@@ -17,6 +17,7 @@ use WP_Error;
  */
 final class Registered_REST_Abilities {
 	const MAX_PAGE_SIZE   = 25;
+	const MAX_INDEX_ROUTES = 1024;
 	const MAX_ROUTE_BYTES = 512;
 	const MAX_ENDPOINTS   = 16;
 	const MAX_ARGUMENTS   = 80;
@@ -82,23 +83,35 @@ final class Registered_REST_Abilities {
 			return $this->invalid_input();
 		}
 		$server = rest_get_server();
-		if ( ! is_object( $server ) || ! method_exists( $server, 'get_routes' ) || ! method_exists( $server, 'get_data_for_route' ) ) {
-			return new WP_Error( 'rest_routes_unavailable', __( 'The native WordPress REST route registry is unavailable.', 'wp-ai-bridge' ) );
-		}
-		$routes = $server->get_routes();
-		if ( ! is_array( $routes ) ) {
+		if ( ! is_object( $server ) || ! method_exists( $server, 'get_routes' ) || ! method_exists( $server, 'get_data_for_routes' ) ) {
 			return new WP_Error( 'rest_routes_unavailable', __( 'The native WordPress REST route registry is unavailable.', 'wp-ai-bridge' ) );
 		}
 
 		if ( 'get' === $action ) {
-			if ( array_diff( array_keys( $input ), array( 'action', 'route' ) ) || ! isset( $input['route'] ) || ! is_string( $input['route'] ) || strlen( $input['route'] ) > self::MAX_ROUTE_BYTES || ! isset( $routes[ $input['route'] ] ) ) {
+			if ( array_diff( array_keys( $input ), array( 'action', 'route' ) ) || ! isset( $input['route'] ) || ! is_string( $input['route'] ) || strlen( $input['route'] ) > self::MAX_ROUTE_BYTES ) {
 				return new WP_Error( 'rest_route_not_found', __( 'The exact registered REST route was not found.', 'wp-ai-bridge' ) );
 			}
-			$item = $this->contract( $server, $input['route'], $routes[ $input['route'] ], true );
+
+			// Core must first establish exact local route identity. Only that route is
+			// converted to public index data, so get does not inspect every schema.
+			$routes = $server->get_routes();
+			if ( ! is_array( $routes ) ) {
+				return new WP_Error( 'rest_routes_unavailable', __( 'The native WordPress REST route registry is unavailable.', 'wp-ai-bridge' ) );
+			}
+			$route = $input['route'];
+			if ( ! isset( $routes[ $route ] ) || ! $this->has_public_handler( $routes[ $route ] ) ) {
+				return new WP_Error( 'rest_route_not_found', __( 'The exact registered REST route was not found.', 'wp-ai-bridge' ) );
+			}
+
+			$index = $this->filtered_index( $server, array( $route => $routes[ $route ] ) );
+			if ( is_wp_error( $index ) ) {
+				return $index;
+			}
+			$item = isset( $index[ $route ] ) ? $this->contract( $route, $index[ $route ], true ) : null;
 			if ( is_wp_error( $item ) ) {
 				return $item;
 			}
-			if ( ! $item['indexed'] ) {
+			if ( null === $item ) {
 				return new WP_Error( 'rest_route_not_found', __( 'The exact registered REST route was not found.', 'wp-ai-bridge' ) );
 			}
 			return $this->bounded(
@@ -126,24 +139,34 @@ final class Registered_REST_Abilities {
 		if ( $page > intdiv( PHP_INT_MAX, $per_page ) ) {
 			return $this->invalid_input();
 		}
-		// Let WordPress filter by namespace before enumerating potentially large route catalogs.
-		if ( '' !== $namespace ) {
-			$routes = $server->get_routes( trim( $namespace, '/' ) );
-			if ( ! is_array( $routes ) ) {
-				return new WP_Error( 'rest_routes_unavailable', __( 'The native WordPress REST route registry is unavailable.', 'wp-ai-bridge' ) );
-			}
+
+		// Native namespace filtering happens before the public-index conversion.
+		// Count before converting; otherwise a small per_page still builds every
+		// third-party provider schema and runs every public-index filter.
+		$routes = $server->get_routes( '' !== $namespace ? trim( $namespace, '/' ) : '' );
+		if ( ! is_array( $routes ) ) {
+			return new WP_Error( 'rest_routes_unavailable', __( 'The native WordPress REST route registry is unavailable.', 'wp-ai-bridge' ) );
 		}
+		if ( count( $routes ) > self::MAX_INDEX_ROUTES ) {
+			return new WP_Error( 'rest_routes_narrowing_required', __( 'Too many registered REST routes to inspect safely. Specify a smaller namespace.', 'wp-ai-bridge' ) );
+		}
+		$index = $this->filtered_index( $server, $routes );
+		if ( is_wp_error( $index ) ) {
+			return $index;
+		}
+
 		$matches = array();
 		foreach ( $routes as $route => $callbacks ) {
-			if ( ! is_string( $route ) ) {
+			if ( ! is_string( $route ) || ! $this->has_public_handler( $callbacks ) || ! array_key_exists( $route, $index ) ) {
 				continue;
 			}
-			// Native REST indexes omit endpoints explicitly hidden from public discovery.
-			$item = $this->contract( $server, $route, $callbacks, false );
+			// Only Core's post-filter public index is ever projected. A provider's
+			// hidden route or removed/invalid filtered index item stays hidden.
+			$item = $this->contract( $route, $index[ $route ], false );
 			if ( is_wp_error( $item ) ) {
 				return $item;
 			}
-			if ( $item['indexed'] ) {
+			if ( null !== $item ) {
 				$matches[ $route ] = $item;
 			}
 		}
@@ -167,32 +190,72 @@ final class Registered_REST_Abilities {
 	}
 
 	/**
-	 * Project only WordPress's publicly indexable contract fields; never return defaults,
-	 * callbacks, auth credentials, arbitrary provider metadata or schema values.
+	 * Confirm Core registered at least one index-visible handler, independent
+	 * of what subsequent metadata filters may append to their output.
 	 *
-	 * @param object $server    Native REST server.
-	 * @param string $route     Exact registered route regex.
-	 * @param mixed  $callbacks Native callback descriptors (never executed).
-	 * @param bool   $detail    Whether to return bounded public argument information.
+	 * @param mixed $callbacks Core-normalized route callbacks.
+	 * @return bool
+	 */
+	private function has_public_handler( $callbacks ) {
+		if ( ! is_array( $callbacks ) ) {
+			return false;
+		}
+		foreach ( $callbacks as $callback ) {
+			if ( is_array( $callback ) && ! empty( $callback['show_in_index'] ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Use the same aggregate native public-index filter pipeline as Core.
+	 * Per-route get_data_for_route() skips rest_endpoints_description and
+	 * rest_route_data, so its unfiltered output must never be projected.
+	 *
+	 * @param object              $server Core REST server.
+	 * @param array<string,mixed> $routes Exact normalized registered route map.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	private function contract( $server, $route, $callbacks, $detail ) {
-		if ( strlen( $route ) > self::MAX_ROUTE_BYTES || ! is_array( $callbacks ) ) {
+	private function filtered_index( $server, array $routes ) {
+		$public = $server->get_data_for_routes( $routes, 'view' );
+		if ( ! is_array( $public ) ) {
 			return $this->unrepresentable();
 		}
-		$public = $server->get_data_for_route( $route, $callbacks, 'view' );
-		if ( null !== $public && ! is_array( $public ) ) {
+		// A filter may add arbitrary keys; registration is an independent
+		// requirement even for metadata deliberately exposed in an index.
+		return array_intersect_key( $public, $routes );
+	}
+
+	/**
+	 * Project only selected, already-filtered public index fields. Never read
+	 * a handler, provider callback, default, private schema or raw registry data.
+	 *
+	 * @param string $route  Exact registered route regex.
+	 * @param mixed  $public Core's post-filter public index data for this route.
+	 * @param bool   $detail Include bounded index argument metadata.
+	 * @return array<string,mixed>|WP_Error|null Null means not public.
+	 */
+	private function contract( $route, $public, $detail ) {
+		if ( strlen( $route ) > self::MAX_ROUTE_BYTES ) {
 			return $this->unrepresentable();
 		}
-		$indexed = is_array( $public ) && ! empty( $public['methods'] );
-		$item    = array(
+		if ( ! is_array( $public ) || ! isset( $public['methods'] ) || ! is_array( $public['methods'] ) ) {
+			return null;
+		}
+		$methods = array_values( array_filter( $public['methods'], 'is_string' ) );
+		if ( ! $methods ) {
+			return null;
+		}
+
+		$item = array(
 			'route'           => $route,
-			'indexed'         => $indexed,
-			'methods'         => $indexed ? array_values( array_filter( $public['methods'], 'is_string' ) ) : array(),
-			'contract_detail' => $detail && $indexed ? 'name_type_required_only' : 'not_returned',
+			'indexed'         => true,
+			'methods'         => $methods,
+			'contract_detail' => $detail ? 'name_type_required_only' : 'not_returned',
 			'endpoints'       => array(),
 		);
-		if ( ! $detail || ! $indexed ) {
+		if ( ! $detail ) {
 			return $item;
 		}
 		$endpoints = isset( $public['endpoints'] ) ? $public['endpoints'] : array();
@@ -202,6 +265,12 @@ final class Registered_REST_Abilities {
 		foreach ( $endpoints as $endpoint ) {
 			if ( ! is_array( $endpoint ) || ! isset( $endpoint['methods'] ) || ! is_array( $endpoint['methods'] ) ) {
 				return $this->unrepresentable();
+			}
+			// If a public-index filter narrowed the route's methods, endpoint
+			// details may not revive methods removed at the aggregate level.
+			$endpoint_methods = array_values( array_intersect( array_filter( $endpoint['methods'], 'is_string' ), $methods ) );
+			if ( ! $endpoint_methods ) {
+				continue;
 			}
 			$args = isset( $endpoint['args'] ) ? $endpoint['args'] : array();
 			if ( ! is_array( $args ) || count( $args ) > self::MAX_ARGUMENTS ) {
@@ -221,7 +290,7 @@ final class Registered_REST_Abilities {
 				);
 			}
 			$item['endpoints'][] = array(
-				'methods'   => array_values( array_filter( $endpoint['methods'], 'is_string' ) ),
+				'methods'   => $endpoint_methods,
 				'arguments' => $fields,
 			);
 		}
