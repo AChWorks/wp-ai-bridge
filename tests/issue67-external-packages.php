@@ -109,7 +109,7 @@ function wp_delete_file( $file ) {
 		return;
 	}
 	if ( 'cleanup_throw' === $GLOBALS['wpnb67']['mode'] ) {
-		throw new RuntimeException( 'PRIVATE_PACKAGE_MARKER cleanup ' . $file );
+		throw new RuntimeException( 'SENSITIVE_PACKAGE_MARKER cleanup ' . $file );
 	}
 	if ( is_file( $file ) ) {
 		unlink( $file );
@@ -141,7 +141,7 @@ function wp_safe_remote_get( $url, $args ) {
 				$callback( $location, array(), null, array( 'filename' => $args['filename'] ) );
 			}
 		} catch ( \WpOrg\Requests\Exception $error ) {
-			return new WP_Error( 'http_request_failed', 'PRIVATE_PACKAGE_MARKER ' . $url );
+			return new WP_Error( 'http_request_failed', 'SENSITIVE_PACKAGE_MARKER ' . $url );
 		}
 		++$GLOBALS['wpnb67']['redirected'];
 	}
@@ -150,10 +150,10 @@ function wp_safe_remote_get( $url, $args ) {
 		$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ]['external_packages'] = 0;
 	}
 	if ( 'http_throw' === $GLOBALS['wpnb67']['mode'] ) {
-		throw new RuntimeException( 'PRIVATE_PACKAGE_MARKER ' . $url . ' ' . $args['filename'] );
+		throw new RuntimeException( 'SENSITIVE_PACKAGE_MARKER ' . $url . ' ' . $args['filename'] );
 	}
 	if ( 'http_error' === $GLOBALS['wpnb67']['mode'] ) {
-		return new WP_Error( 'PRIVATE_PACKAGE_MARKER', $url . ' ' . $args['filename'] );
+		return new WP_Error( 'SENSITIVE_PACKAGE_MARKER', $url . ' ' . $args['filename'] );
 	}
 	return array(
 		'response' => array( 'code' => $GLOBALS['wpnb67']['status'] ),
@@ -169,10 +169,10 @@ class Plugin_Upgrader {
 	public function install( $package ) {
 		++$GLOBALS['wpnb67']['installs'];
 		if ( 'upgrader_throw' === $GLOBALS['wpnb67']['mode'] ) {
-			throw new RuntimeException( 'PRIVATE_PACKAGE_MARKER ' . $package );
+			throw new RuntimeException( 'SENSITIVE_PACKAGE_MARKER ' . $package );
 		}
 		if ( 'upgrader_error' === $GLOBALS['wpnb67']['mode'] ) {
-			return new WP_Error( 'PRIVATE_PACKAGE_MARKER', $package );
+			return new WP_Error( 'SENSITIVE_PACKAGE_MARKER', $package );
 		}
 		return true;
 	}
@@ -183,10 +183,10 @@ class Theme_Upgrader {
 	public function install( $package ) {
 		++$GLOBALS['wpnb67']['installs'];
 		if ( 'upgrader_throw' === $GLOBALS['wpnb67']['mode'] ) {
-			throw new RuntimeException( 'PRIVATE_PACKAGE_MARKER ' . $package );
+			throw new RuntimeException( 'SENSITIVE_PACKAGE_MARKER ' . $package );
 		}
 		if ( 'upgrader_error' === $GLOBALS['wpnb67']['mode'] ) {
-			return new WP_Error( 'PRIVATE_PACKAGE_MARKER', $package );
+			return new WP_Error( 'SENSITIVE_PACKAGE_MARKER', $package );
 		}
 		return true;
 	}
@@ -205,8 +205,8 @@ class Theme_Upgrader {
 function wpnb67_error( $result, $code ) {
 	wpnb67_assert( is_wp_error( $result ), 'Expected a WP_Error for ' . $code );
 	wpnb67_assert( $code === $result->get_error_code(), 'Unexpected error code: ' . $result->get_error_code() );
-	wpnb67_assert( false === strpos( $result->get_error_message(), 'PRIVATE_PACKAGE_MARKER' ), 'Response leaked a package secret.' );
-	wpnb67_assert( false === strpos( json_encode( get_option( Mutation_Log::OPTION_NAME ) ), 'PRIVATE_PACKAGE_MARKER' ), 'Mutation log leaked a package secret.' );
+	wpnb67_assert( false === strpos( $result->get_error_message(), 'SENSITIVE_PACKAGE_MARKER' ), 'Response leaked a package secret.' );
+	wpnb67_assert( false === strpos( json_encode( get_option( Mutation_Log::OPTION_NAME ) ), 'SENSITIVE_PACKAGE_MARKER' ), 'Mutation log leaked a package secret.' );
 }
 function wpnb67_no_files() {
 	foreach ( $GLOBALS['wpnb67']['files'] as $file ) {
@@ -220,7 +220,7 @@ $ability  = new Extension_Abilities( new Permissions( $settings ), new Mutation_
 $package  = array(
 	'kind'        => 'plugin',
 	'action'      => 'install',
-	'package_url' => 'https://packages.example.test/plugin.zip?signature=PRIVATE_PACKAGE_MARKER',
+	'package_url' => 'https://packages.example.test/plugin.zip?signature=SENSITIVE_PACKAGE_MARKER',
 );
 set_error_handler(
 	static function ( $severity, $message, $file, $line ) { throw new ErrorException( $message, 0, $severity, $file, $line ); }
@@ -257,7 +257,7 @@ try {
 	wpnb67_assert( array() === $GLOBALS['wpnb67']['args']['cookies'] && array( 'Accept-Encoding' => 'identity' ) === $GLOBALS['wpnb67']['args']['headers'], 'Package download forwarded cookies or arbitrary headers.' );
 	wpnb67_assert( $GLOBALS['wpnb67']['max'] + 1 === $GLOBALS['wpnb67']['args']['limit_response_size'], 'Package download did not use an overflow sentinel.' );
 	wpnb67_no_files();
-	wpnb67_assert( false === strpos( json_encode( get_option( Mutation_Log::OPTION_NAME ) ), 'PRIVATE_PACKAGE_MARKER' ), 'Successful audit leaked package URL secrets.' );
+	wpnb67_assert( false === strpos( json_encode( get_option( Mutation_Log::OPTION_NAME ) ), 'SENSITIVE_PACKAGE_MARKER' ), 'Successful audit leaked package URL secrets.' );
 
 	wpnb67_reset();
 	$GLOBALS['wpnb67']['mode'] = 'lock_busy';

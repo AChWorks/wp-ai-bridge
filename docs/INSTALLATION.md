@@ -85,7 +85,7 @@ A conservative starting point is:
 - Live Content: leave disabled until publishing is intentionally required.
 - Site Configuration: enable only for site/theme configuration work.
 - Code & Extensions: enable only for managed snippets or extension lifecycle work.
-- External Packages: leave disabled unless the administrator explicitly approves executable plugin/theme packages from public HTTPS or the private ZIP staging flow. Private packages additionally require Code & Extensions, current native install authority, HTTPS as recognized by WordPress, an approved OAuth client, and the shared-storage/locking conditions below.
+- External Packages: leave disabled unless the administrator explicitly permits a validated public HTTPS plugin/theme installation via `extension-lifecycle`. Code & Extensions, exact native install authority and hosting filesystem policy must also allow the operation.
 - Registered REST Discovery: leave disabled unless bounded Core/provider route metadata is needed. It requires the native `manage_options` capability and is not proof that a route can be executed.
 - High-Trust Registered REST Invocation: leave disabled unless the administrator deliberately grants conservative administrator-equivalent generic REST execution. The current policy requires every protected Bridge consent and mapped native capability, and still runs the exact provider/Core permission callback. HTTP GET is not classified safe merely because it reads like a query; do not enable this group to bypass a specialized control.
 - Source Editing: leave disabled unless installed plugin/theme source must be read or changed. It is separate from Code & Extensions and grants administrator-level code trust, not sandboxed execution. Source apply/recovery additionally require guarded same-filesystem no-overwrite replacement with hard-link support; unsupported filesystems fail closed rather than falling back to an in-place write.
@@ -93,9 +93,9 @@ A conservative starting point is:
 - Comments: leave disabled unless bounded comment discovery, replies, or moderation is needed. It is independent from Site Read/Builder Write and still relies on WordPress Core comment permissions; permanent deletion additionally requires Users & Destructive.
 - Users & Destructive: leave disabled unless the requested operation genuinely requires it.
 
-## Private ZIP staging and upgrade host readiness
+## Native installer host readiness
 
-The browser staging page requires real HTTPS as recognized by WordPress (`is_ssl()`), PHP ZipArchive and WordPress Core's native package-install authority. **Before enabling private package ingestion**, verify that web/PHP-FPM, cron and WP-CLI operators access the same physically shared marker-bound private staging volume. Also ensure Bridge-owned Core extension mutations share a lock-coherent `WP_CONTENT_DIR` lock file/inode and a working database advisory lock. The same path string, per-node `/tmp`, container-local volumes or sticky routing are **not sufficient**. Unsupported storage topologies fail closed; storage mismatch can deliberately block deactivation or uninstall until operators reconcile retained bytes and claims. See [Private ZIP packages](./PRIVATE-PACKAGES.md) for the exact limits, cleanup and recovery boundaries. Do not use a production site as a test of package-install, storage-failure or destructive lifecycle behavior.
+WordPress Core's package installer requires current WordPress permissions and hosting file modifications to be allowed. Bridge-owned native installer paths coordinate through the existing `WP_CONTENT_DIR` file lock and the database advisory lock where available. Do not infer lock coherence from a shared path string across independent physical filesystems. File transfer between a connected AI/client/service and WordPress is a separate future bidirectional contract (#134), not a WordPress admin upload page.
 
 ## Canonical runtime baseline
 

@@ -73,7 +73,7 @@ wpai99_check( 'install_themes' === $theme['native_capability'] && 'permission_pr
 foreach ( array(
 	array( 'kind' => 'theme', 'action' => 'deactivate' ),
 	array( 'kind' => 'plugin', 'action' => 'noop' ),
-	array( 'kind' => 'plugin', 'action' => 'install', 'install_source' => 'private_zip' ),
+	array( 'kind' => 'plugin', 'action' => 'install', 'install_source' => 'unsupported_source' ),
 	array( 'kind' => 'plugin', 'action' => 'delete', 'install_source' => 'public_https' ),
 	array( 'kind' => 'plugin', 'action' => 'install', 'unknown' => 'x' ),
 	array( 'kind' => array(), 'action' => 'install' ),

@@ -40,15 +40,6 @@ spl_autoload_register(
 	}
 );
 
-register_deactivation_hook(
-	__FILE__,
-	static function ( $network_deactivating ) {
-		if ( ! \WP_AI_Bridge\Support\Private_Package_Lifecycle::cleanup_sites( (bool) $network_deactivating ) ) {
-			wp_die( esc_html__( 'Private package files could not be retired safely. Verify private storage before deactivation.', 'wp-ai-bridge' ), '', array( 'response' => 500 ) );
-		}
-	}
-);
-
 add_action(
 	'plugins_loaded',
 	static function () {

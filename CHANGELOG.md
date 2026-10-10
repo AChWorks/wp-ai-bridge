@@ -4,6 +4,9 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+- Retire the unwanted manual WordPress-dashboard Private ZIP Packages upload/inspection/install subsystem and its runtime/CI/documentation surface; preserve existing native WordPress.org/public HTTPS installation and Media capabilities (#135). Existing historic v0.5.0 files/options are left for optional manual removal; the maintained plugin adds no migration or cleanup code.
+- Clarify the required AI/client-agnostic bidirectional text/document/binary/media exchange contract, which remains a future independently verified transport deliverable (#134).
+
 ## 0.5.0
 
 - Provide bounded Gutenberg discovery and targeted subtree reads for large/nested pages, with exact path and fingerprint interoperability; return compact committed identity after oversized block mutations rather than an ambiguous transport failure.
