@@ -11,4 +11,5 @@ return array(
 	'REST route metadata exceeds the bounded response. Reduce the page size or request a smaller contract.' => 'حجم فراداده مسیر REST از سقف پاسخ بیشتر است. اندازه صفحه را کاهش دهید یا قرارداد کوچک‌تری بخواهید.',
 	'The registered REST route cannot be represented safely without omitting required metadata.' => 'نمایش ایمن مسیر REST ثبت‌شده بدون حذف فراداده ضروری ممکن نیست.',
 	'Use list with bounded pagination and an optional namespace, or get with an exact route.' => 'از list با صفحه‌بندی محدود و namespace اختیاری، یا get با مسیر دقیق استفاده کنید.',
+	'Too many registered REST routes to inspect safely. Specify a smaller namespace.' => 'تعداد مسیرهای REST ثبت‌شده برای بررسی ایمن بیش از حد است. یک namespace محدودتر انتخاب کنید.',
 );
