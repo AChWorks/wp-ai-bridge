@@ -44,6 +44,10 @@ Native Abilities is broad registered-operation trust, not a sandbox or safety cl
 
 This group governs execution through the exact WP AI Bridge MCP routes. It does not change ordinary direct `WP_Ability::execute()`, the MCP Adapter default server, or WP-CLI behavior.
 
+## Large WordPress content returns `response_too_large`
+
+Check the **installed Bridge and Gateway versions first**; repository `main` may be ahead of both. For posts/revisions use [byte-window content reads](./LARGE-PAYLOADS.md); for Gutenberg use `blocks-find` and targeted `blocks-read(path)`. On Bridge builds that support it, use `site-context(section=current_user)` or bounded `section`/paging instead of an entire plugin/provider inventory. A Gateway transport-size error is not proof that an operation is missing, and increasing a universal limit is not a substitute for source-owned paging. The exact error layer on Alumni remains under [#110](https://github.com/AChWorks/wp-ai-bridge/issues/110); Gateway-only parity discrepancies are tracked in [mcp-gateway#130](https://github.com/AChWorks/mcp-gateway/issues/130).
+
 ## `stale` or conflict errors
 
 The object changed after it was inspected. Read it again, use the new `modified_gmt`/`state_hash` or Workspace `version`/`state_hash`, then decide whether the intended update is still correct.
