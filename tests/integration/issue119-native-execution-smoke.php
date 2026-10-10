@@ -112,7 +112,7 @@ try {
 	update_option( Settings::OPTION_NAME, $enabled, false );
 
 	$first = $ability->execute( $read );
-	wpai119execute_check( ! is_wp_error( $first ) && 200 === $first['status'] && 'succeeded' === $first['outcome'] && 7 === $first['data']['id'], 'Native GET failed under explicit high-trust grant.' );
+	wpai119execute_check( ! is_wp_error( $first ) && 200 === $first['status'] && 'reported_success' === $first['outcome'] && 7 === $first['data']['id'], 'Native GET failed under explicit high-trust grant.' );
 	wpai119execute_check( 1 === $calls && 1 === $permissions_called, 'WordPress provider permission and callback did not run exactly once.' );
 
 	$mutate = array( 'route' => $route, 'path' => $path, 'method' => 'POST', 'body' => array( 'title' => 'native-json' ) );
