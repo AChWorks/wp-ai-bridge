@@ -16,11 +16,11 @@
 
 The settings screen reports whether the WordPress Abilities API, MCP Adapter, and public HTTPS endpoint are available.
 
-Current releases install with the canonical `wp-ai-bridge/` directory and `wp-ai-bridge.php` entrypoint. Version 0.4.1 established the native canonical baseline; current v0.4.2 keeps the same identity and contains no pre-0.4.0 migration runtime.
+Canonical builds install with the `wp-ai-bridge/` directory and `wp-ai-bridge.php` entrypoint. Version 0.4.1 established the native canonical baseline; later releases retain the identity and do not contain the retired pre-0.4.0 migration runtime. The GitHub source branch or release candidate is not evidence of an installed build.
 
-### Updating from 0.4.0 or 0.4.1
+### Updating an already-canonical installation
 
-An existing canonical 0.4.0 or 0.4.1 installation can be updated normally with WordPress's replace/update flow. The plugin directory, Workspace identifiers, settings identity, OAuth identity, MCP routes, and Ability namespace remain canonical, so the v0.4.2 patch does not require another migration or a new ChatGPT connection.
+An existing canonical 0.4.0-or-newer installation can be updated normally with WordPress's replace/update flow, subject to the selected release's compatibility and hosting notes. The plugin directory, Workspace identifiers, settings identity, OAuth routes and Ability namespace remain canonical; the version number alone is not a reason to erase persistent Workspace data or reset a working OAuth client. Verify actual post-upgrade OAuth health and current Bridge delegation rather than inferring it from source or a successful ZIP upload.
 
 Before any production plugin update, keep a normal WordPress/database backup appropriate to the site.
 
@@ -50,7 +50,7 @@ With Developer Mode enabled in the ChatGPT workspace:
 
 The OAuth connection acts as the WordPress user who approved it. Bridge access groups and WordPress capabilities are still checked for every operation.
 
-Current releases serve only the canonical MCP/OAuth routes. A fresh installation needs a fresh OAuth connection. Updating an already-connected canonical 0.4.0 or 0.4.1 installation to 0.4.2 does not by itself invalidate that canonical connection.
+Canonical builds serve only the canonical MCP/OAuth routes. A fresh installation needs a fresh OAuth connection. A normal canonical update does not rename those routes, but the operator must still verify the actual authenticated connection after an upgrade; connection refresh failure must not be treated as proof of a successful reconnect.
 
 ## Other approved AI/MCP clients
 
@@ -85,10 +85,17 @@ A conservative starting point is:
 - Live Content: leave disabled until publishing is intentionally required.
 - Site Configuration: enable only for site/theme configuration work.
 - Code & Extensions: enable only for managed snippets or extension lifecycle work.
+- External Packages: leave disabled unless the administrator explicitly approves executable plugin/theme packages from public HTTPS or the private ZIP staging flow. Private packages additionally require Code & Extensions, current native install authority, HTTPS as recognized by WordPress, an approved OAuth client, and the shared-storage/locking conditions below.
+- Registered REST Discovery: leave disabled unless bounded Core/provider route metadata is needed. It requires the native `manage_options` capability and is not proof that a route can be executed.
+- High-Trust Registered REST Invocation: leave disabled unless the administrator deliberately grants conservative administrator-equivalent generic REST execution. The current policy requires every protected Bridge consent and mapped native capability, and still runs the exact provider/Core permission callback. HTTP GET is not classified safe merely because it reads like a query; do not enable this group to bypass a specialized control.
 - Source Editing: leave disabled unless installed plugin/theme source must be read or changed. It is separate from Code & Extensions and grants administrator-level code trust, not sandboxed execution. Source apply/recovery additionally require guarded same-filesystem no-overwrite replacement with hard-link support; unsupported filesystems fail closed rather than falling back to an in-place write.
 - Native Abilities: leave disabled unless ChatGPT must execute registered Core/provider Abilities directly through WP AI Bridge. Enabling it is broad registered-operation trust, not a sandbox; each target's own WordPress/provider permission callback must still allow the operation. Fresh installs and upgrades keep it disabled until an administrator opts in.
 - Comments: leave disabled unless bounded comment discovery, replies, or moderation is needed. It is independent from Site Read/Builder Write and still relies on WordPress Core comment permissions; permanent deletion additionally requires Users & Destructive.
 - Users & Destructive: leave disabled unless the requested operation genuinely requires it.
+
+## Private ZIP staging and upgrade host readiness
+
+The browser staging page requires real HTTPS as recognized by WordPress (`is_ssl()`), PHP ZipArchive and WordPress Core's native package-install authority. **Before enabling private package ingestion**, verify that web/PHP-FPM, cron and WP-CLI operators access the same physically shared marker-bound private staging volume. Also ensure Bridge-owned Core extension mutations share a lock-coherent `WP_CONTENT_DIR` lock file/inode and a working database advisory lock. The same path string, per-node `/tmp`, container-local volumes or sticky routing are **not sufficient**. Unsupported storage topologies fail closed; storage mismatch can deliberately block deactivation or uninstall until operators reconcile retained bytes and claims. See [Private ZIP packages](./PRIVATE-PACKAGES.md) for the exact limits, cleanup and recovery boundaries. Do not use a production site as a test of package-install, storage-failure or destructive lifecycle behavior.
 
 ## Canonical runtime baseline
 

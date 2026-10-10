@@ -39,8 +39,14 @@ if grep -R -nE 'LEGACY_|wp-native-builder' src/Admin src/Auth --include='*.php';
     exit 1
 fi
 
-if ! grep -qF "Version: 0.4.2" wp-ai-bridge.php || ! grep -qF "define( 'WP_AI_BRIDGE_VERSION', '0.4.2' );" wp-ai-bridge.php; then
-    echo "ERROR: canonical release version metadata is not 0.4.2." >&2
+header_version="$(sed -nE 's/^[[:space:]]*\*[[:space:]]Version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$/\1/p' wp-ai-bridge.php)"
+constant_version="$(sed -nE "s/^define\( 'WP_AI_BRIDGE_VERSION', '([0-9]+\.[0-9]+\.[0-9]+)' \);$/\1/p" wp-ai-bridge.php)"
+if [[ -z "$header_version" || "$header_version" != "$constant_version" ]]; then
+    echo "ERROR: canonical plugin header and WP_AI_BRIDGE_VERSION do not match a valid release version." >&2
+    exit 1
+fi
+if ! grep -qxF "## $header_version" CHANGELOG.md; then
+    echo "ERROR: changelog does not contain the exact canonical plugin release version." >&2
     exit 1
 fi
 

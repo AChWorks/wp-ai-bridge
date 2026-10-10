@@ -191,6 +191,30 @@ bin/             development/build/test helpers
 docs/maintainer/ recovery map and preserved design references
 ```
 
+### Published-release upgrade acceptance for v0.5.0
+
+The first candidate after the immutable v0.4.2 release needs more than a
+fresh-install check. Verify the real published ZIP upgrade in each supported
+WordPress lane before integration and before publishing:
+
+```bash
+bash bin/run-published-upgrade.sh 6.9-php8.4-apache
+bash bin/run-published-upgrade.sh php8.4-apache
+```
+
+The runner verifies the published v0.4.2 asset's pinned SHA-256, installs and
+activates that artifact with the official MCP Adapter, creates disposable
+Workspace/settings and signed-client OAuth/PKCE + refresh-token state, then
+replaces the installed plugin through WordPress Core with the current candidate
+ZIP. It checks persisted state, original access-token use through the official
+MCP Adapter, signed refresh rotation, new groups remaining disabled, canonical
+plugin identity and absence of retired migration state. Test-only tokens and
+the signing key remain in a private Docker volume and are not printed.
+
+The CI specialized matrix owns both upgrade lanes. Future release preparation
+must deliberately revisit the pinned *previous published version* and checksum
+instead of silently treating v0.4.2 as the permanent upgrade baseline.
+
 ## Release process
 
 1. update the plugin version and changelog when a new plugin build is being released;

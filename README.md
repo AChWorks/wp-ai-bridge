@@ -16,8 +16,9 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 - Media Library read, upload, safe URL import, update, and delete operations.
 - Taxonomy and classic navigation management.
 - Bounded WordPress site settings.
-- WordPress.org plugin/theme lifecycle operations plus separately authorized bounded external HTTPS package installation.
+- WordPress.org plugin/theme lifecycle operations, separately authorized public HTTPS package installation, and Bridge-owned authenticated browser staging of private plugin/theme ZIPs with explicit hash-bound native installation (no automatic activation).
 - Separately enabled installed plugin/theme source read, preview, apply, and conflict-safe recovery using native WordPress authority.
+- Filtered, bounded discovery of registered Core/provider REST routes and high-trust guarded native invocation, under independent default-off administrator grants and real provider permissions.
 - User lifecycle and assignment of **existing editable roles** behind explicit permission checks; creation/editing of role definitions belongs to the owning WordPress/plugin API, not a second role editor inside Bridge.
 - Persistent Workspace documents and tasks for durable project context.
 - Native Astra Ability reuse when Astra Abilities are enabled.
@@ -40,7 +41,7 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 4. Install and activate the official WordPress MCP Adapter if it is not already active.
 5. Open **WP AI Bridge → Settings**.
 
-Version 0.4.1 is the native canonical baseline and installs as `wp-ai-bridge/wp-ai-bridge.php` with no pre-0.4.0 migration runtime. The current v0.4.2 patch keeps that canonical identity and normal WordPress replace/update flow. A site still on the published 0.3.0 package that must preserve its old Workspace data should first perform the one-time migration using the immutable v0.4.0 release, verify the migrated Workspace, and then update to the latest release.
+Version 0.4.1 established the native canonical baseline at `wp-ai-bridge/wp-ai-bridge.php`. Later canonical builds retain that installation identity and use the normal WordPress replace/update flow; the retired pre-0.4.0 migration runtime is not included. Install a **published** release, not an untagged source or release-candidate branch. Review the selected release's security and hosting requirements before upgrading. A site still on the published 0.3.0 package that must preserve its old Workspace data should first perform the one-time migration using the immutable v0.4.0 release, verify the migrated Workspace, and then update to the latest release.
 
 See [Installation and connection](./docs/INSTALLATION.md) for the complete setup.
 
@@ -61,7 +62,7 @@ In a ChatGPT workspace with Developer Mode enabled:
 5. Sign in to WordPress when prompted.
 6. Review the WordPress consent page and authorize ChatGPT.
 
-Current releases serve only the canonical `wp-ai-bridge` MCP/OAuth routes. Updating an already-canonical 0.4.0 or 0.4.1 installation to 0.4.2 keeps the canonical installation/storage identity; a normal reconnect is not required solely because of this patch release.
+Canonical builds serve only the `wp-ai-bridge` MCP/OAuth routes. Updating an already-canonical installation preserves the canonical plugin/storage identity; verify OAuth connectivity and existing permission boundaries after an upgrade, rather than assuming a new build is already connected or that new grants are enabled.
 
 No tunnel or separate proxy service is required for the direct ChatGPT HTTPS setup. Independently operated clients supporting the existing metadata and signed-client contract can be explicitly approved under **WP AI Bridge → OAuth Clients**; see [Approved OAuth clients](./docs/OAUTH-CLIENTS.md). This does not assert direct Claude or Gemini interoperability has been tested.
 
@@ -103,7 +104,7 @@ Only **Site Read** is enabled by default.
 
 ## Uploads and extension installation
 
-`wp-ai-bridge/media-upload` accepts Base64-encoded file bytes plus a filename and hands them to WordPress Media Library handling. Its **Bridge-side** payload cap is the smaller of the WordPress upload limit and **20 MiB**; this does **not** guarantee an AI client or MCP Gateway can transfer that much data in one tool request. Actual inline capacity may be lower, and generic authenticated streaming/private binary transfer is **not yet shipped**. Use [type-appropriate data exchange](./docs/LARGE-PAYLOADS.md) rather than relying on a large JSON/Base64 upload. The caller cannot choose a server filesystem path.
+`wp-ai-bridge/media-upload` accepts Base64-encoded file bytes plus a filename and hands them to WordPress Media Library handling. Its **Bridge-side** payload cap is the smaller of the WordPress upload limit and **20 MiB**; this does **not** guarantee an AI client or MCP Gateway can transfer that much data in one tool request. Actual inline capacity may be lower. **Generic streaming/private binary transfer through MCP JSON or Gateway is not supported**; independently authorized **Bridge-owned HTTPS browser staging** is available for executable plugin/theme ZIPs in releases that include that feature (see [private packages](./docs/PRIVATE-PACKAGES.md)). Use [type-appropriate data exchange](./docs/LARGE-PAYLOADS.md) rather than relying on a large JSON/Base64 upload. The caller cannot choose a server filesystem path.
 
 `wp-ai-bridge/media-import-url` accepts a public HTTP(S) URL and a filename, streams it within the current WordPress upload limit, and creates a normal attachment. It requires explicit **Remote Media** plus **Builder Write** access; upgrades do not enable it automatically. See [URL media import](./docs/ABILITIES.md#url-media-import).
 
