@@ -57,7 +57,7 @@ A registered target must pass both enabled Native Abilities and its own native p
 Disabling Native Abilities takes effect on subsequent Bridge calls because settings are read at execution time. The exact Bridge request context is balanced with unconditional cleanup; unrelated REST routes are not governed by that context.
 
 
-## Registered REST API delegation (source integrated; not yet released)
+## Registered REST API delegation (verify the installed release and explicit grants)
 
 Maintained source includes bounded filtered `wp-ai-bridge/rest-routes-read` discovery and guarded `wp-ai-bridge/rest-route-invoke` for **public, locally registered WordPress REST endpoints**, with independent default-off consent groups, the current WordPress principal, native `manage_options` and current Core/provider authorization. The current execution policy additionally requires **every protected Bridge group and mapped native capability**, rather than guessing provider side effects from GET/POST, route names or caller annotations. An installed/registered route is not automatically enabled; revocation is checked on the next execution. These capabilities are merged into source (#119 / PRs #120–#121). Historical published v0.4.2 did not contain them; a newer source candidate or release must be separately identified and is **not proof that Alumni runs it**.
 
@@ -203,7 +203,7 @@ The Bridge does not expose:
 - arbitrary `wp_options` access;
 - arbitrary user-meta administration;
 - credential, session, OAuth-secret, private-key, security-token, or Application Password retrieval;
-- unrestricted plugin ZIP/PHP upload, arbitrary server-file paths or Base64 package execution (bounded, consented, hash-bound private plugin/theme ZIP staging and explicit native install are integrated into **current source** under [#108](https://github.com/AChWorks/wp-ai-bridge/issues/108), not the published v0.4.2 release);
+- unrestricted plugin ZIP/PHP upload, arbitrary server-file paths or Base64 package execution (bounded, consented, hash-bound private plugin/theme ZIP staging and explicit native install are integrated into **current source** under [#108](https://github.com/AChWorks/wp-ai-bridge/issues/108), absent from historical v0.4.2 packages; verify the installed release);
 - direct provider-table administration.
 
 ## OAuth storage
