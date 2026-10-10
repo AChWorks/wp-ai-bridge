@@ -21,7 +21,10 @@ $identity = 'operation' === $mode
 	: array( 'canonical-document', get_current_blog_id(), $key, 'race-brief' );
 $name = Create_Claim::PREFIX . hash( 'sha256', wp_json_encode( $identity ) );
 $dir  = WP_CONTENT_DIR . '/wpai128-race-' . $key . '-' . $mode;
-if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
+// Both PHP workers can pass is_dir() concurrently. wp_mkdir_p() may
+// legitimately return false when the other worker created the directory
+// milliseconds earlier; recheck rather than failing the race fixture.
+if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) && ! is_dir( $dir ) ) {
 	throw new RuntimeException( 'Could not establish isolated test barrier.' );
 }
 add_filter(
@@ -32,7 +35,7 @@ add_filter(
 			$once = true;
 			file_put_contents( $dir . '/' . $slot . '.ready', 'ready' );
 			$other    = 'one' === $slot ? 'two' : 'one';
-			$deadline = microtime( true ) + 15;
+			$deadline = microtime( true ) + 45; // Finite timeout, tolerant of runner container startup skew.
 			while ( ! is_file( $dir . '/' . $other . '.ready' ) ) {
 				if ( microtime( true ) >= $deadline ) {
 					throw new RuntimeException( 'Second PHP worker never reached barrier.' );
