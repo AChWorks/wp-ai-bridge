@@ -107,6 +107,8 @@ function rest_do_request( $request ) {
 }
 
 wpai_test_reset_state();
+$GLOBALS['wpai_test']['blog_id'] = 1;
+function get_current_blog_id() { return $GLOBALS['wpai_test']['blog_id']; }
 $settings = new Settings();
 $provider = new Registered_REST_Invocation_Abilities( new Permissions( $settings ) );
 $defaults = $settings->defaults();
@@ -233,6 +235,21 @@ $server->before_index = static function () {
 $index_error = $provider->invoke( $req );
 wpai119invoke_assert( ! is_wp_error( $index_error ) && 'outcome_unknown' === $index_error['outcome'] && ! str_contains( wp_json_encode( $index_error ), 'private-provider-index-message' ), 'Provider public-index exception must be safely redacted.' );
 $server->before_index = null;
+$before_identity_calls = count( $GLOBALS['wpai119invoke_calls'] );
+$server->before_index = static function () {
+	$GLOBALS['wpai_test']['user_id'] = 2;
+};
+$identity_switch = $provider->invoke( $req );
+wpai119invoke_assert( is_wp_error( $identity_switch ) && 'rest_invocation_denied' === $identity_switch->get_error_code(), 'Preflight principal switching cannot authorize execution as another admin.' );
+$GLOBALS['wpai_test']['user_id'] = 1;
+$server->before_index = static function () {
+	$GLOBALS['wpai_test']['blog_id'] = 2;
+};
+$site_switch = $provider->invoke( $req );
+wpai119invoke_assert( is_wp_error( $site_switch ) && 'rest_invocation_denied' === $site_switch->get_error_code(), 'Preflight site switching cannot change execution Target.' );
+$GLOBALS['wpai_test']['blog_id'] = 1;
+$server->before_index = null;
+wpai119invoke_assert( $before_identity_calls === count( $GLOBALS['wpai119invoke_calls'] ), 'A changed WordPress principal/site dispatched provider code.' );
 $GLOBALS['wpai119invoke_on_dispatch'] = static function () use ( $provider, $req ) {
 	$nested = $provider->invoke( $req );
 	wpai119invoke_assert( is_wp_error( $nested ) && 'rest_invocation_recursive' === $nested->get_error_code(), 'Provider reentrancy must fail closed.' );
