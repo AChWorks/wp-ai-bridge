@@ -82,6 +82,12 @@ final class Registered_REST_Invocation_Abilities {
 		if ( ! $this->can_invoke() ) {
 			return $this->error( 'rest_invocation_denied', __( 'Registered REST invocation requires a separate enabled Bridge grant and WordPress administration permission.', 'wp-ai-bridge' ) );
 		}
+		// An unclassified provider could attach effects even to REST index
+		// filters. Require protected grants BEFORE reading provider registry
+		// metadata, then recheck them immediately before actual dispatch.
+		if ( ! $this->protected_lifecycle_consent() ) {
+			return $this->error( 'rest_invocation_protected_consent_required', __( 'Generic REST execution needs independently enabled protected lifecycle permissions.', 'wp-ai-bridge' ) );
+		}
 		if ( $this->in_flight ) {
 			return $this->error( 'rest_invocation_recursive', __( 'Nested generic REST invocation is not allowed.', 'wp-ai-bridge' ) );
 		}
