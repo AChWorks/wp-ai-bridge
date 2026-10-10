@@ -8,6 +8,7 @@
 namespace WP_AI_Bridge;
 
 use WP_AI_Bridge\Abilities\Registrar;
+use WP_AI_Bridge\Abilities\Private_Package_Abilities;
 use WP_AI_Bridge\Admin\Settings_Page;
 use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Environment;
@@ -35,6 +36,8 @@ final class Plugin {
 	private $native_ability_delegation;
 	/** @var Registrar */
 	private $registrar;
+	/** @var Private_Package_Abilities */
+	private $private_packages;
 	/** @var OAuth_Server */
 	private $oauth_server;
 	/** @var Settings_Page */
@@ -69,12 +72,14 @@ final class Plugin {
 		$this->permissions               = new Permissions( $this->settings );
 		$this->native_ability_delegation = new Native_Ability_Delegation( $this->settings );
 		$this->workspace                 = new Store();
-		$this->registrar                 = new Registrar( $this->environment, $this->settings, $this->permissions, $this->workspace, $this->native_ability_delegation );
+		$this->private_packages          = new Private_Package_Abilities( $this->permissions );
+		$this->registrar                 = new Registrar( $this->environment, $this->settings, $this->permissions, $this->workspace, $this->native_ability_delegation, $this->private_packages );
 		$this->oauth_server              = new OAuth_Server();
 		$this->settings_page             = new Settings_Page( $this->environment, $this->settings, $this->oauth_server, $this->workspace, new Mutation_Log() );
 
 		$this->native_ability_delegation->boot();
 		$this->oauth_server->boot();
+		$this->private_packages->boot();
 
 		add_action( 'init', array( $this, 'load_textdomain' ), 1 );
 		add_action( 'init', array( $this->workspace, 'register_post_types' ), 5 );

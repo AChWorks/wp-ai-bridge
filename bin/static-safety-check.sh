@@ -397,14 +397,32 @@ metadata_store='src/Support/class-post-meta-store.php'
 term_metadata_store='src/Support/class-term-meta-store.php'
 user_comment_metadata_store='src/Support/class-user-comment-meta-store.php'
 oauth_store='src/Auth/class-oauth-store.php'
+private_package_store='src/Support/class-private-package-store.php'
 if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comment_metadata_store" || ! -f "$oauth_store" ]]; then
     echo "ERROR: one or more bounded database stores are missing." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$private_package_store" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2
+    exit 1
+fi
+
+# Issue #108 uses one fixed, indexed, bounded option-name lookup for expired
+# private artifacts. It cannot accept caller SQL, return stored option values,
+# read another WordPress table, or become a general options interface.
+if [[ ! -f "$private_package_store" ||
+      "$(grep -cF '$wpdb->get_col(' "$private_package_store" || true)" != "1" ||
+      "$(grep -cF '$wpdb->prepare(' "$private_package_store" || true)" != "1" ||
+      "$(grep -cF '$wpdb->esc_like(' "$private_package_store" || true)" != "1" ||
+      "$(grep -cF 'SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s ORDER BY option_id DESC LIMIT %d' "$private_package_store" || true)" != "1" ]]; then
+    echo "ERROR: private ZIP staging lost its single bounded option-name query." >&2
+    exit 1
+fi
+if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$private_package_store" |
+    grep -vE '\$wpdb->(options|esc_like|get_col|prepare)([^A-Za-z0-9_]|$)'; then
+    echo "ERROR: private ZIP staging introduced another SQL capability." >&2
     exit 1
 fi
 
