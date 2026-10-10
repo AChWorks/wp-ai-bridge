@@ -16,10 +16,10 @@ use WP_Error;
  * Registry discovery only. This class deliberately cannot dispatch REST requests.
  */
 final class Registered_REST_Abilities {
-	const MAX_PAGE_SIZE = 25;
+	const MAX_PAGE_SIZE   = 25;
 	const MAX_ROUTE_BYTES = 512;
-	const MAX_ENDPOINTS = 16;
-	const MAX_ARGUMENTS = 80;
+	const MAX_ENDPOINTS   = 16;
+	const MAX_ARGUMENTS   = 80;
 
 	/** @var Permissions */
 	private $permissions;
@@ -101,7 +101,17 @@ final class Registered_REST_Abilities {
 			if ( ! $item['indexed'] ) {
 				return new WP_Error( 'rest_route_not_found', __( 'The exact registered REST route was not found.', 'wp-ai-bridge' ) );
 			}
-			return $this->bounded( array( 'items' => array( $item ), 'page' => 1, 'per_page' => 1, 'total' => 1, 'total_pages' => 1, 'has_more' => false, 'execution_permission' => 'not_evaluated' ) );
+			return $this->bounded(
+				array(
+					'items'                => array( $item ),
+					'page'                 => 1,
+					'per_page'             => 1,
+					'total'                => 1,
+					'total_pages'          => 1,
+					'has_more'             => false,
+					'execution_permission' => 'not_evaluated',
+				)
+			);
 		}
 
 		if ( array_diff( array_keys( $input ), array( 'action', 'namespace', 'page', 'per_page' ) ) ) {
@@ -143,7 +153,17 @@ final class Registered_REST_Abilities {
 		if ( ( $page - 1 ) * $per_page < $total ) {
 			$items = array_values( array_slice( $matches, ( $page - 1 ) * $per_page, $per_page ) );
 		}
-		return $this->bounded( array( 'items' => $items, 'page' => $page, 'per_page' => $per_page, 'total' => $total, 'total_pages' => (int) ceil( $total / $per_page ), 'has_more' => $page < (int) ceil( $total / $per_page ), 'execution_permission' => 'not_evaluated' ) );
+		return $this->bounded(
+			array(
+				'items'                => $items,
+				'page'                 => $page,
+				'per_page'             => $per_page,
+				'total'                => $total,
+				'total_pages'          => (int) ceil( $total / $per_page ),
+				'has_more'             => $page < (int) ceil( $total / $per_page ),
+				'execution_permission' => 'not_evaluated',
+			)
+		);
 	}
 
 	/**
@@ -166,11 +186,11 @@ final class Registered_REST_Abilities {
 		}
 		$indexed = is_array( $public ) && ! empty( $public['methods'] );
 		$item    = array(
-			'route'            => $route,
-			'indexed'          => $indexed,
-			'methods'          => $indexed ? array_values( array_filter( $public['methods'], 'is_string' ) ) : array(),
-			'contract_detail'  => $detail && $indexed ? 'name_type_required_only' : 'not_returned',
-			'endpoints'        => array(),
+			'route'           => $route,
+			'indexed'         => $indexed,
+			'methods'         => $indexed ? array_values( array_filter( $public['methods'], 'is_string' ) ) : array(),
+			'contract_detail' => $detail && $indexed ? 'name_type_required_only' : 'not_returned',
+			'endpoints'       => array(),
 		);
 		if ( ! $detail || ! $indexed ) {
 			return $item;
@@ -194,9 +214,16 @@ final class Registered_REST_Abilities {
 				}
 				$raw_type = isset( $schema['type'] ) ? $schema['type'] : 'unspecified';
 				$type     = is_string( $raw_type ) && strlen( $raw_type ) <= 64 ? $raw_type : 'unspecified';
-				$fields[] = array( 'name' => $name, 'type' => $type, 'required' => ! empty( $schema['required'] ) );
+				$fields[] = array(
+					'name'     => $name,
+					'type'     => $type,
+					'required' => ! empty( $schema['required'] ),
+				);
 			}
-			$item['endpoints'][] = array( 'methods' => array_values( array_filter( $endpoint['methods'], 'is_string' ) ), 'arguments' => $fields );
+			$item['endpoints'][] = array(
+				'methods'   => array_values( array_filter( $endpoint['methods'], 'is_string' ) ),
+				'arguments' => $fields,
+			);
 		}
 		return $item;
 	}
@@ -224,11 +251,31 @@ final class Registered_REST_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'action'    => array( 'type' => 'string', 'enum' => array( 'list', 'get' ), 'default' => 'list' ),
-				'route'     => array( 'type' => 'string', 'minLength' => 1, 'maxLength' => self::MAX_ROUTE_BYTES ),
-				'namespace' => array( 'type' => 'string', 'maxLength' => 100 ),
-				'page'      => array( 'type' => 'integer', 'minimum' => 1, 'default' => 1 ),
-				'per_page'  => array( 'type' => 'integer', 'minimum' => 1, 'maximum' => self::MAX_PAGE_SIZE, 'default' => 20 ),
+				'action'    => array(
+					'type'    => 'string',
+					'enum'    => array( 'list', 'get' ),
+					'default' => 'list',
+				),
+				'route'     => array(
+					'type'      => 'string',
+					'minLength' => 1,
+					'maxLength' => self::MAX_ROUTE_BYTES,
+				),
+				'namespace' => array(
+					'type'      => 'string',
+					'maxLength' => 100,
+				),
+				'page'      => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+					'default' => 1,
+				),
+				'per_page'  => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+					'maximum' => self::MAX_PAGE_SIZE,
+					'default' => 20,
+				),
 			),
 			'additionalProperties' => false,
 		);
@@ -239,13 +286,19 @@ final class Registered_REST_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'items'                => array( 'type' => 'array', 'items' => array( 'type' => 'object' ) ),
+				'items'                => array(
+					'type'  => 'array',
+					'items' => array( 'type' => 'object' ),
+				),
 				'page'                 => array( 'type' => 'integer' ),
 				'per_page'             => array( 'type' => 'integer' ),
 				'total'                => array( 'type' => 'integer' ),
 				'total_pages'          => array( 'type' => 'integer' ),
 				'has_more'             => array( 'type' => 'boolean' ),
-				'execution_permission' => array( 'type' => 'string', 'enum' => array( 'not_evaluated' ) ),
+				'execution_permission' => array(
+					'type' => 'string',
+					'enum' => array( 'not_evaluated' ),
+				),
 			),
 			'required'             => array( 'items', 'page', 'per_page', 'total', 'total_pages', 'has_more', 'execution_permission' ),
 			'additionalProperties' => false,
