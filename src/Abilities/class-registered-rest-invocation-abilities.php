@@ -183,8 +183,9 @@ final class Registered_REST_Invocation_Abilities {
 		// contract. A provider can redact parameter names from the index;
 		// invocation must not reconstruct or accept those hidden names from
 		// raw handler schemas or from guessed inputs.
-		$visible_args = array();
-		$endpoints = isset( $indexed[ $route ]['endpoints'] ) ? $indexed[ $route ]['endpoints'] : null;
+		$visible_args     = array();
+		$visible_endpoint = false;
+		$endpoints        = isset( $indexed[ $route ]['endpoints'] ) ? $indexed[ $route ]['endpoints'] : null;
 		if ( ! is_array( $endpoints ) ) {
 			return $this->not_found();
 		}
@@ -195,6 +196,7 @@ final class Registered_REST_Invocation_Abilities {
 			) {
 				continue;
 			}
+			$visible_endpoint = true;
 			$arguments = isset( $endpoint['args'] ) ? $endpoint['args'] : array();
 			if ( ! is_array( $arguments ) ) {
 				return $this->not_found();
@@ -204,6 +206,9 @@ final class Registered_REST_Invocation_Abilities {
 					$visible_args[ $name ] = true;
 				}
 			}
+		}
+		if ( ! $visible_endpoint ) {
+			return $this->not_found();
 		}
 		foreach ( array_keys( $query + $body ) as $name ) {
 			if ( ! is_string( $name ) || ! isset( $visible_args[ $name ] ) ) {
