@@ -110,14 +110,19 @@ final class Registered_REST_Invocation_Abilities {
 
 		// Real WordPress always accepts a concrete request path. The selected
 		// regex is used only as an independent registry identity assertion.
-		$selected_match = @preg_match( '@^' . $route . '$@i', $path );
+		$selected_match = preg_match( '@^' . $route . '$@i', $path );
 		if ( 1 !== $selected_match ) {
 			return $this->invalid();
 		}
 		if ( ! $this->safe_tree( $query ) || ! $this->safe_tree( $body ) ) {
 			return $this->invalid();
 		}
-		$input_json = wp_json_encode( array( 'query' => $query, 'body' => $body ) );
+		$input_json = wp_json_encode(
+			array(
+				'query' => $query,
+				'body'  => $body,
+			)
+		);
 		if ( ! is_string( $input_json ) || strlen( $input_json ) > self::MAX_INPUT_BYTES ) {
 			return $this->invalid();
 		}
@@ -169,7 +174,7 @@ final class Registered_REST_Invocation_Abilities {
 			if ( $candidate === $route || ! is_string( $candidate ) ) {
 				continue;
 			}
-			if ( 1 === @preg_match( '@^' . $candidate . '$@i', $path ) ) {
+			if ( 1 === preg_match( '@^' . $candidate . '$@i', $path ) ) {
 				return $this->error( 'rest_invocation_ambiguous_route', __( 'Multiple registered REST routes match the requested path.', 'wp-ai-bridge' ) );
 			}
 		}
@@ -343,11 +348,28 @@ final class Registered_REST_Invocation_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'route'  => array( 'type' => 'string', 'minLength' => 2, 'maxLength' => self::MAX_ROUTE_BYTES ),
-				'path'   => array( 'type' => 'string', 'minLength' => 2, 'maxLength' => self::MAX_ROUTE_BYTES ),
-				'method' => array( 'type' => 'string', 'enum' => array( 'GET', 'POST', 'PUT', 'PATCH', 'DELETE' ) ),
-				'query'  => array( 'type' => 'object', 'additionalProperties' => true ),
-				'body'   => array( 'type' => 'object', 'additionalProperties' => true ),
+				'route'  => array(
+					'type'      => 'string',
+					'minLength' => 2,
+					'maxLength' => self::MAX_ROUTE_BYTES,
+				),
+				'path'   => array(
+					'type'      => 'string',
+					'minLength' => 2,
+					'maxLength' => self::MAX_ROUTE_BYTES,
+				),
+				'method' => array(
+					'type' => 'string',
+					'enum' => array( 'GET', 'POST', 'PUT', 'PATCH', 'DELETE' ),
+				),
+				'query'  => array(
+					'type'                 => 'object',
+					'additionalProperties' => true,
+				),
+				'body'   => array(
+					'type'                 => 'object',
+					'additionalProperties' => true,
+				),
 			),
 			'required'             => array( 'route', 'path', 'method' ),
 			'additionalProperties' => false,
