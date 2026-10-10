@@ -311,6 +311,11 @@ final class Registered_REST_Invocation_Abilities {
 
 	/** @param string $path Local REST route/path. @return bool */
 	private function blocked_path( $path ) {
+		// WordPress Core /batch/v1 and provider batch handlers may internally
+		// fan out into routes whose separate Bridge trust grants are denied.
+		if ( 1 === preg_match( '#(?:^|/)batch(?:/|$)#i', $path ) ) {
+			return true;
+		}
 		if ( 1 === preg_match( '#^/(?:wp-ai-bridge|mcp-adapter|mcp|wp-abilities)(?:/|$)#i', $path ) ) {
 			return true;
 		}
