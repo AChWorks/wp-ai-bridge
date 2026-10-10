@@ -274,7 +274,6 @@ final class Registered_REST_Invocation_Abilities {
 		// No WordPress principal, blog context or OAuth identity is changed.
 		if (
 			! $this->can_invoke() ||
-			! $this->protected_lifecycle_consent() ||
 			get_current_user_id() !== $principal_id ||
 			( function_exists( 'get_current_blog_id' ) ? get_current_blog_id() : 0 ) !== $site_id
 		) {
@@ -358,12 +357,7 @@ final class Registered_REST_Invocation_Abilities {
 			array( Settings::GROUP_COMMENTS, 'moderate_comments' ),
 			array( Settings::GROUP_USERS_DESTRUCTIVE, 'delete_users' ),
 		);
-		foreach ( $requirements as $requirement ) {
-			if ( ! $this->permissions->allowed( $requirement[0], $requirement[1] ) ) {
-				return false;
-			}
-		}
-		return true;
+		return $this->permissions->allowed_all( $requirements );
 	}
 
 	/** @param string $path Local REST route/path. @return bool */
