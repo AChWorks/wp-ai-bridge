@@ -621,10 +621,9 @@ final class Private_Package_Store {
 				$claimed = false !== get_option( self::CLAIM_PREFIX . $meta['id'], false );
 				$expired = ! $claimed && 'staged' === ( $meta['status'] ?? null ) && time() > (int) $meta['expires'];
 				$old     = time() > (int) $meta['expires'] + self::RECORD_TTL;
-				if ( ! $expired && ! $old ) {
-					continue;
-				}
-				$path = $this->archive_path( $directory, $meta['id'] );
+				$path    = $this->archive_path( $directory, $meta['id'] );
+				// An explicitly flagged unretired ZIP must not wait for staged
+				// expiry: it is executable byte state whose claim is already final.
 				if ( $claimed && ! empty( $meta['cleanup_required'] ) ) {
 					if ( is_file( $path ) && ! is_link( $path ) ) {
 						wp_delete_file( $path );
@@ -634,6 +633,9 @@ final class Private_Package_Store {
 						$meta['cleanup_required'] = false;
 						$this->persist_install_state( $meta['id'], $meta );
 					}
+					continue;
+				}
+				if ( ! $expired && ! $old ) {
 					continue;
 				}
 				if ( is_file( $path ) && ! is_link( $path ) ) {
