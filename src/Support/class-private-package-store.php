@@ -473,84 +473,105 @@ final class Private_Package_Store {
 		if ( ! is_string( $expected_sha ) || ! hash_equals( (string) $meta['sha256'], $expected_sha ) ) {
 			return new WP_Error( 'private_package_hash_mismatch', __( 'Private package integrity confirmation did not match.', 'wp-ai-bridge' ) );
 		}
-		if ( 'staged' !== $meta['status'] || time() >= (int) $meta['expires'] ) {
-			return new WP_Error( 'private_package_not_staged', __( 'This private package is expired or has already been submitted for installation.', 'wp-ai-bridge' ) );
+		$lock = new Extension_Install_Lock();
+		if ( ! $lock->acquire() ) {
+			return new WP_Error( 'private_package_install_busy', __( 'Another extension installation is in progress. Retry this request after it finishes.', 'wp-ai-bridge' ) );
 		}
-		$directory = $this->directory();
-		if ( is_wp_error( $directory ) ) {
-			return $directory;
-		}
-		$path = $this->archive_path( $directory, $id );
-		$hash = is_file( $path ) && ! is_link( $path ) ? hash_file( 'sha256', $path ) : false;
-		if ( ! is_string( $hash ) || ! hash_equals( $meta['sha256'], $hash ) || (int) filesize( $path ) !== (int) $meta['bytes'] ) {
-			return new WP_Error( 'private_package_hash_mismatch', __( 'Private package integrity confirmation did not match.', 'wp-ai-bridge' ) );
-		}
-		$checked = $this->inspect_zip( $path, $kind );
-		if ( is_wp_error( $checked ) || ( $checked['root'] ?? null ) !== $meta['root'] ) {
-			return $this->invalid_archive();
-		}
-		// A unique option INSERT is the one-way, per-blog compare-and-claim gate.
-		// Claims survive process failure; never blindly retry a possible Core install.
-		if ( ! $this->allowed( $kind ) || ! ( new Approved_OAuth_Clients() )->artifact_is_current( $client_id, $meta['client_revision'] ) ||
-			! add_option( self::CLAIM_PREFIX . $id, time(), '', false ) ) {
-			return new WP_Error( 'private_package_not_staged', __( 'This private package is expired or has already been submitted for installation.', 'wp-ai-bridge' ) );
-		}
-		$meta['status'] = 'installing';
-		update_option( self::OPTION_PREFIX . $id, $meta, false );
-		$target  = '';
-		$success = false;
 		try {
-			if ( ! $this->allowed( $kind ) || ! ( new Approved_OAuth_Clients() )->artifact_is_current( $client_id, $meta['client_revision'] ) ) {
-				throw new \RuntimeException( 'Authorization changed after claim.' );
+			// Values and grants may change while another worker owns the installation lock.
+			$meta = $this->load( $id, $client_id );
+			if ( is_wp_error( $meta ) || ( $meta['kind'] ?? null ) !== $kind || ! $this->allowed( $kind ) ||
+				! hash_equals( (string) ( $meta['sha256'] ?? '' ), $expected_sha ) ) {
+				return new WP_Error( 'private_package_permission_denied', __( 'Private package authorization is not available.', 'wp-ai-bridge' ) );
 			}
-			require_once ABSPATH . 'wp-admin/includes/file.php';
-			require_once ABSPATH . 'wp-admin/includes/plugin.php';
-			require_once ABSPATH . 'wp-admin/includes/theme.php';
-			require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-			$skin = new \Automatic_Upgrader_Skin();
-			if ( 'plugin' === $kind ) {
-				$upgrader = new \Plugin_Upgrader( $skin );
-				$ok       = $upgrader->install( $path );
-				$target   = (string) $upgrader->plugin_info();
-				$success  = true === $ok && '' !== $target && isset( get_plugins()[ $target ] );
-			} else {
-				$upgrader = new \Theme_Upgrader( $skin );
-				$ok       = $upgrader->install( $path );
-				$target   = $meta['root'];
-				$success  = true === $ok && wp_get_theme( $target )->exists();
+			if ( 'staged' !== $meta['status'] || time() >= (int) $meta['expires'] ) {
+				return new WP_Error( 'private_package_not_staged', __( 'This private package is expired or has already been submitted for installation.', 'wp-ai-bridge' ) );
 			}
-		} catch ( \Throwable $error ) {
+			$directory = $this->directory();
+			if ( is_wp_error( $directory ) ) {
+				return $directory;
+			}
+			$path = $this->archive_path( $directory, $id );
+			$hash = is_file( $path ) && ! is_link( $path ) ? hash_file( 'sha256', $path ) : false;
+			if ( ! is_string( $hash ) || ! hash_equals( $meta['sha256'], $hash ) || (int) filesize( $path ) !== (int) $meta['bytes'] ) {
+				return new WP_Error( 'private_package_hash_mismatch', __( 'Private package integrity confirmation did not match.', 'wp-ai-bridge' ) );
+			}
+			$checked = $this->inspect_zip( $path, $kind );
+			if ( is_wp_error( $checked ) || ( $checked['root'] ?? null ) !== $meta['root'] ) {
+				return $this->invalid_archive();
+			}
+			// A unique option INSERT is the one-way, per-blog compare-and-claim gate.
+			// Claims survive process failure; never blindly retry a possible Core install.
+			if ( ! $lock->is_owned() || ! $this->allowed( $kind ) || ! ( new Approved_OAuth_Clients() )->artifact_is_current( $client_id, $meta['client_revision'] ) ||
+				! add_option( self::CLAIM_PREFIX . $id, time(), '', false ) ) {
+				return new WP_Error( 'private_package_not_staged', __( 'This private package is expired or has already been submitted for installation.', 'wp-ai-bridge' ) );
+			}
+			$meta['status'] = 'installing';
+			update_option( self::OPTION_PREFIX . $id, $meta, false );
+			$target  = '';
 			$success = false;
-		}
-		// After handing bytes to Core, ambiguous failure is a recovery state.
-		if ( is_file( $path ) ) {
-			wp_delete_file( $path );
-		}
-		$deleted        = ! is_file( $path );
-		$meta['status'] = $success && $deleted ? 'installed' : 'outcome_unknown';
-		$meta['target'] = $success && $deleted ? $target : '';
-		update_option( self::OPTION_PREFIX . $id, $meta, false );
-		if ( ! $success || ! $deleted ) {
 			try {
-				( new Mutation_Log() )->record( 'wp-ai-bridge/private-package-install', $kind, 0, false, 'private_package_recovery_required' );
+				if ( ! $this->allowed( $kind ) || ! ( new Approved_OAuth_Clients() )->artifact_is_current( $client_id, $meta['client_revision'] ) ) {
+					throw new \RuntimeException( 'Authorization changed after claim.' );
+				}
+				require_once ABSPATH . 'wp-admin/includes/file.php';
+				require_once ABSPATH . 'wp-admin/includes/plugin.php';
+				require_once ABSPATH . 'wp-admin/includes/theme.php';
+				require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+				$skin = new \Automatic_Upgrader_Skin();
+				if ( 'plugin' === $kind ) {
+					$upgrader = new \Plugin_Upgrader( $skin );
+					$ok       = $upgrader->install( $path );
+					$target   = (string) $upgrader->plugin_info();
+					$success  = true === $ok && '' !== $target && isset( get_plugins()[ $target ] );
+				} else {
+					$upgrader = new \Theme_Upgrader( $skin );
+					$ok       = $upgrader->install( $path );
+					$target   = $meta['root'];
+					$success  = true === $ok && wp_get_theme( $target )->exists();
+				}
 			} catch ( \Throwable $error ) {
-				// Never disclose a private archive or Core diagnostics while reporting recovery.
+				$success = false;
 			}
-			return new WP_Error( 'private_package_recovery_required', __( 'Private package installation needs administrator recovery before any retry.', 'wp-ai-bridge' ) );
+			// After handing bytes to Core, ambiguous failure is a recovery state.
+			if ( is_file( $path ) ) {
+				wp_delete_file( $path );
+			}
+			$deleted        = ! is_file( $path );
+			$success        = $success && $lock->is_owned();
+			$meta['status'] = $success && $deleted ? 'installed' : 'outcome_unknown';
+			$meta['target'] = $success && $deleted ? $target : '';
+			update_option( self::OPTION_PREFIX . $id, $meta, false );
+			if ( ! $success || ! $deleted ) {
+				try {
+					( new Mutation_Log() )->record( 'wp-ai-bridge/private-package-install', $kind, 0, false, 'private_package_recovery_required' );
+				} catch ( \Throwable $error ) {
+					// Never disclose a private archive or Core diagnostics while reporting recovery.
+				}
+				return new WP_Error( 'private_package_recovery_required', __( 'Private package installation needs administrator recovery before any retry.', 'wp-ai-bridge' ) );
+			}
+			try {
+				if ( ! ( new Mutation_Log() )->record( 'wp-ai-bridge/private-package-install', $kind, 0, true, '' ) ) {
+					// Native Core already committed. Preserve one-way claim and a
+					// recovery-visible outcome when the audit did not persist.
+					$meta['status'] = 'outcome_unknown';
+					update_option( self::OPTION_PREFIX . $id, $meta, false );
+					return new WP_Error( 'private_package_recovery_required', __( 'Private package installation needs administrator recovery before any retry.', 'wp-ai-bridge' ) );
+				}
+			} catch ( \Throwable $error ) {
+				// Once Core has committed, audit failure cannot safely be retried.
+				return new WP_Error( 'private_package_recovery_required', __( 'Private package installation needs administrator recovery before any retry.', 'wp-ai-bridge' ) );
+			}
+			return array(
+				'artifact_id' => $id,
+				'kind'        => $kind,
+				'target'      => $target,
+				'installed'   => true,
+				'activated'   => false,
+			);
+		} finally {
+			$lock->release();
 		}
-		try {
-			( new Mutation_Log() )->record( 'wp-ai-bridge/private-package-install', $kind, 0, true, '' );
-		} catch ( \Throwable $error ) {
-			// Once Core has committed, audit failure cannot safely be retried.
-			return new WP_Error( 'private_package_recovery_required', __( 'Private package installation needs administrator recovery before any retry.', 'wp-ai-bridge' ) );
-		}
-		return array(
-			'artifact_id' => $id,
-			'kind'        => $kind,
-			'target'      => $target,
-			'installed'   => true,
-			'activated'   => false,
-		);
 	}
 
 	/** Dispose only expired, Bridge-owned metadata and private files. */

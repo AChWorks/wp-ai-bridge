@@ -16,6 +16,8 @@ trap cleanup EXIT
 
 bash "$root/bin/build-zip.sh"
 "${compose[@]}" up -d db wordpress
+# Shared disposable /tmp lets real web and CLI worker cleanup inspect the same ZIPs.
+"${compose[@]}" exec -T -u root wordpress chmod 1777 /tmp
 for attempt in $(seq 1 30); do
     if "${compose[@]}" exec -T wordpress test -f /var/www/html/wp-load.php; then
         break
@@ -65,5 +67,21 @@ chmod 0666 /var/www/html/wp-content/plugins/wpai-network-source/wpai-network-sou
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue46-network-active-smoke.php --user=1 --allow-root
 "${wp[@]}" plugin deactivate wpai-network-source --network --allow-root >/dev/null
 "${compose[@]}" exec -T wordpress rm -rf /var/www/html/wp-content/plugins/wpai-network-source
+
+# R1: network deactivation and uninstall retire all blog-local artifacts.
+run_lifecycle() {
+    local mode="$1"
+    "${compose[@]}" run --rm -e "WPAI108_LIFECYCLE_MODE=$mode" -e WPAI108_LIFECYCLE_NETWORK=1 cli         eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue108-lifecycle-smoke.php         --user=1 --allow-root
+}
+run_lifecycle setup
+"${wp[@]}" plugin deactivate wp-ai-bridge --network --allow-root
+run_lifecycle verify
+run_lifecycle cleanup
+"${wp[@]}" plugin activate wp-ai-bridge --network --allow-root >/dev/null
+run_lifecycle setup
+"${wp[@]}" plugin deactivate wp-ai-bridge --network --allow-root
+"${wp[@]}" plugin uninstall wp-ai-bridge --skip-delete --allow-root
+run_lifecycle verify
+run_lifecycle cleanup
 
 echo "PASS: Issue #46 multisite integration suite for ${wordpress_tag}."

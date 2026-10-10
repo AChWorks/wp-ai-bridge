@@ -186,6 +186,33 @@ try {
 	$recent_failure = ( new Mutation_Log() )->recent( 1 );
 	wpai108_live_check( ! empty( $recent_failure ) && false === $recent_failure[0]['success'] && 'private_package_recovery_required' === $recent_failure[0]['error_code'], 'Uncertain Core effect must leave a bounded audit record.' );
 
+	// R2: WordPress can report option persistence failure without throwing.
+	// Core has already installed the package, but its audit write must fail
+	// closed with a retained claim, a visible recovery record and no replay.
+	$audit_root                      = 'wpai108-audit-failure';
+	$audit_key                       = $audit_root . '/' . $audit_root . '.php';
+	$audit_id                        = bin2hex( random_bytes( 24 ) );
+	$fixture_ids[]                   = $audit_id;
+	list( $audit_meta, $audit_path ) = wpai108_live_stage( $store, 'plugin', $audit_id, $client, $audit_root );
+	$fixture_files[]                 = $audit_path;
+	$audit_denial                    = static function ( $value, $old ) {
+		return $old;
+	};
+	add_filter( 'pre_update_option_' . Mutation_Log::OPTION_NAME, $audit_denial, 10, 2 );
+	try {
+		$audit_result = $store->install( $audit_id, $audit_meta['sha256'], 'plugin', $client );
+	} finally {
+		remove_filter( 'pre_update_option_' . Mutation_Log::OPTION_NAME, $audit_denial, 10 );
+	}
+	wpai108_live_check( is_wp_error( $audit_result ) && 'private_package_recovery_required' === $audit_result->get_error_code(), 'Silent audit persistence refusal after native Core must return recovery-required.' );
+	wpai108_live_check( isset( get_plugins()[ $audit_key ] ) && ! is_plugin_active( $audit_key ), 'Audit failure must not falsely roll back Core or activate its installed package.' );
+	$audit_record = $store->inspect( $audit_id, $client );
+	wpai108_live_check( ! is_wp_error( $audit_record ) && 'outcome_unknown' === $audit_record['status'], 'Audit persistence refusal must leave exact private artifact outcome unknown.' );
+	wpai108_live_check( false !== get_option( Private_Package_Store::CLAIM_PREFIX . $audit_id, false ), 'Audit failure must retain the one-way Core installation claim.' );
+	wpai108_live_check( is_wp_error( $store->install( $audit_id, $audit_meta['sha256'], 'plugin', $client ) ), 'Silent audit failure must not permit blind installation replay.' );
+	wpai108_live_check( ! is_file( $audit_path ), 'Audit failure must not retain private executable ZIP bytes.' );
+	wpai108_live_check( ( new Mutation_Log() )->record( 'wp-ai-bridge/private-package-test', 'plugin', 0, true, '' ), 'Normal durable audit must still succeed when the test failure injection is removed.' );
+
 	// Expiry must retire bytes while retaining only a short-lived metadata
 	// record. The expiry path does not need to execute or unpack the archive.
 	$expired_id                          = bin2hex( random_bytes( 24 ) );
@@ -204,6 +231,9 @@ try {
 	update_option( Settings::OPTION_NAME, $original, false );
 	if ( $installed_plugin && isset( get_plugins()[ $plugin_key ] ) && ! is_plugin_active( $plugin_key ) ) {
 		delete_plugins( array( $plugin_key ) );
+	}
+	if ( isset( $audit_key ) && isset( get_plugins()[ $audit_key ] ) && ! is_plugin_active( $audit_key ) ) {
+		delete_plugins( array( $audit_key ) );
 	}
 	if ( $installed_theme && wp_get_theme( $theme_root )->exists() && get_stylesheet() !== $theme_root ) {
 		delete_theme( $theme_root );

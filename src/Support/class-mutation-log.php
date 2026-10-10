@@ -22,7 +22,7 @@ final class Mutation_Log {
 	 * @param int    $target_id   Optional target object ID.
 	 * @param bool   $success     Whether the mutation succeeded.
 	 * @param string $error_code  Optional bounded error code.
-	 * @return void
+	 * @return bool True only when WordPress confirmed durable option mutation.
 	 */
 	public function record( $ability, $target_type = '', $target_id = 0, $success = true, $error_code = '' ) {
 		$entries = get_option( self::OPTION_NAME, array() );
@@ -42,7 +42,7 @@ final class Mutation_Log {
 		);
 
 		$entries = array_slice( $entries, 0, self::LIMIT );
-		update_option( self::OPTION_NAME, $entries, false );
+		return true === update_option( self::OPTION_NAME, $entries, false );
 	}
 
 	/**

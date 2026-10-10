@@ -197,6 +197,7 @@ final class Private_Package_Abilities {
 	}
 
 	public function render_upload_page() {
+		$this->require_private_https();
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'You are not allowed to manage WP AI Bridge settings.', 'wp-ai-bridge' ) );
 		}
@@ -242,8 +243,16 @@ final class Private_Package_Abilities {
 		<?php
 	}
 
+	/** Require the effective HTTPS scheme WordPress recognizes, including trusted proxy configuration. */
+	private function require_private_https() {
+		if ( ! is_ssl() ) {
+			wp_die( esc_html__( 'Private ZIP transfer requires HTTPS. Configure WordPress and any trusted reverse proxy to recognize TLS before uploading.', 'wp-ai-bridge' ), '', array( 'response' => 403 ) );
+		}
+	}
+
 	/** Browser-cookie authentication and nonce, never a generic OAuth bearer-to-REST expansion. */
 	public function handle_browser_upload() {
+		$this->require_private_https();
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'You are not allowed to manage WP AI Bridge settings.', 'wp-ai-bridge' ) );
 		}

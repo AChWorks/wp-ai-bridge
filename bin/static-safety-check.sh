@@ -5,7 +5,13 @@ cd "$(dirname "$0")/.."
 
 forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir)[[:space:]]*\('
 
-if grep -R -nE "$forbidden" src --include='*.php' --exclude='class-media-abilities.php' --exclude='class-source-editing-abilities.php'; then
+# The private ZIP lifecycle may invoke exactly one non-recursive WordPress Core
+# filesystem-directory removal. All other execution/filesystem primitives remain forbidden.
+unexpected_primitives="$(grep -R -nE "$forbidden" src --include='*.php' --exclude='class-media-abilities.php' --exclude='class-source-editing-abilities.php' |
+    grep -vE '^src/Support/class-private-package-lifecycle.php:[0-9]+:[[:space:]]+[$]filesystem->rmdir[(] [$]path [)];$' || true)"
+if [[ -n "$unexpected_primitives" ||
+      "$(grep -cF '$filesystem->rmdir( $path );' src/Support/class-private-package-lifecycle.php || true)" != "1" ]]; then
+    printf '%s\n' "$unexpected_primitives"
     echo "ERROR: forbidden direct execution/filesystem primitive found in production source." >&2
     exit 1
 fi
@@ -398,11 +404,13 @@ term_metadata_store='src/Support/class-term-meta-store.php'
 user_comment_metadata_store='src/Support/class-user-comment-meta-store.php'
 oauth_store='src/Auth/class-oauth-store.php'
 private_package_store='src/Support/class-private-package-store.php'
+install_lock='src/Support/class-extension-install-lock.php'
+private_lifecycle='src/Support/class-private-package-lifecycle.php'
 if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comment_metadata_store" || ! -f "$oauth_store" ]]; then
     echo "ERROR: one or more bounded database stores are missing." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$private_package_store" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$private_package_store" | grep -vFx "$install_lock" | grep -vFx "$private_lifecycle" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2
@@ -428,6 +436,30 @@ fi
 if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$private_package_store" |
     grep -vE '\$wpdb->(options|prefix|esc_like|get_col|get_var|prepare)([^A-Za-z0-9_]|$)'; then
     echo "ERROR: private ZIP staging introduced another SQL capability." >&2
+    exit 1
+fi
+
+# Deactivation/uninstall must not become generic SQL: one fixed indexed
+# metadata/claim key listing, with no arbitrary-value SQL operations.
+if [[ ! -f "$private_lifecycle" ||
+      "$(grep -cF '$wpdb->get_results(' "$private_lifecycle" || true)" != "1" ||
+      "$(grep -cF '$wpdb->prepare(' "$private_lifecycle" || true)" != "1" ||
+      "$(grep -cF '$wpdb->esc_like(' "$private_lifecycle" || true)" != "1" ||
+      "$(grep -cF 'SELECT option_id, option_name FROM {$wpdb->options} WHERE option_name LIKE %s AND option_id > %d ORDER BY option_id ASC LIMIT %d' "$private_lifecycle" || true)" != "1" ]]; then
+    echo "ERROR: private package lifecycle SQL boundary changed." >&2
+    exit 1
+fi
+
+# A single Bridge-owned native installer coordinator may use only the four fixed
+# MySQL/MariaDB lock primitives. No callers may construct arbitrary SQL.
+if [[ ! -f "$install_lock" ||
+      "$(grep -cF '$wpdb->get_var(' "$install_lock" || true)" != "4" ||
+      "$(grep -cF '$wpdb->prepare(' "$install_lock" || true)" != "3" ||
+      "$(grep -cF 'SELECT GET_LOCK(%s, %d)' "$install_lock" || true)" != "1" ||
+      "$(grep -cF 'SELECT IS_USED_LOCK(%s)' "$install_lock" || true)" != "1" ||
+      "$(grep -cF 'SELECT CONNECTION_ID()' "$install_lock" || true)" != "1" ||
+      "$(grep -cF 'SELECT RELEASE_LOCK(%s)' "$install_lock" || true)" != "1" ]]; then
+    echo "ERROR: native package installation lock contract changed." >&2
     exit 1
 fi
 

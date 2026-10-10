@@ -1,5 +1,10 @@
 <?php
 return array(
+	'Private ZIP transfer requires HTTPS. Configure WordPress and any trusted reverse proxy to recognize TLS before uploading.' => 'بارگذاری ZIP خصوصی به HTTPS نیاز دارد. پیش از بارگذاری، تنظیمات وردپرس و پروکسی معتمد را برای شناسایی TLS اصلاح کنید.',
+	'Another extension installation is in progress. Retry this request after it finishes.' => 'نصب افزونه یا پوستهٔ دیگری در جریان است. پس از پایان آن دوباره تلاش کنید.',
+	'Extension installation authorization is unavailable.' => 'مجوز لازم برای نصب افزونه یا پوسته در دسترس نیست.',
+	'Extension installation needs administrator recovery before a retry.' => 'نصب افزونه یا پوسته پیش از تلاش دوباره نیازمند بررسی مدیر است.',
+	'Private package files could not be retired safely. Verify private storage before deactivation.' => 'پاک‌سازی امن فایل‌های بسته خصوصی کامل نشد. پیش از غیرفعال‌کردن، فضای ذخیره‌سازی خصوصی را بررسی کنید.',
 	'Private ZIP Packages' => 'بسته‌های ZIP خصوصی',
 	'Inspect Private ZIP Packages' => 'بررسی بسته‌های ZIP خصوصی',
 	'Lists or inspects only approved, privately staged WordPress plugin/theme ZIPs bound to this user, blog and OAuth client. No package bytes or paths are returned.' => 'فقط بسته‌های ZIP خصوصی و تأییدشدهٔ افزونه/پوسته را برای همین کاربر، سایت و کلاینت OAuth فهرست یا بررسی می‌کند. هیچ مسیر یا محتوای فایلی برگردانده نمی‌شود.',

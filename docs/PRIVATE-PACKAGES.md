@@ -4,6 +4,8 @@ This describes a source implementation candidate, **not** a published release or
 
 ## Bytes transport and ownership
 
+**Production transport requirement:** this Bridge-owned browser upload and its admin page fail closed unless WordPress recognizes HTTPS via is_ssl(). Use real HTTPS for credentials and private ZIP bytes. When TLS terminates at a trusted reverse proxy, configure the WordPress server's HTTPS environment from that trusted proxy (as described by WordPress reverse-proxy documentation); do not trust arbitrary client-supplied forwarded-protocol headers. Plain HTTP upload is not supported, including loopback-only development; tests use an isolated real self-signed HTTPS server.
+
 In the WordPress dashboard, **WP AI Bridge → Private ZIP Packages** uploads a plugin or theme ZIP through Bridge's own logged-in, nonce-checked admin-post action. The archive can originate from an AI, human, vendor or developer; its origin never substitutes for authorization. Files are staged outside the public web root and are **not installed** at upload time. Neither a public download URL nor an AI-controlled local file path is required.
 
 The uploading administrator selects a currently approved OAuth client. The staged artifact is bound to the exact WordPress user, site/blog and selected client ID plus approval revision. Revoking an extra client approval invalidates its staged artifacts. The approved, authenticated MCP client can then use:
@@ -26,9 +28,15 @@ Both default-off **Code & Extensions** and **External Packages** grants, `manage
 
 **Multi-node deployment boundary:** the quota lock is database-wide, but ZIP bytes reside in a per-PHP-host private temporary directory. A WordPress installation spread across independent PHP hosts without shared private staging/sticky routing cannot yet promise that an artifact uploaded on one host will be installable from another. This candidate does not silently claim distributed file-storage support.
 
-AI-visible responses contain metadata only. They never contain uploaded bytes, token values or local paths. Successful Core installs and recovery-required outcomes also produce bounded, credential-free entries in the existing Bridge mutation log.
+AI-visible responses contain metadata only. They never contain uploaded bytes, token values or local paths. Successful Core installs and recovery-required outcomes also produce bounded, credential-free entries in the existing Bridge mutation log. A failed audit-option write after native installation is reported as recovery-required and retains the once-only installation claim; no automatic retry.
+
+## Deactivation and uninstall
+
+Deactivating the Bridge retires every Bridge-owned staged ZIP and orphan ZIP and unschedules its cleanup event, including every blog on network-wide multisite deactivation. Uninstall performs the same strict cleanup **before** removing ordinary Bridge options; a storage failure blocks uninstall rather than silently leaving private executable bytes. Disposable ZIP metadata and claims are removed. For installs that might have begun or returned an uncertain Core outcome, only a minimal non-executable recovery tombstone and one-way claim are deliberately preserved so a subsequent reinstallation cannot blindly replay an unknown install. These records contain no executable ZIP bytes or private filesystem paths. Reconcile the real installed extension with WordPress Core before any new install; uninstall is not an automatic rollback.
 
 ## Installation, recovery and release boundary
+
+A network-wide MySQL/MariaDB named lock serializes all Bridge-owned plugin/theme Core install pathways, including WordPress.org, public HTTPS ZIP, and private ZIP requests across multisite blogs. Contention fails before private-archive claim/irreversible effects, and native-install outcome is accepted only while the DB session still owns the lock. Independent administrators or unrelated plugins changing files outside this coordinator remain a documented operational concurrency limit.
 
 Immediately before executing Core, the Bridge rechecks the user/site/client identity, current approval, all grants/native capabilities, SHA-256/byte length and archive structure. A once-only, atomic option insertion claims the exact artifact, denying concurrent/replayed installation. After the Core boundary, any ambiguous result or cleanup problem returns a bounded recovery-required error, retains the claim, and prohibits blind retry. Installation is never automatic activation.
 

@@ -10,17 +10,58 @@ fi
 compose_file="$root/tests/integration/compose.yml"
 run_compose() { docker compose -f "$compose_file" "$@"; }
 run_wp() { run_compose run --rm cli "$@"; }
-http() { curl --noproxy '*' --silent --show-error --max-time 15 "$@"; }
+http() { curl --noproxy '*' --silent --show-error --max-time 15 --cacert "$tmp/cert.pem" "$@"; }
 run_wp core is-installed --allow-root >/dev/null
 
 endpoint="$(run_compose port wordpress 80)"
 port="$(printf '%s' "$endpoint" | awk -F: '{ print $NF }')"
-if [[ ! "$port" =~ ^[0-9]{2,5}$ ]]; then
-    echo 'ERROR: Could not resolve local-only WordPress HTTP test port.' >&2
+tls_endpoint="$(run_compose port wordpress 443)"
+tls_port="$(printf '%s' "$tls_endpoint" | awk -F: '{ print $NF }')"
+if [[ ! "$port" =~ ^[0-9]{2,5}$ || ! "$tls_port" =~ ^[0-9]{2,5}$ ]]; then
+    echo 'ERROR: Could not resolve isolated WordPress HTTP/HTTPS test ports.' >&2
     exit 2
 fi
-origin="http://localhost:$port"
 tmp="$(mktemp -d)"
+origin="https://localhost:$tls_port"
+http_origin="http://localhost:$port"
+
+# Real TLS termination by Apache/mod_ssl inside the isolated WordPress container.
+# This is not an X-Forwarded-Proto spoof or is_ssl() monkeypatch.
+openssl req -newkey rsa:2048 -nodes -x509 -days 1     -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost'     -keyout "$tmp/key.pem" -out "$tmp/cert.pem" >/dev/null 2>&1
+run_compose cp "$tmp/cert.pem" wordpress:/etc/ssl/certs/wpai108-test.crt
+run_compose cp "$tmp/key.pem" wordpress:/etc/ssl/private/wpai108-test.key
+run_compose exec -T -u root wordpress sh -lc '
+set -eu
+chmod 0600 /etc/ssl/private/wpai108-test.key
+a2enmod ssl >/dev/null
+cat > /etc/apache2/sites-available/wpai108-ssl.conf <<"CONF"
+<VirtualHost *:443>
+    ServerName localhost
+    DocumentRoot /var/www/html
+    SSLEngine On
+    SSLCertificateFile /etc/ssl/certs/wpai108-test.crt
+    SSLCertificateKeyFile /etc/ssl/private/wpai108-test.key
+    <Directory /var/www/html>
+        AllowOverride All
+        Require all granted
+    </Directory>
+</VirtualHost>
+CONF
+a2ensite wpai108-ssl >/dev/null
+apache2ctl -k graceful
+'
+for attempt in $(seq 1 25); do
+    if http -o /dev/null "$origin/wp-login.php" 2>/dev/null; then
+        break
+    fi
+    if [[ "$attempt" == 25 ]]; then
+        echo 'ERROR: Isolated Apache did not serve a certificate-validated HTTPS login.' >&2
+        exit 1
+    fi
+    sleep 1
+done
+echo 'PASS: Issue #108 real Apache HTTPS transport with validated self-signed test CA.'
+
 original_home="$(run_wp option get home --allow-root)"
 original_siteurl="$(run_wp option get siteurl --allow-root)"
 original_access="$(run_wp option get wp_ai_bridge_settings --format=json --allow-root)"
@@ -173,3 +214,54 @@ for kind in plugin theme; do
     echo "PASS: Issue #108 WordPress-authenticated $kind multipart staging, SHA-256 review, no auto-install."
 done
 echo 'PASS: Issue #108 real WordPress login/cookie/nonce, denied/allowed multipart transport.'
+
+# B1: two distinct reviewed ZIPs target the same Core plugin destination.
+# A holds the actual native Upgrader boundary; B must fail BEFORE its claim.
+run_compose exec -T wordpress mkdir -p /var/www/html/wp-content/mu-plugins
+run_compose cp "$root/tests/fixtures/issue108-install-race-mu.php" wordpress:/var/www/html/wp-content/mu-plugins/wpai108-install-race.php
+race_url="$origin/wp-admin/admin-post.php"
+race() {
+    http -b "$tmp/cookies" -F 'action=wpai108_install_race' -F "_wpnonce=$nonce" -F "mode=$1" "$race_url"
+}
+race setup > "$tmp/race-setup.json"
+if ! grep -q '"setup":true' "$tmp/race-setup.json"; then
+    echo 'ERROR: Could not initialize two distinct reviewed ZIP artifacts.' >&2
+    exit 1
+fi
+race install-a > "$tmp/race-a.json" &
+install_pid=$!
+entered=0
+for attempt in $(seq 1 65); do
+    if run_compose exec -T wordpress test -f /var/www/html/wp-content/wpai108-race-core-entered; then
+        entered=1
+        break
+    fi
+    sleep 0.2
+done
+if [[ "$entered" != 1 ]]; then
+    wait "$install_pid" || true
+    echo 'ERROR: First native Core installation never reached held Upgrader boundary.' >&2
+    exit 1
+fi
+race install-b > "$tmp/race-b.json"
+race public-while-locked > "$tmp/race-public.json"
+wait "$install_pid"
+race verify > "$tmp/race-verify.json"
+if ! grep -q '"ok":true' "$tmp/race-a.json" ||
+   ! grep -q '"code":"private_package_install_busy"' "$tmp/race-b.json" ||
+   ! grep -q '"unclaimed":true' "$tmp/race-b.json" ||
+   ! grep -q '"still_staged":true' "$tmp/race-b.json" ||
+   ! grep -q '"code":"extension_install_busy"' "$tmp/race-public.json" ||
+   ! grep -q '"exact_tree":true' "$tmp/race-verify.json" ||
+   ! grep -q '"b_unclaimed":true' "$tmp/race-verify.json"; then
+    echo 'ERROR: Different-artifact Core install race or cross-path lock was not correctly rejected.' >&2
+    cat "$tmp/race-a.json" "$tmp/race-b.json" "$tmp/race-public.json" "$tmp/race-verify.json" >&2
+    exit 1
+fi
+race cleanup > "$tmp/race-cleanup.json"
+if ! grep -q '"cleaned":true' "$tmp/race-cleanup.json"; then
+    echo 'ERROR: Race fixture cleanup did not succeed.' >&2
+    exit 1
+fi
+run_compose exec -T wordpress rm -f /var/www/html/wp-content/mu-plugins/wpai108-install-race.php
+echo 'PASS: Issue #108 two different ZIP IDs versus one native destination, no claim/core overlap, exact final filesystem tree and shared WordPress.org lock.'
