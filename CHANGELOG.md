@@ -6,7 +6,12 @@ All notable public changes are documented here.
 
 - Provide bounded Gutenberg discovery and targeted subtree reads for large/nested pages, with exact path and fingerprint interoperability; return compact committed identity after oversized block mutations rather than an ambiguous transport failure.
 - Add UTF-8-safe, hash-guarded raw content windows for large posts/pages and a shared encoded-response budget helper, with explicit completeness/continuation metadata.
-- Document native binary streaming boundaries and the remaining AI-local executable package ingress gap without introducing unbounded MCP payloads.
+- Add bounded and pageable site-context discovery, including current-principal capability flags, for provider-heavy WordPress installations (#110).
+- Add read-only plugin/theme action-specific authorization diagnosis without executing Core lifecycle mutations (#99).
+- Integrate administrator-opt-in filtered registered REST route discovery and guarded native local REST execution, preserving default-off high-trust consent and Core/provider denials (#119).
+- Integrate source-agnostic private plugin/theme ZIP browser staging, bounded hash-bound inspection, and explicit native installation without activation; fail closed when lifecycle workers do not share the verified private storage domain or extension lock (#108).
+- Publish finite rotating OAuth refresh-token lifetime hints to clients while retaining one-time rotation, revocation and bounded loss recovery.
+- Document the implemented authenticated Bridge-owned browser multipart ZIP transfer and its limits: MCP/Gateway JSON calls do not establish generic binary upload streaming or deployment support.
 
 ## 0.4.2
 
