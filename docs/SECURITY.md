@@ -55,6 +55,12 @@ A registered target must pass both enabled Native Abilities and its own native p
 Disabling Native Abilities takes effect on subsequent Bridge calls because settings are read at execution time. The exact Bridge request context is balanced with unconditional cleanup; unrelated REST routes are not governed by that context.
 
 
+## Future registered REST API delegation (not yet implemented)
+
+The target product contract includes deliberately authorized access to WordPress's actually registered Core/provider REST operations without a separate Bridge-owned tool for every endpoint. **The current plugin does not yet ship a generic REST route/method executor.** Its eventual implementation must use an explicit default-off high-trust group, the exact OAuth-bound WordPress principal/site/client context, native REST route/method discovery and the registered Core/provider `permission_callback`, validation and target policy on each call. It must not assume HTTP verbs reveal all side effects or that access to a route's schema is authorization.
+
+This future surface must not be a generic external HTTP proxy or a back door around Bridge access settings, consent revocation, existing purpose-specific WordPress authorization, source editing, package installation or credential/session lifecycle. Prevent recursion into Bridge's own privilege/connection management, never let a previously disabled grant enable itself through ordinary REST, reject unregistered or unprovable routes and preserve multisite capability mapping. Inspect only contract metadata broadly; return sensitive values only under a supported, specifically consented lifecycle with minimal safe output. Preserve bounded JSON/error handling, target identity and truthful unknown mutation outcomes; binary transfer requires a separately authenticated data path. Its permissions and behavior require isolated HIGH_ASSURANCE tests before any shipment. See [architecture](./ARCHITECTURE.md#registered-wordpress-rest-access-required-evolution-not-yet-shipped).
+
 ## Application Password boundary
 
 Authentication & Credentials is separate default-off consent for WordPress Application Password administration. Existing Site Read, Users & Destructive, Advanced Metadata, Native Abilities, or historical grants do not enable it on fresh installs or upgrades.
@@ -195,7 +201,7 @@ The Bridge does not expose:
 - arbitrary `wp_options` access;
 - arbitrary user-meta administration;
 - credential, session, OAuth-secret, private-key, security-token, or Application Password retrieval;
-- arbitrary plugin ZIP/PHP upload;
+- unrestricted plugin ZIP/PHP upload (reviewed, staged plugin/theme ZIP ingestion remains a separate unshipped requirement under [#108](https://github.com/AChWorks/wp-ai-bridge/issues/108));
 - direct provider-table administration.
 
 ## OAuth storage
