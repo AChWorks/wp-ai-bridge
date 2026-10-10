@@ -185,6 +185,8 @@ Plan coverage across the complete WordPress administration surface from the star
 
 Use the correct owning API for the operation. Generic storage mutation is not a shortcut around business validation, commerce/order storage, role mapping, settings sanitization, or provider lifecycle. An undocumented provider-private table requires investigation, not automatic database access.
 
+**WordPress Core update boundary (Owner decision, 2026-10-11):** Bridge administrator coverage for **WordPress Core upgrade** requires only **read-only detection** (current version, available update offer(s), check freshness and truthful update-policy/permission facts) through existing native WordPress/Site Health contracts where possible. If already available through the Bridge, reuse it without duplication; otherwise add the smallest authorized read-only status. **Initiating, scheduling or executing a WordPress Core upgrade from the Bridge is not required and must not be implemented.** Core upgrade execution remains with WordPress's native administrator UI and authorized hosting/provider tools. This explicitly accepted narrow product exception does not remove supported plugin/theme update lifecycle or the generally broad legitimate Administrator goal; see [#141](https://github.com/AChWorks/wp-ai-bridge/issues/141).
+
 An implementation increment may cover fewer families, but its scope cannot redefine the product ceiling. Track verified implementation gaps in downstream work derived from this specification. Do not mark overall administrator parity complete merely because the current tool list or one work item is complete.
 
 ## 9. Content, metadata, and concurrency

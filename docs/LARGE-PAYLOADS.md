@@ -8,7 +8,7 @@ Choose a transfer method from **content semantics, authority, recoverability and
 
 | Data class | Appropriate contract | Current implementation / outstanding work |
 | --- | --- | --- |
-| Small JSON, configuration, metadata | Native structured result, exact target/schema, bounded output | Implemented for current Bridge Abilities; new general registered-REST access remains unimplemented. |
+| Small JSON, configuration, metadata | Native structured result, exact target/schema, bounded output | Bridge typed Abilities and bounded registered-REST discovery plus guarded generic native invocation are **shipped in v0.5.1**; both REST grants default off and generic invocation is deliberately high-trust. Discovery was observed on the connected site; actual provider REST dispatch on production was not tested ([#119](https://github.com/AChWorks/wp-ai-bridge/issues/119)). |
 | Long UTF-8 text, Gutenberg/HTML, Markdown or editable source | Exact object/revision/hash, UTF-8-safe byte windows or targeted subtree, continuation and completeness | Posts/revisions/blocks have dedicated bounded paths in current `main`; not a universal text endpoint. |
 | Large structured lists/trees | Server-owned filters/projections/pagination, honest `has_more` and stable state when available | Ability catalog and site-context paging exist in `main`; provider-specific list semantics are not automatically pageable. |
 | Media and opaque files (images, audio/video, PDF/archives) | MIME-aware preview/metadata plus authenticated binary streaming or provider-owned download/upload | Media upload and public-URL import exist; arbitrary large private binary ingress/egress is not generally implemented. |

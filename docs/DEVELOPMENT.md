@@ -46,7 +46,7 @@ Security regression coverage belongs to implementation and CI. Add or adjust det
 
 Mark the PR ready only after implementation, targeted validation, documentation, and self-review are complete enough to freeze a candidate. For a parent/program completion PR, that means the accepted parent cutline is complete, not merely that one absorbed child or remediation commit is ready.
 
-The current `.github/workflows/ci.yml` runs the complete supported WordPress assurance set for **non-draft** pull requests on `opened`, `reopened`, `ready_for_review`, and **every subsequent `synchronize` push** that changes non-ignored paths. Draft PR jobs are skipped by each job's `if` guard. A ready/non-draft PR runs **14 workflow jobs**: the existing **13 assurance jobs** (Quality, two WordPress integrations, ten specialized suites) plus **one OCI image-supply job**. Keep active remediation in Draft and batch local/targeted checks before making a final ready candidate. Path filtering applies to the **cumulative changed-file set of the PR, not just the latest commit**: a docs-only push on a mixed code+docs PR can trigger full CI, while an entirely docs-only PR is ignored. Reuse unaffected technical evidence when legitimate, but still diagnose new failures and meet enforced branch/PR checks.
+The current `.github/workflows/ci.yml` runs the complete supported WordPress assurance set for **non-draft** pull requests on `opened`, `reopened`, `ready_for_review`, and **every subsequent `synchronize` push** that changes non-ignored paths. Draft PR jobs are skipped by each job's `if` guard. A ready/non-draft code PR currently runs **18 workflow jobs**: **17 assurance jobs** (Quality, **four** WordPress × MCP Adapter integration combinations, **twelve** specialized suites) plus **one** OCI image-supply job. Job counts are descriptive; the workflow file defines the actual required checks. Keep active remediation in Draft and batch local/targeted checks before making a final ready candidate. Path filtering applies to the **cumulative changed-file set of the PR, not just the latest commit**: a docs-only push on a mixed code+docs PR can trigger full CI, while an entirely docs-only PR is ignored. Reuse unaffected technical evidence when legitimate, but still diagnose new failures and meet enforced branch/PR checks.
 
 Full assurance includes:
 
@@ -191,11 +191,13 @@ bin/             development/build/test helpers
 docs/maintainer/ recovery map and preserved design references
 ```
 
-### Published-release upgrade acceptance for v0.5.0
+### Historical v0.4.2-to-candidate published-package upgrade regression
 
-The first candidate after the immutable v0.4.2 release needs more than a
-fresh-install check. Verify the real published ZIP upgrade in each supported
-WordPress lane before integration and before publishing:
+This fixture was introduced for the first candidate after the immutable v0.4.2
+release. It still checks that an older published installation retains state
+across an upgrade to a current candidate, but it **does not prove the separate
+latest-published-predecessor upgrade path** required when preparing a future
+release. Run it whenever the affected upgrade/runtime surface justifies it:
 
 ```bash
 bash bin/run-published-upgrade.sh 6.9-php8.4-apache
