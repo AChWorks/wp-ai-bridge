@@ -80,10 +80,10 @@ final class Registered_REST_Invocation_Abilities {
 	 */
 	public function invoke( $input ) {
 		if ( ! $this->can_invoke() ) {
-			return $this->error( 'rest_invocation_denied', 'Registered REST invocation requires a separate enabled Bridge grant and WordPress administration permission.' );
+			return $this->error( 'rest_invocation_denied', __( 'Registered REST invocation requires a separate enabled Bridge grant and WordPress administration permission.', 'wp-ai-bridge' ) );
 		}
 		if ( $this->in_flight ) {
-			return $this->error( 'rest_invocation_recursive', 'Nested generic REST invocation is not allowed.' );
+			return $this->error( 'rest_invocation_recursive', __( 'Nested generic REST invocation is not allowed.', 'wp-ai-bridge' ) );
 		}
 		if ( ! is_array( $input ) || array_diff( array_keys( $input ), array( 'route', 'path', 'method', 'query', 'body' ) ) ) {
 			return $this->invalid();
@@ -122,16 +122,16 @@ final class Registered_REST_Invocation_Abilities {
 			return $this->invalid();
 		}
 		if ( ! function_exists( 'rest_get_server' ) || ! function_exists( 'rest_do_request' ) || ! class_exists( 'WP_REST_Request' ) ) {
-			return $this->error( 'rest_invocation_unavailable', 'The native WordPress REST dispatcher is unavailable.' );
+			return $this->error( 'rest_invocation_unavailable', __( 'The native WordPress REST dispatcher is unavailable.', 'wp-ai-bridge' ) );
 		}
 
 		$server = rest_get_server();
 		if ( ! is_object( $server ) || ! method_exists( $server, 'get_routes' ) || ! method_exists( $server, 'get_data_for_routes' ) ) {
-			return $this->error( 'rest_invocation_unavailable', 'The native WordPress REST dispatcher is unavailable.' );
+			return $this->error( 'rest_invocation_unavailable', __( 'The native WordPress REST dispatcher is unavailable.', 'wp-ai-bridge' ) );
 		}
 		$routes = $server->get_routes();
 		if ( ! is_array( $routes ) || count( $routes ) > self::MAX_REGISTRY ) {
-			return $this->error( 'rest_invocation_registry_unavailable', 'The local REST route registry cannot be safely inspected.' );
+			return $this->error( 'rest_invocation_registry_unavailable', __( 'The local REST route registry cannot be safely inspected.', 'wp-ai-bridge' ) );
 		}
 		if ( ! isset( $routes[ $route ] ) || ! is_array( $routes[ $route ] ) ) {
 			return $this->not_found();
@@ -170,14 +170,14 @@ final class Registered_REST_Invocation_Abilities {
 				continue;
 			}
 			if ( 1 === @preg_match( '@^' . $candidate . '$@i', $path ) ) {
-				return $this->error( 'rest_invocation_ambiguous_route', 'Multiple registered REST routes match the requested path.' );
+				return $this->error( 'rest_invocation_ambiguous_route', __( 'Multiple registered REST routes match the requested path.', 'wp-ai-bridge' ) );
 			}
 		}
 
 		// Recheck grant immediately before dispatch. No WordPress principal, site
 		// context or OAuth client identity is changed inside this Ability.
 		if ( ! $this->can_invoke() ) {
-			return $this->error( 'rest_invocation_denied', 'Registered REST invocation requires a separate enabled Bridge grant and WordPress administration permission.' );
+			return $this->error( 'rest_invocation_denied', __( 'Registered REST invocation requires a separate enabled Bridge grant and WordPress administration permission.', 'wp-ai-bridge' ) );
 		}
 
 		$request = new \WP_REST_Request( $method, $path );
@@ -320,22 +320,22 @@ final class Registered_REST_Invocation_Abilities {
 				'error'   => __( 'The REST operation outcome cannot be confirmed. Inspect provider state before retrying.', 'wp-ai-bridge' ),
 			);
 		}
-		return $this->error( 'rest_invocation_result_unavailable', 'The REST response cannot be returned safely within the data limit.' );
+		return $this->error( 'rest_invocation_result_unavailable', __( 'The REST response cannot be returned safely within the data limit.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function invalid() {
-		return $this->error( 'rest_invocation_invalid', 'Specify one exact registered route, a matching local path, an allowed method and bounded JSON parameters.' );
+		return $this->error( 'rest_invocation_invalid', __( 'Specify one exact registered route, a matching local path, an allowed method and bounded JSON parameters.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */
 	private function not_found() {
-		return $this->error( 'rest_invocation_route_not_found', 'The requested public registered REST route and method are not available.' );
+		return $this->error( 'rest_invocation_route_not_found', __( 'The requested public registered REST route and method are not available.', 'wp-ai-bridge' ) );
 	}
 
 	/** @param string $code Error code. @param string $message Safe message. @return WP_Error */
 	private function error( $code, $message ) {
-		return new WP_Error( $code, __( $message, 'wp-ai-bridge' ) );
+		return new WP_Error( $code, $message );
 	}
 
 	/** @return array<string,mixed> */
