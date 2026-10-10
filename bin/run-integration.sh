@@ -62,6 +62,7 @@ for test in \
     issue42-ability-catalog-smoke.php \
     issue110-site-context-smoke.php \
     issue99-extension-authorization-smoke.php \
+    issue119-registered-rest-smoke.php \
     issue44-native-ability-delegation-smoke.php \
     issue46-source-editing-smoke.php \
     issue3-content-block-smoke.php \
