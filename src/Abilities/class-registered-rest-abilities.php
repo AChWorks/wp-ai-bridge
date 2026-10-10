@@ -31,7 +31,8 @@ final class Registered_REST_Abilities {
 
 	/** @return array<int,object> Registered native Abilities. */
 	public function register() {
-		$registered = wp_register_ability(
+		$registered   = array();
+		$registered[] = wp_register_ability(
 			'wp-ai-bridge/rest-routes-read',
 			array(
 				'label'               => __( 'Read Registered REST Routes', 'wp-ai-bridge' ),
@@ -54,7 +55,7 @@ final class Registered_REST_Abilities {
 				),
 			)
 		);
-		return is_object( $registered ) ? array( $registered ) : array();
+		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
 	/** @return bool WordPress principal plus an independent default-off Bridge grant. */
