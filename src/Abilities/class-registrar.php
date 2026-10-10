@@ -196,6 +196,7 @@ final class Registrar {
 		$providers = array(
 			$this->site_abilities,
 			$this->catalog_abilities,
+			new Registered_REST_Abilities( $this->permissions ),
 			$this->content_abilities,
 			$this->post_meta_abilities,
 			$this->term_meta_abilities,
