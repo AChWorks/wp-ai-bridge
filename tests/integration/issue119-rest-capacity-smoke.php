@@ -82,25 +82,25 @@ try {
 	);
 
 	$index = 0;
-	while ( count( $server->get_routes() ) < 2048 ) {
+	$heavy_needed = max( 0, 2048 - $small_count );
+	for ( $i = 0; $i < $heavy_needed; ++$i ) {
 		$register( sprintf( '/wpai119capacity/v1/entry-%04d', $index ) );
 		++$index;
-		// Loop intentionally caps at 2048 registrations. A broken registration
-		// may not produce a new route, so avoid an unbounded fixture loop.
-		wpai119capacity_check( $index < 2100, 'Synthetic provider-heavy route fixture failed to register.' );
 	}
 	$heavy_count = count( $server->get_routes() );
+	wpai119capacity_check( $heavy_count >= 2048 && $heavy_count < 4096, 'Synthetic provider-heavy route count is incorrect.' );
 	$heavy       = $measure();
 	wpai119capacity_check( ! is_wp_error( $heavy['result'] ), 'Provider-heavy registry call unexpectedly failed.' );
 
 	// Fill to precisely 4096 routes and prove the last allowed registry is
 	// bounded, then exceed the limit by ONE and prove no provider dispatch.
-	while ( count( $server->get_routes() ) < 4096 ) {
+	$near_needed = 4096 - $heavy_count;
+	for ( $i = 0; $i < $near_needed; ++$i ) {
 		$register( sprintf( '/wpai119capacity/v1/entry-%04d', $index ) );
 		++$index;
-		wpai119capacity_check( $index < 4200, 'Near-ceiling route registration failed.' );
 	}
 	$near_count = count( $server->get_routes() );
+	wpai119capacity_check( 4096 === $near_count, 'Near-ceiling registry did not register exactly 4096 routes.' );
 	$near       = $measure();
 	wpai119capacity_check( ! is_wp_error( $near['result'] ), 'Precisely 4096 registered routes should remain executable.' );
 
