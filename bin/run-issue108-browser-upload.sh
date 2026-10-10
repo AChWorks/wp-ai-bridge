@@ -373,14 +373,31 @@ if ( \$db_owner !== \$thread || \$thread === (int) \$wpdb->get_var( 'SELECT CONN
 if ( false === \$wpdb->query( 'KILL CONNECTION ' . \$thread ) ) {
     throw new RuntimeException( 'Independent DB connection could not terminate Core worker session.' );
 }
-\$remaining = \$wpdb->get_var( \$wpdb->prepare( 'SELECT IS_USED_LOCK(%s)', \$name ) );
-if ( null !== \$remaining ) {
-    throw new RuntimeException( 'Killed named lock was not released by MariaDB.' );
+\$remaining = null;
+\$released = false;
+// MariaDB KILL CONNECTION can signal asynchronous cancellation. Prove
+// this specific DB named-lock session really released before challenging
+// the still-alive original PHP Core worker.
+for ( \$poll = 0; \$poll < 60; ++\$poll ) {
+    \$remaining = \$wpdb->get_var( \$wpdb->prepare( 'SELECT IS_USED_LOCK(%s)', \$name ) );
+    if ( null === \$remaining ) {
+        \$released = true;
+        break;
+    }
+    usleep( 100000 );
+}
+if ( ! \$released ) {
+    throw new RuntimeException( 'Killed DB session still owns the test lock after bounded polling; last owner=' . (int) \$remaining );
 }
 echo 'DB_LOCK_SESSION_KILLED\n';
 " --user=1 --allow-root > "$tmp/lost-db-kill.log"
 if ! grep -q 'DB_LOCK_SESSION_KILLED' "$tmp/lost-db-kill.log"; then
     echo 'ERROR: Real MariaDB DB-session termination proof is missing.' >&2
+    exit 1
+fi
+# A must still be inside its long-running native Core operation after DB death.
+if ! kill -0 "$disconnect_pid" 2>/dev/null; then
+    echo 'ERROR: PHP installer exited before the DB-session-loss concurrency challenge.' >&2
     exit 1
 fi
 race install-b > "$tmp/lost-db-b.json"
