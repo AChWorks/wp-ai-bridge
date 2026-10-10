@@ -90,6 +90,10 @@ final class Registered_REST_Invocation_Abilities {
 		$this->in_flight = true;
 		try {
 			return $this->invoke_registered( $input );
+		} catch ( \Throwable $throwable ) {
+			// Provider filters and Core registration hooks execute during preflight.
+			// Neither their throwable messages nor any assumed rollback are safe.
+			return $this->unavailable_result();
 		} finally {
 			$this->in_flight = false;
 		}
