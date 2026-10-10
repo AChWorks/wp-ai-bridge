@@ -63,6 +63,7 @@ for test in \
     issue110-site-context-smoke.php \
     issue99-extension-authorization-smoke.php \
     issue119-registered-rest-smoke.php \
+    issue119-native-execution-smoke.php \
     issue44-native-ability-delegation-smoke.php \
     issue46-source-editing-smoke.php \
     issue3-content-block-smoke.php \
@@ -156,6 +157,9 @@ if [[ "${RUN_OPTIONAL_PROVIDERS:-0}" == "1" ]]; then
     done
     bash "$root/bin/run-mcp-provider-smoke.sh"
 fi
+
+echo "== Issue #119 registered REST capacity: small, synthetic provider-heavy, exact 4096/4097 ceiling =="
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue119-rest-capacity-smoke.php --user=1 --allow-root
 
 echo "== Workspace deactivation/uninstall preservation =="
 "${wp[@]}" eval '

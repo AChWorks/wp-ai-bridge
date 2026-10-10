@@ -26,6 +26,7 @@ final class Settings {
 	const GROUP_SOURCE_EDITING    = 'source_editing';
 	const GROUP_NATIVE_ABILITIES  = 'native_abilities';
 	const GROUP_REST_DISCOVERY    = 'rest_discovery';
+	const GROUP_REST_INVOCATION   = 'rest_invocation';
 	const GROUP_COMMENTS          = 'comments';
 	const GROUP_USERS_DESTRUCTIVE = 'users_destructive';
 
@@ -123,6 +124,12 @@ final class Settings {
 			self::GROUP_REST_DISCOVERY    => array(
 				'label'       => __( 'Registered REST Discovery', 'wp-ai-bridge' ),
 				'description' => __( 'Allow WordPress administrators to inspect bounded registered REST route contracts. This does not authorize executing REST routes.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_REST_INVOCATION   => array(
+				'label'       => __( 'High-Trust Registered REST Invocation', 'wp-ai-bridge' ),
+				'description' => __( 'Allow guarded registered REST execution only after every protected lifecycle Bridge consent and corresponding WordPress capability is separately enabled. Generic provider effects are unclassified and require full administrator-equivalent trust; this is not a sandbox.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
