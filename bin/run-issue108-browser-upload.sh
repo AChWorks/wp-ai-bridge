@@ -92,6 +92,26 @@ foreach (array("plugin","theme") as $kind) {
 run_wp option update home "$origin" --allow-root >/dev/null
 run_wp option update siteurl "$origin" --allow-root >/dev/null
 
+# This *disposable* CI image runs WP-CLI as root and Apache as www-data.
+# Earlier native WP-CLI fixtures already created a 0700 root-owned private dir
+# on the shared test-only /tmp volume. Explicitly transfer just that fixture
+# directory and native plugin destination to the HTTP worker. No production
+# permissions or source security guards are relaxed.
+private_dir="$(run_wp eval '
+$store = new \WP_AI_Bridge\Support\Private_Package_Store(
+    new \WP_AI_Bridge\Support\Permissions( new \WP_AI_Bridge\Support\Settings() )
+);
+echo ( new ReflectionMethod( $store, "directory" ) )->invoke( $store );
+' --user=1 --allow-root | tail -n 1)"
+if [[ ! "$private_dir" =~ ^/tmp/wpai-private-zip-[0-9a-f]{24}$ ]]; then
+    echo 'ERROR: Could not establish the exact test-owned private ZIP directory.' >&2
+    exit 1
+fi
+run_compose exec -T -u root wordpress chown -R www-data:www-data "$private_dir"
+run_compose exec -T -u root wordpress chown -R www-data:www-data /var/www/html/wp-content/plugins
+run_compose exec -T -u root wordpress chown www-data:www-data /var/www/html/wp-content
+
+
 http -c "$tmp/cookies" -o "$tmp/login" "$origin/wp-login.php"
 http -c "$tmp/cookies" -b "$tmp/cookies" -o "$tmp/login-post" -D "$tmp/login-headers" \
     --data-urlencode 'log=admin' \
@@ -111,6 +131,29 @@ if [[ ! "$nonce" =~ ^[a-zA-Z0-9]{8,16}$ ]]; then
     echo 'ERROR: Native admin form did not issue a usable WordPress CSRF nonce.' >&2
     exit 1
 fi
+
+# R3: even a real administrator cannot stage private executable bytes on
+# an HTTP request. No unauthenticated-cookie shortcut is counted as proof.
+http_status="$(http -b "$tmp/cookies" -o "$tmp/http-denied" -D "$tmp/http-denied-headers" -w '%{http_code}'     -F 'action=wpai_private_zip_upload' -F "_wpnonce=$nonce" -F 'kind=plugin'     -F 'client_id=https://chatgpt.com/oauth/client.json' -F "wpai_private_zip=@$tmp/plugin.zip;type=application/zip"     "$http_origin/wp-admin/admin-post.php")"
+if [[ "$http_status" == 200 ]] || grep -q 'artifact=' "$tmp/http-denied-headers"; then
+    echo 'ERROR: Private ZIP staging accepted cleartext HTTP transport.' >&2
+    exit 1
+fi
+set +e
+run_wp eval '
+$provider = new \WP_AI_Bridge\Abilities\Private_Package_Abilities(
+    new \WP_AI_Bridge\Support\Permissions( new \WP_AI_Bridge\Support\Settings() )
+);
+$provider->render_upload_page();
+' --user=1 --allow-root > "$tmp/http-direct-denial" 2>&1
+direct_result=$?
+set -e
+if [[ "$direct_result" == 0 ]] || ! grep -q 'Private ZIP transfer requires HTTPS' "$tmp/http-direct-denial"; then
+    echo 'ERROR: Logged-in WordPress admin surface did not enforce is_ssl() rejection.' >&2
+    cat "$tmp/http-direct-denial" >&2
+    exit 1
+fi
+echo 'PASS: Issue #108 cleartext HTTP refusal even for a logged-in administrator.'
 
 # Authenticated but non-consented: deny without storing any ZIP.
 http -b "$tmp/cookies" -c "$tmp/cookies" -o "$tmp/disabled" -D "$tmp/disabled-headers" \
@@ -192,9 +235,10 @@ for kind in plugin theme; do
         -F 'action=wpai_private_zip_upload' -F "_wpnonce=$nonce" -F "kind=$kind" \
         -F 'client_id=https://chatgpt.com/oauth/client.json' -F "wpai_private_zip=@$tmp/$kind.zip;type=application/zip" \
         "$origin/wp-admin/admin-post.php"
-    artifact="$(grep -oE 'artifact=[0-9a-f]{48}' "$tmp/headers-$kind" | head -n 1 | cut -d= -f2)"
+    artifact="$(grep -oE 'artifact=[0-9a-f]{48}' "$tmp/headers-$kind" | head -n 1 | cut -d= -f2 || true)"
     if [[ ! "$artifact" =~ ^[0-9a-f]{48}$ ]]; then
         echo "ERROR: Authenticated $kind upload did not create a private artifact." >&2
+        grep -iE '^HTTP/|^location:|^content-type:' "$tmp/headers-$kind" >&2 || true
         exit 1
     fi
     code="$(http -b "$tmp/cookies" -o "$tmp/review-$kind" -w '%{http_code}' "$page&artifact=$artifact")"
@@ -232,7 +276,7 @@ race install-a > "$tmp/race-a.json" &
 install_pid=$!
 entered=0
 for attempt in $(seq 1 65); do
-    if run_compose exec -T wordpress test -f /var/www/html/wp-content/wpai108-race-core-entered; then
+    if run_compose exec -T wordpress test -f /tmp/wpai108-race-core-entered; then
         entered=1
         break
     fi

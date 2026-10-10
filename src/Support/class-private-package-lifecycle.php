@@ -7,6 +7,8 @@
 
 namespace WP_AI_Bridge\Support;
 
+require_once __DIR__ . '/class-extension-install-lock.php';
+
 /**
  * Retire only Bridge-owned inert ZIPs and disposable options. A claimed or
  * ambiguous install leaves minimal metadata, never executable archive bytes.
@@ -78,31 +80,42 @@ final class Private_Package_Lifecycle {
 		return ! wp_next_scheduled( self::CRON_HOOK );
 	}
 
-	/** @return bool Both deactivation and uninstall must respect every blog namespace. */
+	/** @return bool Deactivation/uninstall must not race a native Core install. */
 	public static function cleanup_sites( $network_wide ) {
-		if ( ! $network_wide || ! is_multisite() ) {
-			return self::cleanup_current_blog();
-		}
-		$site_ids = get_sites(
-			array(
-				'fields' => 'ids',
-				'number' => 0,
-			)
-		);
-		if ( ! is_array( $site_ids ) || ! $site_ids ) {
+		$lock = new Extension_Install_Lock();
+		if ( ! $lock->acquire() ) {
 			return false;
 		}
-		foreach ( $site_ids as $site_id ) {
-			switch_to_blog( (int) $site_id );
-			try {
-				if ( ! self::cleanup_current_blog() ) {
+		try {
+			if ( ! $network_wide || ! is_multisite() ) {
+				return $lock->is_owned() && self::cleanup_current_blog();
+			}
+			$site_ids = get_sites(
+				array(
+					'fields' => 'ids',
+					'number' => 0,
+				)
+			);
+			if ( ! is_array( $site_ids ) || ! $site_ids ) {
+				return false;
+			}
+			foreach ( $site_ids as $site_id ) {
+				if ( ! $lock->is_owned() ) {
 					return false;
 				}
-			} finally {
-				restore_current_blog();
+				switch_to_blog( (int) $site_id );
+				try {
+					if ( ! self::cleanup_current_blog() ) {
+						return false;
+					}
+				} finally {
+					restore_current_blog();
+				}
 			}
+			return $lock->is_owned();
+		} finally {
+			$lock->release();
 		}
-		return true;
 	}
 
 	/** Iterate a fixed prefix through bounded indexed pages, including non-autoload options. */

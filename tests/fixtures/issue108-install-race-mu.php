@@ -15,7 +15,7 @@ add_action(
 		check_admin_referer( \WP_AI_Bridge\Abilities\Private_Package_Abilities::NONCE_ACTION );
 		$mode        = isset( $_POST['mode'] ) && is_string( $_POST['mode'] ) ? sanitize_key( wp_unslash( $_POST['mode'] ) ) : '';
 		$root        = 'wpai108-race-plugin';
-		$marker      = WP_CONTENT_DIR . '/wpai108-race-core-entered';
+		$marker      = rtrim( sys_get_temp_dir(), '/\\' ) . '/wpai108-race-core-entered';
 		$ids         = array(
 			'a' => str_repeat( 'a', 48 ),
 			'b' => str_repeat( 'b', 48 ),
