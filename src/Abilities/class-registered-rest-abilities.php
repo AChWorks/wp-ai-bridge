@@ -97,6 +97,9 @@ final class Registered_REST_Abilities {
 			if ( is_wp_error( $item ) ) {
 				return $item;
 			}
+			if ( ! $item['indexed'] ) {
+				return new WP_Error( 'rest_route_not_found', __( 'The exact registered REST route was not found.', 'wp-ai-bridge' ) );
+			}
 			return $this->bounded( array( 'items' => array( $item ), 'page' => 1, 'per_page' => 1, 'total' => 1, 'total_pages' => 1, 'has_more' => false, 'execution_permission' => 'not_evaluated' ) );
 		}
 
@@ -112,27 +115,32 @@ final class Registered_REST_Abilities {
 		if ( $page > intdiv( PHP_INT_MAX, $per_page ) ) {
 			return $this->invalid_input();
 		}
+		// Let WordPress filter by namespace before enumerating potentially large route catalogs.
+		if ( '' !== $namespace ) {
+			$routes = $server->get_routes( trim( $namespace, '/' ) );
+			if ( ! is_array( $routes ) ) {
+				return new WP_Error( 'rest_routes_unavailable', __( 'The native WordPress REST route registry is unavailable.', 'wp-ai-bridge' ) );
+			}
+		}
 		$matches = array();
 		foreach ( $routes as $route => $callbacks ) {
 			if ( ! is_string( $route ) ) {
 				continue;
 			}
-			if ( '' !== $namespace && 0 !== strpos( $route . '/', '/' . trim( $namespace, '/' ) . '/' ) ) {
-				continue;
+			// Native REST indexes omit endpoints explicitly hidden from public discovery.
+			$item = $this->contract( $server, $route, $callbacks, false );
+			if ( is_wp_error( $item ) ) {
+				return $item;
 			}
-			$matches[] = $route;
+			if ( $item['indexed'] ) {
+				$matches[ $route ] = $item;
+			}
 		}
-		sort( $matches, SORT_STRING );
+		ksort( $matches, SORT_STRING );
 		$total = count( $matches );
 		$items = array();
 		if ( ( $page - 1 ) * $per_page < $total ) {
-			foreach ( array_slice( $matches, ( $page - 1 ) * $per_page, $per_page ) as $route ) {
-				$item = $this->contract( $server, $route, $routes[ $route ], false );
-				if ( is_wp_error( $item ) ) {
-					return $item;
-				}
-				$items[] = $item;
-			}
+			$items = array_values( array_slice( $matches, ( $page - 1 ) * $per_page, $per_page ) );
 		}
 		return $this->bounded( array( 'items' => $items, 'page' => $page, 'per_page' => $per_page, 'total' => $total, 'total_pages' => (int) ceil( $total / $per_page ), 'has_more' => $page < (int) ceil( $total / $per_page ), 'execution_permission' => 'not_evaluated' ) );
 	}
