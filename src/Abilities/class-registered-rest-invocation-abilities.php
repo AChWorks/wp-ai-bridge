@@ -173,19 +173,25 @@ final class Registered_REST_Invocation_Abilities {
 			}
 		}
 
-		// A deliberately non-public REST handler is not a generic entry point.
-		// Honor the final filtered Core index including provider redactions.
-		$public_handler = false;
-		$native_method  = false;
+		// Core dispatch selects the *first* handler matching the method,
+		// independent of show_in_index. For a same-route/same-method pair,
+		// the filtered public index has no stable identity link to Core's
+		// chosen handler. Fail closed for ANY duplicate method registration,
+		// including a hidden handler registered before a public handler.
+		$selected_handler = null;
 		foreach ( $routes[ $route ] as $handler ) {
-			if ( is_array( $handler ) && ! empty( $handler['show_in_index'] ) ) {
-				$public_handler = true;
-				if ( isset( $handler['methods'] ) && is_array( $handler['methods'] ) && ! empty( $handler['methods'][ $method ] ) ) {
-					$native_method = true;
-				}
+			if (
+				! is_array( $handler ) || ! isset( $handler['methods'] ) ||
+				! is_array( $handler['methods'] ) || empty( $handler['methods'][ $method ] )
+			) {
+				continue;
 			}
+			if ( null !== $selected_handler ) {
+				return $this->not_found();
+			}
+			$selected_handler = $handler;
 		}
-		if ( ! $public_handler || ! $native_method ) {
+		if ( null === $selected_handler || empty( $selected_handler['show_in_index'] ) ) {
 			return $this->not_found();
 		}
 		$indexed = $server->get_data_for_routes( array( $route => $routes[ $route ] ), 'view' );
@@ -198,16 +204,16 @@ final class Registered_REST_Invocation_Abilities {
 			return $this->not_found();
 		}
 
-		// The filtered public index is also the caller-visible parameter
-		// contract. A provider can redact parameter names from the index;
-		// invocation must not reconstruct or accept those hidden names from
-		// raw handler schemas or from guessed inputs.
-		$visible_args     = array();
-		$visible_endpoint = false;
-		$endpoints        = isset( $indexed[ $route ]['endpoints'] ) ? $indexed[ $route ]['endpoints'] : null;
-		if ( ! is_array( $endpoints ) ) {
+		// Bind public arguments to the ONE method handler Core can
+		// select. Aggregate/public endpoint data is never sufficient when
+		// two registered handlers can accept the same request method.
+		$visible_args = array();
+		$endpoints    = isset( $indexed[ $route ]['endpoints'] ) ? $indexed[ $route ]['endpoints'] : null;
+		$native_args  = isset( $selected_handler['args'] ) ? $selected_handler['args'] : array();
+		if ( ! is_array( $endpoints ) || ! is_array( $native_args ) ) {
 			return $this->not_found();
 		}
+		$endpoint_count = 0;
 		foreach ( $endpoints as $endpoint ) {
 			if (
 				! is_array( $endpoint ) || ! isset( $endpoint['methods'] ) ||
@@ -215,18 +221,24 @@ final class Registered_REST_Invocation_Abilities {
 			) {
 				continue;
 			}
-			$visible_endpoint = true;
-			$arguments        = isset( $endpoint['args'] ) ? $endpoint['args'] : array();
+			++$endpoint_count;
+			if ( 1 !== $endpoint_count ) {
+				return $this->not_found();
+			}
+			$arguments = isset( $endpoint['args'] ) ? $endpoint['args'] : array();
 			if ( ! is_array( $arguments ) ) {
 				return $this->not_found();
 			}
 			foreach ( array_keys( $arguments ) as $name ) {
-				if ( is_string( $name ) ) {
-					$visible_args[ $name ] = true;
+				// A public-index filter may remove arguments, not create a new
+				// executable parameter outside Core's selected native schema.
+				if ( ! is_string( $name ) || ! array_key_exists( $name, $native_args ) ) {
+					return $this->not_found();
 				}
+				$visible_args[ $name ] = true;
 			}
 		}
-		if ( ! $visible_endpoint ) {
+		if ( 1 !== $endpoint_count ) {
 			return $this->not_found();
 		}
 		foreach ( array_keys( $query + $body ) as $name ) {
