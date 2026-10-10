@@ -94,6 +94,8 @@ $GLOBALS['wpai_test']['core_transient'] = (object) array( 'last_checked' => $now
 $stale = $provider->core_update_status();
 wpai130141_assert( 'unknown_or_stale' === $stale['status'] && 'stale' === $stale['cache_state'], 'Stale offers treated as current.' );
 wpai130141_assert( $before === $GLOBALS['wpai_test']['core_calls'], 'Stale cache triggered offer fetch.' );
+$GLOBALS['wpai_test']['core_transient'] = (object) array( 'last_checked' => $now + 60, 'version_checked' => '7.1', 'updates' => array() );
+wpai130141_assert( 'unknown_or_stale' === $provider->core_update_status()['status'], 'Slightly future-dated cache was trusted.' );
 $GLOBALS['wpai_test']['core_transient'] = (object) array( 'last_checked' => $now + 600, 'version_checked' => '7.1', 'updates' => array() );
 wpai130141_assert( 'unknown_or_stale' === $provider->core_update_status()['status'], 'Future-dated cache trusted.' );
 

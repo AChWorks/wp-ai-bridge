@@ -130,7 +130,7 @@ final class Site_Config_Abilities {
 		$installed_version = (string) get_bloginfo( 'version' );
 		$now               = time();
 		$checked           = is_object( $raw ) && isset( $raw->last_checked ) && is_numeric( $raw->last_checked ) ? (int) $raw->last_checked : 0;
-		$valid_check       = $checked > 0 && $checked <= $now + 300;
+		$valid_check       = $checked > 0 && $checked <= $now;
 		$age               = $valid_check ? max( 0, $now - $checked ) : 0;
 		$has_offer_data    = is_object( $raw ) && isset( $raw->updates ) && is_array( $raw->updates ) && count( $raw->updates ) <= 128;
 		$version_matches   = $has_offer_data && isset( $raw->version_checked ) && is_string( $raw->version_checked ) && $installed_version === $raw->version_checked;
