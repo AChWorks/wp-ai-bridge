@@ -29,7 +29,7 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 ## Requirements
 
 - WordPress **6.9 or newer**.
-- The official [WordPress MCP Adapter](https://github.com/WordPress/mcp-adapter), currently validated with `0.6.1`.
+- The official [WordPress MCP Adapter](https://github.com/WordPress/mcp-adapter), installed as a separate WordPress plugin (not bundled). WP AI Bridge v0.5.0 has been exercised with MCP Adapter `0.6.1` and `0.7.0`; see the version-specific notes below.
 - HTTPS and a publicly reachable WordPress REST API for direct ChatGPT Workspace App connections; other remote clients must be able to reach the endpoint over their supported transport.
 - A WordPress account with the capabilities required for the operations you enable.
 
@@ -39,6 +39,20 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 2. In WordPress open **Plugins → Add Plugin → Upload Plugin**.
 3. Upload the ZIP, install it, and activate **WP AI Bridge**.
 4. Install and activate the official WordPress MCP Adapter if it is not already active.
+
+
+**MCP Adapter 0.7.0 compatibility (October 2026):** The official 0.7.0 release
+changes internal Adapter/schema APIs and adds MCP `2026-07-28`. WP AI Bridge
+uses the standalone Adapter plugin and its registered HTTP transport, not the
+removed DTO/validator APIs. In the established MCP `2025-11-25` HTTP flow,
+clients must send both `Mcp-Session-Id` and
+`MCP-Protocol-Version: 2025-11-25` with every subsequent session request
+after `initialize`; omitting the version header produces HTTP 400 under
+Adapter 0.7.0 even when 0.6.1 accepted the earlier request. Correct the client
+request rather than enabling Bridge grants or rotating OAuth credentials.
+The new sessionless 2026-07-28 client flow has a different request contract;
+the 2025-11-25 compatibility tests do not establish that flow. See the
+[official 0.7.0 migration notes](https://github.com/WordPress/mcp-adapter/blob/trunk/docs/migration/v0.7.0.md).
 5. Open **WP AI Bridge → Settings**.
 
 Version 0.4.1 established the native canonical baseline at `wp-ai-bridge/wp-ai-bridge.php`. Later canonical builds retain that installation identity and use the normal WordPress replace/update flow; the retired pre-0.4.0 migration runtime is not included. Install a **published** release, not an untagged source or release-candidate branch. Review the selected release's security and hosting requirements before upgrading. A site still on the published 0.3.0 package that must preserve its old Workspace data should first perform the one-time migration using the immutable v0.4.0 release, verify the migrated Workspace, and then update to the latest release.

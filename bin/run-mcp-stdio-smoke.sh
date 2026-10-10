@@ -13,6 +13,7 @@ command -v jq >/dev/null 2>&1 || {
 wp=("${compose[@]}" run --rm cli)
 output_file="$(mktemp /tmp/wpai-mcp-output.XXXXXX)"
 request_file="$(mktemp /tmp/wpai-mcp-request.XXXXXX)"
+normalized_file="$(mktemp /tmp/wpai-mcp-normalized.XXXXXX)"
 post_id=""
 media_id=""
 original_tagline="$("${wp[@]}" option get blogdescription --allow-root | tail -n 1)"
@@ -26,14 +27,27 @@ cleanup() {
     fi
     "${wp[@]}" option update blogdescription "$original_tagline" --allow-root >/dev/null 2>&1 || true
     "${wp[@]}" eval 'use WP_AI_Bridge\Support\Settings; $s=new Settings(); update_option(Settings::OPTION_NAME,$s->defaults(),false);' --user=1 --allow-root >/dev/null 2>&1 || true
-    rm -f "$output_file" "$request_file"
+    rm -f "$output_file" "$request_file" "$normalized_file"
 }
 trap cleanup EXIT
 
 run_mcp() {
     local payload="$1"
-    printf '%s\n' "$payload" > "$request_file"
+    local request_id
+    request_id="$(jq -re '.id | select(type == "number" or type == "string")' <<< "$payload")"
+
+    # Each call uses a new STDIO process. Complete the 2025 MCP lifecycle
+    # on that stream before executing a tool, as required by Adapter 0.7.0.
+    printf '%s\n' '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"wpai-stdio-smoke","version":"1.0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$payload" > "$request_file"
     "${compose[@]}" run -T --rm cli mcp-adapter serve --server=mcp-adapter-default-server --user=1 --allow-root < "$request_file" > "$output_file" 2>/dev/null
+
+    # Require an exact successful initialize followed by the requested result.
+    if ! jq -se --argjson id "$request_id" 'length == 2 and .[0].id == 0 and .[0].result.protocolVersion == "2025-11-25" and .[1].id == $id and (.[1].error == null)' "$output_file" >/dev/null; then
+        echo 'ERROR: STDIO initialize or exact tool result failed.' >&2
+        exit 1
+    fi
+    jq -sc '.[1]' "$output_file" > "$normalized_file"
+    cp -- "$normalized_file" "$output_file"
 }
 
 "${wp[@]}" eval 'use WP_AI_Bridge\Support\Settings; $s=new Settings(); $a=$s->defaults(); $a[Settings::GROUP_SITE_READ]=1; $a[Settings::GROUP_BUILDER_WRITE]=1; $a[Settings::GROUP_SITE_CONFIG]=1; update_option(Settings::OPTION_NAME,$a,false);' --user=1 --allow-root >/dev/null

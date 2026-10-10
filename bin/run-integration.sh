@@ -51,7 +51,12 @@ tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \
 
 actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
 actual_php="$("${wp[@]}" eval 'echo PHP_VERSION;' --allow-root | tail -n 1)"
-echo "Integration baseline: WordPress ${actual_wp}; PHP ${actual_php}; image ${wordpress_tag}"
+actual_adapter="$("${wp[@]}" plugin get mcp-adapter --field=version --allow-root | tail -n 1)"
+if [[ -n "${MCP_ADAPTER_EXPECTED_VERSION:-}" && "$actual_adapter" != "$MCP_ADAPTER_EXPECTED_VERSION" ]]; then
+    echo "ERROR: Installed MCP Adapter ${actual_adapter} does not match expected ${MCP_ADAPTER_EXPECTED_VERSION}." >&2
+    exit 1
+fi
+echo "Integration baseline: WordPress ${actual_wp}; PHP ${actual_php}; MCP Adapter ${actual_adapter}; image ${wordpress_tag}"
 
 for test in \
     foundation-smoke.php \

@@ -109,6 +109,7 @@ function wpai124_mcp_request( $access_token, $payload, $session_id = '' ) {
 	$request->set_body( wp_json_encode( $payload ) );
 	if ( '' !== $session_id ) {
 		$request->set_header( 'Mcp-Session-Id', $session_id );
+		$request->set_header( 'MCP-Protocol-Version', '2025-11-25' );
 	}
 	return rest_do_request( $request );
 }

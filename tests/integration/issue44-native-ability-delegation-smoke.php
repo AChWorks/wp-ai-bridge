@@ -33,6 +33,7 @@ function wpai_issue44_live_request( $route, $method, $access_token, array $paylo
 	}
 	if ( '' !== $session_id ) {
 		$request->set_header( 'Mcp-Session-Id', $session_id );
+		$request->set_header( 'MCP-Protocol-Version', '2025-11-25' );
 	}
 	return rest_do_request( $request );
 }
