@@ -1,6 +1,21 @@
 # Large MCP payloads: WordPress content, blocks, and files
 
-MCP clients should be able to administer large WordPress objects without passing entire pages or large binary files as one JSON tool response. The current Gateway transport defaults to a finite 64 KiB decoded response boundary, so simply raising that default is not a reliable solution. WP AI Bridge uses the shared `Bounded_Payload` helper for JSON response budgeting and byte-exact UTF-8 text windows; the bound applies **per response**, not to the size of content WordPress can store.
+MCP clients should be able to administer large WordPress objects without passing entire pages or large binary files as one JSON tool response. The current Gateway source defaults to a finite 64 KiB ordinary response boundary and a separate bounded read-only tool budget (256 KiB by default); an installed Gateway version/configuration may differ. Raising either bound alone is not a reliable solution. WP AI Bridge uses the shared `Bounded_Payload` helper for JSON response budgeting and byte-exact UTF-8 text windows; the bound applies **per response**, not to the size of content WordPress can store.
+
+## Type-aware data interchange (required direction, not all implemented)
+
+Choose a transfer method from **content semantics, authority, recoverability and size**, not size alone. Keep the standard case a single bounded request; do not force every small result through a staged file.
+
+| Data class | Appropriate contract | Current implementation / outstanding work |
+| --- | --- | --- |
+| Small JSON, configuration, metadata | Native structured result, exact target/schema, bounded output | Implemented for current Bridge Abilities; new general registered-REST access remains unimplemented. |
+| Long UTF-8 text, Gutenberg/HTML, Markdown or editable source | Exact object/revision/hash, UTF-8-safe byte windows or targeted subtree, continuation and completeness | Posts/revisions/blocks have dedicated bounded paths in current `main`; not a universal text endpoint. |
+| Large structured lists/trees | Server-owned filters/projections/pagination, honest `has_more` and stable state when available | Ability catalog and site-context paging exist in `main`; provider-specific list semantics are not automatically pageable. |
+| Media and opaque files (images, audio/video, PDF/archives) | MIME-aware preview/metadata plus authenticated binary streaming or provider-owned download/upload | Media upload and public-URL import exist; arbitrary large private binary ingress/egress is not generally implemented. |
+| Executable plugin/theme ZIP | Private staged bytes, SHA-256/size identity, separate administrator review and native installer commit | WordPress.org and public HTTPS installers exist; **private/uploaded ZIP ingress** remains #108. |
+| Long-running or uncertain mutation | Stable operation/target ID, committed state or explicit `outcome_unknown`, truthful progress/completion | Current operations provide bounded failure/recovery semantics where implemented; there is no universal durable job/resume framework. |
+
+Never fabricate supported cursor/range reads for a WordPress/provider API that does not supply stable source state; an opaque transfer handle is scoped and reauthorized, not a bypass capability. Preserve original encoding/bytes and distinguish MIME from merely display-friendly previews. Avoid silent value transformations, content leakage in broad discovery, or unverified claims that a write was rolled back.
 
 ## Gutenberg: discover, inspect, mutate
 
@@ -36,9 +51,15 @@ These semantics are tracked by [Issue #105](https://github.com/AChWorks/wp-ai-br
 Binary files must not be treated as giant text values merely to pass through MCP JSON. Use WordPress-authorized and streaming transfer paths:
 - `media-import-url` already downloads eligible external HTTP(S) sources with bounded streaming into native Media Library storage.
 - The existing `media-upload` base64 Ability is for appropriately sized inline MCP payloads; it is **not** a scalable transport for arbitrarily large files.
-- Administrator-authorized plugin/theme install from a reviewed public HTTPS package uses `extension-lifecycle` and native Core Upgrader handling. A locally generated private ZIP still needs a safe uploaded-artifact ingress design, governed by Issue #99; this PR does **not** claim that capability exists.
+- Administrator-authorized plugin/theme install from a reviewed public HTTPS package uses `extension-lifecycle` and native Core Upgrader handling. A locally generated or human-provided private ZIP still needs a safe source-agnostic uploaded-artifact ingress design, governed by [Issue #108](https://github.com/AChWorks/wp-ai-bridge/issues/108); this PR does **not** claim that capability exists.
 
-If large private-file upload is implemented, it needs a separate typed ingress/lifecycle using a native HTTP streaming/multipart or approved artifact transport, administrator delegation, bounded storage, per-object hash, expiry/cleanup/recovery, and native WordPress media or extension authority. Do not reassemble huge base64 files in ordinary MCP tool arguments, expose arbitrary filesystem paths, or relax Gateway decoded response limits. The related Gateway diagnostic/limit work remains at [mcp-gateway#122](https://github.com/AChWorks/mcp-gateway/issues/122).
+If large private-file upload is implemented, it needs a separate typed ingress/lifecycle using a native HTTP streaming/multipart or approved artifact transport, administrator delegation, bounded storage, per-object hash, expiry/cleanup/recovery, and native WordPress media or extension authority. Do not reassemble huge base64 files in ordinary MCP tool arguments, expose arbitrary filesystem paths, or relax Gateway decoded response limits. Gateway [#122](https://github.com/AChWorks/mcp-gateway/issues/122) completed its bounded-result/error slice and documented future file-transfer semantics, but did **not** ship a general WordPress private binary transport.
+
+## Direct Bridge versus MCP Gateway
+
+The direct WordPress client and the Gateway route must preserve the *same source identity, hash, MIME/encoding, completeness and execution outcome*. A new bounded JSON Bridge Ability can normally use Gateway's existing catalog and Ability execution path after authorization. **Exception:** an Ability that dynamically selects REST routes/methods cannot inherit readonly classification from a static tool annotation. The current Gateway WordPress connector uses static Ability metadata for its read/mutate/destructive permission classes; until a separate per-operation classification is verified, this generic executor requires explicit elevated/unclassified Gateway authorization. Binary upload/download does **not** fit Gateway's current JSON-only `site-ability-execute(input: object)` path; it requires an authenticated streaming/multipart flow, a supported scoped direct-to-Bridge transfer, or an equivalent explicitly tested client workflow. Plan an interoperable, Target/user/client-bound contract with [Gateway remote I/O design](https://github.com/AChWorks/mcp-gateway/blob/main/docs/REMOTE-IO-CONTRACT.md); assess and repair only actual Gateway-side deficits in [mcp-gateway#130](https://github.com/AChWorks/mcp-gateway/issues/130). Do not imply that every AI client can upload files through MCP resources or that a drafted Gateway data-plane contract is already operational.
+
+For future MCP protocol features, negotiate actual Adapter/client versions rather than assuming a newer specification, resource-link support or asynchronous task support is present. Existing tested ChatGPT and Gateway OAuth/MCP operation must continue to function until separately reviewed replacement/upgrade paths are accepted.
 
 ## Reusing this pattern elsewhere
 

@@ -6,7 +6,7 @@
 
 WP AI Bridge connects WordPress to authenticated, compatible AI/MCP clients through HTTPS, WordPress-backed OAuth, the official WordPress MCP Adapter, and the WordPress Abilities API. It includes a tested direct ChatGPT connection and administrator-approved additional OAuth client identities; compatibility with other named AI products must be verified rather than assumed.
 
-It exposes bounded, typed site-management abilities while keeping WordPress capabilities and explicit Bridge access groups in control.
+It exposes bounded, typed site-management abilities while keeping WordPress capabilities and explicit Bridge access groups in control. The long-term goal is full legitimate administrator coverage, **not a claim that every registered REST API or browser-only admin operation is already exposed**. Bridge is a secure access/delegation and data-exchange layer, not a replacement for Core or specialized feature plugins; its private Workspace intentionally preserves recoverable AI project context.
 
 ## What it provides
 
@@ -18,7 +18,7 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 - Bounded WordPress site settings.
 - WordPress.org plugin/theme lifecycle operations plus separately authorized bounded external HTTPS package installation.
 - Separately enabled installed plugin/theme source read, preview, apply, and conflict-safe recovery using native WordPress authority.
-- User and role administration behind an explicit destructive-access group.
+- User lifecycle and assignment of **existing editable roles** behind explicit permission checks; creation/editing of role definitions belongs to the owning WordPress/plugin API, not a second role editor inside Bridge.
 - Persistent Workspace documents and tasks for durable project context.
 - Native Astra Ability reuse when Astra Abilities are enabled.
 - Managed Code Snippets lifecycle support for compatible Code Snippets versions.
@@ -103,7 +103,7 @@ Only **Site Read** is enabled by default.
 
 ## Uploads and extension installation
 
-`wp-ai-bridge/media-upload` accepts file bytes plus a filename and hands them to WordPress Media Library handling. The maximum payload is the smaller of the WordPress upload limit and **20 MiB**. The caller cannot choose a server filesystem path.
+`wp-ai-bridge/media-upload` accepts Base64-encoded file bytes plus a filename and hands them to WordPress Media Library handling. Its **Bridge-side** payload cap is the smaller of the WordPress upload limit and **20 MiB**; this does **not** guarantee an AI client or MCP Gateway can transfer that much data in one tool request. Actual inline capacity may be lower, and generic authenticated streaming/private binary transfer is **not yet shipped**. Use [type-appropriate data exchange](./docs/LARGE-PAYLOADS.md) rather than relying on a large JSON/Base64 upload. The caller cannot choose a server filesystem path.
 
 `wp-ai-bridge/media-import-url` accepts a public HTTP(S) URL and a filename, streams it within the current WordPress upload limit, and creates a normal attachment. It requires explicit **Remote Media** plus **Builder Write** access; upgrades do not enable it automatically. See [URL media import](./docs/ABILITIES.md#url-media-import).
 
@@ -153,7 +153,9 @@ Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Au
 - [Application Password boundary](./docs/ABILITIES.md#application-password-boundary)
 - [Integrations](./docs/INTEGRATIONS.md)
 - [Security](./docs/SECURITY.md)
+- [Master Specification — accepted product goal](./MASTER-SPEC.md)
 - [Architecture](./docs/ARCHITECTURE.md)
+- [Large and binary data exchange](./docs/LARGE-PAYLOADS.md)
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)
 - [Development and testing](./docs/DEVELOPMENT.md)
 - [Changelog](./CHANGELOG.md)
