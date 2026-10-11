@@ -123,7 +123,7 @@ try {
 	);
 
 	// Full length alone is not sufficient without correct digest.
-	$bad = $transfer->begin( 'media', 4, str_repeat( '0', 64 ), 1000, 100, 3, 600 );
+	$bad = $transfer->begin( 'media', 4, str_repeat( '0', 64 ), 8 * 1024 * 1024, 100, 3, 600 );
 	wpai134_staging_assert( ! is_wp_error( $bad ), 'Corrupt-hash fixture could not begin.' );
 	$ids[] = $bad['id'];
 	wpai134_staging_assert( ! is_wp_error( $transfer->append( $bad['id'], 0, 'abcd' ) ), 'Incorrect-hash fixture staging unexpectedly refused raw bytes.' );
