@@ -7,8 +7,6 @@
  * @package WP_AI_Bridge
  */
 
-use WP_AI_Bridge\Support\Bounded_Payload;
-use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Settings;
 
 function wpai138_manage_assert( $condition, $message ) {
@@ -20,7 +18,6 @@ function wpai138_manage_assert( $condition, $message ) {
 $actor         = get_current_user_id();
 $settings      = new Settings();
 $original      = get_option( Settings::OPTION_NAME, false );
-$payload_prev  = get_option( Payload_Settings::OPTION_NAME, false );
 $many_profiles = null;
 $hook          = 'wpai138_managed_fixture_' . get_current_blog_id();
 $args          = array( 'secret-wpai138-' . bin2hex( random_bytes( 6 ) ) );
@@ -80,21 +77,28 @@ try {
 		return $profiles;
 	};
 	add_filter( 'wp_ai_bridge_cron_profiles', $many_profiles );
-	$limits                                   = ( new Payload_Settings() )->defaults();
-	$limits[ Payload_Settings::RESPONSE_KEY ] = 16;
-	update_option( Payload_Settings::OPTION_NAME, $limits, false );
-	$first_page = $ability->execute(
+	$first_page              = $ability->execute(
 		array(
 			'action' => 'profiles',
 			'limit'  => 50,
 		)
 	);
+	$structured              = wp_json_encode(
+		array(
+			'success' => true,
+			'data'    => $first_page,
+		)
+	);
+	$text_block              = is_string( $structured ) ? wp_json_encode( $structured ) : false;
+	$projected_profile_bytes = is_string( $text_block )
+		? strlen( $structured ) + strlen( $text_block ) + 2048
+		: PHP_INT_MAX;
 	wpai138_manage_assert(
 		! is_wp_error( $first_page ) && 76 === $first_page['profile_total'] &&
 		! empty( $first_page['profile_has_more'] ) && ! empty( $first_page['profiles'] ) &&
 		50 >= count( $first_page['profiles'] ) &&
 		$first_page['profile_next_offset'] === count( $first_page['profiles'] ) &&
-		Bounded_Payload::fits( $first_page ) &&
+		16 * 1024 >= $projected_profile_bytes &&
 		false === strpos( wp_json_encode( $first_page ), $args[0] ),
 		'Bounded Cron profile discovery failed or disclosed server-side arguments.'
 	);
@@ -134,11 +138,6 @@ try {
 		is_wp_error( $stale_profiles ) && 'cron_profiles_stale' === $stale_profiles->get_error_code(),
 		'Changed trusted Cron profile registrations did not invalidate pagination.'
 	);
-	if ( false === $payload_prev ) {
-		delete_option( Payload_Settings::OPTION_NAME );
-	} else {
-		update_option( Payload_Settings::OPTION_NAME, $payload_prev, false );
-	}
 	$reader_initial = $reader->execute(
 		array(
 			'action' => 'list',
@@ -300,11 +299,6 @@ try {
 	remove_filter( 'wp_ai_bridge_cron_profiles', $provider );
 	if ( null !== $many_profiles ) {
 		remove_filter( 'wp_ai_bridge_cron_profiles', $many_profiles );
-	}
-	if ( false === $payload_prev ) {
-		delete_option( Payload_Settings::OPTION_NAME );
-	} else {
-		update_option( Payload_Settings::OPTION_NAME, $payload_prev, false );
 	}
 	if ( false === $original ) {
 		delete_option( Settings::OPTION_NAME );

@@ -240,7 +240,7 @@ final class Cron_Mutation_Abilities {
 				$result['profile_total']       = $total;
 				$result['profile_next_offset'] = $next;
 				$result['profile_has_more']    = $next < $total;
-				if ( Bounded_Payload::fits( $result ) ) {
+				if ( $this->profile_response_fits( $result ) ) {
 					return $result;
 				}
 				if ( ! $public ) {
@@ -366,6 +366,34 @@ final class Cron_Mutation_Abilities {
 		} finally {
 			$lock->release();
 		}
+	}
+
+	/**
+	 * Bound profile listing even when the separate large-payload proposal is
+	 * not installed. The shared operator-controlled budget takes precedence
+	 * once available, without making this independent PR depend on its class.
+	 *
+	 * @param array<string,mixed> $result Proposed profile response.
+	 * @return bool
+	 */
+	private function profile_response_fits( $result ) {
+		if ( class_exists( Bounded_Payload::class ) ) {
+			return Bounded_Payload::fits( $result );
+		}
+		// Lowest supported projected MCP JSON budget in the optional shared
+		// payload proposal. This guards standalone Cron installs and does not
+		// limit total profiles, events or native WordPress object storage.
+		$structured = wp_json_encode(
+			array(
+				'success' => true,
+				'data'    => $result,
+			)
+		);
+		if ( ! is_string( $structured ) ) {
+			return false;
+		}
+		$text = wp_json_encode( $structured );
+		return is_string( $text ) && strlen( $structured ) + strlen( $text ) + 2048 <= 16 * 1024;
 	}
 
 	/** @return WP_Error */
