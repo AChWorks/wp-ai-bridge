@@ -96,13 +96,13 @@ try {
 	);
 	wpai134_mcp_assert( is_string( $token ) && '' !== $token, 'Could not issue disposable OAuth bearer.' );
 	$before_sessions = class_exists( '\\WP\\MCP\\Transport\\Infrastructure\\SessionManager' )
-		? \\WP\\MCP\\Transport\\Infrastructure\\SessionManager::get_all_user_sessions( $actor ) : array();
+		? \WP\MCP\Transport\Infrastructure\SessionManager::get_all_user_sessions( $actor ) : array();
 	wp_set_current_user( 0 );
 	list( $init, $headers ) = wpai134_mcp_request( $token, '', 1, '', array() );
 	wpai134_mcp_assert( '2025-11-25' === ( $init['result']['protocolVersion'] ?? null ), 'Real OAuth MCP protocol was not initialized.' );
 	$session = (string) ( $headers['Mcp-Session-Id'] ?? '' );
 	if ( '' === $session && class_exists( '\\WP\\MCP\\Transport\\Infrastructure\\SessionManager' ) ) {
-		$after_sessions = \\WP\\MCP\\Transport\\Infrastructure\\SessionManager::get_all_user_sessions( $actor );
+		$after_sessions = \WP\MCP\Transport\Infrastructure\SessionManager::get_all_user_sessions( $actor );
 		$session        = (string) array_key_first( array_diff_key( $after_sessions, $before_sessions ) );
 	}
 	wpai134_mcp_assert( '' !== $session, 'Native OAuth MCP transport did not return a session.' );
