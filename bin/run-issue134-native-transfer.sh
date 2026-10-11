@@ -35,7 +35,7 @@ tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \
 
 actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
 actual_php="$("${wp[@]}" eval 'echo PHP_VERSION;' --allow-root | tail -n 1)"
-echo "FOCUSED candidate $(git -C "$root" rev-parse HEAD); WordPress $actual_wp; PHP $actual_php; Adapter ${MCP_ADAPTER_EXPECTED_VERSION:-0.7.0}"
+echo "FOCUSED candidate $(git -c safe.directory="$root" -C "$root" rev-parse HEAD); WordPress $actual_wp; PHP $actual_php; Adapter ${MCP_ADAPTER_EXPECTED_VERSION:-0.7.0}"
 for fixture in issue134-payload-settings-smoke.php issue134-direct-mcp-bytes-smoke.php \
     issue134-public-session-smoke.php issue134-private-staging-smoke.php; do
     echo "== $fixture =="
