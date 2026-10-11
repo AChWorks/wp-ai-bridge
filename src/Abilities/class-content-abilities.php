@@ -882,7 +882,7 @@ final class Content_Abilities {
 	 * @param mixed  $expected_hash     Expected SHA-256 state hash.
 	 * @return true|WP_Error
 	 */
-	private function check_expected_identity( $post, $expected_modified, $expected_hash ) {
+	public function check_expected_identity( $post, $expected_modified, $expected_hash ) {
 		if ( ! $post || ! is_string( $expected_modified ) || '' === $expected_modified || ! is_string( $expected_hash ) || 64 !== strlen( $expected_hash ) ) {
 			return new WP_Error( 'expected_identity_required', __( 'expected_modified_gmt and expected_state_hash are required for overwrite-sensitive full-content updates.', 'wp-ai-bridge' ) );
 		}

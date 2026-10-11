@@ -296,6 +296,221 @@ final class Private_Transfer_Session {
 		}
 	}
 
+	/**
+	 * Snapshot one WordPress-validated source into the same private, digest-bound
+	 * transport. Caller must first authorize and confine the source to its native
+	 * provider root. No path may be returned through an MCP response.
+	 *
+	 * The copy and verification are bounded-memory; admission is governed by
+	 * administrator transfer, concurrency and available disk budgets.
+	 *
+	 * @param string $path Provider-validated local regular file.
+	 * @param array<string,int> $policy Current administrator transfer policy.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function stage_media_export( $path, $policy, $attachment_id ) {
+		if ( ! $this->allowed( 'media_read' ) || ! is_string( $path ) ||
+			! is_file( $path ) || is_link( $path ) || ! is_readable( $path ) ||
+			! is_int( $attachment_id ) || $attachment_id < 1 ||
+			! current_user_can( 'read_post', $attachment_id ) ||
+			! is_array( $policy ) ) {
+			return $this->denied();
+		}
+		clearstatcache( true, $path );
+		$size = filesize( $path );
+		if ( ! is_int( $size ) || $size < 0 || $size > $policy['file'] ) {
+			return new WP_Error( 'transfer_size_setting', 'This file exceeds the current administrator-configured file transfer budget.' );
+		}
+		$sha256 = hash_file( 'sha256', $path );
+		if ( ! is_string( $sha256 ) ) {
+			return new WP_Error( 'transfer_source_changed', 'The WordPress source could not be hashed before export.' );
+		}
+		$chunk = min( $policy['chunk'], max( 1, intdiv( max( 1, $policy['request'] - 4096 ) * 3, 4 ) ) );
+		$lease = $this->begin( 'media_read', $size, $sha256, $policy['file'], $chunk, $policy['sessions'], $policy['ttl'], $policy['active'] );
+		if ( is_wp_error( $lease ) ) {
+			return $lease;
+		}
+		$id     = $lease['id'];
+		$source = @fopen( $path, 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Constrained native attachment source; never a caller path.
+		try {
+			if ( ! is_resource( $source ) ) {
+				return new WP_Error( 'transfer_source_changed', 'WordPress source became unavailable during export.' );
+			}
+			$offset = 0;
+			while ( $offset < $size ) {
+				$part = fread( $source, min( $chunk, $size - $offset ) );
+				if ( ! is_string( $part ) || '' === $part ) {
+					return new WP_Error( 'transfer_source_changed', 'WordPress source was interrupted during export.' );
+				}
+				$next = $this->append( $id, $offset, $part );
+				if ( is_wp_error( $next ) ) {
+					return $next;
+				}
+				$offset = $next['received'];
+			}
+			$verified = $this->verify( $id );
+			if ( is_wp_error( $verified ) ) {
+				return $verified;
+			}
+			$loaded = $this->load( $id );
+			if ( is_wp_error( $loaded ) ) {
+				return $loaded;
+			}
+			list( $root, $handle, $meta ) = $loaded;
+			try {
+				if ( 'verified' !== $meta['state'] || 'media_read' !== $meta['purpose'] ||
+					! current_user_can( 'read_post', $attachment_id ) ||
+					'attachment' !== get_post_type( $attachment_id ) ) {
+					return $this->denied();
+				}
+				$meta['source_id'] = $attachment_id;
+				if ( ! $this->save_meta( $handle, $meta ) ) {
+					return new WP_Error( 'transfer_outcome_unknown', 'Media snapshot receipt could not be stored.' );
+				}
+				return $this->receipt( $meta );
+			} finally {
+				$this->close_meta( $handle );
+			}
+		} finally {
+			if ( is_resource( $source ) ) {
+				fclose( $source );
+			}
+			// Release incomplete/failed snapshots; verified copies remain for
+			// normal client read/cancel/expiry. The lease never exposes its path.
+			$state = $this->status( $id );
+			if ( is_wp_error( $state ) || 'verified' !== $state['state'] || empty( $state['source_id'] ) ) {
+				$this->cancel( $id );
+			}
+		}
+	}
+
+	/**
+	 * One bounded, arbitrary-offset byte window of a frozen Media export.
+	 * The final client MUST independently verify total length and SHA-256.
+	 *
+	 * @param string $id Authenticated snapshot.
+	 * @param int $offset Absolute raw byte offset.
+	 * @param int $max_bytes Current permitted per-response raw bytes.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function read_media_export( $id, $offset, $max_bytes ) {
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		try {
+			if ( 'media_read' !== $meta['purpose'] || 'verified' !== $meta['state'] ||
+				! $this->allowed( 'media_read' ) ||
+				! is_int( $meta['source_id'] ?? null ) ||
+				'attachment' !== get_post_type( $meta['source_id'] ) ||
+				! current_user_can( 'read_post', $meta['source_id'] ) ||
+				! is_int( $offset ) || $offset < 0 || $offset > $meta['total'] ||
+				! is_int( $max_bytes ) || $max_bytes < 1 || $max_bytes > $meta['chunk'] ) {
+				return $this->invalid();
+			}
+			$path   = $root . '/' . $id . '.bytes';
+			$stream = @fopen( $path, 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Authenticated, confined immutable snapshot.
+			if ( ! is_resource( $stream ) ) {
+				return new WP_Error( 'transfer_storage_uncertain', 'Private exported bytes could not be opened.' );
+			}
+			try {
+				if ( ! $this->secure_file( $stream, $path ) ||
+					! $this->file_length( $stream, $meta['total'] ) || 0 !== fseek( $stream, $offset ) ) {
+					return new WP_Error( 'transfer_source_changed', 'Private export snapshot identity or byte offset changed.' );
+				}
+				$wanted = min( $max_bytes, $meta['total'] - $offset );
+				$bytes  = 0 === $wanted ? '' : fread( $stream, $wanted );
+				if ( ! is_string( $bytes ) || strlen( $bytes ) !== $wanted ) {
+					return new WP_Error( 'transfer_source_changed', 'Private export snapshot ended before the declared window.' );
+				}
+				return array(
+					'id'           => $id,
+					'offset'       => $offset,
+					'next_offset'  => $offset + $wanted,
+					'complete'     => $offset + $wanted === $meta['total'],
+					'base64'       => base64_encode( $bytes ),
+					'chunk_sha256' => hash( 'sha256', $bytes ),
+					'total'        => $meta['total'],
+					'sha256'       => $meta['sha256'],
+				);
+			} finally {
+				fclose( $stream );
+			}
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
+	/**
+	 * Claim one text stage before its potentially non-idempotent WordPress write.
+	 * A crash after this claim must NOT silently retry the effect.
+	 *
+	 * @param string $id Verified text lease.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function claim_content( $id ) {
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		try {
+			if ( 'text' !== $meta['purpose'] || 'verified' !== $meta['state'] ||
+				! $this->allowed( 'text' ) ) {
+				return new WP_Error( 'transfer_consume_uncertain', 'Text transfer has already been claimed or is not verified.' );
+			}
+			$path = $this->check_file( $root, $id, $meta );
+			if ( is_wp_error( $path ) ||
+				! hash_equals( $meta['sha256'], (string) hash_file( 'sha256', $path ) ) ) {
+				return new WP_Error( 'transfer_source_changed', 'Staged text changed before native consumption.' );
+			}
+			$meta['state']          = 'committing';
+			$meta['consumer']       = 'content';
+			$meta['destination_id'] = 0;
+			if ( ! $this->save_meta( $handle, $meta ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'Text claim persistence was uncertain; do not blindly retry.' );
+			}
+			return $this->receipt( $meta );
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
+	/**
+	 * Verify the exact native WordPress content effect before recording success.
+	 * @param string $id Claimed transfer.
+	 * @param int $post_id Native WordPress object.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function finish_content( $id, $post_id ) {
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		try {
+			$post = get_post( $post_id );
+			if ( 'text' !== $meta['purpose'] || 'committing' !== $meta['state'] ||
+				'content' !== ( $meta['consumer'] ?? '' ) ||
+				! is_int( $post_id ) || $post_id < 1 ||
+				! $post || ! current_user_can( 'edit_post', $post_id ) ||
+				! $this->allowed( 'text' ) ||
+				strlen( (string) $post->post_content ) !== $meta['total'] ||
+				! hash_equals( $meta['sha256'], hash( 'sha256', (string) $post->post_content ) ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'WordPress text persisted with an unverified result; inspect the post, never retry blindly.' );
+			}
+			$meta['state']          = 'committed';
+			$meta['destination_id'] = $post_id;
+			if ( ! $this->save_meta( $handle, $meta ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'WordPress text was saved, but the private receipt could not be committed.' );
+			}
+			return $this->receipt( $meta );
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
 	/** @param string $id Opaque session. @return bool|WP_Error */
 	public function cancel( $id ) {
 		$loaded = $this->load( $id );
@@ -320,6 +535,8 @@ final class Private_Transfer_Session {
 		switch ( $purpose ) {
 			case 'media':
 				return $this->permissions->allowed( Settings::GROUP_BUILDER_WRITE, 'upload_files' );
+			case 'media_read':
+				return $this->permissions->allowed( Settings::GROUP_SITE_READ, 'read' );
 			case 'text':
 				return $this->permissions->allowed( Settings::GROUP_BUILDER_WRITE, 'edit_posts' );
 			case 'wxr':
@@ -423,11 +640,11 @@ final class Private_Transfer_Session {
 			! is_int( $meta['blog'] ) || $meta['blog'] < 1 ||
 			! is_int( $meta['user'] ) || $meta['user'] < 1 ||
 			! is_string( $meta['client'] ) || ! is_string( $meta['purpose'] ) ||
-			! in_array( $meta['purpose'], array( 'media', 'text', 'wxr' ), true ) ||
+			! in_array( $meta['purpose'], array( 'media', 'media_read', 'text', 'wxr' ), true ) ||
 			! is_string( $meta['sha256'] ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $meta['sha256'] ) ||
 			! in_array( $meta['state'], array( 'open', 'verified', 'committing', 'committed' ), true ) ||
 			( in_array( $meta['state'], array( 'committing', 'committed' ), true ) &&
-				( ( $meta['consumer'] ?? '' ) !== 'media' ||
+				( ! in_array( $meta['consumer'] ?? '', array( 'media', 'content' ), true ) ||
 					! is_int( $meta['destination_id'] ?? null ) || $meta['destination_id'] < 0 ) ) ) {
 			$this->close_meta( $h );
 			return new WP_Error( 'transfer_storage_uncertain', 'Private transfer metadata is malformed or incomplete.' );
@@ -692,6 +909,7 @@ final class Private_Transfer_Session {
 			'sha256'         => $meta['sha256'],
 			'expires'        => $meta['expires'],
 			'destination_id' => (int) ( $meta['destination_id'] ?? 0 ),
+			'source_id'      => (int) ( $meta['source_id'] ?? 0 ),
 		);
 	}
 }

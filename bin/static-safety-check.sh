@@ -16,12 +16,12 @@ if [[ -n "$unexpected_primitives" ||
 fi
 
 
-# One audited internal-only temporary-byte ingestion seam. Keep its exact
+# One audited internal-only private byte ingress/egress seam. Keep its exact
 # resource/persistence primitive inventory explicit rather than globally
 # allowing a new generic filesystem adapter across Bridge Abilities.
 private_stage='src/Support/class-private-transfer-session.php'
 if [[ ! -f "$private_stage" ||
-      "$(grep -cF '@fopen(' "$private_stage" || true)" != "8" ||
+      "$(grep -cF '@fopen(' "$private_stage" || true)" != "10" ||
       "$(grep -cF 'fwrite(' "$private_stage" || true)" != "2" ||
       "$(grep -cF 'stream_copy_to_stream(' "$private_stage" || true)" != "1" ||
       "$(grep -cF '@mkdir(' "$private_stage" || true)" != "1" ||
@@ -31,6 +31,14 @@ if [[ ! -f "$private_stage" ||
 fi
 if grep -nE '(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|unlink|rename|copy|rmdir|curl_exec|curl_init|wp_remote_get|wp_remote_post|wp_remote_request)[[:space:]]*\(' "$private_stage"; then
     echo "ERROR: private transfer staging grew forbidden execution/network/filesystem primitives." >&2
+    exit 1
+fi
+# The only new content-file reader must use the already authenticated,
+# exact private lease descriptor. No arbitrary-path WordPress file reader.
+if [[ "$(grep -cF "file_get_contents( \$lease['path'] )" src/Abilities/class-transfer-content-abilities.php || true)" != "1" ||
+      "$(grep -cF 'file_get_contents(' src/Abilities/class-transfer-content-abilities.php || true)" != "1" ||
+      "$(grep -cF '@fopen(' src/Abilities/class-transfer-media-export-abilities.php || true)" != "0" ]]; then
+    echo "ERROR: transfer consumer private file read surface changed." >&2
     exit 1
 fi
 if grep -nE "'(client_path|filesystem_path|target_path|public_url|download_url|ftp_password|ssh_password)'[[:space:]]*=>" "$private_stage"; then

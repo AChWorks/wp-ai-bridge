@@ -11,6 +11,7 @@ use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Private_Transfer_Session;
 use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Transfer_Settings;
 use WP_Error;
 
@@ -45,7 +46,7 @@ final class Transfer_Session_Abilities {
 					'properties'           => array(
 						'action'         => array(
 							'type' => 'string',
-							'enum' => array( 'limits', 'begin', 'append', 'status', 'verify', 'cancel' ),
+							'enum' => array( 'limits', 'begin', 'append', 'status', 'verify', 'cancel', 'read' ),
 						),
 						'purpose'        => array(
 							'type' => 'string',
@@ -64,6 +65,10 @@ final class Transfer_Session_Abilities {
 							'type'      => 'string',
 							'minLength' => 64,
 							'maxLength' => 64,
+						),
+						'max_bytes'      => array(
+							'type'    => 'integer',
+							'minimum' => 1,
 						),
 						'offset'         => array(
 							'type'    => 'integer',
@@ -93,6 +98,11 @@ final class Transfer_Session_Abilities {
 						'max_sessions'     => array( 'type' => 'integer' ),
 						'lease_seconds'    => array( 'type' => 'integer' ),
 						'destination_id'   => array( 'type' => 'integer' ),
+						'read_offset'      => array( 'type' => 'integer' ),
+						'read_next_offset' => array( 'type' => 'integer' ),
+						'read_complete'    => array( 'type' => 'boolean' ),
+						'content_base64'   => array( 'type' => 'string' ),
+						'chunk_sha256'     => array( 'type' => 'string' ),
 					),
 					'required'             => array( 'action', 'state', 'transfer_id', 'purpose', 'complete', 'received_bytes', 'total_bytes', 'sha256', 'expires_at', 'max_chunk_bytes', 'request_bytes', 'max_file_bytes', 'max_active_bytes', 'max_sessions', 'lease_seconds', 'destination_id' ),
 					'additionalProperties' => false,
@@ -136,6 +146,7 @@ final class Transfer_Session_Abilities {
 		// These are availability checks only; the opaque lease store binds and
 		// rechecks exact blog, WordPress user, OAuth client and purpose.
 		return $this->can_purpose( 'media' ) ||
+			$this->can_purpose( 'media_read' ) ||
 			$this->can_purpose( 'text' ) ||
 			$this->can_purpose( 'wxr' );
 	}
@@ -144,6 +155,9 @@ final class Transfer_Session_Abilities {
 	private function can_purpose( $purpose ) {
 		if ( 'media' === $purpose ) {
 			return $this->permissions->allowed( Settings::GROUP_BUILDER_WRITE, 'upload_files' );
+		}
+		if ( 'media_read' === $purpose ) {
+			return $this->permissions->allowed( Settings::GROUP_SITE_READ, 'read' );
 		}
 		if ( 'text' === $purpose ) {
 			return $this->permissions->allowed( Settings::GROUP_BUILDER_WRITE, 'edit_posts' );
@@ -182,6 +196,7 @@ final class Transfer_Session_Abilities {
 			'status' => array( 'action', 'transfer_id' ),
 			'verify' => array( 'action', 'transfer_id' ),
 			'cancel' => array( 'action', 'transfer_id' ),
+			'read'   => array( 'action', 'transfer_id', 'offset', 'max_bytes' ),
 		);
 		if ( ! isset( $allowed_keys[ $action ] ) ||
 			array_diff( array_keys( $input ), $allowed_keys[ $action ] ) ) {
@@ -192,6 +207,7 @@ final class Transfer_Session_Abilities {
 		}
 		if ( 'begin' === $action ) {
 			if ( count( $input ) !== 4 || ! isset( $input['purpose'], $input['total_bytes'], $input['sha256'] ) ||
+				! in_array( $input['purpose'], array( 'media', 'text', 'wxr' ), true ) ||
 				! $this->can_purpose( $input['purpose'] ) ||
 				! is_int( $input['total_bytes'] ) || $input['total_bytes'] < 0 ||
 				! is_string( $input['sha256'] ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $input['sha256'] ) ) {
@@ -236,6 +252,34 @@ final class Transfer_Session_Abilities {
 				return $this->invalid();
 			}
 			$receipt = $this->store->append( $id, $input['offset'], $decoded );
+		} elseif ( 'read' === $action ) {
+			if ( 4 !== count( $input ) || ! isset( $input['offset'], $input['max_bytes'] ) ||
+				! is_int( $input['offset'] ) || $input['offset'] < 0 ||
+				! is_int( $input['max_bytes'] ) || $input['max_bytes'] < 1 ) {
+				return $this->invalid();
+			}
+			// MCP returns JSON/Base64. Respect independently administrator-tunable
+			// wire response and source lease budgets without reading whole files.
+			$response_budget = ( new Payload_Settings() )->all()[ Payload_Settings::RESPONSE_KEY ] * 1024;
+			$out_chunk       = min( $chunk, max( 1, intdiv( max( 1, $response_budget - 8192 ) * 3, 4 ) ) );
+			if ( $input['max_bytes'] > $out_chunk ) {
+				return new WP_Error( 'transfer_message_budget', __( 'Requested outbound window exceeds the current MCP response budget. Request fewer bytes or adjust the administrator response setting.', 'wp-ai-bridge' ) );
+			}
+			$window = $this->store->read_media_export( $id, $input['offset'], $input['max_bytes'] );
+			if ( is_wp_error( $window ) ) {
+				return $window;
+			}
+			$receipt = $this->store->status( $id );
+			if ( is_wp_error( $receipt ) ) {
+				return $receipt;
+			}
+			$result                     = $this->result( $action, $receipt, $policy, $out_chunk );
+			$result['read_offset']      = $window['offset'];
+			$result['read_next_offset'] = $window['next_offset'];
+			$result['read_complete']    = $window['complete'];
+			$result['content_base64']   = $window['base64'];
+			$result['chunk_sha256']     = $window['chunk_sha256'];
+			return $result;
 		} elseif ( 'status' === $action ) {
 			$receipt = $this->store->status( $id );
 		} elseif ( 'verify' === $action ) {

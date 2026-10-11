@@ -71,6 +71,46 @@ function wpai134_session_request( $token, $session, $id, $ability, $parameters )
 }
 
 
+/**
+ * Simulate an actual MCP byte sender, not an internal PHP stage shortcut.
+ *
+ * @param string $token Authenticated fixture bearer.
+ * @param string $session Native Adapter session.
+ * @param int $seq JSON-RPC ID.
+ * @param string $purpose Native transfer purpose.
+ * @param string $body Exact untrusted client payload.
+ * @param array<int,string> $identities Cleanup identities.
+ * @return string Transfer ID.
+ */
+function wpai134_client_stage( $token, $session, &$seq, $purpose, $body, &$identities ) {
+	$begin = wpai134_session_action(
+		$token, $session, $seq,
+		array( 'action' => 'begin', 'purpose' => $purpose, 'total_bytes' => strlen( $body ), 'sha256' => hash( 'sha256', $body ) )
+	);
+	$payload = $begin['result']['structuredContent'] ?? array();
+	wpai134_session_assert( true === ( $payload['success'] ?? false ), 'Native MCP client could not begin exact ' . $purpose . ' source.' );
+	$id = $payload['data']['transfer_id'];
+	$identities[] = $id;
+	$offset = 0;
+	$window = min( 32768, $payload['data']['max_chunk_bytes'] );
+	while ( $offset < strlen( $body ) ) {
+		$part = substr( $body, $offset, $window );
+		$sent = wpai134_session_action(
+			$token, $session, $seq,
+			array( 'action' => 'append', 'transfer_id' => $id, 'offset' => $offset, 'content_base64' => base64_encode( $part ) )
+		);
+		wpai134_session_assert(
+			true === ( $sent['result']['structuredContent']['success'] ?? false ) &&
+			$offset + strlen( $part ) === ( $sent['result']['structuredContent']['data']['received_bytes'] ?? 0 ),
+			'Native MCP byte sender failed at source offset ' . $offset
+		);
+		$offset += strlen( $part );
+	}
+	$verified = wpai134_session_action( $token, $session, $seq, array( 'action' => 'verify', 'transfer_id' => $id ) );
+	wpai134_session_assert( true === ( $verified['result']['structuredContent']['success'] ?? false ), 'Native MCP sender did not verify final staged hash.' );
+	return $id;
+}
+
 $actor         = get_current_user_id();
 $settings      = new Settings();
 $original      = get_option( Settings::OPTION_NAME, false );
@@ -83,6 +123,7 @@ $session       = '';
 $token         = '';
 $identities    = array();
 $media_id      = 0;
+$content_ids   = array();
 $seq           = 20;
 
 function wpai134_session_action( $token, $session, &$seq, $action ) {
@@ -93,6 +134,7 @@ function wpai134_session_action( $token, $session, &$seq, $action ) {
 try {
 	wpai134_session_assert( $actor > 0 && current_user_can( 'manage_options' ), 'Disposable integration requires a current WordPress administrator.' );
 	$grants[ Settings::GROUP_BUILDER_WRITE ] = 1;
+	$grants[ Settings::GROUP_SITE_READ ] = 1;
 	update_option( Settings::OPTION_NAME, $grants, false );
 	$limits = $policy->defaults();
 	// Set a small per-file policy to prove administrator-controlled errors,
@@ -276,6 +318,61 @@ try {
 		(int) $media_status['result']['structuredContent']['data']['destination_id'] === $media_id,
 		'Committed Media effect had no durable status/attachment receipt.'
 	);
+	// Outbound producer: a source-bound private snapshot, losslessly read by
+	// the same external JSON-RPC-style MCP client without a public URL/path.
+	list( $exported ) = wpai134_session_request(
+		$token, $session, $seq++, 'wp-ai-bridge/transfer-media-export',
+		array( 'media_id' => $media_id )
+	);
+	$exp = $exported['result']['structuredContent'] ?? array();
+	wpai134_session_assert(
+		true === ( $exp['success'] ?? false ) &&
+		strlen( $exp['data']['transfer_id'] ?? '' ) === 64 &&
+		68 === ( $exp['data']['total_bytes'] ?? 0 ),
+		'Native WordPress Media export snapshot could not be opened.'
+	);
+	$export_id = $exp['data']['transfer_id'];
+	$identities[] = $export_id;
+	$cursor = 0;
+	$downloaded = '';
+	while ( $cursor < strlen( $png ) ) {
+		$read = wpai134_session_action(
+			$token, $session, $seq,
+			array( 'action' => 'read', 'transfer_id' => $export_id, 'offset' => $cursor, 'max_bytes' => 23 )
+		);
+		$window = $read['result']['structuredContent'] ?? array();
+		wpai134_session_assert( true === ( $window['success'] ?? false ), 'Authenticated Media export read failed.' );
+		$part = base64_decode( $window['data']['content_base64'] ?? '', true );
+		wpai134_session_assert(
+			is_string( $part ) && hash( 'sha256', $part ) === ( $window['data']['chunk_sha256'] ?? '' ) &&
+			$cursor + strlen( $part ) === ( $window['data']['read_next_offset'] ?? 0 ),
+			'Frozen Media transfer window had an incorrect chunk or offset.'
+		);
+		$downloaded .= $part;
+		$cursor += strlen( $part );
+	}
+	wpai134_session_assert(
+		$downloaded === $png && hash( 'sha256', $downloaded ) === $exp['data']['sha256'],
+		'Native outbound WordPress Media MCP transfer did not reconstruct exact private bytes.'
+	);
+	$end = wpai134_session_action(
+		$token, $session, $seq,
+		array( 'action' => 'read', 'transfer_id' => $export_id, 'offset' => strlen( $png ), 'max_bytes' => 23 )
+	);
+	wpai134_session_assert(
+		true === ( $end['result']['structuredContent']['success'] ?? false ) &&
+		true === ( $end['result']['structuredContent']['data']['read_complete'] ?? false ) &&
+		'' === ( $end['result']['structuredContent']['data']['content_base64'] ?? null ),
+		'Exact end-of-file export continuation did not terminate without fabricated bytes.'
+	);
+	$read_denied = wpai134_session_action(
+		$token, $session, $seq,
+		array( 'action' => 'read', 'transfer_id' => $media_lease, 'offset' => 0, 'max_bytes' => 1 )
+	);
+	wpai134_session_assert( ! empty( $read_denied['result']['isError'] ), 'Inbound Media staging was mistakenly readable as an outbound export.' );
+	$export_cancel = wpai134_session_action( $token, $session, $seq, array( 'action' => 'cancel', 'transfer_id' => $export_id ) );
+	wpai134_session_assert( true === ( $export_cancel['result']['structuredContent']['success'] ?? false ), 'WordPress Media export snapshot release failed.' );
+
 	list( $duplicate ) = wpai134_session_request(
 		$token, $session, $seq++, 'wp-ai-bridge/transfer-media-import',
 		array( 'transfer_id' => $media_lease, 'filename' => 'wpai134-staged.png' )
@@ -286,6 +383,87 @@ try {
 	wp_set_current_user( $actor );
 	wpai134_session_assert( get_post( $media_id ) && is_file( get_attached_file( $media_id ) ), 'Private staged-data release deleted the native Media attachment.' );
 	wp_set_current_user( 0 );
+
+	// Multi-megabyte UTF-8 text travels through the same authenticated
+	// byte plane, but mutates WordPress only through explicit content-upsert
+	// authorization with an exact native content state precondition.
+	$long_text = str_repeat( "درود 🌍 Guten\\berg <?php echo 'literal'; ?> \\n", 40000 );
+	wpai134_session_assert( strlen( $long_text ) > 1048576, 'Native text fixture must exceed a single JSON/MCP message.' );
+	$text_id = wpai134_client_stage( $token, $session, $seq, 'text', $long_text, $identities );
+	list( $created ) = wpai134_session_request(
+		$token, $session, $seq++, 'wp-ai-bridge/transfer-content-commit',
+		array( 'action' => 'create', 'transfer_id' => $text_id, 'post_type' => 'post', 'title' => 'انتقال متن چندبخشی' )
+	);
+	$created_data = $created['result']['structuredContent'] ?? array();
+	wpai134_session_assert(
+		true === ( $created_data['success'] ?? false ) && 'committed' === ( $created_data['data']['state'] ?? '' ) &&
+		(int) ( $created_data['data']['post_id'] ?? 0 ) > 0,
+		'Authenticated native WordPress text consumer did not commit a new draft.'
+	);
+	$post_id = (int) $created_data['data']['post_id'];
+	$content_ids[] = $post_id;
+	wp_set_current_user( $actor );
+	$post = get_post( $post_id );
+	wpai134_session_assert(
+		$post && 'draft' === $post->post_status &&
+		$long_text === $post->post_content && hash( 'sha256', $post->post_content ) === hash( 'sha256', $long_text ),
+		'Native WordPress content creation did not preserve exact multi-MiB UTF-8 and slash bytes.'
+	);
+	wp_set_current_user( 0 );
+	list( $duplicate_text ) = wpai134_session_request(
+		$token, $session, $seq++, 'wp-ai-bridge/transfer-content-commit',
+		array( 'action' => 'create', 'transfer_id' => $text_id, 'post_type' => 'post', 'title' => 'تکرار غیرمجاز' )
+	);
+	wpai134_session_assert( ! empty( $duplicate_text['result']['isError'] ), 'Claimed WordPress create was replayed as a duplicate post.' );
+	$revised_text = str_repeat( "متن جدید 🌿 HTML <em>ارزش</em> و \\\\ اسلش\n", 40000 );
+	$revision_id = wpai134_client_stage( $token, $session, $seq, 'text', $revised_text, $identities );
+	list( $stale ) = wpai134_session_request(
+		$token, $session, $seq++, 'wp-ai-bridge/transfer-content-commit',
+		array(
+			'action' => 'update', 'transfer_id' => $revision_id, 'post_id' => $post_id,
+			'expected_modified_gmt' => '2000-01-01 00:00:00',
+			'expected_state_hash' => str_repeat( '0', 64 ),
+		)
+	);
+	wpai134_session_assert( ! empty( $stale['result']['isError'] ), 'Stale full-text CAS did not refuse an overwrite.' );
+	$unclaimed = wpai134_session_action( $token, $session, $seq, array( 'action' => 'status', 'transfer_id' => $revision_id ) );
+	wpai134_session_assert( 'verified' === ( $unclaimed['result']['structuredContent']['data']['state'] ?? '' ), 'Stale preflight consumed a still-safe text source.' );
+	list( $current ) = wpai134_session_request(
+		$token, $session, $seq++, 'wp-ai-bridge/content-read',
+		array( 'action' => 'get', 'id' => $post_id, 'include_content' => false )
+	);
+	$current_data = $current['result']['structuredContent']['data']['items'][0] ?? array();
+	wpai134_session_assert(
+		! empty( $current_data['state_hash'] ) && ! empty( $current_data['modified_gmt'] ),
+		'Native current post state lacked the CAS identity required for update.'
+	);
+	list( $updated ) = wpai134_session_request(
+		$token, $session, $seq++, 'wp-ai-bridge/transfer-content-commit',
+		array(
+			'action' => 'update', 'transfer_id' => $revision_id, 'post_id' => $post_id,
+			'expected_modified_gmt' => $current_data['modified_gmt'],
+			'expected_state_hash' => $current_data['state_hash'],
+		)
+	);
+	$updated_data = $updated['result']['structuredContent'] ?? array();
+	wpai134_session_assert(
+		true === ( $updated_data['success'] ?? false ) &&
+		(int) ( $updated_data['data']['post_id'] ?? 0 ) === $post_id &&
+		'committed' === ( $updated_data['data']['state'] ?? '' ),
+		'Native WordPress content update did not commit the exact prior content state.'
+	);
+	wp_set_current_user( $actor );
+	wpai134_session_assert(
+		$revised_text === get_post( $post_id )->post_content,
+		'Post update truncated or rewrote Markdown, UTF-8, literal backslashes or HTML.'
+	);
+	wp_set_current_user( 0 );
+	$updated_status = wpai134_session_action( $token, $session, $seq, array( 'action' => 'status', 'transfer_id' => $revision_id ) );
+	wpai134_session_assert(
+		$post_id === ( $updated_status['result']['structuredContent']['data']['destination_id'] ?? 0 ),
+		'Successful native content commit lacked a durable destination receipt.'
+	);
+	echo "PASS: #134 real WordPress native MCP bidirectional Media snapshot and >1 MiB lossless UTF-8 content create/update with CAS, no replay.\n";
 
 	// Zero-byte source must verify without an invented synthetic chunk.
 	$zero = wpai134_session_action(
@@ -321,6 +499,9 @@ try {
 	}
 	if ( $media_id > 0 ) {
 		wp_delete_attachment( $media_id, true );
+	}
+	foreach ( $content_ids as $content_id ) {
+		wp_delete_post( $content_id, true );
 	}
 	if ( '' !== $token ) {
 		$store->revoke( $token );
