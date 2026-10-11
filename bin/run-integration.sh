@@ -17,12 +17,21 @@ trap cleanup EXIT
 
 "${compose[@]}" up -d db wordpress
 
-for attempt in $(seq 1 30); do
-    if "${compose[@]}" exec -T wordpress test -f /var/www/html/wp-load.php; then
+# The official image copies WordPress into the named volume on first boot.
+# wp-load.php alone may exist before the Core tree finishes extracting.
+# Require bootstrap, Core upgrade API and generated config before WP-CLI.
+for attempt in $(seq 1 45); do
+    if "${compose[@]}" exec -T wordpress sh -c '
+        test -s /var/www/html/wp-load.php &&
+        test -s /var/www/html/wp-settings.php &&
+        test -s /var/www/html/wp-includes/version.php &&
+        test -s /var/www/html/wp-admin/includes/upgrade.php &&
+        test -s /var/www/html/wp-config.php
+    '; then
         break
     fi
-    if [[ "$attempt" == "30" ]]; then
-        echo "ERROR: WordPress files were not initialized." >&2
+    if [[ "$attempt" == "45" ]]; then
+        echo "ERROR: WordPress Core files and configuration were not initialized." >&2
         exit 1
     fi
     sleep 2
