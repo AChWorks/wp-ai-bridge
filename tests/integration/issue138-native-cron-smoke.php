@@ -147,6 +147,67 @@ try {
 		is_wp_error( $stale ) && 'cron_stale_snapshot' === $stale->get_error_code(),
 		'Native event mutation did not invalidate stale Cron paging.'
 	);
+	// Representative native-option cost and >4096-event pagination, without
+	// scheduling thousands of actions individually or creating real callbacks.
+	// This changes only a disposable WordPress fixture and restores the exact
+	// preexisting Cron option before continuing with revocation tests.
+	$previous_cron_option = get_option( 'cron', array() );
+	try {
+		$synthetic_cron = is_array( $previous_cron_option ) ? $previous_cron_option : array();
+		$synthetic_hook = 'wpai138_large_synthetic';
+		$synthetic_args = array( 'private_test_marker' => $secret_marker );
+		$synthetic_hash = md5( serialize( $synthetic_args ) );
+		$start_large    = time() + 2 * DAY_IN_SECONDS;
+		for ( $event_index = 0; $event_index < 4103; ++$event_index ) {
+			$synthetic_cron[ $start_large + $event_index ]['wpai138_large_synthetic'][ $synthetic_hash ] = array(
+				'schedule' => false,
+				'args'     => $synthetic_args,
+			);
+		}
+		ksort( $synthetic_cron, SORT_NUMERIC );
+		wpai138_native_assert(
+			update_option( 'cron', $synthetic_cron, false ),
+			'Disposable large Cron option could not be persisted.'
+		);
+		$memory_before = memory_get_usage( true );
+		$started_at    = microtime( true );
+		$large_first   = $ability->execute( array( 'hook' => $synthetic_hook, 'limit' => 25 ) );
+		$first_ms      = ( microtime( true ) - $started_at ) * 1000;
+		wpai138_native_assert(
+			! is_wp_error( $large_first ) &&
+			4103 === $large_first['total'] &&
+			25 === count( $large_first['items'] ) &&
+			$large_first['has_more'],
+			'Native Cron inventory >4096 events was refused or silently truncated.'
+		);
+		$large_last = $ability->execute(
+			array(
+				'hook'              => $synthetic_hook,
+				'offset'            => 4100,
+				'limit'             => 25,
+				'expected_snapshot' => $large_first['snapshot'],
+			)
+		);
+		wpai138_native_assert(
+			! is_wp_error( $large_last ) && 4103 === $large_last['total'] &&
+			3 === count( $large_last['items'] ) && ! $large_last['has_more'],
+			'Native >4096-event inventory failed its final source-bound page.'
+		);
+		wpai138_native_assert(
+			false === strpos( wp_json_encode( $large_last ), $secret_marker ),
+			'Native large Cron inventory exposed secret serialized arguments.'
+		);
+		echo sprintf(
+			"MEASURE: #138 native_cron_events=%d first_filtered_page_ms=%.2f memory_before_bytes=%d php_peak_bytes=%d.
+",
+			$large_first['total'],
+			$first_ms,
+			$memory_before,
+			memory_get_peak_usage( true )
+		);
+	} finally {
+		update_option( 'cron', $previous_cron_option, false );
+	}
 	wp_set_current_user( 0 );
 	wpai138_native_assert(
 		true !== $ability->check_permissions( array( 'action' => 'list' ) ),
