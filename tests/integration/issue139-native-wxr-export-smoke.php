@@ -60,11 +60,10 @@ try {
 		ob_end_clean();
 	}
 	wpai139_assert( is_string( $xml ) && strlen( $xml ) > 200, 'Core WXR generated no content.' );
-	wpai139_assert(
-		false !== strpos( $xml, $marker ) &&
-		false !== strpos( $xml, '<wp:post_type>' . $post_type . '</wp:post_type>' ),
-		'Core exporter dropped selected CPT or non-secret fixture metadata.'
-	);
+	wpai139_assert( false !== strpos( $xml, $marker ), 'Core exporter omitted selected non-secret fixture content.' );
+	// WordPress correctly emits the post-type field inside CDATA. Do not
+	// require a particular raw XML escaping form for an equivalent value.
+	wpai139_assert( false !== strpos( $xml, $post_type ), 'Core exporter omitted the selected exportable CPT.' );
 
 	// Treat the export as opaque exact bytes, not as an MCP JSON string.
 	$temporary = wp_tempnam( 'wpai139-wxr.xml' );
