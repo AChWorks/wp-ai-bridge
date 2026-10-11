@@ -394,6 +394,13 @@ final class Settings_Page {
 							<p class="description"><?php echo esc_html__( 'Fallback only: largest existing Media Library file for hash-bound, byte-exact MCP Base64 windows. Default 128 MiB; configurable 8 to 1024 MiB. The per-response budget controls each window separately. This is not a limit for future streaming transports.', 'wp-ai-bridge' ); ?></p>
 						</td>
 					</tr>
+					<tr>
+						<th scope="row"><label for="wpai-inline-media-mib"><?php echo esc_html__( 'Inline Base64 Media upload budget (MiB)', 'wp-ai-bridge' ); ?></label></th>
+						<td>
+							<input type="number" class="small-text" id="wpai-inline-media-mib" name="<?php echo esc_attr( Payload_Settings::OPTION_NAME . '[' . Payload_Settings::INLINE_MEDIA_KEY . ']' ); ?>" value="<?php echo esc_attr( (string) $payload_limits[ Payload_Settings::INLINE_MEDIA_KEY ] ); ?>" min="<?php echo esc_attr( (string) Payload_Settings::MIN_INLINE_MEDIA_MIB ); ?>" max="<?php echo esc_attr( (string) Payload_Settings::MAX_INLINE_MEDIA_MIB ); ?>" step="1" required>
+							<p class="description"><?php echo esc_html__( 'Default 20 MiB; configurable from 1 to 256 MiB. Limits only one inline MCP Media Library upload and remains bounded by WordPress upload_max_filesize/post_max_size, client request and proxy quotas. It is not the maximum size for future streamed files.', 'wp-ai-bridge' ); ?></p>
+						</td>
+					</tr>
 				</tbody></table>
 				<p class="description"><?php echo esc_html__( 'Bridge cannot change MCP client, Gateway, proxy, PHP or hosting limits. Increase those separately where supported; large private files still require an authenticated binary transport.', 'wp-ai-bridge' ); ?></p>
 				<?php submit_button( __( 'Save response and text budgets', 'wp-ai-bridge' ) ); ?>

@@ -10,7 +10,7 @@ return array(
 	'Default: 512 KiB; configurable from 64 to 1024 KiB. This bounds one private Workspace document, not WordPress posts or file transport.' => 'پیش‌فرض: ۵۱۲ کیبی‌بایت؛ قابل تنظیم از ۶۴ تا ۱۰۲۴. این سقف برای یک سند خصوصی Workspace است، نه نوشته‌های وردپرس یا انتقال فایل.',
 	'Workspace task notes storage limit (KiB per task)' => 'سقف ذخیرهٔ یادداشت وظیفهٔ Workspace (کیبی‌بایت به‌ازای هر وظیفه)',
 	'Default: 128 KiB; configurable from 16 to 256 KiB. Lowering a limit does not erase existing longer notes, but blocks oversized replacements.' => 'پیش‌فرض: ۱۲۸ کیبی‌بایت؛ قابل تنظیم از ۱۶ تا ۲۵۶. کاهش سقف، یادداشت‌های قبلی را پاک نمی‌کند، اما جایگزینی حجیم‌تر از سقف را نمی‌پذیرد.',
-	'The transfer budget must be a whole number within the indicated KiB range. The previous value was kept.' => 'بودجهٔ انتقال باید عدد صحیح در بازهٔ کیبی‌بایت مشخص‌شده باشد. مقدار قبلی حفظ شد.',
+	'The transfer budget must be a whole number within the indicated range and units. The previous value was kept.' => 'بودجهٔ انتقال باید عدد صحیح در بازهٔ کیبی‌بایت مشخص‌شده باشد. مقدار قبلی حفظ شد.',
 	'MCP response and text budgets' => 'بودجهٔ پاسخ MCP و بخش‌های متن',
 	'These are per-request response and text-window budgets, not limits on the size of a WordPress document or transferred file. No capacity is preallocated when idle.' => 'این مقادیر بودجهٔ هر پاسخ و بخش متن هستند، نه محدودیت اندازهٔ سند وردپرس یا فایل انتقالی. در حالت بیکار ظرفیتی از پیش رزرو نمی‌شود.',
 	'MCP JSON response budget (KiB)' => 'بودجهٔ پاسخ JSON در MCP (کیبی‌بایت)',

@@ -9,6 +9,7 @@ namespace WP_AI_Bridge\Abilities;
 
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Settings;
 use WP_Error;
 
@@ -16,7 +17,6 @@ use WP_Error;
  * Provides generic Media Library inspection and mutation through WordPress APIs.
  */
 final class Media_Abilities {
-	const ABSOLUTE_MAX_UPLOAD_BYTES = 20971520;
 
 	/**
 	 * Bridge permission service.
@@ -280,7 +280,7 @@ final class Media_Abilities {
 			return $this->logged_error( $ability, 'invalid_media_filename', __( 'A valid filename with an extension is required.', 'wp-ai-bridge' ) );
 		}
 
-		$max_bytes   = min( (int) wp_max_upload_size(), self::ABSOLUTE_MAX_UPLOAD_BYTES );
+		$max_bytes   = min( (int) wp_max_upload_size(), ( new Payload_Settings() )->all()[ Payload_Settings::INLINE_MEDIA_KEY ] * 1048576 );
 		$encoded     = (string) $input['content_base64'];
 		$encoded_max = (int) ceil( $max_bytes * 4 / 3 ) + 8;
 		if ( '' === $encoded || strlen( $encoded ) > $encoded_max ) {

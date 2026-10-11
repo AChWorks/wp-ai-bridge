@@ -77,7 +77,7 @@ For action=chunk, the caller supplies the same media source, offset, max_bytes, 
 
 The new independently configurable inline_file_read_mib option defaults to 128 MiB (8–1024 MiB) and applies ONLY to this inline JSON/Base64 fallback. It does NOT cap WordPress file/object storage, other binary transports or future streaming. Binary response windows and whole-file capacity must never be conflated. Large-file Base64 incurs request/wire overhead; provider-supported secure streaming or private receipts would need separate authorization and proof.
 
-Existing media-upload remains a separate, one-request Base64 Media Library ingress under native upload permissions. It does not solve durable chunked private binary/text ingress, WXR import, large file delivery as a true client attachment, or Gateway interoperability. This proposed Ability is available only in the draft branch, with no release, external ChatGPT acceptance or independent security review yet.
+Existing media-upload remains a separate, one-request Base64 Media Library ingress under native upload permissions. Its formerly fixed 20 MiB Bridge fallback budget is now per-site operator-configurable through inline_media_upload_mib (20 MiB default, 1–256 MiB), still restricted by WordPress wp_max_upload_size (upload_max_filesize / post_max_size), provider authorization and client/Gateway request body limits. This is NOT a maximum aggregate file size for future streaming. It does not solve durable chunked private binary/text ingress, WXR import, large file delivery as a true client attachment, or Gateway interoperability. This proposed Ability is available only in the draft branch, with no release, external ChatGPT acceptance or independent security review yet.
 
 ## Direct Bridge versus MCP Gateway
 

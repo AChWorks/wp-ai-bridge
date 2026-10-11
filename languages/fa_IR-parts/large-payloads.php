@@ -27,4 +27,6 @@ return array(
 	'The authorized Media Library source has no readable native file.' => 'برای رسانه مجاز، فایل قابل‌خواندن محلی در دسترس نیست.',
 	'The file exceeds the configured inline MCP reader ceiling; use another supported file transport.' => 'حجم فایل از سقف تنظیم‌شده خواندن مستقیم MCP بیشتر است؛ از مسیر انتقال دیگری که پشتیبانی می‌شود استفاده کنید.',
 	'The file-read result cannot fit the current MCP response budget.' => 'نتیجه خواندن فایل در سقف فعلی پاسخ MCP جای نمی‌گیرد.',
+	'Inline Base64 Media upload budget (MiB)' => 'بودجه آپلود مستقیم رسانه با Base64 (مگابایت)',
+	'Default 20 MiB; configurable from 1 to 256 MiB. Limits only one inline MCP Media Library upload and remains bounded by WordPress upload_max_filesize/post_max_size, client request and proxy quotas. It is not the maximum size for future streamed files.' => 'مقدار پیش‌فرض ۲۰ مگابایت و بازه تنظیم ۱ تا ۲۵۶ مگابایت است. این سقف فقط برای هر درخواست آپلود مستقیم MCP است و محدودیت‌های وردپرس، کلاینت و پراکسی همچنان اعمال می‌شوند؛ انتقال جریانی آینده به این سقف محدود نیست.',
 );

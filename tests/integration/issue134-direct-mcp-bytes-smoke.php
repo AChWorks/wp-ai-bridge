@@ -12,6 +12,7 @@
 use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Auth\OAuth_Store;
 use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Payload_Settings;
 
 function wpai134_mcp_assert( $condition, $message ) {
 	if ( ! $condition ) {
@@ -70,20 +71,21 @@ function wpai134_mcp_request( $token, $session, $id, $ability, $parameters ) {
 	return array( $decoded, $response->get_headers() );
 }
 
-$actor          = get_current_user_id();
-$settings       = new Settings();
-$original       = get_option( Settings::OPTION_NAME, $settings->defaults() );
-$grant          = $settings->defaults();
-$store          = new OAuth_Store();
-$oauth          = new OAuth_Server( $store );
-$token          = '';
-$session        = '';
-$attachment     = 0;
-$zip_attachment = 0;
-$zip_path       = '';
-$zip_size       = 0;
-$zip_wire_bytes = 0;
-$post_id        = 0;
+$actor           = get_current_user_id();
+$settings        = new Settings();
+$original        = get_option( Settings::OPTION_NAME, $settings->defaults() );
+$original_inline = get_option( Payload_Settings::OPTION_NAME, false );
+$grant           = $settings->defaults();
+$store           = new OAuth_Store();
+$oauth           = new OAuth_Server( $store );
+$token           = '';
+$session         = '';
+$attachment      = 0;
+$zip_attachment  = 0;
+$zip_path        = '';
+$zip_size        = 0;
+$zip_wire_bytes  = 0;
+$post_id         = 0;
 
 try {
 	wpai134_mcp_assert( $actor > 0, 'Native fixture requires authenticated WordPress administrator.' );
@@ -190,18 +192,30 @@ try {
 		strlen( $zip_input ) < wp_max_upload_size(),
 		'Generated ZIP is outside native WordPress permitted Media upload size.'
 	);
-	$zip_size           = strlen( $zip_input );
-	$zip_args           = array(
+	$zip_size       = strlen( $zip_input );
+	$zip_args       = array(
 		'filename'       => 'wpai134-direct-opaque.zip',
 		'content_base64' => base64_encode( $zip_input ),
 	);
-	$zip_wire           = wp_json_encode(
+	$zip_wire       = wp_json_encode(
 		array(
 			'ability_name' => 'wp-ai-bridge/media-upload',
 			'parameters'   => $zip_args,
 		)
 	);
-	$zip_wire_bytes     = is_string( $zip_wire ) ? strlen( $zip_wire ) : 0;
+	$zip_wire_bytes = is_string( $zip_wire ) ? strlen( $zip_wire ) : 0;
+	// Distinct operator-tunable inline upload ceiling: this valid
+	// 1,048,856-byte ZIP must fail when the bridge budget is 1 MiB.
+	$payload_limits                                       = ( new Payload_Settings() )->defaults();
+	$payload_limits[ Payload_Settings::INLINE_MEDIA_KEY ] = 1;
+	wp_set_current_user( $actor );
+	update_option( Payload_Settings::OPTION_NAME, $payload_limits, false );
+	wp_set_current_user( 0 );
+	list( $blocked_zip ) = wpai134_mcp_request( $token, $session, 81, 'wp-ai-bridge/media-upload', $zip_args );
+	wpai134_mcp_assert( ! empty( $blocked_zip['result']['isError'] ), 'Configured 1 MiB inline Media budget was ignored for a larger ZIP.' );
+	wp_set_current_user( $actor );
+	update_option( Payload_Settings::OPTION_NAME, ( new Payload_Settings() )->defaults(), false );
+	wp_set_current_user( 0 );
 	list( $zip_result ) = wpai134_mcp_request( $token, $session, 4, 'wp-ai-bridge/media-upload', $zip_args );
 	unset( $zip_args, $zip_wire );
 	$zip_returned = $zip_result['result']['structuredContent'] ?? array();
@@ -449,6 +463,11 @@ try {
 	}
 	if ( '' !== $token ) {
 		$store->revoke( $token );
+	}
+	if ( false === $original_inline ) {
+		delete_option( Payload_Settings::OPTION_NAME );
+	} else {
+		update_option( Payload_Settings::OPTION_NAME, $original_inline, false );
 	}
 	if ( false === $original ) {
 		delete_option( Settings::OPTION_NAME );

@@ -11,23 +11,25 @@ namespace WP_AI_Bridge\Support;
  * Independently manages Bridge transport budgets and finite per-record Workspace quotas.
  */
 final class Payload_Settings {
-	const OPTION_NAME     = 'wp_ai_bridge_payload_limits';
-	const OPTION_GROUP    = 'wp_ai_bridge_payload';
-	const RESPONSE_KEY    = 'response_kib';
-	const WINDOW_KEY      = 'text_window_kib';
-	const DOCUMENT_KEY    = 'workspace_document_kib';
-	const NOTES_KEY       = 'workspace_notes_kib';
-	const INLINE_FILE_KEY = 'inline_file_read_mib';
+	const OPTION_NAME      = 'wp_ai_bridge_payload_limits';
+	const OPTION_GROUP     = 'wp_ai_bridge_payload';
+	const RESPONSE_KEY     = 'response_kib';
+	const WINDOW_KEY       = 'text_window_kib';
+	const DOCUMENT_KEY     = 'workspace_document_kib';
+	const NOTES_KEY        = 'workspace_notes_kib';
+	const INLINE_FILE_KEY  = 'inline_file_read_mib';
+	const INLINE_MEDIA_KEY = 'inline_media_upload_mib';
 
 	// The direct Bridge default is intentionally not constrained by the old
 	// Gateway 64 KiB ordinary-response default. Older Gateway deployments
 	// must use a smaller operator setting (e.g. 48 KiB) until coordinated
 	// compatibility and effective response budgets are verified.
-	const DEFAULT_RESPONSE_KIB    = 128;
-	const DEFAULT_WINDOW_KIB      = 128;
-	const DEFAULT_DOCUMENT_KIB    = 512;
-	const DEFAULT_NOTES_KIB       = 128;
-	const DEFAULT_INLINE_FILE_MIB = 128;
+	const DEFAULT_RESPONSE_KIB     = 128;
+	const DEFAULT_WINDOW_KIB       = 128;
+	const DEFAULT_DOCUMENT_KIB     = 512;
+	const DEFAULT_NOTES_KIB        = 128;
+	const DEFAULT_INLINE_FILE_MIB  = 128;
+	const DEFAULT_INLINE_MEDIA_MIB = 20;
 
 	// Administrator tuning is intentionally finite. These are not aggregate
 	// file/document/transfer size ceilings and do not allocate memory at rest.
@@ -42,6 +44,9 @@ final class Payload_Settings {
 	// Read-only, whole-file hashing inline-MCP fallback; not a universal file cap.
 	const MIN_INLINE_FILE_MIB = 8;
 	const MAX_INLINE_FILE_MIB = 1024;
+	// Bounded legacy Base64 upload only; WordPress and client caps still apply.
+	const MIN_INLINE_MEDIA_MIB = 1;
+	const MAX_INLINE_MEDIA_MIB = 256;
 
 	/** Register an independent setting so saving it cannot change access grants. */
 	public function register() {
@@ -60,11 +65,12 @@ final class Payload_Settings {
 	/** @return array<string,int> */
 	public function defaults() {
 		return array(
-			self::RESPONSE_KEY    => self::DEFAULT_RESPONSE_KIB,
-			self::WINDOW_KEY      => self::DEFAULT_WINDOW_KIB,
-			self::DOCUMENT_KEY    => self::DEFAULT_DOCUMENT_KIB,
-			self::NOTES_KEY       => self::DEFAULT_NOTES_KIB,
-			self::INLINE_FILE_KEY => self::DEFAULT_INLINE_FILE_MIB,
+			self::RESPONSE_KEY     => self::DEFAULT_RESPONSE_KIB,
+			self::WINDOW_KEY       => self::DEFAULT_WINDOW_KIB,
+			self::DOCUMENT_KEY     => self::DEFAULT_DOCUMENT_KIB,
+			self::NOTES_KEY        => self::DEFAULT_NOTES_KIB,
+			self::INLINE_FILE_KEY  => self::DEFAULT_INLINE_FILE_MIB,
+			self::INLINE_MEDIA_KEY => self::DEFAULT_INLINE_MEDIA_MIB,
 		);
 	}
 
@@ -128,7 +134,7 @@ final class Payload_Settings {
 	 * @return int|null
 	 */
 	private function parse( $key, $value ) {
-		if ( ! in_array( $key, array( self::RESPONSE_KEY, self::WINDOW_KEY, self::DOCUMENT_KEY, self::NOTES_KEY, self::INLINE_FILE_KEY ), true ) ||
+		if ( ! in_array( $key, array( self::RESPONSE_KEY, self::WINDOW_KEY, self::DOCUMENT_KEY, self::NOTES_KEY, self::INLINE_FILE_KEY, self::INLINE_MEDIA_KEY ), true ) ||
 			( ! is_int( $value ) && ! is_string( $value ) ) ) {
 			return null;
 		}
@@ -139,11 +145,12 @@ final class Payload_Settings {
 
 		$integer = (int) $value;
 		$ranges  = array(
-			self::RESPONSE_KEY    => array( self::MIN_RESPONSE_KIB, self::MAX_RESPONSE_KIB ),
-			self::WINDOW_KEY      => array( self::MIN_WINDOW_KIB, self::MAX_WINDOW_KIB ),
-			self::DOCUMENT_KEY    => array( self::MIN_DOCUMENT_KIB, self::MAX_DOCUMENT_KIB ),
-			self::NOTES_KEY       => array( self::MIN_NOTES_KIB, self::MAX_NOTES_KIB ),
-			self::INLINE_FILE_KEY => array( self::MIN_INLINE_FILE_MIB, self::MAX_INLINE_FILE_MIB ),
+			self::RESPONSE_KEY     => array( self::MIN_RESPONSE_KIB, self::MAX_RESPONSE_KIB ),
+			self::WINDOW_KEY       => array( self::MIN_WINDOW_KIB, self::MAX_WINDOW_KIB ),
+			self::DOCUMENT_KEY     => array( self::MIN_DOCUMENT_KIB, self::MAX_DOCUMENT_KIB ),
+			self::NOTES_KEY        => array( self::MIN_NOTES_KIB, self::MAX_NOTES_KIB ),
+			self::INLINE_FILE_KEY  => array( self::MIN_INLINE_FILE_MIB, self::MAX_INLINE_FILE_MIB ),
+			self::INLINE_MEDIA_KEY => array( self::MIN_INLINE_MEDIA_MIB, self::MAX_INLINE_MEDIA_MIB ),
 		);
 		$min     = $ranges[ $key ][0];
 		$max     = $ranges[ $key ][1];
@@ -157,7 +164,7 @@ final class Payload_Settings {
 			add_settings_error(
 				self::OPTION_NAME,
 				'wpai_payload_limit_invalid',
-				__( 'The transfer budget must be a whole number within the indicated KiB range. The previous value was kept.', 'wp-ai-bridge' )
+				__( 'The transfer budget must be a whole number within the indicated range and units. The previous value was kept.', 'wp-ai-bridge' )
 			);
 		}
 	}
