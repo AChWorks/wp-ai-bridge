@@ -240,6 +240,12 @@ The import adds private/reserved-address checks to native URL validation: all re
 
 Import is not idempotent: importing the same URL again can create another attachment. An interrupted request is not proof of failure; inspect the Media Library before retrying. This is not a transaction or a sandbox for third-party hooks; process termination and provider side effects may require inspection and recovery. WordPress's own network policy and installed filters remain the runtime trust boundary; the Bridge does not override them or claim to replace host egress controls.
 
+## Draft file bytes via ordinary MCP Ability (Issue #134; not shipped)
+
+The draft payload branch proposes **wp-ai-bridge/file-bytes-read**, a read-only, source-neutral Ability with an initial media adapter. Its inspect step returns authorized source size/digest and a blog/user/OAuth-client-bound opaque identity. Its chunk step returns bounded Base64 with source-state checks, byte offsets and a stable digest for caller-side verification. Every call requires the enabled Site Read grant, a native attachment read_post capability and confinement to the site's canonical uploads directory. The inline source-size ceiling is operator-tunable and independent of the MCP encoded response ceiling.
+
+This is NOT a complete private binary ingress, file transport session, HTTP streaming protocol, WXR artifact export, downloadable model attachment, ChatGPT top-level fileParams extension, or verified Gateway compatibility. Review and approve its public contract before release; do not expose server paths.
+
 ## Public Ability contract inspection
 
 **Direct MCP tool inventory versus WordPress operations:** the canonical direct server exposes only the three generic MCP Adapter tools in `tools/list`. Use `mcp-adapter-discover-abilities` to discover public WordPress operations, including `wp-ai-bridge/extension-lifecycle`; absence of that Ability name from `tools/list` alone does not mean it is unimplemented. For a site-specific diagnosis of build version, delegation, native authority and remaining administrator-parity gaps, see [administrator capability audit](POST-PARITY-AUDIT.md).

@@ -38,7 +38,10 @@ function wpai134_mcp_request( $token, $session, $id, $ability, $parameters ) {
 					'params'  => array(
 						'protocolVersion' => '2025-11-25',
 						'capabilities'    => (object) array(),
-						'clientInfo'      => array( 'name' => 'wpai134-direct-byte-fixture', 'version' => '1.0' ),
+						'clientInfo'      => array(
+							'name'    => 'wpai134-direct-byte-fixture',
+							'version' => '1.0',
+						),
 					),
 				)
 			)
@@ -67,14 +70,14 @@ function wpai134_mcp_request( $token, $session, $id, $ability, $parameters ) {
 	return array( $decoded, $response->get_headers() );
 }
 
-$actor      = get_current_user_id();
-$settings   = new Settings();
-$original   = get_option( Settings::OPTION_NAME, $settings->defaults() );
-$grant      = $settings->defaults();
-$store      = new OAuth_Store();
-$oauth      = new OAuth_Server( $store );
-$token      = '';
-$session    = '';
+$actor          = get_current_user_id();
+$settings       = new Settings();
+$original       = get_option( Settings::OPTION_NAME, $settings->defaults() );
+$grant          = $settings->defaults();
+$store          = new OAuth_Store();
+$oauth          = new OAuth_Server( $store );
+$token          = '';
+$session        = '';
 $attachment     = 0;
 $zip_attachment = 0;
 $zip_path       = '';
@@ -120,7 +123,7 @@ try {
 
 	// Existing inline Media path: byte-exact ingress into the native Media
 	// Library, not a general streaming/private file transfer implementation.
-	$png = base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1kAAAAASUVORK5CYII=', true );
+	$png            = base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1kAAAAASUVORK5CYII=', true );
 	list( $upload ) = wpai134_mcp_request(
 		$token,
 		$session,
@@ -132,7 +135,7 @@ try {
 			'title'          => 'Disposable MCP ingress fixture',
 		)
 	);
-	$uploaded = $upload['result']['structuredContent'] ?? array();
+	$uploaded       = $upload['result']['structuredContent'] ?? array();
 	wpai134_mcp_assert(
 		true === ( $uploaded['success'] ?? false ) && isset( $uploaded['data']['id'] ),
 		'Native OAuth MCP Media ingress failed.'
@@ -153,12 +156,15 @@ try {
 		$session,
 		3,
 		'wp-ai-bridge/media-read',
-		array( 'action' => 'get', 'id' => $attachment )
+		array(
+			'action' => 'get',
+			'id'     => $attachment,
+		)
 	);
-	$media = $read_media['result']['structuredContent'] ?? array();
+	$media              = $read_media['result']['structuredContent'] ?? array();
 	wpai134_mcp_assert(
 		true === ( $media['success'] ?? false ) &&
-		$attachment === (int) ( $media['data']['items'][0]['id'] ?? 0 ),
+		(int) ( $media['data']['items'][0]['id'] ?? 0 ) === $attachment,
 		'Existing direct MCP Media metadata read failed.'
 	);
 
@@ -184,13 +190,18 @@ try {
 		strlen( $zip_input ) < wp_max_upload_size(),
 		'Generated ZIP is outside native WordPress permitted Media upload size.'
 	);
-	$zip_size = strlen( $zip_input );
-	$zip_args = array(
+	$zip_size           = strlen( $zip_input );
+	$zip_args           = array(
 		'filename'       => 'wpai134-direct-opaque.zip',
 		'content_base64' => base64_encode( $zip_input ),
 	);
-	$zip_wire = wp_json_encode( array( 'ability_name' => 'wp-ai-bridge/media-upload', 'parameters' => $zip_args ) );
-	$zip_wire_bytes = is_string( $zip_wire ) ? strlen( $zip_wire ) : 0;
+	$zip_wire           = wp_json_encode(
+		array(
+			'ability_name' => 'wp-ai-bridge/media-upload',
+			'parameters'   => $zip_args,
+		)
+	);
+	$zip_wire_bytes     = is_string( $zip_wire ) ? strlen( $zip_wire ) : 0;
 	list( $zip_result ) = wpai134_mcp_request( $token, $session, 4, 'wp-ai-bridge/media-upload', $zip_args );
 	unset( $zip_args, $zip_wire );
 	$zip_returned = $zip_result['result']['structuredContent'] ?? array();
@@ -203,10 +214,113 @@ try {
 	$zip_saved = get_attached_file( $zip_attachment );
 	wpai134_mcp_assert(
 		is_string( $zip_saved ) && is_file( $zip_saved ) &&
-		$zip_size === filesize( $zip_saved ) &&
+		filesize( $zip_saved ) === $zip_size &&
 		hash( 'sha256', $zip_input ) === hash_file( 'sha256', $zip_saved ),
 		'WordPress Media Library changed the opaque ZIP payload bytes.'
 	);
+	// New draft common binary window reader, Media source adapter only. Direct
+	// authenticated MCP results must fit the actual dual-encoded Adapter reply.
+	$max_binary_wire = 0;
+	$binary_windows  = 0;
+	foreach ( array(
+		$attachment     => $png,
+		$zip_attachment => $zip_input,
+	) as $source_id => $source_bytes ) {
+		wp_set_current_user( 0 );
+		list( $inspection ) = wpai134_mcp_request(
+			$token,
+			$session,
+			105,
+			'wp-ai-bridge/file-bytes-read',
+			array(
+				'action'      => 'inspect',
+				'source_type' => 'media',
+				'source_id'   => (int) $source_id,
+			)
+		);
+		$info               = $inspection['result']['structuredContent'] ?? array();
+		wpai134_mcp_assert( true === ( $info['success'] ?? false ) && strlen( $source_bytes ) === $info['data']['total_bytes'], 'Native MCP binary source inspection failed.' );
+		$source_hash = hash( 'sha256', $source_bytes );
+		wpai134_mcp_assert( $source_hash === $info['data']['content_sha256'], 'Binary source digest was incorrect.' );
+		$source_snapshot = $info['data']['snapshot'];
+		$cursor          = 0;
+		$assembled_bytes = '';
+		$finished_bytes  = false;
+		for ( $piece = 0; $piece < 130; ++$piece ) {
+			list( $answer ) = wpai134_mcp_request(
+				$token,
+				$session,
+				120 + $piece,
+				'wp-ai-bridge/file-bytes-read',
+				array(
+					'action'            => 'chunk',
+					'source_type'       => 'media',
+					'source_id'         => (int) $source_id,
+					'offset'            => $cursor,
+					'max_bytes'         => 128 * 1024,
+					'expected_snapshot' => $source_snapshot,
+					'expected_sha256'   => $source_hash,
+				)
+			);
+			$wire           = wp_json_encode( $answer );
+			wpai134_mcp_assert( is_string( $wire ) && strlen( $wire ) <= \WP_AI_Bridge\Support\Bounded_Payload::response_limit(), 'Full real MCP Base64 result exceeded the effective wire budget.' );
+			$max_binary_wire = max( $max_binary_wire, strlen( $wire ) );
+			$block           = $answer['result']['structuredContent'] ?? array();
+			wpai134_mcp_assert( true === ( $block['success'] ?? false ) && ( $block['data']['snapshot'] ?? '' ) === $source_snapshot, 'Authenticated binary read failed or leaked source identity.' );
+			$part = base64_decode( $block['data']['content_base64'], true );
+			wpai134_mcp_assert( is_string( $part ) && strlen( $part ) > 0 && ( $block['data']['offset'] ?? -1 ) === $cursor, 'Binary part decode and forward progress failed.' );
+			$assembled_bytes .= $part;
+			$cursor           = $block['data']['next_offset'];
+			++$binary_windows;
+			if ( $block['data']['complete'] ) {
+				$finished_bytes = true;
+				break;
+			}
+		}
+		wpai134_mcp_assert(
+			$finished_bytes && $source_bytes === $assembled_bytes &&
+			hash( 'sha256', $assembled_bytes ) === $source_hash &&
+			strlen( $source_bytes ) === $cursor,
+			'Native MCP Media+opaque ZIP binary roundtrip was not byte-for-byte exact.'
+		);
+		list( $wrong ) = wpai134_mcp_request(
+			$token,
+			$session,
+			219,
+			'wp-ai-bridge/file-bytes-read',
+			array(
+				'action'            => 'chunk',
+				'source_type'       => 'media',
+				'source_id'         => (int) $source_id,
+				'offset'            => 0,
+				'max_bytes'         => 200,
+				'expected_snapshot' => $source_snapshot,
+				'expected_sha256'   => str_repeat( '0', 64 ),
+			)
+		);
+		wpai134_mcp_assert( ! empty( $wrong['result']['isError'] ), 'Wrong file hash did not invalidate the signed snapshot.' );
+	}
+	// WordPress media metadata must not turn a file Ability into a reader
+	// for arbitrary files outside the native uploads root.
+	wp_set_current_user( $actor );
+	$original_file_ref = get_post_meta( $attachment, '_wp_attached_file', true );
+	update_post_meta( $attachment, '_wp_attached_file', '../../wp-config.php' );
+	wp_set_current_user( 0 );
+	list( $escaped ) = wpai134_mcp_request(
+		$token,
+		$session,
+		225,
+		'wp-ai-bridge/file-bytes-read',
+		array(
+			'action'      => 'inspect',
+			'source_type' => 'media',
+			'source_id'   => $attachment,
+		)
+	);
+	wp_set_current_user( $actor );
+	update_post_meta( $attachment, '_wp_attached_file', $original_file_ref );
+	wp_set_current_user( 0 );
+	wpai134_mcp_assert( ! empty( $escaped['result']['isError'] ), 'The reader accepted a file outside WordPress uploads.' );
 	unset( $zip_input );
 	wp_set_current_user( 0 );
 
@@ -225,12 +339,12 @@ try {
 	);
 	wpai134_mcp_assert( ! is_wp_error( $post_id ) && (int) $post_id > 0, 'Could not create disposable private draft.' );
 	wp_set_current_user( 0 );
-	$offset                 = 0;
-	$assembled              = '';
-	$hash                   = hash( 'sha256', $source );
-	$max_encoded_result     = 0;
-	$read_window_count      = 0;
-	$finished  = false;
+	$offset             = 0;
+	$assembled          = '';
+	$hash               = hash( 'sha256', $source );
+	$max_encoded_result = 0;
+	$read_window_count  = 0;
+	$finished           = false;
 	for ( $part = 0; $part < 60; ++$part ) {
 		$params = array(
 			'action'            => 'get',
@@ -254,7 +368,7 @@ try {
 		wpai134_mcp_assert( true === ( $result['success'] ?? false ), 'Authorized direct MCP content window failed.' );
 		$item = $result['data']['items'][0] ?? array();
 		wpai134_mcp_assert(
-			$hash === ( $item['content_hash'] ?? '' ) &&
+			( $item['content_hash'] ?? '' ) === $hash &&
 			$offset < ( $item['content_next_offset'] ?? 0 ) &&
 			( $item['content_total_bytes'] ?? null ) === strlen( $source ),
 			'Hash-bound direct content window lost immutable identity/forward progress.'
@@ -267,10 +381,28 @@ try {
 		}
 	}
 	wpai134_mcp_assert(
-		$finished && $source === $assembled && $hash === hash( 'sha256', $assembled ),
+		$finished && $assembled === $source && hash( 'sha256', $assembled ) === $hash,
 		'Direct MCP Unicode window reconstruction was not byte-exact.'
 	);
 
+	// Existing site-read grant must remain authoritative after the client has
+	// already received an inspection snapshot and byte windows.
+	$grant[ Settings::GROUP_SITE_READ ] = 0;
+	wp_set_current_user( $actor );
+	update_option( Settings::OPTION_NAME, $grant, false );
+	wp_set_current_user( 0 );
+	list( $revoked_read ) = wpai134_mcp_request(
+		$token,
+		$session,
+		87,
+		'wp-ai-bridge/file-bytes-read',
+		array(
+			'action'      => 'inspect',
+			'source_type' => 'media',
+			'source_id'   => (int) $attachment,
+		)
+	);
+	wpai134_mcp_assert( ! empty( $revoked_read['result']['isError'] ), 'Revoked Site Read group still delivered protected Media bytes.' );
 	$grant[ Settings::GROUP_BUILDER_WRITE ] = 0;
 	wp_set_current_user( $actor );
 	update_option( Settings::OPTION_NAME, $grant, false );
@@ -286,6 +418,7 @@ try {
 		)
 	);
 	wpai134_mcp_assert( ! empty( $denied['result']['isError'] ), 'Revoked Builder Write grant still allowed MCP file ingress.' );
+	echo sprintf( "MEASURE: #134 binary_outbound_windows=%d largest_binary_mcp_json_bytes=%d.\\n", $binary_windows, $max_binary_wire );
 	// Results describe the native local MCP REST response only, not unknown
 	// Gateway or external ChatGPT host attachment/transport limits.
 	echo sprintf(

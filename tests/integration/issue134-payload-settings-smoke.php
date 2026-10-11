@@ -34,14 +34,15 @@ try {
 	wpai134_limits_assert( isset( $registered[ Payload_Settings::OPTION_NAME ] ) && false === $registered[ Payload_Settings::OPTION_NAME ]['show_in_rest'], 'Budget option became public REST writable.' );
 	$chosen = $payload->sanitize(
 		array(
-			Payload_Settings::RESPONSE_KEY => '96',
-			Payload_Settings::WINDOW_KEY   => '128',
-			Payload_Settings::DOCUMENT_KEY => '512',
-			Payload_Settings::NOTES_KEY    => '128',
+			Payload_Settings::RESPONSE_KEY    => '96',
+			Payload_Settings::WINDOW_KEY      => '128',
+			Payload_Settings::DOCUMENT_KEY    => '512',
+			Payload_Settings::NOTES_KEY       => '128',
+			Payload_Settings::INLINE_FILE_KEY => '64',
 		)
 	);
 	update_option( Payload_Settings::OPTION_NAME, $chosen, false );
-	wpai134_limits_assert( 96 * 1024 === Bounded_Payload::response_limit() && 128 * 1024 === Bounded_Payload::window_limit(), 'Native get_option did not affect live transport budget.' );
+	wpai134_limits_assert( 96 * 1024 === Bounded_Payload::response_limit() && 128 * 1024 === Bounded_Payload::window_limit() && 64 === $payload->all()[ Payload_Settings::INLINE_FILE_KEY ], 'Native get_option did not affect live transport budget.' );
 	wpai134_limits_assert( 512 * 1024 === Store::document_limit() && 128 * 1024 === Store::notes_limit(), 'WordPress record quotas ignored the saved operator option.' );
 	wpai134_limits_assert( get_option( Settings::OPTION_NAME, array() ) === $original_grants, 'Budget change mutated access grants.' );
 
@@ -53,7 +54,11 @@ try {
 		false !== strpos( $html, 'wpai-response-kib' ) &&
 		false !== strpos( $html, 'wpai-text-window-kib' ) &&
 		false !== strpos( $html, 'wpai-document-kib' ) &&
-		false !== strpos( $html, 'wpai-notes-kib' ),
+		false !== strpos(
+			$html,
+			'wpai-notes-kib' &&
+			false !== strpos( $html, 'wpai-inline-file-mib' )
+		),
 		'Native administrator configuration form is missing a budget field.'
 	);
 
