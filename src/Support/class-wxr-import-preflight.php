@@ -181,6 +181,18 @@ final class WXR_Import_Preflight {
 		if ( ! $seen_rss || ! $seen_channel || '1.2' !== $version || $inside_item ) {
 			return new WP_Error( 'wxr_preview_unsupported', __( 'The WXR document is incomplete or has an unsupported version.', 'wp-ai-bridge' ) );
 		}
+		// The input is a private staged file, but an unrelated privileged
+		// process could still change it during XML streaming. Never commit
+		// a preview bound to different bytes than those inspected.
+		clearstatcache( true, $canonical );
+		$after_size   = filesize( $canonical );
+		$after_digest = hash_file( 'sha256', $canonical );
+		if (
+			! is_int( $after_size ) || $after_size !== $size ||
+			! is_string( $after_digest ) || ! hash_equals( $digest, $after_digest )
+		) {
+			return new WP_Error( 'wxr_preview_stale', __( 'WXR source SHA-256 changed after staging.', 'wp-ai-bridge' ) );
+		}
 		ksort( $types, SORT_STRING );
 
 		return array(
