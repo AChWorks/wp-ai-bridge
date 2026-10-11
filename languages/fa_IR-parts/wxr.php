@@ -17,4 +17,5 @@ return array(
 	'This WordPress post type is not exportable.' => 'این نوع محتوای وردپرس قابلیت برون‌بری ندارد.',
 	'WXR export must begin before HTTP headers have been sent.' => 'برون‌بری WXR باید پیش از ارسال سرآیندهای HTTP آغاز شود.',
 	'Native WXR export could not complete within the available private staging budget.' => 'برون‌بری WXR در محدودیت فضای خصوصی تخصیص‌یافته کامل نشد.',
+	'Native WXR export must use a new WordPress request for every attempt.' => 'برای هر بار برون‌بری WXR باید یک درخواست جدید وردپرس ارسال شود.',
 );

@@ -92,15 +92,6 @@ try {
 	);
 	wpai139_stage_assert( ! is_wp_error( $post_id ) && (int) $post_id > 0, 'Could not create large native WXR source.' );
 
-	// The producer must refuse an insufficient negotiated staging budget
-	// and discard a partial artifact. No unbounded MCP JSON fallback.
-	$small = $producer->stage( $type, 32 * 1024 );
-	wpai139_stage_assert(
-		is_wp_error( $small ) && 'wxr_stage_too_large' === $small->get_error_code() &&
-		$before === $private_paths(),
-		'Too-small quota did not reject and clean up partial private WXR.'
-	);
-
 	$start      = microtime( true );
 	$result     = $producer->stage( $type, 4 * 1024 * 1024 );
 	$elapsed_ms = ( microtime( true ) - $start ) * 1000;
@@ -126,6 +117,11 @@ try {
 	);
 	unset( $xml, $content );
 
+	$repeated = $producer->stage( $type, 4 * 1024 * 1024 );
+	wpai139_stage_assert(
+		is_wp_error( $repeated ) && 'wxr_stage_request_exhausted' === $repeated->get_error_code(),
+		'Second Core export attempt in one PHP request was not safely rejected.'
+	);
 	wp_set_current_user( 0 );
 	wpai139_stage_assert(
 		is_wp_error( $producer->stage( $type, 4096 ) ),

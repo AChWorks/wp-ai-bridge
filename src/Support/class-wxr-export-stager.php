@@ -51,6 +51,12 @@ final class WXR_Export_Stager {
 				return new WP_Error( 'wxr_stage_unsupported', __( 'This WordPress post type is not exportable.', 'wp-ai-bridge' ) );
 			}
 		}
+		// Core declares wxr_cdata() and other helpers globally inside
+		// export_wp(). A second export_wp() call in the same PHP request
+		// would fatally redeclare them. Never attempt an in-request retry.
+		if ( function_exists( 'wxr_cdata' ) ) {
+			return new WP_Error( 'wxr_stage_request_exhausted', __( 'Native WXR export must use a new WordPress request for every attempt.', 'wp-ai-bridge' ) );
+		}
 		if ( headers_sent() ) {
 			return new WP_Error( 'wxr_stage_headers', __( 'WXR export must begin before HTTP headers have been sent.', 'wp-ai-bridge' ) );
 		}

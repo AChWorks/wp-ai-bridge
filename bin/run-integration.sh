@@ -72,6 +72,7 @@ for test in \
     issue139-wxr-discovery-smoke.php \
     issue139-native-wxr-export-smoke.php \
     issue139-wxr-staged-stream-smoke.php \
+    issue139-wxr-budget-rejection-smoke.php \
     issue119-registered-rest-smoke.php \
     issue119-native-execution-smoke.php \
     issue44-native-ability-delegation-smoke.php \
