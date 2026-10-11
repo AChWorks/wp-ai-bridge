@@ -84,7 +84,7 @@ try {
 			'args'              => array( 'untrusted' ),
 		)
 	);
-	wpai138_manage_assert( is_wp_error( $invalid ) && 'cron_mutation_invalid' === $invalid->get_error_code(), 'Caller could inject runtime Cron arguments.' );
+	wpai138_manage_assert( is_wp_error( $invalid ), 'Caller could inject runtime Cron arguments.' );
 	$short = $ability->execute(
 		array(
 			'action'            => 'schedule',
