@@ -93,7 +93,10 @@ try {
 		}
 	}
 	wpai139_roundtrip_assert( '' !== $installed_entrypoint, 'Official WordPress Importer was not installed.' );
-	require_once $installed_entrypoint;
+	// WP-CLI already included and exited this plugin entrypoint while the
+	// importer bootstrap flag was absent. Re-include it *once* in this isolated
+	// proof after setting WP_LOAD_IMPORTERS; require_once would do nothing.
+	require $installed_entrypoint;
 	wpai139_roundtrip_assert( class_exists( 'WP_Import', false ), 'Official WP_Import class did not load through installed provider.' );
 	$importer = new WP_Import();
 
