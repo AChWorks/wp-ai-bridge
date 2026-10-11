@@ -28,4 +28,8 @@ return array(
 	'Streaming XMLReader is unavailable for WXR inspection.' => 'ابزار XMLReader برای بررسی جریانی WXR در دسترس نیست.',
 	'The WXR artifact did not pass bounded structural XML inspection.' => 'فایل WXR بررسی ساختاری XML با محدودیت منابع را با موفقیت نگذرانده است.',
 	'The WXR document is incomplete or has an unsupported version.' => 'سند WXR ناقص است یا نسخه پشتیبانی‌نشده دارد.',
+	'Invalid native WXR analysis resource budgets.' => 'سهمیه\u200cهای منابع برای تحلیل WXR با ابزار رسمی وردپرس نامعتبر است.',
+	'WXR file exceeds the full-parser input byte budget; structural inspection remains available.' => 'حجم WXR از سهمیه ورودی تحلیلگر رسمی بیشتر است؛ بررسی ساختاری همچنان ممکن است.',
+	'The official WordPress Importer is not enabled for this request.' => 'افزونه رسمی درون\u200cبری وردپرس برای این درخواست فعال نیست.',
+	'Official WordPress Importer could not consistently parse the staged WXR.' => 'درون\u200cبر رسمی وردپرس نتوانست فایل موقت WXR را به\u200cصورت سازگار تحلیل کند.',
 );
