@@ -51,6 +51,47 @@ final class Create_Claim_Store {
 		return 0 === $inserted ? 'existing' : 'error';
 	}
 
+
+	/**
+	 * Atomically admits one claim under the site-local finite capacity.
+	 * The dedicated coordinator covers DIFFERENT option names; INSERT IGNORE
+	 * continues to protect the uniqueness of one identical operation/key.
+	 *
+	 * @param string $name Fixed hashed option name.
+	 * @param string $initial Initial receipt.
+	 * @return string acquired|existing|capacity|error
+	 */
+	public static function try_claim_bounded( $name, $initial ) {
+		if ( ! self::valid_name( $name ) || ! is_string( $initial ) ||
+			'' === $initial || strlen( $initial ) > 1024 ) {
+			return 'error';
+		}
+		$lock = Admission_Lock::acquire( 'claims' );
+		if ( ! $lock ) {
+			return 'error';
+		}
+		try {
+			// Preserve idempotent readback when a second caller has already
+			// acquired this same name, even if admission is now at capacity.
+			wp_cache_delete( $name, 'options' );
+			wp_cache_delete( 'notoptions', 'options' );
+			$existing = get_option( $name, false );
+			if ( is_string( $existing ) && '' !== $existing ) {
+				return 'existing';
+			}
+			if ( self::count() >= Create_Claim::MAX_CLAIMS ) {
+				return 'capacity';
+			}
+			if ( ! $lock->is_owned() ) {
+				return 'error';
+			}
+			$result = self::try_claim( $name, $initial );
+			return $lock->is_owned() ? $result : 'error';
+		} finally {
+			$lock->release();
+		}
+	}
+
 	/** @param string $name Generated option name. @return bool */
 	private static function valid_name( $name ) {
 		return is_string( $name ) && 1 === preg_match( '/^wpai_create_claim_[a-f0-9]{64}$/D', $name );

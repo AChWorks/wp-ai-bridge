@@ -111,6 +111,12 @@ done
 # representative lane, instead of repeating 200 writes in all four lanes.
 if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
     "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-quotas-corruption-smoke.php --user=1 --allow-root
+    # Distinct-identity 2047/2048 and 199/200 cross-process capacities plus
+    # true PHP process death, once on a representative native MariaDB lane.
+    # The broader four-lane suite still covers ordinary Core/Adapter behavior.
+    bash "$root/bin/run-issue128-capacity-race.sh"
+    bash "$root/bin/run-issue126-quota-race.sh"
+    bash "$root/bin/run-issue128-crash.sh"
 fi
 
 # Two independent PHP workers race for one native database claim.

@@ -19,6 +19,7 @@ function add_option( $name, $value, $deprecated = '', $autoload = null ) {
 }
 class WPAI_Claim_Fake_DB {
 	public $options = 'wp_options';
+	public $posts = 'wp_posts';
 	public function esc_like( $input ) { return (string) $input; }
 	public function prepare( $sql, ...$args ) {
 		foreach ( $args as $arg ) {
@@ -47,6 +48,19 @@ class WPAI_Claim_Fake_DB {
 		return 1;
 	}
 	public function get_var( $sql ) {
+		if ( 0 === strpos( $sql, 'SELECT GET_LOCK(' ) ) {
+			return empty( $GLOBALS['wpai_test']['simulate_lock_failure'] ) ? 1 : 0;
+		}
+		if ( 0 === strpos( $sql, 'SELECT IS_USED_LOCK(' ) ||
+			'SELECT CONNECTION_ID()' === $sql ) {
+			return 45;
+		}
+		if ( 0 === strpos( $sql, 'SELECT RELEASE_LOCK(' ) ) {
+			return 1;
+		}
+		if ( ! ( 0 === strpos( $sql, 'SELECT COUNT(*)' ) ) ) {
+			throw new RuntimeException( 'Unexpected SQL in create claim count: ' . $sql );
+		}
 		if ( ! empty( $GLOBALS['wpai_test']['force_capacity_full'] ) ) {
 			return Create_Claim::MAX_CLAIMS;
 		}
@@ -163,6 +177,14 @@ $GLOBALS['wpai_test']['force_capacity_full'] = true;
 $full = Create_Claim::run( 'content-create', wpai128_create_input( 'capacity-limit-128' ), $permission, $perform, $recover );
 wpai128_assert( is_wp_error( $full ) && 'create_claim_capacity' === $full->get_error_code() && 5 === $writes, 'Saturated durable receipt store did not fail closed.' );
 $GLOBALS['wpai_test']['force_capacity_full'] = false;
+$GLOBALS['wpai_test']['simulate_lock_failure'] = true;
+$busy = Create_Claim::run( 'content-create', wpai128_create_input( 'admission-lock-fail-128' ), $permission, $perform, $recover );
+wpai128_assert( is_wp_error( $busy ) && 'create_claim_outcome_unknown' === $busy->get_error_code() &&
+	5 === $writes, 'Admission lock failure must prohibit creating an object.' );
+$canonical_busy = Create_Claim::reserve_document_key( 'locked-project', 'project-brief' );
+wpai128_assert( is_wp_error( $canonical_busy ) && 'workspace_key_outcome_unknown' === $canonical_busy->get_error_code(),
+	'Canonical key reservation must fail closed if admission coordination fails.' );
+$GLOBALS['wpai_test']['simulate_lock_failure'] = false;
 // A fully known original result remains non-replayable after retention:
 $old_key = Create_Claim::PREFIX . hash( 'sha256', wp_json_encode( array( 1, 1, '', 'content-create', 'example-key-102' ) ) );
 $receipt = json_decode( $GLOBALS['wpai_test']['options'][ $old_key ], true );

@@ -48,6 +48,11 @@ tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue135-no-private-packages-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue130-141-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-128-multisite-smoke.php --user=1 --allow-root
+# Repeat the real 199->200 concurrency boundary on the secondary network
+# blog, proving the lock scopes to WordPress's switched posts table.
+if [[ "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
+    WPAI_QUOTA_MULTISITE=1 bash "$root/bin/run-issue126-quota-race.sh"
+fi
 
 "${compose[@]}" exec -T wordpress sh -lc '
 set -eu

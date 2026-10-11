@@ -80,10 +80,10 @@ final class Create_Claim {
 		if ( false !== $existing ) {
 			return self::adopt( $name, $existing, $fingerprint, $allowed, $clean, $recover );
 		}
-		if ( self::claim_count() >= self::MAX_CLAIMS ) {
+		$reserved = Create_Claim_Store::try_claim_bounded( $name, $initial );
+		if ( 'capacity' === $reserved ) {
 			return new WP_Error( 'create_claim_capacity', __( 'Create recovery capacity is full. No new create was attempted; administrative reconciliation is required.', 'wp-ai-bridge' ) );
 		}
-		$reserved = Create_Claim_Store::try_claim( $name, $initial );
 		if ( 'acquired' !== $reserved ) {
 			if ( 'existing' === $reserved ) {
 				$winner = self::fresh_option( $name );
@@ -147,9 +147,6 @@ final class Create_Claim {
 		if ( false !== self::fresh_option( $name ) ) {
 			return new WP_Error( 'workspace_key_reserved', __( 'This project document key is already reserved or has an uncertain create outcome; read or reconcile it instead.', 'wp-ai-bridge' ) );
 		}
-		if ( self::claim_count() >= self::MAX_CLAIMS ) {
-			return new WP_Error( 'create_claim_capacity', __( 'Create recovery capacity is full. No new create was attempted; administrative reconciliation is required.', 'wp-ai-bridge' ) );
-		}
 		$initial = wp_json_encode(
 			array(
 				'fingerprint' => hash( 'sha256', $identity ),
@@ -161,8 +158,12 @@ final class Create_Claim {
 		if ( ! is_string( $initial ) ) {
 			return new WP_Error( 'workspace_key_invalid', __( 'Document key cannot be represented.', 'wp-ai-bridge' ) );
 		}
-		if ( 'acquired' !== Create_Claim_Store::try_claim( $name, $initial ) ) {
-			return new WP_Error( 'workspace_key_reserved', __( 'Another create owns this project document key; do not retry blindly.', 'wp-ai-bridge' ) );
+		$reserved = Create_Claim_Store::try_claim_bounded( $name, $initial );
+		if ( 'capacity' === $reserved ) {
+			return new WP_Error( 'create_claim_capacity', __( 'Create recovery capacity is full. No new create was attempted; administrative reconciliation is required.', 'wp-ai-bridge' ) );
+		}
+		if ( 'acquired' !== $reserved ) {
+			return new WP_Error( 'error' === $reserved ? 'workspace_key_outcome_unknown' : 'workspace_key_reserved', __( 'Another create may own this project document key; do not retry blindly.', 'wp-ai-bridge' ) );
 		}
 		return array(
 			'name'    => $name,
@@ -194,12 +195,6 @@ final class Create_Claim {
 	private static function compare_swap( $name, $before, $after ) {
 		return Create_Claim_Store::compare_swap( $name, $before, $after );
 	}
-
-	/** @return int */
-	private static function claim_count() {
-		return Create_Claim_Store::count();
-	}
-
 
 	/**
 	 * Adopt a known create only after rechecking current WordPress authority

@@ -10,6 +10,7 @@ namespace WP_AI_Bridge\Workspace;
 use WP_Error;
 use WP_AI_Bridge\Support\Bounded_Payload;
 use WP_AI_Bridge\Support\Create_Claim;
+use WP_AI_Bridge\Support\Admission_Lock;
 
 /**
  * Stores compact Workspace documents and tasks in private WordPress objects.
@@ -124,6 +125,22 @@ final class Store {
 		if ( is_wp_error( $invalid ) ) {
 			return $invalid;
 		}
+		$lock = Admission_Lock::acquire( 'documents' );
+		if ( ! $lock ) {
+			return new WP_Error( 'workspace_admission_unavailable', __( 'Workspace capacity admission is unavailable; no create was attempted.', 'wp-ai-bridge' ) );
+		}
+		try {
+			return $this->create_document_locked( $input, $lock );
+		} finally {
+			$lock->release();
+		}
+	}
+
+	/** @param array $input Validated create input. @param Admission_Lock $lock Exclusive site/type admission lock. @return array|WP_Error */
+	private function create_document_locked( $input, $lock ) {
+		if ( ! $lock->is_owned() ) {
+			return new WP_Error( 'workspace_admission_unavailable', __( 'Workspace capacity admission is unavailable; no create was attempted.', 'wp-ai-bridge' ) );
+		}
 		if ( $this->record_count( self::DOCUMENT_POST_TYPE ) >= self::MAX_RECORDS ) {
 			return new WP_Error( 'workspace_document_limit', __( 'The Workspace document limit has been reached.', 'wp-ai-bridge' ) );
 		}
@@ -157,6 +174,9 @@ final class Store {
 		}
 		$content = $this->bounded_markdown( $input['content'] ?? '', self::MAX_DOCUMENT_BYTES );
 		$now     = gmdate( 'c' );
+		if ( ! $lock->is_owned() ) {
+			return new WP_Error( 'workspace_admission_unavailable', __( 'Workspace capacity admission is unavailable; no create was attempted.', 'wp-ai-bridge' ) );
+		}
 		$post_id = wp_insert_post(
 			array(
 				'post_type'   => self::DOCUMENT_POST_TYPE,
@@ -195,6 +215,11 @@ final class Store {
 			return new WP_Error( 'workspace_key_outcome_unknown', __( 'Document exists but its canonical key receipt could not be verified.', 'wp-ai-bridge' ), array( 'id' => (int) $post_id ) );
 		}
 
+		// If the DB session reconnected during WordPress hooks, a committed
+		// object must not be falsely reported as a failed/nonexistent create.
+		if ( ! $lock->is_owned() ) {
+			return new WP_Error( 'workspace_admission_outcome_unknown', __( 'Workspace object may have committed after its admission lock was lost; inspect its ID before retrying.', 'wp-ai-bridge' ), array( 'id' => (int) $post_id ) );
+		}
 		return $stored;
 	}
 
@@ -582,6 +607,22 @@ final class Store {
 		if ( is_wp_error( $invalid ) ) {
 			return $invalid;
 		}
+		$lock = Admission_Lock::acquire( 'tasks' );
+		if ( ! $lock ) {
+			return new WP_Error( 'workspace_admission_unavailable', __( 'Workspace capacity admission is unavailable; no create was attempted.', 'wp-ai-bridge' ) );
+		}
+		try {
+			return $this->create_task_locked( $input, $lock );
+		} finally {
+			$lock->release();
+		}
+	}
+
+	/** @param array $input Validated create input. @param Admission_Lock $lock Exclusive site/type admission lock. @return array|WP_Error */
+	private function create_task_locked( $input, $lock ) {
+		if ( ! $lock->is_owned() ) {
+			return new WP_Error( 'workspace_admission_unavailable', __( 'Workspace capacity admission is unavailable; no create was attempted.', 'wp-ai-bridge' ) );
+		}
 		if ( $this->record_count( self::TASK_POST_TYPE ) >= self::MAX_RECORDS ) {
 			return new WP_Error( 'workspace_task_limit', __( 'The Workspace task limit has been reached.', 'wp-ai-bridge' ) );
 		}
@@ -598,7 +639,10 @@ final class Store {
 			return new WP_Error( 'workspace_invalid_task', __( 'The Workspace task state is not valid.', 'wp-ai-bridge' ) );
 		}
 
-		$now     = gmdate( 'c' );
+		$now = gmdate( 'c' );
+		if ( ! $lock->is_owned() ) {
+			return new WP_Error( 'workspace_admission_unavailable', __( 'Workspace capacity admission is unavailable; no create was attempted.', 'wp-ai-bridge' ) );
+		}
 		$post_id = wp_insert_post(
 			array(
 				'post_type'   => self::TASK_POST_TYPE,
@@ -638,6 +682,11 @@ final class Store {
 			return $stored;
 		}
 
+		// If the DB session reconnected during WordPress hooks, a committed
+		// object must not be falsely reported as a failed/nonexistent create.
+		if ( ! $lock->is_owned() ) {
+			return new WP_Error( 'workspace_admission_outcome_unknown', __( 'Workspace object may have committed after its admission lock was lost; inspect its ID before retrying.', 'wp-ai-bridge' ), array( 'id' => (int) $post_id ) );
+		}
 		return $stored;
 	}
 
@@ -1160,10 +1209,44 @@ final class Store {
 			! is_string( $state['key'] ) || ! is_string( $state['content'] ) ) ) {
 			return null;
 		}
-		if ( 'task' === $state['kind'] && ( ! isset( $state['progress'], $state['review'], $state['delivery'] ) ||
-			! is_string( $state['progress'] ) || ! is_string( $state['review'] ) ||
-			! is_string( $state['delivery'] ) ) ) {
+		// An absent project_ref is a genuine legacy/unbound record. A PRESENT
+		// malformed binding is corruption, never evidence of being unbound.
+		if ( array_key_exists( 'project_ref', $state ) &&
+			( ! is_string( $state['project_ref'] ) ||
+				( '' !== $state['project_ref'] &&
+					1 !== preg_match( '/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/D', $state['project_ref'] ) ) ) ) {
 			return null;
+		}
+		if ( 'document' === $state['kind'] &&
+			( '' === $state['key'] || sanitize_key( $state['key'] ) !== $state['key'] ) ) {
+			return null;
+		}
+		if ( 'task' === $state['kind'] ) {
+			if ( ! isset( $state['progress'], $state['review'], $state['delivery'] ) ||
+				! in_array( $state['progress'], array( 'todo', 'in_progress', 'blocked', 'done' ), true ) ||
+				! in_array( $state['review'], array( 'not_required', 'pending', 'changes_requested', 'approved' ), true ) ||
+				! in_array( $state['delivery'], array( 'not_applicable', 'draft_preview', 'live' ), true ) ) {
+				return null;
+			}
+			foreach ( array( 'goal', 'notes', 'next_action', 'blocker' ) as $field ) {
+				if ( array_key_exists( $field, $state ) && ! is_string( $state[ $field ] ) ) {
+					return null;
+				}
+			}
+			foreach ( array( 'acceptance', 'dependencies', 'target_refs' ) as $field ) {
+				if ( ! array_key_exists( $field, $state ) ) {
+					continue; // Old records may omit optional descriptive fields.
+				}
+				if ( ! is_array( $state[ $field ] ) ||
+					array_values( $state[ $field ] ) !== $state[ $field ] ) {
+					return null;
+				}
+				foreach ( $state[ $field ] as $entry ) {
+					if ( ! is_string( $entry ) ) {
+						return null;
+					}
+				}
+			}
 		}
 		return $state;
 	}
