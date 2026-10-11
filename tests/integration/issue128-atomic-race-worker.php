@@ -4,7 +4,6 @@
  *
  * @package WP_AI_Bridge
  */
-use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Create_Claim;
 use WP_AI_Bridge\Workspace\Store;
 
@@ -16,44 +15,37 @@ if ( ! is_string( $key ) || ! preg_match( '/^race-[a-z0-9-]{8,55}$/D', $key ) ||
 	! in_array( $mode, array( 'operation', 'canonical' ), true ) ) {
 	throw new RuntimeException( 'Invalid isolated race configuration.' );
 }
-$identity = 'operation' === $mode
-	? array( get_current_blog_id(), get_current_user_id(), (string) OAuth_Server::authenticated_mcp_client_id(), 'race-create', $key )
-	: array( 'canonical-document', get_current_blog_id(), $key, 'race-brief' );
-$name = Create_Claim::PREFIX . hash( 'sha256', wp_json_encode( $identity ) );
-$dir  = WP_CONTENT_DIR . '/wpai128-race-' . $key . '-' . $mode;
+$dir = WP_CONTENT_DIR . '/wpai128-race-' . $key . '-' . $mode;
 // Both PHP workers can pass is_dir() concurrently. wp_mkdir_p() may
 // legitimately return false when the other worker created the directory
 // milliseconds earlier; recheck rather than failing the race fixture.
 if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) && ! is_dir( $dir ) ) {
 	throw new RuntimeException( 'Could not establish isolated test barrier.' );
 }
-add_filter(
-	'pre_option_' . $name,
-	static function ( $pre ) use ( $dir, $slot ) {
-		static $once = false;
-		if ( ! $once ) {
-			$once = true;
-			file_put_contents( $dir . '/' . $slot . '.ready', 'ready' );
-			$other    = 'one' === $slot ? 'two' : 'one';
-			$deadline = microtime( true ) + 45; // Finite timeout, tolerant of runner container startup skew.
-			while ( ! is_file( $dir . '/' . $other . '.ready' ) ) {
-				if ( microtime( true ) >= $deadline ) {
-					throw new RuntimeException( 'Second PHP worker never reached barrier.' );
-				}
-				usleep( 20000 );
-			}
-		}
-		return $pre;
-	},
-	10,
-	1
-);
+// Synchronize BEFORE entering either production admission boundary. A
+// WordPress-backed create now holds the finite Workspace admission lock
+// before checking its project key, so a barrier inside pre_option_* would
+// deadlock the fixture itself (the peer cannot reach that filter).
+file_put_contents( $dir . '/' . $slot . '.ready', 'ready' );
+$other    = 'one' === $slot ? 'two' : 'one';
+$deadline = microtime( true ) + 45;
+while ( ! is_file( $dir . '/' . $other . '.ready' ) ) {
+	if ( microtime( true ) >= $deadline ) {
+		throw new RuntimeException( 'Second PHP worker never reached pre-admission barrier.' );
+	}
+	usleep( 20000 );
+}
+
 $performed = false;
 if ( 'operation' === $mode ) {
 	$result = Create_Claim::run(
 		'race-create',
-		array( 'title' => 'WPAI128 atomic ' . $key, 'operation_id' => $key ),
-		static function () { return true; },
+		array(
+			'title'        => 'WPAI128 atomic ' . $key,
+			'operation_id' => $key,
+		),
+		static function () {
+			return true; },
 		static function ( $input ) use ( &$performed ) {
 			$performed = true;
 			usleep( 500000 );
