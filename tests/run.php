@@ -111,7 +111,30 @@ wpai_assert( 512 === $payload_valid[ Payload_Settings::DOCUMENT_KEY ] &&
 
 update_option( Payload_Settings::OPTION_NAME, $payload_valid );
 wpai_assert( 128 * 1024 === Bounded_Payload::response_limit() && 256 * 1024 === Bounded_Payload::window_limit(), 'Runtime limits ignored validated administrator values.' );
-wpai_assert( Bounded_Payload::fits( str_repeat( 'a', 100 * 1024 ) ), 'Increased response budget still applies the old fixed cap.' );
+wpai_assert(
+	Bounded_Payload::fits( str_repeat( 'a', 60 * 1024 ) ) &&
+	! Bounded_Payload::fits( str_repeat( 'a', 100 * 1024 ) ),
+	'Expanded MCP budget must permit useful larger results but count the duplicated Adapter envelope.'
+);
+$wire_fixture      = array( 'content' => str_repeat( 'سلام WordPress', 2200 ) );
+$wire_structured   = array( 'success' => true, 'data' => $wire_fixture );
+$wire_text         = wp_json_encode( $wire_structured );
+$wire_actual       = wp_json_encode(
+	array(
+		'jsonrpc' => '2.0',
+		'id'      => 42,
+		'result'  => array(
+			'content'           => array( array( 'type' => 'text', 'text' => $wire_text ) ),
+			'isError'           => false,
+			'structuredContent' => $wire_structured,
+		),
+	)
+);
+wpai_assert(
+	is_string( $wire_actual ) &&
+	Bounded_Payload::projected_mcp_bytes( $wire_fixture ) >= strlen( $wire_actual ),
+	'Projected MCP wire budget omitted official Adapter duplicated text/structured content.'
+);
 $sample_window = Bounded_Payload::text_window( str_repeat( 'b', 320 * 1024 ), 0, 120 * 1024 );
 wpai_assert( ! is_wp_error( $sample_window ) && 120 * 1024 === $sample_window['next_offset'] && ! $sample_window['complete'], 'Increased per-request text window did not advance correctly.' );
 wpai_assert( is_wp_error( Bounded_Payload::text_window( 'abc', 0, 257 * 1024 ) ), 'Oversized requested window bypassed current admin limit.' );
@@ -133,7 +156,7 @@ $payload_after_mixed = $payload->sanitize(
 wpai_assert( 96 === $payload_after_mixed[ Payload_Settings::RESPONSE_KEY ] &&
 	256 === $payload_after_mixed[ Payload_Settings::WINDOW_KEY ], 'Invalid nested field discarded a valid independent setting.' );
 update_option( Payload_Settings::OPTION_NAME, $payload_after_mixed );
-wpai_assert( ! Bounded_Payload::fits( str_repeat( 'a', 100 * 1024 ) ), 'Lowered runtime response limit was not honored.' );
+wpai_assert( ! Bounded_Payload::fits( str_repeat( 'a', 60 * 1024 ) ), 'Lowered runtime MCP wire-response budget was not honored.' );
 wpai_assert( 96 * 1024 === Bounded_Payload::response_limit(), 'Decreased configured budget not effective.' );
 $payload_with_workspace = $payload->sanitize(
 	array(

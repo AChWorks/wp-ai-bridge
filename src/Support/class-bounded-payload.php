@@ -26,6 +26,12 @@ final class Bounded_Payload {
 	const TEXT_WINDOW_BYTES = Payload_Settings::DEFAULT_WINDOW_KIB * 1024;
 
 	/**
+	 * Space for JSON-RPC, tool-result field names, request ID and routing headers.
+	 * This is a per-response safety reserve, never an aggregate file-size cap.
+	 */
+	const MCP_ENVELOPE_HEADROOM_BYTES = 2048;
+
+	/**
 	 * Effective per-response encoded-JSON limit, for the current WordPress site.
 	 * A larger administrator maximum does not allocate memory until used.
 	 *
@@ -48,15 +54,44 @@ final class Bounded_Payload {
 	}
 
 	/**
-	 * Check the actual serialized JSON byte count, not only PHP string lengths.
+	 * Project the official MCP Adapter generic tool result bytes, including
+	 * its two representations of the same result: structuredContent and a
+	 * JSON-encoded text block. A raw Ability result alone is NOT the final
+	 * wire envelope. This projection covers the normal 2025-11-25 Adapter
+	 * route and includes a finite extra JSON-RPC/metadata safety allowance.
 	 *
-	 * @param mixed $value JSON-safe value.
-	 * @return bool Whether the result fits the normal downstream MCP envelope.
+	 * @param mixed $value JSON-safe WordPress Bridge Ability result.
+	 * @return int Conservative encoded result size, or PHP_INT_MAX on failure.
+	 */
+	public static function projected_mcp_bytes( $value ) {
+		$structured = wp_json_encode(
+			array(
+				'success' => true,
+				'data'    => $value,
+			)
+		);
+		if ( ! is_string( $structured ) ) {
+			return PHP_INT_MAX;
+		}
+		// ToolsHandler encodes the structured JSON into a text content block
+		// as well, escaping the backslashes/quotes for the outer JSON string.
+		$text = wp_json_encode( $structured );
+		if ( ! is_string( $text ) ) {
+			return PHP_INT_MAX;
+		}
+		return strlen( $structured ) + strlen( $text ) + self::MCP_ENVELOPE_HEADROOM_BYTES;
+	}
+
+	/**
+	 * Constrain the conservatively projected final MCP result, rather than
+	 * claiming a smaller raw WordPress JSON object is the full wire payload.
+	 * External clients/Gateways may still impose their own smaller limits.
+	 *
+	 * @param mixed $value JSON-safe Ability result.
+	 * @return bool Whether the projected result fits this site's MCP budget.
 	 */
 	public static function fits( $value ) {
-		// Default JSON escaping is intentionally conservative for Unicode-heavy payloads.
-		$json = wp_json_encode( $value );
-		return is_string( $json ) && strlen( $json ) <= self::response_limit();
+		return self::projected_mcp_bytes( $value ) <= self::response_limit();
 	}
 
 	/**

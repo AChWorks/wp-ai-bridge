@@ -193,6 +193,10 @@ try {
 		$encoded_message = wp_json_encode( $message );
 		wpai134_mcp_assert( is_string( $encoded_message ), 'MCP result could not be encoded as JSON for effective-byte accounting.' );
 		$max_encoded_result = max( $max_encoded_result, strlen( $encoded_message ) );
+		wpai134_mcp_assert(
+			strlen( $encoded_message ) <= \WP_AI_Bridge\Support\Bounded_Payload::response_limit(),
+			'Real Adapter JSON result exceeded the administrator MCP response budget.'
+		);
 		++$read_window_count;
 		$result = $message['result']['structuredContent'] ?? array();
 		wpai134_mcp_assert( true === ( $result['success'] ?? false ), 'Authorized direct MCP content window failed.' );
