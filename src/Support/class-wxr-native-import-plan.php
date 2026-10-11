@@ -75,9 +75,10 @@ final class WXR_Native_Import_Plan {
 
 		// Parse has no import side effects, but an installed provider might
 		// echo diagnostics. Confine all such output; no data enters MCP JSON.
-		$start_level = ob_get_level();
-		$parsed      = null;
-		$failed      = false;
+		$start_level     = ob_get_level();
+		$previous_libxml = libxml_use_internal_errors();
+		$parsed          = null;
+		$failed          = false;
 		try {
 			if ( ! ob_start(
 				static function () {
@@ -97,6 +98,11 @@ final class WXR_Native_Import_Plan {
 					break;
 				}
 			}
+			// Official Importer 0.9.6 SimpleXML's parser switches this
+			// process-wide setting on and does not restore it. A diagnostic
+			// Ability must not change subsequent WordPress XML handling.
+			libxml_clear_errors();
+			libxml_use_internal_errors( $previous_libxml );
 		}
 
 		if ( $failed || is_wp_error( $parsed ) || ! is_array( $parsed ) ||

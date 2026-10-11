@@ -51,8 +51,9 @@ try {
 	update_post_meta( $id, 'wxr139_meta', 'do-not-return-this-value' );
 	$artifact = ( new WXR_Export_Stager( $perms ) )->stage( $type, 512 * 1024 );
 	plan139_check( ! is_wp_error( $artifact ), 'Failed native WXR stage.' );
-	$before = wp_count_posts( $type )->publish;
-	$plan   = $planner->inspect( $artifact, 512 * 1024, 35000, 10, 512 * 1024, 8 );
+	$before        = wp_count_posts( $type )->publish;
+	$libxml_before = libxml_use_internal_errors();
+	$plan          = $planner->inspect( $artifact, 512 * 1024, 35000, 10, 512 * 1024, 8 );
 	plan139_check(
 		! is_wp_error( $plan ) &&
 		'native_parser_informational' === $plan['preview_type'] &&
@@ -65,7 +66,8 @@ try {
 		$plan['postmeta_count'] >= 1 &&
 		$plan['author_definitions'] >= 1 &&
 		$plan['content_sha256'] === $artifact['sha256'] &&
-		wp_count_posts( $type )->publish === $before,
+		wp_count_posts( $type )->publish === $before &&
+		libxml_use_internal_errors() === $libxml_before,
 		'Native parser-only preview changed site or returned invalid summary: ' .
 		( is_wp_error( $plan ) ? $plan->get_error_code() : 'summary' )
 	);
