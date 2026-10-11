@@ -32,4 +32,7 @@ return array(
 	'The native Cron mutation coordinator is unavailable.' => 'هماهنگ‌کننده تغییرات Cron در دسترس نیست.',
 	'Another Cron change is in progress; inspect current schedules before retrying.' => 'تغییر دیگری در Cron در حال انجام است؛ پیش از تلاش دوباره وضعیت زمان‌بندی‌ها را بررسی کنید.',
 	'The Cron mutation lock was lost; inspect current events before retrying.' => 'قفل تغییر Cron از دست رفته است؛ پیش از تلاش دوباره رویدادها را بررسی کنید.',
+	'Resuming Cron profile discovery requires the previous profile snapshot.' => 'برای ادامه فهرست پروفایل‌های Cron باید شناسه وضعیت قبلی ارسال شود.',
+	'The registered Cron profiles changed; restart at offset zero.' => 'پروفایل‌های ثبت‌شده Cron تغییر کرده‌اند؛ فهرست را از ابتدا دریافت کنید.',
+	'Cron profile metadata exceeds the configured response budget.' => 'فراداده پروفایل Cron از بودجه تنظیم‌شده پاسخ بزرگ‌تر است.',
 );

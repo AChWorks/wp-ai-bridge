@@ -7,6 +7,8 @@
  * @package WP_AI_Bridge
  */
 
+use WP_AI_Bridge\Support\Bounded_Payload;
+use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Settings;
 
 function wpai138_manage_assert( $condition, $message ) {
@@ -15,19 +17,21 @@ function wpai138_manage_assert( $condition, $message ) {
 	}
 }
 
-$actor        = get_current_user_id();
-$settings     = new Settings();
-$original     = get_option( Settings::OPTION_NAME, false );
-$hook         = 'wpai138_managed_fixture_' . get_current_blog_id();
-$args         = array( 'secret-wpai138-' . bin2hex( random_bytes( 6 ) ) );
-$when         = time() + 5400;
-$rescheduled  = $when + 1800;
-$before       = get_option( 'cron', array() );
-$side_effects = 0;
-$callback     = static function () use ( &$side_effects ) {
+$actor         = get_current_user_id();
+$settings      = new Settings();
+$original      = get_option( Settings::OPTION_NAME, false );
+$payload_prev  = get_option( Payload_Settings::OPTION_NAME, false );
+$many_profiles = null;
+$hook          = 'wpai138_managed_fixture_' . get_current_blog_id();
+$args          = array( 'secret-wpai138-' . bin2hex( random_bytes( 6 ) ) );
+$when          = time() + 5400;
+$rescheduled   = $when + 1800;
+$before        = get_option( 'cron', array() );
+$side_effects  = 0;
+$callback      = static function () use ( &$side_effects ) {
 	++$side_effects;
 };
-$provider     = static function ( $profiles ) use ( $hook, $args ) {
+$provider      = static function ( $profiles ) use ( $hook, $args ) {
 	$profiles['fixture'] = array(
 		'hook'                 => $hook,
 		'args'                 => $args,
@@ -62,6 +66,79 @@ try {
 	$catalog = $ability->execute( array( 'action' => 'profiles' ) );
 	wpai138_manage_assert( ! is_wp_error( $catalog ) && 'fixture' === $catalog['profiles'][0]['profile_id'], 'Provider-managed Cron profile was not discoverable.' );
 	wpai138_manage_assert( false === strpos( wp_json_encode( $catalog ), $args[0] ), 'Profile listing leaked WordPress provider secrets.' );
+
+	// A provider can define many trusted profiles; do not silently output
+	// an unbounded one-response inventory or hard-cap the aggregate total.
+	$many_profiles = static function ( $profiles ) use ( $hook, $args ) {
+		for ( $number = 0; $number < 75; ++$number ) {
+			$profiles[ 'fixture_' . sprintf( '%03d', $number ) ] = array(
+				'hook'    => $hook,
+				'args'    => array( $args[0], $number ),
+				'actions' => array( 'schedule', 'reschedule', 'unschedule' ),
+			);
+		}
+		return $profiles;
+	};
+	add_filter( 'wp_ai_bridge_cron_profiles', $many_profiles );
+	$limits                                   = ( new Payload_Settings() )->defaults();
+	$limits[ Payload_Settings::RESPONSE_KEY ] = 16;
+	update_option( Payload_Settings::OPTION_NAME, $limits, false );
+	$first_page = $ability->execute(
+		array(
+			'action' => 'profiles',
+			'limit'  => 50,
+		)
+	);
+	wpai138_manage_assert(
+		! is_wp_error( $first_page ) && 76 === $first_page['profile_total'] &&
+		! empty( $first_page['profile_has_more'] ) && ! empty( $first_page['profiles'] ) &&
+		50 >= count( $first_page['profiles'] ) &&
+		$first_page['profile_next_offset'] === count( $first_page['profiles'] ) &&
+		Bounded_Payload::fits( $first_page ) &&
+		false === strpos( wp_json_encode( $first_page ), $args[0] ),
+		'Bounded Cron profile discovery failed or disclosed server-side arguments.'
+	);
+	$resumed = $ability->execute(
+		array(
+			'action'            => 'profiles',
+			'offset'            => $first_page['profile_next_offset'],
+			'limit'             => 7,
+			'expected_snapshot' => $first_page['snapshot'],
+		)
+	);
+	wpai138_manage_assert(
+		! is_wp_error( $resumed ) && 7 === count( $resumed['profiles'] ) &&
+		$resumed['profile_next_offset'] === $first_page['profile_next_offset'] + 7 &&
+		$resumed['snapshot'] === $first_page['snapshot'],
+		'Cron profile page continuation omitted or repeated registered profiles.'
+	);
+	$missing_snapshot = $ability->execute(
+		array(
+			'action' => 'profiles',
+			'offset' => 1,
+		)
+	);
+	wpai138_manage_assert(
+		is_wp_error( $missing_snapshot ) && 'cron_profiles_identity_required' === $missing_snapshot->get_error_code(),
+		'A resumed profile page omitted required source provenance.'
+	);
+	remove_filter( 'wp_ai_bridge_cron_profiles', $many_profiles );
+	$stale_profiles = $ability->execute(
+		array(
+			'action'            => 'profiles',
+			'offset'            => 1,
+			'expected_snapshot' => $first_page['snapshot'],
+		)
+	);
+	wpai138_manage_assert(
+		is_wp_error( $stale_profiles ) && 'cron_profiles_stale' === $stale_profiles->get_error_code(),
+		'Changed trusted Cron profile registrations did not invalidate pagination.'
+	);
+	if ( false === $payload_prev ) {
+		delete_option( Payload_Settings::OPTION_NAME );
+	} else {
+		update_option( Payload_Settings::OPTION_NAME, $payload_prev, false );
+	}
 	$reader_initial = $reader->execute(
 		array(
 			'action' => 'list',
@@ -221,6 +298,14 @@ try {
 	wp_clear_scheduled_hook( $hook, $args );
 	remove_action( $hook, $callback );
 	remove_filter( 'wp_ai_bridge_cron_profiles', $provider );
+	if ( null !== $many_profiles ) {
+		remove_filter( 'wp_ai_bridge_cron_profiles', $many_profiles );
+	}
+	if ( false === $payload_prev ) {
+		delete_option( Payload_Settings::OPTION_NAME );
+	} else {
+		update_option( Payload_Settings::OPTION_NAME, $payload_prev, false );
+	}
 	if ( false === $original ) {
 		delete_option( Settings::OPTION_NAME );
 	} else {

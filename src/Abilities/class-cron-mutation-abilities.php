@@ -8,6 +8,7 @@
 namespace WP_AI_Bridge\Abilities;
 
 use WP_AI_Bridge\Support\Admission_Lock;
+use WP_AI_Bridge\Support\Bounded_Payload;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Settings;
 use WP_Error;
@@ -48,6 +49,15 @@ final class Cron_Mutation_Abilities {
 							'minLength' => 1,
 							'maxLength' => 80,
 						),
+						'offset'            => array(
+							'type'    => 'integer',
+							'minimum' => 0,
+						),
+						'limit'             => array(
+							'type'    => 'integer',
+							'minimum' => 1,
+							'maximum' => 50,
+						),
 						'event_id'          => array(
 							'type'      => 'string',
 							'minLength' => 64,
@@ -73,12 +83,15 @@ final class Cron_Mutation_Abilities {
 				'output_schema'       => array(
 					'type'                 => 'object',
 					'properties'           => array(
-						'action'    => array( 'type' => 'string' ),
-						'status'    => array( 'type' => 'string' ),
-						'event_id'  => array( 'type' => 'string' ),
-						'timestamp' => array( 'type' => 'integer' ),
-						'snapshot'  => array( 'type' => 'string' ),
-						'profiles'  => array(
+						'action'              => array( 'type' => 'string' ),
+						'status'              => array( 'type' => 'string' ),
+						'event_id'            => array( 'type' => 'string' ),
+						'timestamp'           => array( 'type' => 'integer' ),
+						'snapshot'            => array( 'type' => 'string' ),
+						'profile_total'       => array( 'type' => 'integer' ),
+						'profile_next_offset' => array( 'type' => 'integer' ),
+						'profile_has_more'    => array( 'type' => 'boolean' ),
+						'profiles'            => array(
 							'type'  => 'array',
 							'items' => array(
 								'type'                 => 'object',
@@ -186,18 +199,55 @@ final class Cron_Mutation_Abilities {
 		$action   = $input['action'];
 		$profiles = $this->profiles();
 		if ( 'profiles' === $action ) {
-			if ( array_keys( $input ) !== array( 'action' ) ) {
+			if ( array_diff( array_keys( $input ), array( 'action', 'offset', 'limit', 'expected_snapshot' ) ) ) {
+				return $this->invalid();
+			}
+			$offset   = $input['offset'] ?? 0;
+			$limit    = $input['limit'] ?? 10;
+			$expected = $input['expected_snapshot'] ?? '';
+			if ( ! is_int( $offset ) || $offset < 0 || ! is_int( $limit ) || $limit < 1 || $limit > 50 ||
+				! is_string( $expected ) || ( '' !== $expected && 1 !== preg_match( '/^[a-f0-9]{64}$/D', $expected ) ) ) {
+				return $this->invalid();
+			}
+			if ( $offset > 0 && '' === $expected ) {
+				return new WP_Error( 'cron_profiles_identity_required', __( 'Resuming Cron profile discovery requires the previous profile snapshot.', 'wp-ai-bridge' ) );
+			}
+			// Stable provider-owned IDs form a source-bound paginated inventory;
+			// private fixed callback arguments influence the opaque digest only.
+			ksort( $profiles, SORT_STRING );
+			$snapshot = hash_hmac( 'sha256', serialize( array( get_current_blog_id(), $profiles ) ), wp_salt( 'auth' ) );
+			if ( '' !== $expected && ! hash_equals( $expected, $snapshot ) ) {
+				return new WP_Error( 'cron_profiles_stale', __( 'The registered Cron profiles changed; restart at offset zero.', 'wp-ai-bridge' ) );
+			}
+			$total = count( $profiles );
+			if ( $offset > $total ) {
 				return $this->invalid();
 			}
 			$public = array();
-			foreach ( $profiles as $id => $profile ) {
+			foreach ( array_slice( $profiles, $offset, $limit, true ) as $id => $profile ) {
 				$public[] = array(
 					'profile_id' => $id,
 					'hook'       => $profile['hook'],
 					'actions'    => $profile['actions'],
 				);
 			}
-			return $this->receipt( $action, 'read', '', 0, '', $public );
+			// The provider registry may grow beyond one site's encoded MCP
+			// response budget. Never truncate silently or force a total cap:
+			// reduce this page until the projected Adapter wire response fits.
+			while ( true ) {
+				$next                          = $offset + count( $public );
+				$result                        = $this->receipt( $action, 'read', '', 0, $snapshot, $public );
+				$result['profile_total']       = $total;
+				$result['profile_next_offset'] = $next;
+				$result['profile_has_more']    = $next < $total;
+				if ( Bounded_Payload::fits( $result ) ) {
+					return $result;
+				}
+				if ( ! $public ) {
+					return new WP_Error( 'cron_profiles_response_too_large', __( 'Cron profile metadata exceeds the configured response budget.', 'wp-ai-bridge' ) );
+				}
+				array_pop( $public );
+			}
 		}
 		if ( ! in_array( $action, array( 'schedule', 'unschedule', 'reschedule', 'run_now' ), true ) ) {
 			return $this->invalid();
