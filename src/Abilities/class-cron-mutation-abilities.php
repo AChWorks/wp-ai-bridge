@@ -107,7 +107,7 @@ final class Cron_Mutation_Abilities {
 					),
 					'annotations' => array(
 						'readonly'    => false,
-						'destructive' => false,
+						'destructive' => true,
 						'idempotent'  => false,
 					),
 				),

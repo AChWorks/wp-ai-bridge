@@ -44,6 +44,13 @@ try {
 	$ability = wp_get_ability( 'wp-ai-bridge/cron-events-manage' );
 	$reader  = wp_get_ability( 'wp-ai-bridge/cron-events-read' );
 	wpai138_manage_assert( $ability instanceof WP_Ability && $reader instanceof WP_Ability, 'Draft native Cron Abilities were not registered.' );
+	$managed_meta = $ability->get_meta();
+	wpai138_manage_assert(
+		is_array( $managed_meta ) && true === ( $managed_meta['annotations']['destructive'] ?? null ) &&
+		false === ( $managed_meta['annotations']['readonly'] ?? null ),
+		'Mixed-effect Cron management incorrectly advertised cancellation as nondestructive or readonly.'
+	);
+
 
 	$groups = $settings->defaults();
 	update_option( Settings::OPTION_NAME, $groups, false );
