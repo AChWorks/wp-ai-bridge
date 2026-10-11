@@ -173,9 +173,11 @@ try {
 	);
 	wpai134_mcp_assert( ! is_wp_error( $post_id ) && (int) $post_id > 0, 'Could not create disposable private draft.' );
 	wp_set_current_user( 0 );
-	$offset    = 0;
-	$assembled = '';
-	$hash      = hash( 'sha256', $source );
+	$offset                 = 0;
+	$assembled              = '';
+	$hash                   = hash( 'sha256', $source );
+	$max_encoded_result     = 0;
+	$read_window_count      = 0;
 	$finished  = false;
 	for ( $part = 0; $part < 60; ++$part ) {
 		$params = array(
@@ -188,6 +190,10 @@ try {
 			$params['expected_content_hash'] = $hash;
 		}
 		list( $message ) = wpai134_mcp_request( $token, $session, 10 + $part, 'wp-ai-bridge/content-read', $params );
+		$encoded_message = wp_json_encode( $message );
+		wpai134_mcp_assert( is_string( $encoded_message ), 'MCP result could not be encoded as JSON for effective-byte accounting.' );
+		$max_encoded_result = max( $max_encoded_result, strlen( $encoded_message ) );
+		++$read_window_count;
 		$result = $message['result']['structuredContent'] ?? array();
 		wpai134_mcp_assert( true === ( $result['success'] ?? false ), 'Authorized direct MCP content window failed.' );
 		$item = $result['data']['items'][0] ?? array();
@@ -224,6 +230,17 @@ try {
 		)
 	);
 	wpai134_mcp_assert( ! empty( $denied['result']['isError'] ), 'Revoked Builder Write grant still allowed MCP file ingress.' );
+	// Results describe the native local MCP REST response only, not unknown
+	// Gateway or external ChatGPT host attachment/transport limits.
+	echo sprintf(
+		"MEASURE: #134 media_bytes=%d media_base64_bytes=%d utf8_source_bytes=%d text_windows=%d largest_encoded_mcp_result_bytes=%d php_peak_bytes=%d.\n",
+		strlen( $png ),
+		strlen( base64_encode( $png ) ),
+		strlen( $source ),
+		$read_window_count,
+		$max_encoded_result,
+		memory_get_peak_usage( true )
+	);
 	echo "PASS: #134 Bridge OAuth MCP small binary ingress, large UTF-8 egress, hash equality and revocation.\n";
 } finally {
 	wp_set_current_user( $actor );
