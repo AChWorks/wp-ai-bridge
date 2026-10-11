@@ -528,12 +528,24 @@ try {
 	// Real WordPress source, arbitrary binary bytes and >1 MiB end-to-end
 	// outward transfer without ever making a single oversized MCP result.
 	wp_set_current_user( $actor );
-	$opaque_bytes  = random_bytes( 1310851 );
-	$opaque_upload = wp_upload_bits( 'wpai134-opaque.dat', null, $opaque_bytes );
-	wpai134_session_assert( empty( $opaque_upload['error'] ) && ! empty( $opaque_upload['file'] ), 'Disposable large binary source was not created.' );
+	wpai134_session_assert( class_exists( 'ZipArchive' ), 'Native WordPress large ZIP export fixture requires PHP ZIP support.' );
+	$zip_temp = wp_tempnam( 'wpai134-binary-outbound.zip' );
+	wpai134_session_assert( is_string( $zip_temp ), 'Disposable outgoing ZIP temp file unavailable.' );
+	$zip = new ZipArchive();
+	wpai134_session_assert( true === $zip->open( $zip_temp, ZipArchive::CREATE | ZipArchive::OVERWRITE ), 'Outgoing ZIP fixture cannot open.' );
+	wpai134_session_assert( $zip->addFromString( 'opaque-payload.bin', random_bytes( 1310851 ) ), 'Outgoing ZIP payload cannot be recorded.' );
+	wpai134_session_assert( true === $zip->close(), 'Outgoing ZIP fixture cannot close.' );
+	$opaque_bytes = file_get_contents( $zip_temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Test-only disposable ZIP fixture.
+	unlink( $zip_temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Test-only temporary ZIP fixture cleanup.
+	wpai134_session_assert( is_string( $opaque_bytes ) && strlen( $opaque_bytes ) > 1048576, 'Native ZIP fixture must exceed a single transfer chunk.' );
+	$opaque_upload = wp_upload_bits( 'wpai134-opaque.zip', null, $opaque_bytes );
+	wpai134_session_assert(
+		empty( $opaque_upload['error'] ) && ! empty( $opaque_upload['file'] ),
+		'Disposable large ZIP source was not created: ' . ( $opaque_upload['error'] ?? '' )
+	);
 	$opaque_media_id = wp_insert_attachment(
 		array(
-			'post_mime_type' => 'application/octet-stream',
+			'post_mime_type' => 'application/zip',
 			'post_title'     => 'Private outgoing binary acceptance',
 			'post_status'    => 'inherit',
 		),
