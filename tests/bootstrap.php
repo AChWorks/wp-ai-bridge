@@ -136,7 +136,7 @@ function get_bloginfo( $show = '' ) { return '7.1'; }
 function get_locale() { return 'en_US'; }
 function is_rtl() { return false; }
 function wp_timezone_string() { return 'UTC'; }
-function rest_url( $path = '' ) { return 'https://example.test/wp-json/' . ltrim( $path, '/' ); }
+function rest_url( $path = '' ) { return ( ! empty( $GLOBALS['wpai_test']['rest_http'] ) ? 'http' : 'https' ) . '://example.test/wp-json/' . ltrim( $path, '/' ); }
 function home_url( $path = '' ) { return 'https://example.test' . ( '' === $path ? '' : '/' . ltrim( $path, '/' ) ); }
 function untrailingslashit( $value ) { return rtrim( (string) $value, '/\\' ); }
 function wp_parse_url( $url, $component = -1 ) { return parse_url( $url, $component ); }
