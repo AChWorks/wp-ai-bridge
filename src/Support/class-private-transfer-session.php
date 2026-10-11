@@ -82,7 +82,7 @@ final class Private_Transfer_Session {
 						return new WP_Error( 'transfer_storage_uncertain', 'Private transfer state is inconsistent; inspect storage before beginning another transfer.' );
 					}
 					list( $handle, $meta ) = $info;
-					if ( $meta['expires'] <= time() ) {
+					if ( $meta['expires'] <= time() && 'committing' !== $meta['state'] ) {
 						if ( ! $this->erase( $root, $id ) ) {
 							$this->close_meta( $handle );
 							return new WP_Error( 'transfer_cleanup_uncertain', 'Expired private transfer bytes could not be fully deleted. Manual cleanup is required.' );
@@ -302,8 +302,12 @@ final class Private_Transfer_Session {
 		if ( is_wp_error( $loaded ) ) {
 			return $loaded;
 		}
-		list( $root, $handle ) = $loaded;
-		$deleted               = $this->erase( $root, $id );
+		list( $root, $handle, $meta ) = $loaded;
+		if ( 'committing' === $meta['state'] ) {
+			$this->close_meta( $handle );
+			return new WP_Error( 'transfer_outcome_unknown', 'A WordPress Media effect may be in progress or unacknowledged. Inspect the destination before removing its receipt.' );
+		}
+		$deleted = $this->erase( $root, $id );
 		$this->close_meta( $handle );
 		return $deleted ? true : new WP_Error( 'transfer_cleanup_uncertain', 'Private transfer deletion could not be verified; inspect and retry cleanup.' );
 	}
@@ -421,11 +425,170 @@ final class Private_Transfer_Session {
 			! is_string( $meta['client'] ) || ! is_string( $meta['purpose'] ) ||
 			! in_array( $meta['purpose'], array( 'media', 'text', 'wxr' ), true ) ||
 			! is_string( $meta['sha256'] ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $meta['sha256'] ) ||
-			! in_array( $meta['state'], array( 'open', 'verified' ), true ) ) {
+			! in_array( $meta['state'], array( 'open', 'verified', 'committing', 'committed' ), true ) ||
+			( in_array( $meta['state'], array( 'committing', 'committed' ), true ) &&
+				( ( $meta['consumer'] ?? '' ) !== 'media' ||
+					! is_int( $meta['destination_id'] ?? null ) || $meta['destination_id'] < 0 ) ) ) {
 			$this->close_meta( $h );
 			return new WP_Error( 'transfer_storage_uncertain', 'Private transfer metadata is malformed or incomplete.' );
 		}
 		return array( $h, $meta );
+	}
+
+	/**
+	 * Claim one verified private source for its one permitted native Media
+	 * effect. Persist the uncertain state BEFORE any WordPress operation.
+	 * No automatic retry is allowed after claiming, even across process death.
+	 *
+	 * @param string $id Lease.
+	 * @return array<string,mixed>|WP_Error Internal-only source descriptor.
+	 */
+	public function claim_media( $id ) {
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		try {
+			if ( 'media' !== $meta['purpose'] || ! $this->allowed( 'media' ) ) {
+				return $this->denied();
+			}
+			if ( 'verified' !== $meta['state'] ) {
+				return new WP_Error( 'transfer_consume_uncertain', 'This transfer cannot be consumed again. Inspect its recorded outcome and the WordPress Media Library.' );
+			}
+			$path = $this->check_file( $root, $id, $meta );
+			if ( is_wp_error( $path ) || ! hash_equals( $meta['sha256'], (string) hash_file( 'sha256', $path ) ) ) {
+				return new WP_Error( 'transfer_source_changed', 'The staged source changed before Media import.' );
+			}
+			$meta['state']          = 'committing';
+			$meta['consumer']       = 'media';
+			$meta['destination_id'] = 0;
+			if ( ! $this->save_meta( $handle, $meta ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'The private Media import claim could not be durably recorded. Do not retry blindly.' );
+			}
+			return array(
+				'path'   => $path,
+				'bytes'  => $meta['total'],
+				'sha256' => $meta['sha256'],
+				'id'     => $meta['id'],
+			);
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
+	/**
+	 * Audited private copy for WordPress's native sideload consumer.
+	 * Claiming first makes uncertain WordPress outcomes replay-safe.
+	 *
+	 * @param string $id Exact verified lease.
+	 * @return array<string,mixed>|WP_Error Internal-only temp descriptor.
+	 */
+	public function prepare_media_sideload( $id ) {
+		// Make and verify the private copy BEFORE claiming any native effect.
+		// Exhausted disk or transient IO failure must be safely retryable.
+		$source_info = $this->verified_private_source( $id, 'media' );
+		if ( is_wp_error( $source_info ) ) {
+			return $source_info;
+		}
+		$private_dir = dirname( $source_info['path'] );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_tempnam,WordPress.PHP.NoSilencedErrors.Discouraged -- Verified owner-only private root, not web-accessible.
+		$temp = @tempnam( $private_dir, 'wpai-media-' );
+		if ( ! is_string( $temp ) ) {
+			return new WP_Error( 'transfer_storage_unavailable', 'Private Media copy could not be allocated. The verified transfer remains safe to resume.' );
+		}
+		if ( dirname( $temp ) !== $private_dir || is_link( $temp ) || ! chmod( $temp, 0600 ) ) {
+			$this->remove_file( $temp );
+			return new WP_Error( 'transfer_storage_unsafe', 'Private Media copy could not be secured. The verified transfer remains unconsumed.' );
+		}
+		$source = @fopen( $source_info['path'], 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Audited verified private source, no warnings with path.
+		$target = @fopen( $temp, 'wb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Audited private duplicate stream.
+		if ( ! is_resource( $source ) || ! is_resource( $target ) ) {
+			if ( is_resource( $source ) ) {
+				fclose( $source );
+			}
+			if ( is_resource( $target ) ) {
+				fclose( $target );
+			}
+			$this->cleanup_media_temporary( $temp );
+			return new WP_Error( 'transfer_storage_unavailable', 'Private Media copy could not be opened. The verified transfer remains unconsumed.' );
+		}
+		$copied  = stream_copy_to_stream( $source, $target );
+		$flushed = fflush( $target );
+		fclose( $source );
+		fclose( $target );
+		if ( $copied !== $source_info['bytes'] || ! $flushed ||
+			! hash_equals( $source_info['sha256'], (string) hash_file( 'sha256', $temp ) ) ) {
+			$this->cleanup_media_temporary( $temp );
+			return new WP_Error( 'transfer_source_changed', 'Private Media copy could not be verified. Recheck the exact source before retrying.' );
+		}
+		// Final revalidation and one-way state change immediately precede
+		// calling Core; a concurrent import can claim this lease only once.
+		$claim = $this->claim_media( $id );
+		if ( is_wp_error( $claim ) ) {
+			$this->cleanup_media_temporary( $temp );
+			return $claim;
+		}
+		return array(
+			'temp'   => $temp,
+			'bytes'  => $claim['bytes'],
+			'sha256' => $claim['sha256'],
+		);
+	}
+
+	/**
+	 * Remove only temporary copies created in the current private root.
+	 * The WordPress native sideload may already have moved the source.
+	 *
+	 * @param string $temp Private generated copy path.
+	 * @return bool
+	 */
+	public function cleanup_media_temporary( $temp ) {
+		$root = $this->root();
+		if ( is_wp_error( $root ) || ! is_string( $temp ) ||
+			dirname( $temp ) !== $root || ! str_starts_with( basename( $temp ), 'wpai-media-' ) ) {
+			return false;
+		}
+		return $this->remove_file( $temp );
+	}
+
+	/**
+	 * Record a native Media effect after the saved attachment bytes are
+	 * independently verified. Failure preserves the claimed/unknown state.
+	 *
+	 * @param string $id Lease identity.
+	 * @param int    $attachment_id Verified native WordPress ID.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function finish_media( $id, $attachment_id ) {
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		try {
+			if ( 'media' !== $meta['purpose'] || 'committing' !== $meta['state'] ||
+				! is_int( $attachment_id ) || $attachment_id < 1 ||
+				! $this->allowed( 'media' ) || ! current_user_can( 'edit_post', $attachment_id ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'The native Media result could not be authorized or reconciled; inspect Media before retrying.' );
+			}
+			$attachment = get_post( $attachment_id );
+			$path       = get_attached_file( $attachment_id );
+			if ( ! $attachment || 'attachment' !== $attachment->post_type ||
+				! is_string( $path ) || ! is_file( $path ) ||
+				(int) filesize( $path ) !== $meta['total'] ||
+				! hash_equals( $meta['sha256'], (string) hash_file( 'sha256', $path ) ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'WordPress created an uncertain Media result; inspect its exact bytes and identity.' );
+			}
+			$meta['state']          = 'committed';
+			$meta['destination_id'] = $attachment_id;
+			if ( ! $this->save_meta( $handle, $meta ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'WordPress Media was saved but the private receipt is uncertain; inspect the destination.' );
+			}
+			return $this->receipt( $meta );
+		} finally {
+			$this->close_meta( $handle );
+		}
 	}
 
 	/** @param string $id Exact opaque id. @return array<int,mixed>|WP_Error */
@@ -449,7 +612,7 @@ final class Private_Transfer_Session {
 			$this->close_meta( $h );
 			return $this->denied();
 		}
-		if ( $meta['expires'] <= time() ) {
+		if ( $meta['expires'] <= time() && 'committing' !== $meta['state'] ) {
 			$this->close_meta( $h );
 			return new WP_Error( 'transfer_expired', 'The private transfer lease expired; a new transfer is required.' );
 		}
@@ -519,15 +682,16 @@ final class Private_Transfer_Session {
 	/** @param array<string,mixed> $meta Private metadata. @return array<string,mixed> */
 	private function receipt( $meta ) {
 		return array(
-			'id'       => $meta['id'],
-			'purpose'  => $meta['purpose'],
-			'total'    => $meta['total'],
-			'received' => $meta['received'],
-			'chunk'    => $meta['chunk'],
-			'complete' => $meta['received'] === $meta['total'],
-			'state'    => $meta['state'],
-			'sha256'   => $meta['sha256'],
-			'expires'  => $meta['expires'],
+			'id'             => $meta['id'],
+			'purpose'        => $meta['purpose'],
+			'total'          => $meta['total'],
+			'received'       => $meta['received'],
+			'chunk'          => $meta['chunk'],
+			'complete'       => $meta['received'] === $meta['total'],
+			'state'          => $meta['state'],
+			'sha256'         => $meta['sha256'],
+			'expires'        => $meta['expires'],
+			'destination_id' => (int) ( $meta['destination_id'] ?? 0 ),
 		);
 	}
 }

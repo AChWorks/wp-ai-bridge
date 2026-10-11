@@ -82,6 +82,7 @@ $oauth         = new OAuth_Server( $store );
 $session       = '';
 $token         = '';
 $identities    = array();
+$media_id      = 0;
 $seq           = 20;
 
 function wpai134_session_action( $token, $session, &$seq, $action ) {
@@ -213,6 +214,69 @@ try {
 	$missing = wpai134_session_action( $token, $session, $seq, array( 'action' => 'status', 'transfer_id' => $id ) );
 	wpai134_session_assert( ! empty( $missing['result']['isError'] ), 'Cancelled private lease remained readable.' );
 
+
+	// Explicit second-stage native Media consumer: passive library import,
+	// never plugin activation, archive extraction or arbitrary server path.
+	$png = base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1kAAAAASUVORK5CYII=', true );
+	wpai134_session_assert( is_string( $png ) && 68 === strlen( $png ), 'Media consumer fixture must be a real PNG.' );
+	$media_begin = wpai134_session_action(
+		$token, $session, $seq,
+		array( 'action' => 'begin', 'purpose' => 'media', 'total_bytes' => strlen( $png ), 'sha256' => hash( 'sha256', $png ) )
+	);
+	wpai134_session_assert( true === ( $media_begin['result']['structuredContent']['success'] ?? false ), 'Native Media staging begin failed.' );
+	$media_lease = $media_begin['result']['structuredContent']['data']['transfer_id'];
+	$identities[] = $media_lease;
+	$media_bytes = wpai134_session_action(
+		$token, $session, $seq,
+		array( 'action' => 'append', 'transfer_id' => $media_lease, 'offset' => 0, 'content_base64' => base64_encode( $png ) )
+	);
+	wpai134_session_assert( true === ( $media_bytes['result']['structuredContent']['success'] ?? false ), 'Native Media staging bytes failed.' );
+	$media_verified = wpai134_session_action( $token, $session, $seq, array( 'action' => 'verify', 'transfer_id' => $media_lease ) );
+	wpai134_session_assert( true === ( $media_verified['result']['structuredContent']['success'] ?? false ), 'Native Media source verification failed.' );
+
+	list( $bad_media ) = wpai134_session_request(
+		$token, $session, $seq++, 'wp-ai-bridge/transfer-media-import',
+		array( 'transfer_id' => $media_lease, 'filename' => 'wpai134-staged.php' )
+	);
+	wpai134_session_assert( ! empty( $bad_media['result']['isError'] ), 'A disallowed executable Media MIME was admitted.' );
+	list( $good_media ) = wpai134_session_request(
+		$token, $session, $seq++, 'wp-ai-bridge/transfer-media-import',
+		array( 'transfer_id' => $media_lease, 'filename' => 'wpai134-staged.png' )
+	);
+	$media_data = $good_media['result']['structuredContent'] ?? array();
+	wpai134_session_assert(
+		true === ( $media_data['success'] ?? false ) &&
+		'committed' === ( $media_data['data']['state'] ?? '' ) &&
+		(int) ( $media_data['data']['media_id'] ?? 0 ) > 0,
+		'Verified Media staging was not consumed through native WordPress Media Library.'
+	);
+	$media_id = (int) $media_data['data']['media_id'];
+	wp_set_current_user( $actor );
+	$media_file = get_attached_file( $media_id );
+	wpai134_session_assert(
+		'attachment' === get_post_type( $media_id ) &&
+		is_string( $media_file ) && is_file( $media_file ) &&
+		hash_file( 'sha256', $media_file ) === hash( 'sha256', $png ),
+		'Native Media consumer did not preserve exact verified file bytes.'
+	);
+	wp_set_current_user( 0 );
+	$media_status = wpai134_session_action( $token, $session, $seq, array( 'action' => 'status', 'transfer_id' => $media_lease ) );
+	wpai134_session_assert(
+		true === ( $media_status['result']['structuredContent']['success'] ?? false ) &&
+		(int) $media_status['result']['structuredContent']['data']['destination_id'] === $media_id,
+		'Committed Media effect had no durable status/attachment receipt.'
+	);
+	list( $duplicate ) = wpai134_session_request(
+		$token, $session, $seq++, 'wp-ai-bridge/transfer-media-import',
+		array( 'transfer_id' => $media_lease, 'filename' => 'wpai134-staged.png' )
+	);
+	wpai134_session_assert( ! empty( $duplicate['result']['isError'] ), 'Replay created a second Media object after a committed effect.' );
+	$media_released = wpai134_session_action( $token, $session, $seq, array( 'action' => 'cancel', 'transfer_id' => $media_lease ) );
+	wpai134_session_assert( true === ( $media_released['result']['structuredContent']['success'] ?? false ), 'Completed transfer could not release its private staged copy.' );
+	wp_set_current_user( $actor );
+	wpai134_session_assert( get_post( $media_id ) && is_file( get_attached_file( $media_id ) ), 'Private staged-data release deleted the native Media attachment.' );
+	wp_set_current_user( 0 );
+
 	// Zero-byte source must verify without an invented synthetic chunk.
 	$zero = wpai134_session_action(
 		$token, $session, $seq,
@@ -244,6 +308,9 @@ try {
 	$transfer = new \WP_AI_Bridge\Support\Private_Transfer_Session( new \WP_AI_Bridge\Support\Permissions( $settings ) );
 	foreach ( $identities as $identity ) {
 		$transfer->cancel( $identity );
+	}
+	if ( $media_id > 0 ) {
+		wp_delete_attachment( $media_id, true );
 	}
 	if ( '' !== $token ) {
 		$store->revoke( $token );

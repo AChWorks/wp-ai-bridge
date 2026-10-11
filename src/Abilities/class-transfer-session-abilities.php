@@ -92,8 +92,9 @@ final class Transfer_Session_Abilities {
 						'max_active_bytes' => array( 'type' => 'integer' ),
 						'max_sessions'     => array( 'type' => 'integer' ),
 						'lease_seconds'    => array( 'type' => 'integer' ),
+						'destination_id'   => array( 'type' => 'integer' ),
 					),
-					'required'             => array( 'action', 'state', 'transfer_id', 'purpose', 'complete', 'received_bytes', 'total_bytes', 'sha256', 'expires_at', 'max_chunk_bytes', 'request_bytes', 'max_file_bytes', 'max_active_bytes', 'max_sessions', 'lease_seconds' ),
+					'required'             => array( 'action', 'state', 'transfer_id', 'purpose', 'complete', 'received_bytes', 'total_bytes', 'sha256', 'expires_at', 'max_chunk_bytes', 'request_bytes', 'max_file_bytes', 'max_active_bytes', 'max_sessions', 'lease_seconds', 'destination_id' ),
 					'additionalProperties' => false,
 				),
 				'execute_callback'    => array( $this, 'execute' ),
@@ -275,6 +276,7 @@ final class Transfer_Session_Abilities {
 			'max_active_bytes' => $policy['active'],
 			'max_sessions'     => $policy['sessions'],
 			'lease_seconds'    => $policy['ttl'],
+			'destination_id'   => (int) ( $receipt['destination_id'] ?? 0 ),
 		);
 	}
 }

@@ -30,4 +30,13 @@ return array(
 	'The encoded incoming transfer message exceeds the configured MCP request budget.' => 'پیام ورودی کدگذاری‌شده انتقال از بودجه تنظیم‌شده درخواست MCP بیشتر است.',
 	'The private transfer request or expected session identity is invalid.' => 'درخواست انتقال خصوصی یا شناسه مورد انتظار نشست نامعتبر است.',
 	'Transfer capacity must be a positive whole number within the current PHP resource limits. The previous setting was kept.' => 'ظرفیت انتقال باید عدد صحیح مثبت در محدوده منابع PHP فعلی باشد. مقدار قبلی حفظ شد.',
+	'Import Verified Transfer into Media' => 'واردکردن انتقال تأییدشده به رسانه‌های وردپرس',
+	'Consumes one previously verified private transfer as a new WordPress Media Library file. Side effects are not automatically retried. Does not install, unpack or run archives.' => 'یک انتقال خصوصی تأییدشده را به عنوان فایل جدید در کتابخانه رسانه وردپرس وارد می‌کند. عملیات دارای اثر به طور خودکار تکرار نمی‌شود و آرشیوها را نصب، استخراج یا اجرا نمی‌کند.',
+	'Authenticated client, Builder Write and WordPress upload authority are required for Media import.' => 'برای واردکردن رسانه، کلاینت احراز هویت‌شده، مجوز Builder Write و اجازه بارگذاری وردپرس لازم است.',
+	'WordPress does not allow this file type for the current upload principal.' => 'وردپرس این نوع فایل را برای کاربر فعلی بارگذاری مجاز نمی‌داند.',
+	'Media consumption requires an unclaimed, fully verified private transfer. Inspect its status before another action.' => 'ورود به رسانه نیازمند انتقال خصوصی کامل و تأییدشده‌ای است که قبلاً مصرف نشده باشد. پیش از اقدام جدید وضعیت آن را بررسی کنید.',
+	'WordPress Media Library does not support an empty sideload; keep the verified zero-byte transfer private.' => 'کتابخانه رسانه وردپرس از واردکردن فایل خالی پشتیبانی نمی‌کند؛ انتقال صفر‌بایتی تأییدشده را خصوصی نگه دارید.',
+	'The transfer is larger than the current native WordPress upload limit. Increase the WordPress/host setting or use another authorized consumer.' => 'اندازه انتقال از محدودیت بومی بارگذاری وردپرس بیشتر است. تنظیمات وردپرس یا هاست را افزایش دهید یا مصرف‌کننده مجاز دیگری به کار برید.',
+	'The requested Media consumer identity or filename is invalid.' => 'شناسه انتقال یا نام فایل درخواستی برای رسانه نامعتبر است.',
+	'The Media operation may be incomplete. Inspect the exact WordPress Media destination and transfer status; do not retry blindly.' => 'عملیات رسانه ممکن است ناقص باشد. مقصد دقیق رسانه وردپرس و وضعیت انتقال را بررسی کنید و بدون اطمینان دوباره تلاش نکنید.',
 );
