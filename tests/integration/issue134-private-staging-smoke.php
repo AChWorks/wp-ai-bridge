@@ -25,6 +25,7 @@ $original    = get_option( Settings::OPTION_NAME, false );
 $permissions = new Permissions( $settings );
 $transfer    = new Private_Transfer_Session( $permissions );
 $ids         = array();
+$other_user  = 0;
 
 try {
 	wpai134_staging_assert( $actor > 0, 'A native WordPress administrator is required.' );
@@ -44,6 +45,27 @@ try {
 	wpai134_staging_assert( ! is_wp_error( $open ) && 'open' === $open['state'] && 0 === $open['received'], 'Private source allocation did not return an opaque initial receipt.' );
 	$id    = $open['id'];
 	$ids[] = $id;
+	// A second real native WordPress administrator has the same grant but
+	// MUST NOT inherit a different principal's opaque private transfer.
+	$other_user = wp_insert_user(
+		array(
+			'user_login' => 'wpai134_other_' . bin2hex( random_bytes( 5 ) ),
+			'user_pass'  => wp_generate_password( 32, true, true ),
+			'user_email' => 'other-' . bin2hex( random_bytes( 4 ) ) . '@example.invalid',
+			'role'       => 'administrator',
+		)
+	);
+	wpai134_staging_assert( is_int( $other_user ) && $other_user > 0, 'Could not create isolated second administrator.' );
+	wp_set_current_user( $other_user );
+	wpai134_staging_assert(
+		current_user_can( 'upload_files' ) &&
+		is_wp_error( $transfer->status( $id ) ) &&
+		is_wp_error( $transfer->append( $id, 0, substr( $png, 0, 12 ) ) ) &&
+		is_wp_error( $transfer->cancel( $id ) ),
+		'An equally privileged but unrelated administrator could use the opaque transfer.'
+	);
+	wp_set_current_user( $actor );
+
 	wpai134_staging_assert( is_wp_error( $transfer->verify( $id ) ), 'Incomplete binary was prematurely verified.' );
 	$first = new Private_Transfer_Session( $permissions );
 	$a     = $first->append( $id, 0, substr( $png, 0, 32 ) );
@@ -135,6 +157,27 @@ try {
 		'Multi-megabyte Persian/emoji exact-byte reconstruction failed.'
 	);
 
+	// A privileged local change after verification must invalidate the
+	// immutable content digest rather than silently reusing a stale receipt.
+	$changed_bytes = 'X' . substr( $long, 1 );
+	wpai134_staging_assert(
+		strlen( $changed_bytes ) === strlen( $long ) &&
+		strlen( $changed_bytes ) === file_put_contents( $large_file['path'], $changed_bytes ),
+		'Could not exercise post-verification source mutation.'
+	);
+	$changed = $transfer->verified_private_source( $large['id'], 'text' );
+	wpai134_staging_assert(
+		is_wp_error( $changed ) &&
+		'transfer_source_changed' === $changed->get_error_code(),
+		'An altered verified private source was accepted as original content.'
+	);
+	wpai134_staging_assert(
+		strlen( $long ) === file_put_contents( $large_file['path'], $long ) &&
+		! is_wp_error( $transfer->verified_private_source( $large['id'], 'text' ) ),
+		'Restored exact private bytes did not regain SHA-256 integrity.'
+	);
+
+
 	// Full length alone is not sufficient without correct digest.
 	$bad = $transfer->begin( 'media', 4, str_repeat( '0', 64 ), 8 * 1024 * 1024, 100, 3, 600 );
 	wpai134_staging_assert( ! is_wp_error( $bad ), 'Corrupt-hash fixture could not begin.' );
@@ -162,6 +205,10 @@ try {
 	echo "PASS: #134 real WordPress internal-only resumable private binary/text staging, fail-closed leases and byte integrity.\n";
 } finally {
 	wp_set_current_user( $actor );
+	if ( is_int( $other_user ) && $other_user > 0 ) {
+		require_once ABSPATH . 'wp-admin/includes/user.php';
+		wp_delete_user( $other_user );
+	}
 	$restore                                  = $settings->defaults();
 	$restore[ Settings::GROUP_BUILDER_WRITE ] = 1;
 	update_option( Settings::OPTION_NAME, $restore, false );
