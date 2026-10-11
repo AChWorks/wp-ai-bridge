@@ -209,6 +209,7 @@ final class Registrar {
 			$this->integration_abilities,
 			$this->site_config_abilities,
 			new Site_Health_Abilities( $this->permissions ),
+			new Cron_Abilities( $this->permissions ),
 			$this->extension_abilities,
 			new Extension_Authorization_Abilities( $this->extension_abilities, $this->permissions, $this->settings ),
 			$this->source_editing_abilities,

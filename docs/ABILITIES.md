@@ -45,6 +45,7 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `site-settings-update` | Site Configuration | Update bounded site settings. |
 | site-health | Site Configuration + native view_site_health_checks | Discover native Core/provider Site Health tests; execute only reviewed Core direct or REST tests with current WordPress permissions and bounded results. |
 | `core-update-status` | Site Configuration + native administrator capability (network administrator on multisite) | Read only cached Core update offers, their age, and native policy signals. Never triggers an update check, download, or upgrade. Missing/stale cache is unknown. |
+| `cron-events-read` | Site Configuration + WordPress `manage_options`; multisite also `manage_network_options` | Read-only bounded WP-Cron inventory, exact event metadata without callback arguments, source-bound pagination and truthful unsupported external-trigger status. |
 | `extensions-read` | Site Read | Read installed plugin/theme metadata. |
 | `extension-authorization` | Site Read | Read-only per-kind/action/group/native-capability preflight. Execution permission, target and environment are not evaluated. |
 | `extension-lifecycle` | Code & Extensions; External Packages additionally for external HTTPS install | Preserve WordPress.org slug install/update/activate/deactivate and separately allow one public-HTTPS package install when additionally authorized; deletion is destructive. |
@@ -68,6 +69,14 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | workspace-document | Site Read / Builder Write | Project-bound canonical documents, small summary pages, guarded UTF-8 field windows and archive/unarchive. |
 | workspace-task | Site Read / Builder Write | Project-bound tasks, next_action/blocker, small summary pages, guarded notes, version/hash CAS. |
 
+
+### WP-Cron inventory (Issue #138, read-only implementation slice)
+
+The source candidate includes `wp-ai-bridge/cron-events-read` under the existing default-off **Site Configuration** grant and native administrator authority; multisite requires network-administrator authority. `action=list` returns up to 25 entries with an opaque site-bound `event_id`, hook (explicitly `hook_truncated` if needed), next run UTC/timestamp, recurrence/interval, argument **count only**, callback registration observation and overdue flag. It never returns serialized arguments, sensitive callback state, or provider input. `action=get` selects a present event by opaque identity. Empty or missing Cron data does not invent executions.
+
+Every inventory response carries a snapshot digest. Pass `expected_snapshot` with the next `offset` to detect a changed native Cron option and restart instead of silently mixing pages. Exact `hook` filtering is optional. The native WordPress scheduler stores all events in one site-scoped option, so any inspection must first read that Core representation; if there are over 4,096 entries or invalid/unrepresentable data, Bridge returns an explicit error rather than silently omitting items. `wordpress_cron_disabled` only reports the local constant; `external_trigger_verified:false` deliberately makes **no** inference about an OS cron job or whether any callback ran. A registered callback does not certify that a provider job is safe to execute manually.
+
+**This is not the full #138 lifecycle:** schedule, reschedule, unschedule, and safe targeted run-now remain pending separate source implementation and acceptance. The current maintained main/release remains unchanged until normal merge/release gates. No generic callable, shell, arbitrary hook runner, or WP-Cron keepalive is exposed.
 
 ### Site Health (Issue #140 development candidate)
 
