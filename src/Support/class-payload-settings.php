@@ -169,7 +169,13 @@ final class Payload_Settings {
 			return null;
 		}
 		$value = (string) $value;
-		if ( 1 !== preg_match( '/^[0-9]{1,7}$/D', $value ) ) {
+		// Validate the actual machine integer representation before casting.
+		// The former seven-digit parser was itself an arbitrary hard cap on
+		// administrator-configurable Media source/transfer sizes.
+		$machine_max = (string) PHP_INT_MAX;
+		if ( '' === $value || strlen( $value ) > strlen( $machine_max ) ||
+			1 !== preg_match( '/^[0-9]+$/D', $value ) ||
+			( strlen( $value ) === strlen( $machine_max ) && strcmp( $value, $machine_max ) > 0 ) ) {
 			return null;
 		}
 

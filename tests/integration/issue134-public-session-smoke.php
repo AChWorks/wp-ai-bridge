@@ -300,7 +300,7 @@ try {
 		"MEASURE: #134 native authenticated MCP private transfer bytes=%d chunks=%d php_peak_bytes=%d.\n",
 		$source_size, $steps, memory_get_peak_usage( true )
 	);
-	echo "PASS: #134 native OAuth MCP configurable multi-chunk private transfer, hash, replay, zero, cancellation and revocation.\n";
+	echo "PASS: #134 native OAuth MCP chunked transfer, verified Media Library import, exact hash, no-replay, zero/cancel and grant revocation.\n";
 } finally {
 	wp_set_current_user( $actor );
 	$grants[ Settings::GROUP_BUILDER_WRITE ] = 1;
