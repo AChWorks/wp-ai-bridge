@@ -166,7 +166,13 @@ final class Private_Transfer_Session {
 			return $loaded;
 		}
 		list( $root, $handle, $meta ) = $loaded;
-		$result                       = $this->check_file( $root, $id, $meta );
+		if ( 'media_read' === $meta['purpose'] && ! empty( $meta['source_id'] ) &&
+			( 'attachment' !== get_post_type( $meta['source_id'] ) ||
+				! current_user_can( 'read_post', $meta['source_id'] ) ) ) {
+			$this->close_meta( $handle );
+			return $this->denied();
+		}
+		$result = $this->check_file( $root, $id, $meta );
 		$this->close_meta( $handle );
 		return is_wp_error( $result ) ? $result : $this->receipt( $meta );
 	}
