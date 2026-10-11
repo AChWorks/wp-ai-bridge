@@ -18,4 +18,14 @@ return array(
 	'WXR export must begin before HTTP headers have been sent.' => 'برون‌بری WXR باید پیش از ارسال سرآیندهای HTTP آغاز شود.',
 	'Native WXR export could not complete within the available private staging budget.' => 'برون‌بری WXR در محدودیت فضای خصوصی تخصیص‌یافته کامل نشد.',
 	'Native WXR export must use a new WordPress request for every attempt.' => 'برای هر بار برون‌بری WXR باید یک درخواست جدید وردپرس ارسال شود.',
+
+	'Native WordPress import and Site Configuration authorization are required.' => 'برای بررسی WXR مجوز درون‌بری وردپرس و دسترسی تنظیمات سایت لازم است.',
+	'Invalid private WXR preview parameters.' => 'پارامترهای بررسی WXR خصوصی نامعتبر هستند.',
+	'The WXR artifact belongs to another WordPress blog.' => 'فایل WXR به سایت وردپرسی دیگری تعلق دارد.',
+	'WXR preview requires an owner-only internal temporary artifact.' => 'بررسی WXR نیازمند فایل موقت داخلی با دسترسی محدود به مالک است.',
+	'WXR preview exceeds the available byte budget or source length changed.' => 'حجم WXR از سهمیه موجود فراتر رفته یا اندازه فایل تغییر کرده است.',
+	'WXR source SHA-256 changed after staging.' => 'اثر انگشت SHA-256 فایل WXR پس از ذخیره‌سازی موقت تغییر کرده است.',
+	'Streaming XMLReader is unavailable for WXR inspection.' => 'ابزار XMLReader برای بررسی جریانی WXR در دسترس نیست.',
+	'The WXR artifact did not pass bounded structural XML inspection.' => 'فایل WXR بررسی ساختاری XML با محدودیت منابع را با موفقیت نگذرانده است.',
+	'The WXR document is incomplete or has an unsupported version.' => 'سند WXR ناقص است یا نسخه پشتیبانی‌نشده دارد.',
 );
