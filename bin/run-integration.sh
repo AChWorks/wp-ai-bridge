@@ -69,6 +69,7 @@ for test in \
     issue99-extension-authorization-smoke.php \
     issue130-141-diagnostics-smoke.php \
     issue140-site-health-smoke.php \
+    issue138-native-cron-smoke.php \
     issue119-registered-rest-smoke.php \
     issue119-native-execution-smoke.php \
     issue44-native-ability-delegation-smoke.php \
