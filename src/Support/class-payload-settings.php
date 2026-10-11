@@ -43,10 +43,40 @@ final class Payload_Settings {
 	const MAX_NOTES_KIB    = 256;
 	// Read-only, whole-file hashing inline-MCP fallback; not a universal file cap.
 	const MIN_INLINE_FILE_MIB = 8;
-	const MAX_INLINE_FILE_MIB = 1024;
+	// No fixed Bridge-side maximum Media source size; the effective limit is
+	// validated against the current PHP integer/file-system representation.
 	// Bounded legacy Base64 upload only; WordPress and client caps still apply.
 	const MIN_INLINE_MEDIA_MIB = 1;
-	const MAX_INLINE_MEDIA_MIB = 256;
+	// One-shot inline Media upload is memory-bound. The general staged
+	// transfer should be used when client/PHP memory cannot hold a JSON body.
+
+	/**
+	 * Numeric ceiling of the legacy *source* fallback, not a product file
+	 * capacity policy. Streaming hash and source windows do not load the
+	 * entire WordPress Media file into PHP memory.
+	 *
+	 * @return int
+	 */
+	public static function max_inline_file_mib() {
+		return intdiv( PHP_INT_MAX, 1048576 );
+	}
+
+	/**
+	 * One-shot inline Base64 uploads do materialize request and decoded bytes.
+	 * Bound the operator override by current PHP memory rather than a fixed
+	 * product-defined 256 MiB max. Existing default remains backward compatible.
+	 *
+	 * @return int
+	 */
+	public static function max_inline_media_mib() {
+		$numeric = intdiv( PHP_INT_MAX, 1048576 );
+		$limit   = function_exists( 'wp_convert_hr_to_bytes' ) ?
+			wp_convert_hr_to_bytes( ini_get( 'memory_limit' ) ) : -1;
+		if ( ! is_int( $limit ) || $limit <= 0 ) {
+			return $numeric;
+		}
+		return min( $numeric, max( self::DEFAULT_INLINE_MEDIA_MIB, intdiv( $limit, 8 * 1048576 ) ) );
+	}
 
 	/** Register an independent setting so saving it cannot change access grants. */
 	public function register() {
@@ -149,8 +179,8 @@ final class Payload_Settings {
 			self::WINDOW_KEY       => array( self::MIN_WINDOW_KIB, self::MAX_WINDOW_KIB ),
 			self::DOCUMENT_KEY     => array( self::MIN_DOCUMENT_KIB, self::MAX_DOCUMENT_KIB ),
 			self::NOTES_KEY        => array( self::MIN_NOTES_KIB, self::MAX_NOTES_KIB ),
-			self::INLINE_FILE_KEY  => array( self::MIN_INLINE_FILE_MIB, self::MAX_INLINE_FILE_MIB ),
-			self::INLINE_MEDIA_KEY => array( self::MIN_INLINE_MEDIA_MIB, self::MAX_INLINE_MEDIA_MIB ),
+			self::INLINE_FILE_KEY  => array( self::MIN_INLINE_FILE_MIB, self::max_inline_file_mib() ),
+			self::INLINE_MEDIA_KEY => array( self::MIN_INLINE_MEDIA_MIB, self::max_inline_media_mib() ),
 		);
 		$min     = $ranges[ $key ][0];
 		$max     = $ranges[ $key ][1];
