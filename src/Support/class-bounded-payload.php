@@ -18,12 +18,34 @@ final class Bounded_Payload {
 	/**
 	 * Leave headroom for MCP JSON-RPC envelope and Gateway transport metadata.
 	 */
-	const RESPONSE_BYTES = 32768;
+	const RESPONSE_BYTES = Payload_Settings::DEFAULT_RESPONSE_KIB * 1024;
 
 	/**
 	 * A safe upper bound for a single UTF-8 text part within the response envelope.
 	 */
-	const TEXT_WINDOW_BYTES = 16384;
+	const TEXT_WINDOW_BYTES = Payload_Settings::DEFAULT_WINDOW_KIB * 1024;
+
+	/**
+	 * Effective per-response encoded-JSON limit, for the current WordPress site.
+	 * A larger administrator maximum does not allocate memory until used.
+	 *
+	 * @return int
+	 */
+	public static function response_limit() {
+		$settings = new Payload_Settings();
+		return $settings->all()[ Payload_Settings::RESPONSE_KEY ] * 1024;
+	}
+
+	/**
+	 * Maximum requested bytes of one source UTF-8 text window. The actual
+	 * encoded reply may need a shorter adaptive window to fit the response.
+	 *
+	 * @return int
+	 */
+	public static function window_limit() {
+		$settings = new Payload_Settings();
+		return $settings->all()[ Payload_Settings::WINDOW_KEY ] * 1024;
+	}
 
 	/**
 	 * Check the actual serialized JSON byte count, not only PHP string lengths.
@@ -34,7 +56,7 @@ final class Bounded_Payload {
 	public static function fits( $value ) {
 		// Default JSON escaping is intentionally conservative for Unicode-heavy payloads.
 		$json = wp_json_encode( $value );
-		return is_string( $json ) && strlen( $json ) <= self::RESPONSE_BYTES;
+		return is_string( $json ) && strlen( $json ) <= self::response_limit();
 	}
 
 	/**
@@ -50,7 +72,7 @@ final class Bounded_Payload {
 		$total   = strlen( $content );
 
 		if ( ! is_int( $offset ) || $offset < 0 || $offset > $total ||
-			! is_int( $limit ) || $limit < 1 || $limit > self::TEXT_WINDOW_BYTES ) {
+			! is_int( $limit ) || $limit < 1 || $limit > self::window_limit() ) {
 			return new WP_Error( 'invalid_content_window', __( 'The requested content window is outside the supported bounds.', 'wp-ai-bridge' ) );
 		}
 		if ( $offset < $total && 0x80 === ( ord( $content[ $offset ] ) & 0xC0 ) ) {

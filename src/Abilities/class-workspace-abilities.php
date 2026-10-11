@@ -418,7 +418,7 @@ final class Workspace_Abilities {
 				'max_bytes'           => array(
 					'type'    => 'integer',
 					'minimum' => 1,
-					'maximum' => 16384,
+					'maximum' => Bounded_Payload::window_limit(),
 				),
 				'operation_id'        => array(
 					'type'      => 'string',
@@ -435,7 +435,7 @@ final class Workspace_Abilities {
 				),
 				'content'             => array(
 					'type'      => 'string',
-					'maxLength' => Store::MAX_DOCUMENT_BYTES,
+					'maxLength' => Store::document_limit(),
 				),
 				'expected_version'    => array(
 					'type'    => 'integer',
@@ -493,7 +493,7 @@ final class Workspace_Abilities {
 				'max_bytes'           => array(
 					'type'    => 'integer',
 					'minimum' => 1,
-					'maximum' => 16384,
+					'maximum' => Bounded_Payload::window_limit(),
 				),
 				'operation_id'        => array(
 					'type'      => 'string',
@@ -521,7 +521,7 @@ final class Workspace_Abilities {
 				'target_refs'         => $this->string_list_schema(),
 				'notes'               => array(
 					'type'      => 'string',
-					'maxLength' => Store::MAX_NOTES_BYTES,
+					'maxLength' => Store::notes_limit(),
 				),
 				'progress'            => array(
 					'type' => 'string',

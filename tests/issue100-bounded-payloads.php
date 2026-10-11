@@ -263,7 +263,7 @@ wpai_issue100_assert( ! $blocks->can_read( array( 'post_id' => 100 ) ), 'Block d
 $access[ Settings::GROUP_SITE_READ ] = 1;
 update_option( Settings::OPTION_NAME, $access, false );
 
-$body               = str_repeat( 'سلام WordPress دنیا! ', 2100 );
+$body               = str_repeat( 'سلام WordPress دنیا! ', (int) ceil( ( Bounded_Payload::window_limit() + 4096 ) / strlen( 'سلام WordPress دنیا! ' ) ) );
 $post->post_content = $body;
 $metadata           = $content->read(
 	array(

@@ -112,7 +112,7 @@ try {
 
 	$invalid = $store->create_document( array( 'title' => 'Invalid', 'content' => "\xC3\x28", 'project_ref' => $project_a ) );
 	wpai126_assert( is_wp_error( $invalid ) && 'workspace_lossy_input' === $invalid->get_error_code(), 'Invalid UTF-8 was silently persisted.' );
-	$oversize = $store->create_document( array( 'title' => 'Oversize', 'content' => str_repeat( 'x', 100001 ) ) );
+	$oversize = $store->create_document( array( 'title' => 'Oversize', 'content' => str_repeat( 'x', Store::document_limit() + 1 ) ) );
 	wpai126_assert( is_wp_error( $oversize ), 'Oversized document was silently truncated.' );
 	$unsafe = $store->create_document( array( 'title' => 'Sanitize', 'content' => '<script>side effect</script>' ) );
 	wpai126_assert( is_wp_error( $unsafe ), 'Material HTML filtering happened silently.' );

@@ -24,7 +24,8 @@ $messages = array_merge(
 	require __DIR__ . '/fa_IR-parts/user-comment-meta.php',
 	require __DIR__ . '/fa_IR-parts/diagnostics.php',
 	require __DIR__ . '/fa_IR-parts/workspace-reliability.php',
-	require __DIR__ . '/fa_IR-parts/application-passwords.php'
+	require __DIR__ . '/fa_IR-parts/application-passwords.php',
+	require __DIR__ . '/fa_IR-parts/payload-settings.php'
 );
 
 return array(

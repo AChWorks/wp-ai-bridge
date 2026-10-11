@@ -10,6 +10,7 @@ namespace WP_AI_Bridge\Admin;
 use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Environment;
 use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Settings;
 use WP_AI_Bridge\Workspace\Store;
 
@@ -344,6 +345,51 @@ final class Settings_Page {
 				<?php endforeach; ?>
 				</tbody></table>
 				<?php submit_button(); ?>
+			</form>
+
+			<?php
+			// This is intentionally a separate native Settings API form: changing
+			// a payload budget must never toggle an existing access group.
+			$payload_settings = new Payload_Settings();
+			$payload_limits   = $payload_settings->all();
+			?>
+			<h2><?php echo esc_html__( 'MCP response and text budgets', 'wp-ai-bridge' ); ?></h2>
+			<p><?php echo esc_html__( 'These are per-request response and text-window budgets, not limits on the size of a WordPress document or transferred file. No capacity is preallocated when idle.', 'wp-ai-bridge' ); ?></p>
+			<p><?php echo esc_html__( 'Workspace record storage limits below are separate quotas; they do not change the maximum MCP request size or create a file upload path.', 'wp-ai-bridge' ); ?></p>
+			<form action="options.php" method="post">
+				<?php settings_fields( Payload_Settings::OPTION_GROUP ); ?>
+				<table class="form-table" role="presentation"><tbody>
+					<tr>
+						<th scope="row"><label for="wpai-response-kib"><?php echo esc_html__( 'MCP JSON response budget (KiB)', 'wp-ai-bridge' ); ?></label></th>
+						<td>
+							<input type="number" class="small-text" id="wpai-response-kib" name="<?php echo esc_attr( Payload_Settings::OPTION_NAME . '[' . Payload_Settings::RESPONSE_KEY . ']' ); ?>" value="<?php echo esc_attr( (string) $payload_limits[ Payload_Settings::RESPONSE_KEY ] ); ?>" min="<?php echo esc_attr( (string) Payload_Settings::MIN_RESPONSE_KIB ); ?>" max="<?php echo esc_attr( (string) Payload_Settings::MAX_RESPONSE_KIB ); ?>" step="1" required>
+							<p class="description"><?php echo esc_html__( 'Encoded result size, including Unicode JSON escaping. Default: 128 KiB; configurable from 16 to 1024 KiB. Older Gateways with a 64 KiB limit require a smaller value (such as 48 KiB) until upgraded.', 'wp-ai-bridge' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="wpai-text-window-kib"><?php echo esc_html__( 'Maximum UTF-8 text window (KiB)', 'wp-ai-bridge' ); ?></label></th>
+						<td>
+							<input type="number" class="small-text" id="wpai-text-window-kib" name="<?php echo esc_attr( Payload_Settings::OPTION_NAME . '[' . Payload_Settings::WINDOW_KEY . ']' ); ?>" value="<?php echo esc_attr( (string) $payload_limits[ Payload_Settings::WINDOW_KEY ] ); ?>" min="<?php echo esc_attr( (string) Payload_Settings::MIN_WINDOW_KIB ); ?>" max="<?php echo esc_attr( (string) Payload_Settings::MAX_WINDOW_KIB ); ?>" step="1" required>
+							<p class="description"><?php echo esc_html__( 'Maximum source bytes per requested text window. Default: 128 KiB; configurable from 4 to 512 KiB. A response may return a shorter window to fit JSON encoding. The entire text remains readable using offsets and hashes.', 'wp-ai-bridge' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="wpai-document-kib"><?php echo esc_html__( 'Workspace document storage limit (KiB per document)', 'wp-ai-bridge' ); ?></label></th>
+						<td>
+							<input type="number" class="small-text" id="wpai-document-kib" name="<?php echo esc_attr( Payload_Settings::OPTION_NAME . '[' . Payload_Settings::DOCUMENT_KEY . ']' ); ?>" value="<?php echo esc_attr( (string) $payload_limits[ Payload_Settings::DOCUMENT_KEY ] ); ?>" min="<?php echo esc_attr( (string) Payload_Settings::MIN_DOCUMENT_KIB ); ?>" max="<?php echo esc_attr( (string) Payload_Settings::MAX_DOCUMENT_KIB ); ?>" step="1" required>
+							<p class="description"><?php echo esc_html__( 'Default: 512 KiB; configurable from 64 to 1024 KiB. This bounds one private Workspace document, not WordPress posts or file transport.', 'wp-ai-bridge' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="wpai-notes-kib"><?php echo esc_html__( 'Workspace task notes storage limit (KiB per task)', 'wp-ai-bridge' ); ?></label></th>
+						<td>
+							<input type="number" class="small-text" id="wpai-notes-kib" name="<?php echo esc_attr( Payload_Settings::OPTION_NAME . '[' . Payload_Settings::NOTES_KEY . ']' ); ?>" value="<?php echo esc_attr( (string) $payload_limits[ Payload_Settings::NOTES_KEY ] ); ?>" min="<?php echo esc_attr( (string) Payload_Settings::MIN_NOTES_KIB ); ?>" max="<?php echo esc_attr( (string) Payload_Settings::MAX_NOTES_KIB ); ?>" step="1" required>
+							<p class="description"><?php echo esc_html__( 'Default: 128 KiB; configurable from 16 to 256 KiB. Lowering a limit does not erase existing longer notes, but blocks oversized replacements.', 'wp-ai-bridge' ); ?></p>
+						</td>
+					</tr>
+				</tbody></table>
+				<p class="description"><?php echo esc_html__( 'Bridge cannot change MCP client, Gateway, proxy, PHP or hosting limits. Increase those separately where supported; large private files still require an authenticated binary transport.', 'wp-ai-bridge' ); ?></p>
+				<?php submit_button( __( 'Save response and text budgets', 'wp-ai-bridge' ) ); ?>
 			</form>
 
 			<h2><?php echo esc_html__( 'Workspace data lifecycle', 'wp-ai-bridge' ); ?></h2>

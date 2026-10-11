@@ -139,7 +139,7 @@ final class Content_Abilities {
 						'content_max_bytes'     => array(
 							'type'    => 'integer',
 							'minimum' => 4,
-							'maximum' => Bounded_Payload::TEXT_WINDOW_BYTES,
+							'maximum' => Bounded_Payload::window_limit(),
 						),
 						'expected_content_hash' => array(
 							'type'      => 'string',
@@ -157,7 +157,7 @@ final class Content_Abilities {
 						'text_max_bytes'        => array(
 							'type'    => 'integer',
 							'minimum' => 4,
-							'maximum' => Bounded_Payload::TEXT_WINDOW_BYTES,
+							'maximum' => Bounded_Payload::window_limit(),
 						),
 						'expected_text_hash'    => array(
 							'type'      => 'string',
@@ -395,7 +395,7 @@ final class Content_Abilities {
 					$item['content_total_bytes'] = strlen( $content );
 					$item['content_next_offset'] = 0;
 					$item['content_complete']    = false;
-					if ( strlen( $content ) <= Bounded_Payload::TEXT_WINDOW_BYTES ) {
+					if ( strlen( $content ) <= Bounded_Payload::window_limit() ) {
 						$item['content']             = $content;
 						$item['content_next_offset'] = strlen( $content );
 						$item['content_complete']    = true;
@@ -624,10 +624,10 @@ final class Content_Abilities {
 				return new WP_Error( 'revision_read_forbidden', __( 'Revision access is no longer permitted.', 'wp-ai-bridge' ) );
 			}
 			$body       = (string) $revision->post_content;
-			$large_meta = strlen( (string) $revision->post_title ) > Bounded_Payload::TEXT_WINDOW_BYTES || strlen( (string) $revision->post_excerpt ) > Bounded_Payload::TEXT_WINDOW_BYTES;
+			$large_meta = strlen( (string) $revision->post_title ) > Bounded_Payload::window_limit() || strlen( (string) $revision->post_excerpt ) > Bounded_Payload::window_limit();
 			$item       = $large_meta ? $this->compact_revision( $revision, $include ) : $this->format_revision( $revision, false );
 			if ( $include && ! $large_meta ) {
-				if ( strlen( $body ) <= Bounded_Payload::TEXT_WINDOW_BYTES ) {
+				if ( strlen( $body ) <= Bounded_Payload::window_limit() ) {
 					$item['content'] = $body;
 				} else {
 					$item['content_total_bytes']  = strlen( $body );
@@ -671,7 +671,7 @@ final class Content_Abilities {
 			if ( isset( $input['content_offset'] ) || isset( $input['content_max_bytes'] ) || isset( $input['expected_content_hash'] ) ) {
 				return new WP_Error( 'invalid_revision_query', __( 'Set include_content to read revision content windows.', 'wp-ai-bridge' ) );
 			}
-			$large_meta = strlen( (string) $revision->post_title ) > Bounded_Payload::TEXT_WINDOW_BYTES || strlen( (string) $revision->post_excerpt ) > Bounded_Payload::TEXT_WINDOW_BYTES;
+			$large_meta = strlen( (string) $revision->post_title ) > Bounded_Payload::window_limit() || strlen( (string) $revision->post_excerpt ) > Bounded_Payload::window_limit();
 			$item       = $large_meta ? $this->compact_revision( $revision, false ) : $this->format_revision( $revision, false );
 			if ( Bounded_Payload::fits( array( $item ) ) ) {
 				return array( $item );
@@ -683,7 +683,7 @@ final class Content_Abilities {
 		$content = (string) $revision->post_content;
 		$hash    = hash( 'sha256', $content );
 		$offset  = isset( $input['content_offset'] ) ? (int) $input['content_offset'] : 0;
-		$limit   = isset( $input['content_max_bytes'] ) ? (int) $input['content_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
+		$limit   = isset( $input['content_max_bytes'] ) ? (int) $input['content_max_bytes'] : Bounded_Payload::window_limit();
 		if ( $offset > 0 && empty( $input['expected_content_hash'] ) ) {
 			return new WP_Error( 'revision_identity_required', __( 'A resumed revision read requires its expected_content_hash.', 'wp-ai-bridge' ) );
 		}
@@ -693,9 +693,9 @@ final class Content_Abilities {
 
 		// Existing callers retain complete small-body behavior; selectors always report windows.
 		if ( ! isset( $input['content_offset'] ) && ! isset( $input['content_max_bytes'] ) &&
-			strlen( $content ) <= Bounded_Payload::TEXT_WINDOW_BYTES &&
-			strlen( (string) $revision->post_title ) <= Bounded_Payload::TEXT_WINDOW_BYTES &&
-			strlen( (string) $revision->post_excerpt ) <= Bounded_Payload::TEXT_WINDOW_BYTES ) {
+			strlen( $content ) <= Bounded_Payload::window_limit() &&
+			strlen( (string) $revision->post_title ) <= Bounded_Payload::window_limit() &&
+			strlen( (string) $revision->post_excerpt ) <= Bounded_Payload::window_limit() ) {
 			$item                        = $this->format_revision( $revision, true );
 			$item['content_total_bytes'] = strlen( $content );
 			$item['content_next_offset'] = strlen( $content );
@@ -740,7 +740,7 @@ final class Content_Abilities {
 		$value  = (string) ( 'title' === $field ? $revision->post_title : $revision->post_excerpt );
 		$hash   = hash( 'sha256', $value );
 		$offset = isset( $input['text_offset'] ) ? (int) $input['text_offset'] : 0;
-		$limit  = isset( $input['text_max_bytes'] ) ? (int) $input['text_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
+		$limit  = isset( $input['text_max_bytes'] ) ? (int) $input['text_max_bytes'] : Bounded_Payload::window_limit();
 		if ( $offset > 0 && empty( $input['expected_text_hash'] ) ) {
 			return new WP_Error( 'revision_identity_required', __( 'A resumed revision text read requires its expected_text_hash.', 'wp-ai-bridge' ) );
 		}
@@ -981,8 +981,8 @@ final class Content_Abilities {
 	 */
 	private function read_single_content( $post, $input, $content, $offset, $windowed ) {
 		$item          = $this->format_post( $post, false );
-		$limit         = isset( $input['content_max_bytes'] ) ? (int) $input['content_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
-		$needs_content = $windowed || strlen( $content ) <= Bounded_Payload::TEXT_WINDOW_BYTES;
+		$limit         = isset( $input['content_max_bytes'] ) ? (int) $input['content_max_bytes'] : Bounded_Payload::window_limit();
+		$needs_content = $windowed || strlen( $content ) <= Bounded_Payload::window_limit();
 		if ( $needs_content ) {
 			$window = Bounded_Payload::text_window( $content, $offset, $limit );
 			if ( is_wp_error( $window ) ) {
@@ -1081,7 +1081,7 @@ final class Content_Abilities {
 		$item               = $this->compact_post_identity( $post );
 		$item['text_field'] = $field;
 		$item['text_hash']  = hash( 'sha256', $value );
-		$limit              = isset( $input['text_max_bytes'] ) ? (int) $input['text_max_bytes'] : Bounded_Payload::TEXT_WINDOW_BYTES;
+		$limit              = isset( $input['text_max_bytes'] ) ? (int) $input['text_max_bytes'] : Bounded_Payload::window_limit();
 		for ( $size = $limit; $size >= 4; $size = (int) floor( $size / 2 ) ) {
 			$window = Bounded_Payload::text_window( $value, $offset, $size );
 			if ( is_wp_error( $window ) ) {
@@ -1149,7 +1149,7 @@ final class Content_Abilities {
 		$item                        = $this->format_post( $post, false );
 		$body                        = (string) $post->post_content;
 		$item['content_total_bytes'] = strlen( $body );
-		for ( $size = Bounded_Payload::TEXT_WINDOW_BYTES; $size >= 4; $size = (int) floor( $size / 2 ) ) {
+		for ( $size = Bounded_Payload::window_limit(); $size >= 4; $size = (int) floor( $size / 2 ) ) {
 			$window = Bounded_Payload::text_window( $body, 0, $size );
 			if ( is_wp_error( $window ) ) {
 				break;
@@ -1267,7 +1267,7 @@ final class Content_Abilities {
 				'content_max_bytes'     => array(
 					'type'    => 'integer',
 					'minimum' => 1,
-					'maximum' => Bounded_Payload::TEXT_WINDOW_BYTES,
+					'maximum' => Bounded_Payload::window_limit(),
 				),
 				'expected_content_hash' => array(
 					'type'      => 'string',
@@ -1285,7 +1285,7 @@ final class Content_Abilities {
 				'text_max_bytes'        => array(
 					'type'    => 'integer',
 					'minimum' => 4,
-					'maximum' => Bounded_Payload::TEXT_WINDOW_BYTES,
+					'maximum' => Bounded_Payload::window_limit(),
 				),
 				'expected_state_hash'   => array(
 					'type'      => 'string',

@@ -85,6 +85,7 @@ for test in \
     issue6-direct-oauth-negative-smoke.php \
     issue6-direct-mcp-tools-smoke.php \
     issue6-i18n-smoke.php \
+    issue134-payload-settings-smoke.php \
     issue126-128-workspace-smoke.php \
     issue128-native-creates-smoke.php \
     issue8-workspace-smoke.php
