@@ -11,6 +11,7 @@ use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Environment;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Payload_Settings;
+use WP_AI_Bridge\Support\Transfer_Settings;
 use WP_AI_Bridge\Support\Settings;
 use WP_AI_Bridge\Workspace\Store;
 
@@ -404,6 +405,59 @@ final class Settings_Page {
 				</tbody></table>
 				<p class="description"><?php echo esc_html__( 'Bridge cannot change MCP client, Gateway, proxy, PHP or hosting limits. Increase those separately where supported; large private files still require an authenticated binary transport.', 'wp-ai-bridge' ); ?></p>
 				<?php submit_button( __( 'Save response and text budgets', 'wp-ai-bridge' ) ); ?>
+			</form>
+
+
+			<?php
+			// Separate native Settings API option: transfer capacity must not
+			// alter either WordPress authority groups or legacy inline quotas.
+			$transfer_settings = new Transfer_Settings();
+			$transfer_values   = $transfer_settings->all();
+			$transfer_maxima   = $transfer_settings->upper_bounds();
+			$transfer_fields   = array(
+				Transfer_Settings::REQUEST_KIB => array(
+					__( 'Incoming MCP request budget (KiB)', 'wp-ai-bridge' ),
+					__( 'Bounds one encoded inbound tool message, not the aggregate file. Larger WordPress, proxy or MCP client limits must be configured separately.', 'wp-ai-bridge' ),
+				),
+				Transfer_Settings::CHUNK_KIB   => array(
+					__( 'Maximum raw transfer chunk (KiB)', 'wp-ai-bridge' ),
+					__( 'Chunk bytes are also reduced automatically to fit the effective incoming MCP JSON budget. This is not a total file-size ceiling.', 'wp-ai-bridge' ),
+				),
+				Transfer_Settings::FILE_MIB    => array(
+					__( 'One staged transfer reservation (MiB)', 'wp-ai-bridge' ),
+					__( 'Adjust for actual private disk capacity and workloads. No archive, document or file extension has a universal Bridge-side aggregate cap.', 'wp-ai-bridge' ),
+				),
+				Transfer_Settings::ACTIVE_MIB  => array(
+					__( 'Aggregate live reservation budget (MiB)', 'wp-ai-bridge' ),
+					__( 'Limits total outstanding private storage reservations per WordPress site independently of the per-file budget.', 'wp-ai-bridge' ),
+				),
+				Transfer_Settings::SESSIONS    => array(
+					__( 'Concurrent private transfer sessions', 'wp-ai-bridge' ),
+					__( 'Maximum non-expired transfers; expired sessions are cleaned on subsequent admissions.', 'wp-ai-bridge' ),
+				),
+				Transfer_Settings::LEASE_MIN   => array(
+					__( 'Private transfer lease lifetime (minutes)', 'wp-ai-bridge' ),
+					__( 'Retention is finite and separate from one HTTP request timeout. The host must preserve temporary storage across requests.', 'wp-ai-bridge' ),
+				),
+			);
+			?>
+			<h2><?php echo esc_html__( 'Private file transfer capacity', 'wp-ai-bridge' ); ?></h2>
+			<p><?php echo esc_html__( 'Adjust these values without changing plugin source. They reserve finite, revocable private transfer resources; WordPress, PHP, filesystem, client and Gateway constraints still apply.', 'wp-ai-bridge' ); ?></p>
+			<form action="options.php" method="post">
+				<?php settings_fields( Transfer_Settings::OPTION_GROUP ); ?>
+				<table class="form-table" role="presentation"><tbody>
+					<?php foreach ( $transfer_fields as $key => $field ) : ?>
+						<tr>
+							<th scope="row"><label for="<?php echo esc_attr( 'wpai-transfer-' . $key ); ?>"><?php echo esc_html( $field[0] ); ?></label></th>
+							<td>
+								<input type="text" inputmode="numeric" pattern="[1-9][0-9]*" class="regular-text" id="<?php echo esc_attr( 'wpai-transfer-' . $key ); ?>" name="<?php echo esc_attr( Transfer_Settings::OPTION_NAME . '[' . $key . ']' ); ?>" value="<?php echo esc_attr( (string) $transfer_values[ $key ] ); ?>" required>
+								<p class="description"><?php echo esc_html( $field[1] ); ?></p>
+								<p class="description"><?php echo esc_html__( 'Current PHP-derived maximum:', 'wp-ai-bridge' ); ?> <?php echo esc_html( (string) $transfer_maxima[ $key ] ); ?></p>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody></table>
+				<?php submit_button( __( 'Save private transfer capacity', 'wp-ai-bridge' ) ); ?>
 			</form>
 
 			<h2><?php echo esc_html__( 'Workspace data lifecycle', 'wp-ai-bridge' ); ?></h2>

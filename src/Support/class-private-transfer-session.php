@@ -36,17 +36,21 @@ final class Private_Transfer_Session {
 	 * @param int    $ttl_seconds Finite retention in seconds.
 	 * @return array<string,mixed>|WP_Error No private path in return.
 	 */
-	public function begin( $purpose, $total, $sha256, $max_total, $max_chunk, $active_limit, $ttl_seconds ) {
+	public function begin( $purpose, $total, $sha256, $max_total, $max_chunk, $active_limit, $ttl_seconds, $max_active = null ) {
 		if ( ! $this->allowed( $purpose ) ) {
 			return $this->denied();
 		}
+		if ( null === $max_active && is_int( $max_total ) && is_int( $active_limit ) && $max_total > 0 && $active_limit > 0 ) {
+			// Preserve the earlier internal callers' reservation policy without overflowing.
+			$max_active = $active_limit > intdiv( PHP_INT_MAX, $max_total ) ? PHP_INT_MAX : $active_limit * $max_total;
+		}
 		if (
-			! is_int( $total ) || $total < 0 || ! is_int( $max_total ) || $max_total < 1 ||
+			! is_int( $max_active ) || $max_active < 1 ||
+			! is_int( $total ) || $total < 0 || $total > $max_active || ! is_int( $max_total ) || $max_total < 1 ||
 			$total > $max_total || ! is_int( $max_chunk ) || $max_chunk < 1 || $max_chunk > $max_total ||
-			! is_int( $active_limit ) || $active_limit < 1 || $active_limit > 64 ||
-			! is_int( $ttl_seconds ) || $ttl_seconds < 60 || $ttl_seconds > DAY_IN_SECONDS ||
-			! is_string( $sha256 ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $sha256 ) ||
-			$max_total > intdiv( PHP_INT_MAX - 1, 64 )
+			! is_int( $active_limit ) || $active_limit < 1 ||
+			! is_int( $ttl_seconds ) || $ttl_seconds < 60 || $ttl_seconds > PHP_INT_MAX - time() ||
+			! is_string( $sha256 ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $sha256 )
 		) {
 			return $this->invalid();
 		}
@@ -60,35 +64,55 @@ final class Private_Transfer_Session {
 		}
 		try {
 			$used    = 0;
+			$pending = 0;
 			$count   = 0;
-			$entries = glob( $root . '/*.meta' );
-			if ( ! is_array( $entries ) || count( $entries ) > 256 ) {
-				return new WP_Error( 'transfer_capacity', 'Too many private transfer metadata entries; administrator cleanup is required.' );
-			}
-			foreach ( $entries as $path ) {
-				$id = basename( $path, '.meta' );
-				if ( 1 !== preg_match( '/^[a-f0-9]{64}$/D', $id ) ) {
-					continue;
-				}
-				$info = $this->open_meta( $root, $id );
-				if ( is_wp_error( $info ) ) {
-					// A corrupt in-progress entry is NOT silently discarded.
-					return new WP_Error( 'transfer_storage_uncertain', 'Private transfer state is inconsistent; inspect storage before beginning another transfer.' );
-				}
-				list( $handle, $meta ) = $info;
-				if ( $meta['expires'] <= time() ) {
-					if ( ! $this->erase( $root, $id ) ) {
-						$this->close_meta( $handle );
-						return new WP_Error( 'transfer_cleanup_uncertain', 'Expired private transfer bytes could not be fully deleted. Manual cleanup is required.' );
+			// Iterate bounded-memory over private metadata; no fixed 256-entry
+			// product ceiling or full-directory glob allocation. Concurrency
+			// and reserved-byte limits are administrator-owned.
+			try {
+				$entries = new \FilesystemIterator( $root, \FilesystemIterator::SKIP_DOTS );
+				foreach ( $entries as $entry ) {
+					$name = $entry->getFilename();
+					if ( ! preg_match( '/^[a-f0-9]{64}\\.meta$/D', $name ) ) {
+						continue;
 					}
-				} else {
-					++$count;
-					$used += $meta['total'];
+					$id   = substr( $name, 0, 64 );
+					$info = $this->open_meta( $root, $id );
+					if ( is_wp_error( $info ) ) {
+						return new WP_Error( 'transfer_storage_uncertain', 'Private transfer state is inconsistent; inspect storage before beginning another transfer.' );
+					}
+					list( $handle, $meta ) = $info;
+					if ( $meta['expires'] <= time() ) {
+						if ( ! $this->erase( $root, $id ) ) {
+							$this->close_meta( $handle );
+							return new WP_Error( 'transfer_cleanup_uncertain', 'Expired private transfer bytes could not be fully deleted. Manual cleanup is required.' );
+						}
+					} else {
+						++$count;
+						// Subtract before adding to prevent integer overflow.
+						if ( $meta['total'] > $max_active - $used ) {
+							$this->close_meta( $handle );
+							return new WP_Error( 'transfer_capacity', 'Active private transfer reservation budget reached; adjust the administrator setting or complete/cancel older leases.' );
+						}
+						$used    += $meta['total'];
+						$pending += $meta['total'] - $meta['received'];
+					}
+					$this->close_meta( $handle );
 				}
-				$this->close_meta( $handle );
+			} catch ( \UnexpectedValueException $error ) {
+				return new WP_Error( 'transfer_storage_unavailable', 'Private transfer metadata directory cannot be enumerated.' );
 			}
-			if ( $count >= $active_limit || $used > $max_total * $active_limit - $total ) {
-				return new WP_Error( 'transfer_capacity', 'The configured active private transfer reservation budget was reached.' );
+			if ( $count >= $active_limit || $total > $max_active - $used ) {
+				return new WP_Error( 'transfer_capacity', 'Configured concurrent private transfer reservation capacity reached.' );
+			}
+			// Aggregate reservation should fit the *actual* current private
+			// storage, not merely an invented software-wide file ceiling.
+			$free = disk_free_space( $root );
+			if ( ! is_float( $free ) && ! is_int( $free ) ) {
+				return new WP_Error( 'transfer_disk_unknown', 'Available private disk capacity could not be measured.' );
+			}
+			if ( $total > $free || $pending > $free - $total ) {
+				return new WP_Error( 'transfer_disk_insufficient', 'Private temporary storage cannot accommodate the requested active transfer reservation.' );
 			}
 
 			$id       = bin2hex( random_bytes( 32 ) );
@@ -295,7 +319,7 @@ final class Private_Transfer_Session {
 			case 'text':
 				return $this->permissions->allowed( Settings::GROUP_BUILDER_WRITE, 'edit_posts' );
 			case 'wxr':
-				return $this->permissions->allowed( Settings::GROUP_SITE_CONFIG, 'import' );
+				return $this->permissions->allowed_all( array( array( Settings::GROUP_SITE_CONFIG, 'import' ), array( Settings::GROUP_BUILDER_WRITE, 'edit_posts' ) ) );
 			default:
 				return false;
 		}
@@ -499,6 +523,7 @@ final class Private_Transfer_Session {
 			'purpose'  => $meta['purpose'],
 			'total'    => $meta['total'],
 			'received' => $meta['received'],
+			'chunk'    => $meta['chunk'],
 			'complete' => $meta['received'] === $meta['total'],
 			'state'    => $meta['state'],
 			'sha256'   => $meta['sha256'],

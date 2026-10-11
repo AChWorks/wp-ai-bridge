@@ -96,6 +96,7 @@ for test in \
     issue6-i18n-smoke.php \
     issue134-payload-settings-smoke.php \
     issue134-direct-mcp-bytes-smoke.php \
+    issue134-public-session-smoke.php \
     issue134-private-staging-smoke.php \
     issue126-128-workspace-smoke.php \
     issue128-native-creates-smoke.php \

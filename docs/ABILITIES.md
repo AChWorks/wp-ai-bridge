@@ -246,6 +246,12 @@ The draft payload branch proposes **wp-ai-bridge/file-bytes-read**, a read-only,
 
 This is NOT a complete private binary ingress, file transport session, HTTP streaming protocol, WXR artifact export, downloadable model attachment, ChatGPT top-level fileParams extension, or verified Gateway compatibility. Review and approve its public contract before release; do not expose server paths.
 
+## Draft private transfer sessions (Issue #134; not shipped)
+
+The proposed wp-ai-bridge/private-transfer Ability uses existing Bridge OAuth, the registered Core Abilities API and the official MCP Adapter. It can report current configurable inbound message/chunk/file/reserved-disk/concurrency/lease budgets and privately stage client-supplied bytes via begin, append, status, verify, cancel. Only current purpose-appropriate native WordPress capabilities and Bridge grants can create or access a lease; every resume binds current site, principal and OAuth client. Unknown/malformed requests, differing replay, stale leases, hash mismatch, revocation, full disk and short writes fail explicitly. No filesystem path is returned, and no staged file is imported or executed.
+
+The input budget is a **per-message** encoded JSON constraint, distinct from total object/file capacity. Current site administrators can adjust the finite separate transfer resource settings without editing source; the PHP host/client/Gateway may impose smaller effective bounds. The current proposal remains DRAFT: consumer commit, real external attachment/materialization and high-assurance review are NOT delivered by this Ability.
+
 ## Public Ability contract inspection
 
 **Direct MCP tool inventory versus WordPress operations:** the canonical direct server exposes only the three generic MCP Adapter tools in `tools/list`. Use `mcp-adapter-discover-abilities` to discover public WordPress operations, including `wp-ai-bridge/extension-lifecycle`; absence of that Ability name from `tools/list` alone does not mean it is unimplemented. For a site-specific diagnosis of build version, delegation, native authority and remaining administrator-parity gaps, see [administrator capability audit](POST-PARITY-AUDIT.md).

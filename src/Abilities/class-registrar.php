@@ -205,6 +205,7 @@ final class Registrar {
 			$this->block_abilities,
 			$this->media_abilities,
 			new File_Transfer_Abilities( $this->permissions ),
+			new Transfer_Session_Abilities( $this->permissions ),
 			$this->taxonomy_abilities,
 			$this->navigation_abilities,
 			$this->integration_abilities,

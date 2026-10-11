@@ -15,6 +15,7 @@ use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Native_Ability_Delegation;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Payload_Settings;
+use WP_AI_Bridge\Support\Transfer_Settings;
 use WP_AI_Bridge\Support\Settings;
 use WP_AI_Bridge\Workspace\Store;
 
@@ -81,6 +82,7 @@ final class Plugin {
 		add_action( 'init', array( $this->workspace, 'register_post_types' ), 5 );
 		add_action( 'admin_init', array( $this->settings, 'register' ) );
 		add_action( 'admin_init', array( new Payload_Settings(), 'register' ) );
+		add_action( 'admin_init', array( new Transfer_Settings(), 'register' ) );
 		add_action( 'admin_menu', array( $this->settings_page, 'register_menu' ) );
 		add_action( 'admin_post_wpai_workspace_export', array( $this->settings_page, 'handle_export' ) );
 		add_action( 'admin_post_wpai_workspace_clear', array( $this->settings_page, 'handle_clear' ) );
