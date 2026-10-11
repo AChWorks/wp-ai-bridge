@@ -19,7 +19,6 @@ use WP_Error;
  */
 final class Cron_Abilities {
 	const PAGE_LIMIT = 25;
-	const MAX_EVENTS = 4096;
 
 	/** @var Permissions */
 	private $permissions;
@@ -142,15 +141,28 @@ final class Cron_Abilities {
 			return new WP_Error( 'cron_inventory_unavailable', __( 'Native WordPress Cron inventory was unavailable.', 'wp-ai-bridge' ) );
 		}
 
-		$rows        = array();
-		$state_parts = array();
-		$now         = time();
+
+		// WordPress itself loads the native Cron option as an array. Do not
+		// amplify that unavoidable cost by accumulating and sorting a second
+		// copy of every event just to return a small result page.
+		$rows          = array();
+		$matching      = 0;
+		$exact         = null;
+		$now           = time();
+		$site_id       = get_current_blog_id();
+		$salt          = wp_salt( 'auth' );
+		$snapshot_hash = hash_init( 'sha256', HASH_HMAC, $salt );
+		hash_update( $snapshot_hash, 'wpai-cron-inventory-v2|' . $site_id . '|' );
+
+		// Native WordPress Cron preserves the order of its stored timestamp,
+		// hook and event keys. A change in this ordering invalidates a
+		// continuation conservatively via expected_snapshot.
 		foreach ( (array) $raw as $timestamp => $hooks ) {
 			if ( ! ctype_digit( (string) $timestamp ) || ! is_array( $hooks ) ) {
 				return new WP_Error( 'cron_inventory_invalid', __( 'Native Cron inventory contains unexpected data.', 'wp-ai-bridge' ) );
 			}
 			foreach ( $hooks as $name => $events ) {
-				if ( ! is_string( $name ) || ! is_array( $events ) ) {
+				if ( ! is_string( $name ) || ! is_array( $events ) || 1 !== preg_match( '//u', $name ) ) {
 					return new WP_Error( 'cron_inventory_invalid', __( 'Native Cron inventory contains unexpected event data.', 'wp-ai-bridge' ) );
 				}
 				foreach ( $events as $key => $event ) {
@@ -161,74 +173,77 @@ final class Cron_Abilities {
 						( isset( $event['interval'] ) && ( ! is_int( $event['interval'] ) || $event['interval'] < 0 ) ) ) {
 						return new WP_Error( 'cron_inventory_invalid', __( 'Native Cron inventory contains an invalid event.', 'wp-ai-bridge' ) );
 					}
-					if ( count( $rows ) >= self::MAX_EVENTS ) {
-						return new WP_Error( 'cron_inventory_too_large', __( 'Cron inventory exceeds the bounded Bridge limit. Inspect it using native WordPress administration.', 'wp-ai-bridge' ) );
+					$recurrence = false === $event['schedule'] ? '' : $event['schedule'];
+					if ( 1 !== preg_match( '//u', $recurrence ) ) {
+						return new WP_Error( 'cron_inventory_invalid', __( 'Native Cron inventory contains an invalid event.', 'wp-ai-bridge' ) );
 					}
-					$when = (int) $timestamp;
-					// Stable event ID hides potentially sensitive callback arguments.
-					$identity      = hash_hmac( 'sha256', get_current_blog_id() . '|' . $timestamp . '|' . $name . '|' . $key, wp_salt( 'auth' ) );
-					$recurrence    = false === $event['schedule'] ? '' : $event['schedule'];
-					$interval      = isset( $event['interval'] ) ? $event['interval'] : 0;
-					$state_parts[] = $identity . ':' . $recurrence . ':' . $interval;
-					if ( ! preg_match( '//u', $name ) ) {
-						return new WP_Error( 'cron_inventory_invalid', __( 'Native Cron event name is not valid UTF-8.', 'wp-ai-bridge' ) );
-					}
-					$visible_hook = $name;
-					if ( strlen( $visible_hook ) > 200 ) {
-						$visible_hook = substr( $visible_hook, 0, 200 );
-						while ( '' !== $visible_hook && ! preg_match( '//u', $visible_hook ) ) {
-							$visible_hook = substr( $visible_hook, 0, -1 );
+					$interval = isset( $event['interval'] ) ? $event['interval'] : 0;
+					$identity = hash_hmac( 'sha256', $site_id . '|' . $timestamp . '|' . $name . '|' . $key, $salt );
+
+					// Length-delimited serialized scalar metadata. Arguments
+					// and their values never enter the result or snapshot.
+					hash_update( $snapshot_hash, serialize( array( $identity, $recurrence, $interval ) ) );
+
+					if ( 'get' === $action ) {
+						if ( hash_equals( $identity, $id ) ) {
+							$exact = $this->event_row( $identity, $timestamp, $name, $recurrence, $interval, count( $event['args'] ), $now );
 						}
+						continue;
 					}
-					$rows[] = array(
-						'event_id'            => $identity,
-						'hook'                => $visible_hook,
-						'hook_truncated'      => strlen( $name ) > 200,
-						'next_run_utc'        => gmdate( 'c', $when ),
-						'next_run_timestamp'  => $when,
-						'recurrence'          => substr( $recurrence, 0, 80 ),
-						'interval_seconds'    => $interval,
-						'arguments_count'     => count( $event['args'] ),
-						'callback_registered' => false !== has_action( $name ),
-						'overdue'             => $when < $now,
-					);
+					if ( '' !== $hook && $name !== $hook ) {
+						continue;
+					}
+					if ( $matching >= $offset && count( $rows ) < $limit ) {
+						$rows[] = $this->event_row( $identity, $timestamp, $name, $recurrence, $interval, count( $event['args'] ), $now );
+					}
+					++$matching;
 				}
 			}
 		}
-		usort(
-			$rows,
-			static function ( $left, $right ) {
-				return ( $left['next_run_timestamp'] <=> $right['next_run_timestamp'] ) ? ( $left['next_run_timestamp'] <=> $right['next_run_timestamp'] ) : strcmp( $left['event_id'], $right['event_id'] );
-			}
-		);
-		sort( $state_parts, SORT_STRING );
-		$snapshot = hash_hmac( 'sha256', implode( ':', $state_parts ), wp_salt( 'auth' ) );
+		$snapshot = hash_final( $snapshot_hash );
 
 		if ( 'get' === $action ) {
-			foreach ( $rows as $row ) {
-				if ( hash_equals( $row['event_id'], $id ) ) {
-					return $this->result( array( $row ), 1, false, 1, $snapshot );
-				}
-			}
-			return new WP_Error( 'cron_event_not_found', __( 'The selected Cron event no longer exists.', 'wp-ai-bridge' ) );
+			return null !== $exact
+				? $this->result( array( $exact ), 1, false, 1, $snapshot )
+				: new WP_Error( 'cron_event_not_found', __( 'The selected Cron event no longer exists.', 'wp-ai-bridge' ) );
 		}
-
 		if ( '' !== $expected && ! hash_equals( $expected, $snapshot ) ) {
 			return new WP_Error( 'cron_stale_snapshot', __( 'The Cron inventory changed. Restart pagination from offset zero.', 'wp-ai-bridge' ) );
 		}
-		if ( '' !== $hook ) {
-			$rows = array_values(
-				array_filter(
-					$rows,
-					static function ( $row ) use ( $hook ) {
-						return ! $row['hook_truncated'] && $row['hook'] === $hook;
-					}
-				)
-			);
+		return $this->result( $rows, $matching, $offset + count( $rows ) < $matching, $offset + count( $rows ), $snapshot );
+	}
+
+	/**
+	 * Construct sensitive-argument-free output only for selected page entries.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function event_row( $identity, $timestamp, $name, $recurrence, $interval, $args_count, $now ) {
+		$visible_hook = $name;
+		while ( strlen( $visible_hook ) > 200 ) {
+			$visible_hook = substr( $visible_hook, 0, 200 );
+			while ( '' !== $visible_hook && 1 !== preg_match( '//u', $visible_hook ) ) {
+				$visible_hook = substr( $visible_hook, 0, -1 );
+			}
 		}
-		$total = count( $rows );
-		$page  = array_slice( $rows, $offset, $limit );
-		return $this->result( $page, $total, $offset + count( $page ) < $total, $offset + count( $page ), $snapshot );
+		$visible_recurrence = substr( $recurrence, 0, 80 );
+		while ( '' !== $visible_recurrence && 1 !== preg_match( '//u', $visible_recurrence ) ) {
+			$visible_recurrence = substr( $visible_recurrence, 0, -1 );
+		}
+		$when = (int) $timestamp;
+		return array(
+			'event_id'              => $identity,
+			'hook'                  => $visible_hook,
+			'hook_truncated'        => strlen( $name ) > 200,
+			'next_run_utc'          => gmdate( 'c', $when ),
+			'next_run_timestamp'    => $when,
+			'recurrence'            => $visible_recurrence,
+			'recurrence_truncated'  => strlen( $recurrence ) > 80,
+			'interval_seconds'      => $interval,
+			'arguments_count'       => $args_count,
+			'callback_registered'   => false !== has_action( $name ),
+			'overdue'               => $when < $now,
+		);
 	}
 
 	/** @return array<string,mixed> */
@@ -255,12 +270,13 @@ final class Cron_Abilities {
 				'next_run_utc'        => array( 'type' => 'string' ),
 				'next_run_timestamp'  => array( 'type' => 'integer' ),
 				'recurrence'          => array( 'type' => 'string' ),
+				'recurrence_truncated' => array( 'type' => 'boolean' ),
 				'arguments_count'     => array( 'type' => 'integer' ),
 				'interval_seconds'    => array( 'type' => 'integer' ),
 				'callback_registered' => array( 'type' => 'boolean' ),
 				'overdue'             => array( 'type' => 'boolean' ),
 			),
-			'required'             => array( 'event_id', 'hook', 'hook_truncated', 'next_run_utc', 'next_run_timestamp', 'recurrence', 'interval_seconds', 'arguments_count', 'callback_registered', 'overdue' ),
+			'required'             => array( 'event_id', 'hook', 'hook_truncated', 'next_run_utc', 'next_run_timestamp', 'recurrence', 'recurrence_truncated', 'interval_seconds', 'arguments_count', 'callback_registered', 'overdue' ),
 			'additionalProperties' => false,
 		);
 		return array(
