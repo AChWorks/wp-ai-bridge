@@ -79,6 +79,19 @@ try {
 	);
 	wpai134_staging_assert( is_wp_error( $transfer->verified_private_source( $id, 'wxr' ) ), 'A Media lease was converted into an unauthorized WXR consumer.' );
 	wpai134_staging_assert( is_wp_error( $transfer->append( $id, 0, substr( $png, 0, 1 ) ) ), 'Appending after verification was allowed.' );
+	// Even a privileged WordPress delete_file filter can veto cleanup. A
+	// canceled lease must NEVER report success before deletion is verified.
+	$refuse_delete = static function ( $path ) use ( $private ) {
+		return $path === $private['path'] ? false : $path;
+	};
+	add_filter( 'wp_delete_file', $refuse_delete );
+	$blocked_cleanup = $transfer->cancel( $id );
+	wpai134_staging_assert(
+		is_wp_error( $blocked_cleanup ) && 'transfer_cleanup_uncertain' === $blocked_cleanup->get_error_code() &&
+		file_exists( $private['path'] ),
+		'Private cleanup falsely confirmed a blocked disk deletion.'
+	);
+	remove_filter( 'wp_delete_file', $refuse_delete );
 	wpai134_staging_assert( true === $transfer->cancel( $id ) && ! file_exists( $private['path'] ), 'Cancel left confidential staged bytes on disk.' );
 	wpai134_staging_assert( is_wp_error( $transfer->status( $id ) ), 'Canceled lease remained accessible.' );
 	$ids = array();

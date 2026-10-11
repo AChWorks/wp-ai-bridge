@@ -77,7 +77,10 @@ final class Private_Transfer_Session {
 				}
 				list( $handle, $meta ) = $info;
 				if ( $meta['expires'] <= time() ) {
-					$this->erase( $root, $id );
+					if ( ! $this->erase( $root, $id ) ) {
+						$this->close_meta( $handle );
+						return new WP_Error( 'transfer_cleanup_uncertain', 'Expired private transfer bytes could not be fully deleted. Manual cleanup is required.' );
+					}
 				} else {
 					++$count;
 					$used += $meta['total'];
@@ -276,9 +279,9 @@ final class Private_Transfer_Session {
 			return $loaded;
 		}
 		list( $root, $handle ) = $loaded;
-		$this->erase( $root, $id );
+		$deleted               = $this->erase( $root, $id );
 		$this->close_meta( $handle );
-		return true;
+		return $deleted ? true : new WP_Error( 'transfer_cleanup_uncertain', 'Private transfer deletion could not be verified; inspect and retry cleanup.' );
 	}
 
 	/** @param string $purpose Explicit caller workflow. @return bool */
@@ -464,17 +467,29 @@ final class Private_Transfer_Session {
 		return $valid ? $path : new WP_Error( 'transfer_storage_uncertain', 'Private transfer source length or identity changed.' );
 	}
 
-	/** @param string $root Root. @param string $id Session. @return void */
+	/** @param string $root Root. @param string $id Session. @return bool */
 	private function erase( $root, $id ) {
-		$this->remove_file( $root . '/' . $id . '.bytes' );
-		$this->remove_file( $root . '/' . $id . '.meta' );
+		if ( ! $this->remove_file( $root . '/' . $id . '.bytes' ) ) {
+			return false;
+		}
+		return $this->remove_file( $root . '/' . $id . '.meta' );
 	}
 
-	/** @param string $path Fixed private file. @return void */
+	/** @param string $path Fixed private file. @return bool */
 	private function remove_file( $path ) {
-		if ( is_file( $path ) && ! is_link( $path ) ) {
-			wp_delete_file( $path );
+		clearstatcache( true, $path );
+		if ( is_link( $path ) ) {
+			return false;
 		}
+		if ( ! file_exists( $path ) ) {
+			return true;
+		}
+		if ( ! is_file( $path ) ) {
+			return false;
+		}
+		wp_delete_file( $path );
+		clearstatcache( true, $path );
+		return ! file_exists( $path ) && ! is_link( $path );
 	}
 
 	/** @param array<string,mixed> $meta Private metadata. @return array<string,mixed> */
