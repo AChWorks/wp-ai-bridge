@@ -184,7 +184,8 @@ wpai138_assert(
 );
 
 $GLOBALS['wpai_test']['cron'] = array();
-for ( $i = 0; $i <= Cron_Abilities::MAX_EVENTS; ++$i ) {
+$large_total                 = 4103;
+for ( $i = 0; $i < $large_total; ++$i ) {
 	$GLOBALS['wpai_test']['cron'][ $future + $i ] = array(
 		'hook' => array(
 			$hash_empty => array(
@@ -194,7 +195,56 @@ for ( $i = 0; $i <= Cron_Abilities::MAX_EVENTS; ++$i ) {
 		),
 	);
 }
-$overflow = $provider->execute();
-wpai138_assert( is_wp_error( $overflow ) && 'cron_inventory_too_large' === $overflow->get_error_code(), 'Over-cap Cron silently omitted events.' );
+$large_first = $provider->execute( array( 'limit' => 25 ) );
+wpai138_assert(
+	! is_wp_error( $large_first ) && $large_total === $large_first['total'] &&
+	25 === count( $large_first['items'] ) && $large_first['has_more'] &&
+	25 === $large_first['next_offset'],
+	'Legitimate Cron inventories over 4,096 events must support bounded pages.'
+);
+$large_last = $provider->execute(
+	array(
+		'offset'            => $large_total - 7,
+		'limit'             => 25,
+		'expected_snapshot' => $large_first['snapshot'],
+	)
+);
+wpai138_assert(
+	! is_wp_error( $large_last ) && $large_total === $large_last['total'] &&
+	7 === count( $large_last['items'] ) && ! $large_last['has_more'] &&
+	$large_total === $large_last['next_offset'] &&
+	$large_first['snapshot'] === $large_last['snapshot'],
+	'Large Cron inventory last-page continuation failed.'
+);
+$large_exact = $provider->execute(
+	array(
+		'action'   => 'get',
+		'event_id' => $large_last['items'][6]['event_id'],
+	)
+);
+wpai138_assert(
+	! is_wp_error( $large_exact ) &&
+	$large_last['items'][6]['event_id'] === $large_exact['items'][0]['event_id'],
+	'Large inventory exact event lookup failed.'
+);
+$GLOBALS['wpai_test']['cron'][ $future + $large_total ] = array(
+	'hook' => array(
+		$hash_empty => array(
+			'schedule' => false,
+			'args'     => array(),
+		),
+	),
+);
+$large_stale = $provider->execute(
+	array(
+		'offset'            => 25,
+		'expected_snapshot' => $large_first['snapshot'],
+	)
+);
+wpai138_assert(
+	is_wp_error( $large_stale ) &&
+	'cron_stale_snapshot' === $large_stale->get_error_code(),
+	'Large inventory replayed a stale page after event changes.'
+);
 
 echo 'PASS: Issue #138 bounded native Cron inventory (' . $GLOBALS['wpai_test']['assertions'] . " assertions).\n";
