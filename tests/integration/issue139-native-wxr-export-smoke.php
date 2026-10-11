@@ -27,14 +27,14 @@ try {
 	register_post_type(
 		$post_type,
 		array(
-			'public'      => true,
-			'can_export'  => true,
-			'show_ui'     => true,
-			'supports'    => array( 'title', 'editor', 'custom-fields' ),
+			'public'     => true,
+			'can_export' => true,
+			'show_ui'    => true,
+			'supports'   => array( 'title', 'editor', 'custom-fields' ),
 		)
 	);
 	register_taxonomy( $taxonomy, array( $post_type ), array( 'public' => true ) );
-	$content = "WXR exact UTF-8 - سلام ایران 🌍\n" . $marker;
+	$content      = "WXR exact UTF-8 - سلام ایران 🌍\n" . $marker;
 	$created_post = wp_insert_post(
 		array(
 			'post_type'    => $post_type,
@@ -85,6 +85,7 @@ try {
 	$seen_version = false;
 	$seen_item    = false;
 	try {
+		// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- XMLReader native read-only property names.
 		while ( $reader->read() ) {
 			wpai139_assert(
 				XMLReader::DOC_TYPE !== $reader->nodeType &&
@@ -104,6 +105,7 @@ try {
 				$seen_item = true;
 			}
 		}
+		// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	} finally {
 		$reader->close();
 	}

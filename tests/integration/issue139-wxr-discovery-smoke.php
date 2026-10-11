@@ -108,11 +108,22 @@ try {
 	);
 	wpai139_discover_assert(
 		! is_wp_error( $result ) && true === ( $result['success'] ?? false ) &&
-		$page['registry_hash'] === ( $result['data']['registry_hash'] ?? '' ),
+		( $result['data']['registry_hash'] ?? '' ) === $page['registry_hash'],
 		'Native Adapter did not preserve registered WXR discovery and its identity.'
 	);
-	register_post_type( 'wpai139_new', array( 'public' => true, 'can_export' => true ) );
-	$stale = $ability->execute( array( 'offset' => 1, 'expected_registry_hash' => $page['registry_hash'] ) );
+	register_post_type(
+		'wpai139_new',
+		array(
+			'public'     => true,
+			'can_export' => true,
+		)
+	);
+	$stale = $ability->execute(
+		array(
+			'offset'                 => 1,
+			'expected_registry_hash' => $page['registry_hash'],
+		)
+	);
 	wpai139_discover_assert(
 		is_wp_error( $stale ) && 'wxr_stale_registry' === $stale->get_error_code(),
 		'Registry mutation did not invalidate WXR paging continuation.'

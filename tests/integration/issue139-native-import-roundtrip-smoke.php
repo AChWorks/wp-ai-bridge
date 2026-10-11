@@ -73,7 +73,7 @@ try {
 	$filename = wp_tempnam( 'wpai139-semantic-roundtrip.xml' );
 	wpai139_roundtrip_assert( '' !== $filename && strlen( $xml ) === file_put_contents( $filename, $xml ), 'Native exporter file was not byte-identical.' );
 	$expected_hash = hash( 'sha256', $xml );
-	wpai139_roundtrip_assert( $expected_hash === hash_file( 'sha256', $filename ), 'Core WXR file digest changed before import.' );
+	wpai139_roundtrip_assert( hash_file( 'sha256', $filename ) === $expected_hash, 'Core WXR file digest changed before import.' );
 
 	// WordPress Importer is initialized through its *normal* entrypoint when
 	// WP_LOAD_IMPORTERS is defined before WordPress/bootstrap loads plugins.
@@ -95,7 +95,7 @@ try {
 	);
 	$matched = false;
 	foreach ( $parsed['posts'] as $post ) {
-		if ( $post_type === ( $post['post_type'] ?? '' ) && false !== strpos( (string) ( $post['post_content'] ?? '' ), 'سلام ایران' ) ) {
+		if ( ( $post['post_type'] ?? '' ) === $post_type && false !== strpos( (string) ( $post['post_content'] ?? '' ), 'سلام ایران' ) ) {
 			$matched = true;
 			break;
 		}
@@ -133,8 +133,8 @@ try {
 	$imported_id = (int) $recreated[0]->ID;
 	wpai139_roundtrip_assert(
 		$source === (string) $recreated[0]->post_content &&
-		$marker === get_post_meta( $imported_id, 'wpai139_roundtrip_key', true ) &&
-		$actor === (int) $recreated[0]->post_author,
+		get_post_meta( $imported_id, 'wpai139_roundtrip_key', true ) === $marker &&
+		(int) $recreated[0]->post_author === $actor,
 		'Official importer changed content, metadata or author-mapping default.'
 	);
 	$terms = wp_get_object_terms( $imported_id, $taxonomy_name, array( 'fields' => 'names' ) );
@@ -142,7 +142,7 @@ try {
 		! is_wp_error( $terms ) && in_array( 'WXR Test Taxonomy Term', $terms, true ),
 		'Official importer lost the native taxonomy relationship.'
 	);
-	wpai139_roundtrip_assert( $expected_hash === hash_file( 'sha256', $filename ), 'Official importer modified source bytes.' );
+	wpai139_roundtrip_assert( hash_file( 'sha256', $filename ) === $expected_hash, 'Official importer modified source bytes.' );
 	echo "PASS: #139 native Core export → official WordPress Importer parse/create CPT, UTF-8, term and metadata roundtrip.\n";
 } finally {
 	remove_filter( 'pre_http_request', $deny_http, 1 );

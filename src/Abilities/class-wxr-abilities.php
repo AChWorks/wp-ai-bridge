@@ -37,19 +37,30 @@ final class WXR_Abilities {
 				'input_schema'        => array(
 					'type'                 => 'object',
 					'properties'           => array(
-						'offset'                 => array( 'type' => 'integer', 'minimum' => 0 ),
-						'limit'                  => array( 'type' => 'integer', 'minimum' => 1, 'maximum' => self::PAGE_LIMIT ),
-						'expected_registry_hash' => array( 'type' => 'string', 'minLength' => 64, 'maxLength' => 64 ),
+						'offset'                 => array(
+							'type'    => 'integer',
+							'minimum' => 0,
+						),
+						'limit'                  => array(
+							'type'    => 'integer',
+							'minimum' => 1,
+							'maximum' => self::PAGE_LIMIT,
+						),
+						'expected_registry_hash' => array(
+							'type'      => 'string',
+							'minLength' => 64,
+							'maxLength' => 64,
+						),
 					),
 					'additionalProperties' => false,
 				),
 				'output_schema'       => array(
 					'type'                 => 'object',
 					'properties'           => array(
-						'blog_id'              => array( 'type' => 'integer' ),
+						'blog_id'                 => array( 'type' => 'integer' ),
 						'native_export_available' => array( 'type' => 'boolean' ),
-						'supports_all_content' => array( 'type' => 'boolean' ),
-						'items'                => array(
+						'supports_all_content'    => array( 'type' => 'boolean' ),
+						'items'                   => array(
 							'type'  => 'array',
 							'items' => array(
 								'type'                 => 'object',
@@ -65,11 +76,11 @@ final class WXR_Abilities {
 								'additionalProperties' => false,
 							),
 						),
-						'total'                => array( 'type' => 'integer' ),
-						'has_more'             => array( 'type' => 'boolean' ),
-						'next_offset'          => array( 'type' => 'integer' ),
-						'registry_hash'        => array( 'type' => 'string' ),
-						'generates_file'       => array( 'type' => 'boolean' ),
+						'total'                   => array( 'type' => 'integer' ),
+						'has_more'                => array( 'type' => 'boolean' ),
+						'next_offset'             => array( 'type' => 'integer' ),
+						'registry_hash'           => array( 'type' => 'string' ),
+						'generates_file'          => array( 'type' => 'boolean' ),
 					),
 					'required'             => array( 'blog_id', 'native_export_available', 'supports_all_content', 'items', 'total', 'has_more', 'next_offset', 'registry_hash', 'generates_file' ),
 					'additionalProperties' => false,
@@ -77,8 +88,15 @@ final class WXR_Abilities {
 				'execute_callback'    => array( $this, 'discover' ),
 				'permission_callback' => array( $this, 'can_discover' ),
 				'meta'                => array(
-					'mcp'         => array( 'public' => true, 'type' => 'tool' ),
-					'annotations' => array( 'readonly' => true, 'destructive' => false, 'idempotent' => true ),
+					'mcp'         => array(
+						'public' => true,
+						'type'   => 'tool',
+					),
+					'annotations' => array(
+						'readonly'    => true,
+						'destructive' => false,
+						'idempotent'  => true,
+					),
 				),
 			)
 		);
@@ -131,7 +149,7 @@ final class WXR_Abilities {
 				}
 			}
 			$native_filtered = in_array( $name, array( 'post', 'page', 'attachment' ), true );
-			$items[]        = array(
+			$items[]         = array(
 				'post_type'         => $name,
 				'label'             => $label,
 				'supports_author'   => $native_filtered,
