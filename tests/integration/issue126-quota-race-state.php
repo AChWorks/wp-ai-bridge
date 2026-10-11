@@ -36,6 +36,10 @@ if ( '1' === getenv( 'WPAI_QUOTA_MULTISITE' ) ) {
 		throw new RuntimeException( 'Multisite quota fixture requires a second blog.' );
 	}
 	switch_to_blog( $secondary_blog );
+	if ( (int) get_current_blog_id() !== (int) $secondary_blog ) {
+		throw new RuntimeException( 'Secondary blog switch failed in quota state fixture.' );
+	}
+	echo 'WPAI_QUOTA_SECONDARY_BLOG=' . (int) get_current_blog_id() . "\n";
 }
 $store         = new Store();
 $type          = 'document' === $mode ? Store::DOCUMENT_POST_TYPE : Store::TASK_POST_TYPE;

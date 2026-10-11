@@ -36,6 +36,9 @@ if ( '1' === getenv( 'WPAI_QUOTA_MULTISITE' ) ) {
 		throw new RuntimeException( 'Multisite quota fixture requires a second blog.' );
 	}
 	switch_to_blog( $secondary_blog );
+	if ( (int) get_current_blog_id() !== (int) $secondary_blog ) {
+		throw new RuntimeException( 'Secondary blog switch failed in quota worker.' );
+	}
 }
 $dir = WP_CONTENT_DIR . '/wpai126-quota-' . $key . '-' . $mode;
 if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) && ! is_dir( $dir ) ) {

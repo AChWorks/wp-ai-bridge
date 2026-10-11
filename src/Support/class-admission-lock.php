@@ -29,23 +29,53 @@ final class Admission_Lock {
 		$this->name = $name;
 	}
 
+
+	/**
+	 * Namespace MySQL's SERVER-WIDE advisory locks by schema as well as
+	 * WordPress's exact site-local table. Independent databases on the same
+	 * MySQL host commonly have identical wp_ table names.
+	 *
+	 * @param string $scope One of the three fixed Bridge admission scopes.
+	 * @param string $table The actual current blog's native table name.
+	 * @param string $database Stable shared WordPress database/schema identity.
+	 * @return string Empty for an unsupported/ambiguous identity.
+	 */
+	private static function lock_name( $scope, $table, $database ) {
+		if ( ! in_array( $scope, array( 'claims', 'documents', 'tasks' ), true ) ||
+			! is_string( $table ) || '' === $table ||
+			! is_string( $database ) || '' === trim( $database ) ) {
+			return '';
+		}
+		// Length-delimited fields prevent ambiguous concatenation. Do not use
+		// ABSPATH, host aliases or a process-specific value: separate WP nodes
+		// accessing the SAME database/site must derive exactly one lock.
+		$identity = strlen( $database ) . ':' . $database . strlen( $table ) . ':' . $table . $scope;
+		return 'wpai_admit_' . substr( hash( 'sha256', $identity ), 0, 40 );
+	}
+
 	/**
 	 * @param string $scope One fixed Bridge-owned admission surface.
 	 * @return self|false
 	 */
 	public static function acquire( $scope ) {
 		global $wpdb;
-		if ( ! in_array( $scope, array( 'claims', 'documents', 'tasks' ), true ) ||
-			! isset( $wpdb ) || ! is_object( $wpdb ) ) {
+		if ( ! isset( $wpdb ) || ! is_object( $wpdb ) ) {
 			return false;
 		}
-		// WordPress blog/site table names form the isolation boundary. Hashing
-		// keeps names short and avoids caller-selected SQL or lock identifiers.
-		$table = 'claims' === $scope ? ( $wpdb->options ?? '' ) : ( $wpdb->posts ?? '' );
-		if ( ! is_string( $table ) || '' === $table ) {
+		// Named locks are server-wide, NOT scoped by the active database.
+		// DB_NAME is shared across horizontally scaled nodes, while the
+		// current blog's table differentiates multisite tenants.
+		$database = defined( 'DB_NAME' ) && is_string( DB_NAME ) ? DB_NAME : '';
+		$table    = 'claims' === $scope ? ( $wpdb->options ?? '' ) : ( $wpdb->posts ?? '' );
+		// Standard wpdb exposes the connection's configured schema. If a DB
+		// router reports a different one, do not create an ambiguous lock.
+		if ( isset( $wpdb->dbname ) && $wpdb->dbname !== $database ) {
 			return false;
 		}
-		$name = 'wpai_admit_' . substr( hash( 'sha256', $scope . '|' . $table ), 0, 40 );
+		$name = self::lock_name( $scope, $table, $database );
+		if ( '' === $name ) {
+			return false;
+		}
 		if ( isset( self::$held[ $name ] ) ) {
 			return false;
 		}

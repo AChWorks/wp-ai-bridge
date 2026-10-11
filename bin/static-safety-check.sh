@@ -444,7 +444,7 @@ fi
 # Any new DB member must be reviewed explicitly. The coordinator has no
 # generic query/insert/update/delete method and never receives raw SQL.
 if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$admission_lock" |
-    grep -vE '\$wpdb->(get_var|prepare|options|posts)([^A-Za-z0-9_]|$)'; then
+    grep -vE '\$wpdb->(get_var|prepare|options|posts|dbname)([^A-Za-z0-9_]|$)'; then
     echo "ERROR: bounded admission coordinator acquired unexpected database access." >&2
     exit 1
 fi

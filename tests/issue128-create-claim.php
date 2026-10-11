@@ -4,6 +4,7 @@
  *
  * @package WP_AI_Bridge
  */
+define( 'DB_NAME', 'wpai_fake_schema' );
 require __DIR__ . '/bootstrap.php';
 
 use WP_AI_Bridge\Support\Create_Claim;
@@ -20,6 +21,7 @@ function add_option( $name, $value, $deprecated = '', $autoload = null ) {
 class WPAI_Claim_Fake_DB {
 	public $options = 'wp_options';
 	public $posts = 'wp_posts';
+	public $dbname = 'wpai_fake_schema';
 	public function esc_like( $input ) { return (string) $input; }
 	public function prepare( $sql, ...$args ) {
 		foreach ( $args as $arg ) {
@@ -49,6 +51,9 @@ class WPAI_Claim_Fake_DB {
 	}
 	public function get_var( $sql ) {
 		if ( 0 === strpos( $sql, 'SELECT GET_LOCK(' ) ) {
+			if ( preg_match( "/GET_LOCK\\('([^']+)'/D", $sql, $parts ) ) {
+				$GLOBALS['wpai_test']['observed_lock_name'] = $parts[1];
+			}
 			return empty( $GLOBALS['wpai_test']['simulate_lock_failure'] ) ? 1 : 0;
 		}
 		if ( 0 === strpos( $sql, 'SELECT IS_USED_LOCK(' ) ||
@@ -213,4 +218,35 @@ try {
 } finally {
 	$client_property->setValue( null, $original_client );
 }
+// MySQL named-lock namespace is server-wide, not per WordPress schema.
+// Two independent databases sharing the exact wp_ table names must NOT
+// block each other's admission. Same DB/site/type MUST share the lock.
+$lock_identity = new ReflectionMethod( \WP_AI_Bridge\Support\Admission_Lock::class, 'lock_name' );
+$schema_a      = $lock_identity->invoke( null, 'claims', 'wp_options', 'wpai_site_a' );
+$schema_b      = $lock_identity->invoke( null, 'claims', 'wp_options', 'wpai_site_b' );
+wpai128_assert( is_string( $schema_a ) && '' !== $schema_a && $schema_a !== $schema_b,
+	'Two independent schemas with identical wp_options names shared an admission lock.' );
+wpai128_assert( $schema_a === $lock_identity->invoke( null, 'claims', 'wp_options', 'wpai_site_a' ),
+	'Same schema/site/scope did not derive a stable lock for horizontal nodes.' );
+wpai128_assert( $schema_a !== $lock_identity->invoke( null, 'claims', 'wp_2_options', 'wpai_site_a' ),
+	'Secondary multisite blog incorrectly shared its primary blog admission lock.' );
+wpai128_assert( $schema_a !== $lock_identity->invoke( null, 'documents', 'wp_posts', 'wpai_site_a' ) &&
+	$lock_identity->invoke( null, 'documents', 'wp_posts', 'wpai_site_a' ) !==
+	$lock_identity->invoke( null, 'tasks', 'wp_posts', 'wpai_site_a' ),
+	'Different admission scopes were not isolated.' );
+wpai128_assert( '' === $lock_identity->invoke( null, 'claims', 'wp_options', '' ) &&
+	'' === $lock_identity->invoke( null, 'claims', 'wp_options', '   ' ) &&
+	'' === $lock_identity->invoke( null, 'claims', '', 'wpai_site_a' ),
+	'Unknown schema or table identity did not fail closed.' );
+$actual_lock_name = $lock_identity->invoke( null, 'claims', 'wp_options', DB_NAME );
+wpai128_assert( $actual_lock_name === ( $GLOBALS['wpai_test']['observed_lock_name'] ?? '' ),
+	'Real admission path did not use configured database plus exact table and scope.' );
+$GLOBALS['wpdb']->dbname = 'a_different_router_schema';
+$before_mismatch_writes = $writes;
+$router_mismatch = Create_Claim::run( 'content-create', wpai128_create_input( 'router-mismatch-128' ), $permission, $perform, $recover );
+wpai128_assert( is_wp_error( $router_mismatch ) &&
+	'create_claim_outcome_unknown' === $router_mismatch->get_error_code() &&
+	$before_mismatch_writes === $writes,
+	'Unexpected DB router schema admitted an unsafe create.' );
+$GLOBALS['wpdb']->dbname = DB_NAME;
 echo "PASS: #128 durable keyed-create safety ({$assertions} assertions).\n";

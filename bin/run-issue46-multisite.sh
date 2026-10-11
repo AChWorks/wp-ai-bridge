@@ -48,9 +48,10 @@ tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue135-no-private-packages-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue130-141-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-128-multisite-smoke.php --user=1 --allow-root
-# Repeat the real 199->200 concurrency boundary on the secondary network
-# blog, proving the lock scopes to WordPress's switched posts table.
-if [[ "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
+# Execute the actual secondary-blog 199->200 race in ONE specialized CI
+# lane. This runner does not receive MCP_ADAPTER_EXPECTED_VERSION; the old
+# condition silently skipped the entire fixture even though CI was green.
+if [[ "$wordpress_tag" == '6.9-php8.4-apache' ]]; then
     WPAI_QUOTA_MULTISITE=1 bash "$root/bin/run-issue126-quota-race.sh"
 fi
 
