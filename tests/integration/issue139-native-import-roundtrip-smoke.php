@@ -75,29 +75,15 @@ try {
 	$expected_hash = hash( 'sha256', $xml );
 	wpai139_roundtrip_assert( $expected_hash === hash_file( 'sha256', $filename ), 'Core WXR file digest changed before import.' );
 
-	// Official plugin's bootstrap is intentionally gated behind
-	// WP_LOAD_IMPORTERS; merely activating it does not load WP_Import in WP-CLI.
-	if ( ! defined( 'WP_LOAD_IMPORTERS' ) ) {
-		define( 'WP_LOAD_IMPORTERS', true );
-	}
-	$installed_entrypoint = '';
-	foreach (
-		array(
-			WP_PLUGIN_DIR . '/wordpress-importer/wordpress-importer.php',
-			WP_PLUGIN_DIR . '/wordpress-importer/src/wordpress-importer.php',
-		) as $entrypoint
-	) {
-		if ( is_readable( $entrypoint ) ) {
-			$installed_entrypoint = $entrypoint;
-			break;
-		}
-	}
-	wpai139_roundtrip_assert( '' !== $installed_entrypoint, 'Official WordPress Importer was not installed.' );
-	// WP-CLI already included and exited this plugin entrypoint while the
-	// importer bootstrap flag was absent. Re-include it *once* in this isolated
-	// proof after setting WP_LOAD_IMPORTERS; require_once would do nothing.
-	require $installed_entrypoint;
-	wpai139_roundtrip_assert( class_exists( 'WP_Import', false ), 'Official WP_Import class did not load through installed provider.' );
+	// WordPress Importer is initialized through its *normal* entrypoint when
+	// WP_LOAD_IMPORTERS is defined before WordPress/bootstrap loads plugins.
+	// The disposable CLI runner sets this flag in wp-config.php before this
+	// fresh process. Re-including the plugin main file after bootstrap would
+	// redeclare functions; require_once cannot re-run an early-returned file.
+	wpai139_roundtrip_assert(
+		defined( 'WP_LOAD_IMPORTERS' ) && WP_LOAD_IMPORTERS && class_exists( 'WP_Import', false ),
+		'Official WordPress Importer must be bootstrapped by the native loader.'
+	);
 	$importer = new WP_Import();
 
 	// Provider owns parsing. We do not recreate WXR/WordPress post semantics.

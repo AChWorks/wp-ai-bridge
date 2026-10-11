@@ -115,7 +115,9 @@ done
 if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
     echo '== Issue #139 native WXR/official WordPress Importer roundtrip =='
     "${wp[@]}" plugin install wordpress-importer --version="${WPAI_IMPORTER_VERSION:-0.9.6}" --activate --allow-root
+    "${wp[@]}" config set WP_LOAD_IMPORTERS true --raw --allow-root >/dev/null
     "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue139-native-import-roundtrip-smoke.php --user=1 --allow-root
+    "${wp[@]}" config delete WP_LOAD_IMPORTERS --allow-root >/dev/null
 fi
 
 # Exercise the Workspace 200-item ceiling and unexpected corruption in one
