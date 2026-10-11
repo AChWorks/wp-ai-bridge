@@ -239,6 +239,16 @@ try {
 		array( 'transfer_id' => $media_lease, 'filename' => 'wpai134-staged.php' )
 	);
 	wpai134_session_assert( ! empty( $bad_media['result']['isError'] ), 'A disallowed executable Media MIME was admitted.' );
+	// A host that disables native WordPress Media uploads must not be
+	// bypassed merely because source bytes arrived as smaller MCP chunks.
+	$disable_uploads = static function () { return 0; };
+	add_filter( 'upload_size_limit', $disable_uploads );
+	list( $host_denied ) = wpai134_session_request(
+		$token, $session, $seq++, 'wp-ai-bridge/transfer-media-import',
+		array( 'transfer_id' => $media_lease, 'filename' => 'wpai134-staged.png' )
+	);
+	remove_filter( 'upload_size_limit', $disable_uploads );
+	wpai134_session_assert( ! empty( $host_denied['result']['isError'] ), 'Disabled native WordPress uploads were bypassed by a staged transfer.' );
 	list( $good_media ) = wpai134_session_request(
 		$token, $session, $seq++, 'wp-ai-bridge/transfer-media-import',
 		array( 'transfer_id' => $media_lease, 'filename' => 'wpai134-staged.png' )

@@ -141,7 +141,7 @@ final class Transfer_Media_Abilities {
 		// Respect current WordPress/hosting upload policy; do NOT impose a
 		// second fixed Bridge media-size ceiling on the staged byte protocol.
 		$wp_size = wp_max_upload_size();
-		if ( $wp_size > 0 && $info['total'] > $wp_size ) {
+		if ( $wp_size <= 0 || $info['total'] > $wp_size ) {
 			return new WP_Error( 'transfer_media_wp_limit', __( 'The transfer is larger than the current native WordPress upload limit. Increase the WordPress/host setting or use another authorized consumer.', 'wp-ai-bridge' ) );
 		}
 		// The one audited private-byte service owns the filesystem boundary;
