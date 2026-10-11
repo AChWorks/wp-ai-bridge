@@ -5,13 +5,35 @@ cd "$(dirname "$0")/.."
 
 forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir)[[:space:]]*\('
 
-unexpected_primitives="$(grep -R -nE "$forbidden" src --include='*.php' --exclude='class-media-abilities.php' --exclude='class-source-editing-abilities.php' |
+unexpected_primitives="$(grep -R -nE "$forbidden" src --include='*.php' --exclude='class-media-abilities.php' --exclude='class-source-editing-abilities.php' --exclude='class-private-transfer-session.php' |
     grep -vE "^src/Support/class-extension-install-lock.php:[0-9]+:[[:space:]]+[$]handle = @fopen[(] [$]path, '[xr]' [)];" || true)"
 if [[ -n "$unexpected_primitives" ||
       "$(grep -cF "@fopen( \$path, 'x' );" src/Support/class-extension-install-lock.php || true)" != "1" ||
       "$(grep -cF "@fopen( \$path, 'r' );" src/Support/class-extension-install-lock.php || true)" != "1" ]]; then
     printf '%s\n' "$unexpected_primitives"
     echo "ERROR: forbidden direct execution/filesystem primitive found in production source." >&2
+    exit 1
+fi
+
+
+# One audited internal-only temporary-byte ingestion seam. Keep its exact
+# resource/persistence primitive inventory explicit rather than globally
+# allowing a new generic filesystem adapter across Bridge Abilities.
+private_stage='src/Support/class-private-transfer-session.php'
+if [[ ! -f "$private_stage" ||
+      "$(grep -cF '@fopen(' "$private_stage" || true)" != "6" ||
+      "$(grep -cF 'fwrite(' "$private_stage" || true)" != "2" ||
+      "$(grep -cF '@mkdir(' "$private_stage" || true)" != "1" ||
+      "$(grep -cF 'flock(' "$private_stage" || true)" != "4" ]]; then
+    echo "ERROR: internal-only private transfer filesystem/lock surface changed." >&2
+    exit 1
+fi
+if grep -nE '(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|unlink|rename|copy|rmdir|curl_exec|curl_init|wp_remote_get|wp_remote_post|wp_remote_request)[[:space:]]*\(' "$private_stage"; then
+    echo "ERROR: private transfer staging grew forbidden execution/network/filesystem primitives." >&2
+    exit 1
+fi
+if grep -nE "'(client_path|filesystem_path|target_path|public_url|download_url|ftp_password|ssh_password)'[[:space:]]*=>" "$private_stage"; then
+    echo "ERROR: private transfer accepted a caller path or leaked a public file URL." >&2
     exit 1
 fi
 
