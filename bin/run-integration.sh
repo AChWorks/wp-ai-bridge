@@ -68,6 +68,7 @@ for test in \
     issue110-site-context-smoke.php \
     issue99-extension-authorization-smoke.php \
     issue130-141-diagnostics-smoke.php \
+    issue140-site-health-smoke.php \
     issue119-registered-rest-smoke.php \
     issue119-native-execution-smoke.php \
     issue44-native-ability-delegation-smoke.php \
@@ -84,6 +85,8 @@ for test in \
     issue6-direct-oauth-negative-smoke.php \
     issue6-direct-mcp-tools-smoke.php \
     issue6-i18n-smoke.php \
+    issue126-128-workspace-smoke.php \
+    issue128-native-creates-smoke.php \
     issue8-workspace-smoke.php
 do
     echo "== ${test} =="
@@ -103,6 +106,22 @@ do
         "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-content/mu-plugins/wpai-issue44-native-provider.php
     fi
 done
+
+# Exercise the Workspace 200-item ceiling and unexpected corruption in one
+# representative lane, instead of repeating 200 writes in all four lanes.
+if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-quotas-corruption-smoke.php --user=1 --allow-root
+    # Distinct-identity 2047/2048 and 199/200 cross-process capacities plus
+    # true PHP process death, once on a representative native MariaDB lane.
+    # The broader four-lane suite still covers ordinary Core/Adapter behavior.
+    bash "$root/bin/run-issue128-capacity-race.sh"
+    bash "$root/bin/run-issue126-quota-race.sh"
+    bash "$root/bin/run-issue128-crash.sh"
+fi
+
+# Two independent PHP workers race for one native database claim.
+# Runs against the already bootstrapped disposable WordPress/MariaDB stack.
+bash "$root/bin/run-issue128-atomic-race.sh"
 
 echo "== Issue #46 web-user direct filesystem denial =="
 wp_web=("${compose[@]}" run --rm --user 33:33 -e WP_CLI_CACHE_DIR=/tmp/wp-cli-cache cli)

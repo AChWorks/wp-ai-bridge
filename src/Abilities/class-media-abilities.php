@@ -260,6 +260,20 @@ final class Media_Abilities {
 	 * @return array<string,mixed>|WP_Error Uploaded attachment or error.
 	 */
 	public function upload( $input ) {
+		if ( is_array( $input ) && array_key_exists( 'operation_id', $input ) ) {
+			return \WP_AI_Bridge\Support\Create_Claim::run(
+				'media-upload',
+				$input,
+				array( $this, 'can_upload' ),
+				function ( $clean ) {
+					return $this->upload( $clean ); },
+				function ( $id ) {
+					$attachment = get_post( $id );
+					return $attachment && 'attachment' === $attachment->post_type && current_user_can( 'edit_post', $id )
+						? $this->format_attachment( $attachment ) : null;
+				}
+			);
+		}
 		$ability  = 'wp-ai-bridge/media-upload';
 		$filename = sanitize_file_name( (string) $input['filename'] );
 		if ( '' === $filename || false === strpos( $filename, '.' ) ) {
@@ -501,6 +515,11 @@ final class Media_Abilities {
 				'caption'        => array( 'type' => 'string' ),
 				'description'    => array( 'type' => 'string' ),
 				'alt_text'       => array( 'type' => 'string' ),
+				'operation_id'   => array(
+					'type'      => 'string',
+					'minLength' => 8,
+					'maxLength' => 128,
+				),
 			),
 			'required'             => array( 'filename', 'content_base64' ),
 			'additionalProperties' => false,
@@ -645,6 +664,20 @@ final class Media_Abilities {
 	 * @return array<string,mixed>|WP_Error Attachment summary or a redacted error.
 	 */
 	public function import_url( $input ) {
+		if ( is_array( $input ) && array_key_exists( 'operation_id', $input ) ) {
+			return \WP_AI_Bridge\Support\Create_Claim::run(
+				'media-import-url',
+				$input,
+				array( $this, 'can_import_url' ),
+				function ( $clean ) {
+					return $this->import_url( $clean ); },
+				function ( $id ) {
+					$attachment = get_post( $id );
+					return $attachment && 'attachment' === $attachment->post_type && current_user_can( 'edit_post', $id )
+						? $this->format_attachment( $attachment ) : null;
+				}
+			);
+		}
 		$state      = array(
 			'temp_file'        => '',
 			'destination_file' => '',

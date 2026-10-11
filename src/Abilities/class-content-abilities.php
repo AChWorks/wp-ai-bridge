@@ -433,6 +433,23 @@ final class Content_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function upsert( $input ) {
+		if ( is_array( $input ) && 'create' === ( $input['action'] ?? '' ) && array_key_exists( 'operation_id', $input ) ) {
+			return \WP_AI_Bridge\Support\Create_Claim::run(
+				'content-create',
+				$input,
+				array( $this, 'can_upsert' ),
+				function ( $clean ) {
+					return $this->upsert( $clean ); },
+				function ( $id, $clean ) {
+					$post = get_post( $id );
+					return $post && $post->post_type === $clean['post_type'] && current_user_can( 'edit_post', $id )
+						? $this->format_post_after_mutation( $post ) : null;
+				}
+			);
+		}
+		if ( is_array( $input ) && array_key_exists( 'operation_id', $input ) ) {
+			return new WP_Error( 'create_claim_invalid', __( 'operation_id is only supported for create.', 'wp-ai-bridge' ) );
+		}
 		$ability = 'wp-ai-bridge/content-upsert';
 		$action  = (string) $input['action'];
 		$id      = ! empty( $input['id'] ) ? (int) $input['id'] : 0;
@@ -1335,6 +1352,11 @@ final class Content_Abilities {
 				'featured_media'        => array(
 					'type'    => 'integer',
 					'minimum' => 0,
+				),
+				'operation_id'          => array(
+					'type'      => 'string',
+					'minLength' => 8,
+					'maxLength' => 128,
 				),
 				'expected_modified_gmt' => array( 'type' => 'string' ),
 				'expected_state_hash'   => array(

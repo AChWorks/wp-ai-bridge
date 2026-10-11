@@ -407,10 +407,45 @@ if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comme
     echo "ERROR: one or more bounded database stores are missing." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" || true)"
+admission_lock='src/Support/class-admission-lock.php'
+create_claim_store='src/Support/class-create-claim-store.php'
+if [[ ! -f "$create_claim_store" ||
+      "$(grep -cF '$wpdb->update(' "$create_claim_store" || true)" != "1" ||
+      "$(grep -cF '$wpdb->get_var(' "$create_claim_store" || true)" != "1" ||
+      "$(grep -cF '$wpdb->prepare(' "$create_claim_store" || true)" != "2" ||
+      "$(grep -cF '$wpdb->query(' "$create_claim_store" || true)" != "1" ||
+      "$(grep -cF 'INSERT IGNORE INTO ' "$create_claim_store" || true)" != "1" ||
+      "$(grep -cF "Admission_Lock::acquire( 'claims' )" "$create_claim_store" || true)" != "1" ]]; then
+    echo "ERROR: create receipt store must retain one conditional update, one exclusive insert, and one prepared capacity query." >&2
+    exit 1
+fi
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$admission_lock" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2
+    exit 1
+fi
+
+# The finite create-claim / Workspace capacity admission coordinator is
+# confined to three literal scopes and the four native MySQL lock reads.
+# No caller-selected SQL, lock names, or general database access is permitted.
+if [[ ! -f "$admission_lock" ||
+      "$(grep -cF '$wpdb->get_var(' "$admission_lock" || true)" != "4" ||
+      "$(grep -cF '$wpdb->prepare(' "$admission_lock" || true)" != "3" ||
+      "$(grep -cF 'SELECT GET_LOCK(%s, %d)' "$admission_lock" || true)" != "1" ||
+      "$(grep -cF 'SELECT IS_USED_LOCK(%s)' "$admission_lock" || true)" != "1" ||
+      "$(grep -cF 'SELECT CONNECTION_ID()' "$admission_lock" || true)" != "1" ||
+      "$(grep -cF 'SELECT RELEASE_LOCK(%s)' "$admission_lock" || true)" != "1" ||
+      "$(grep -cF "array( 'claims', 'documents', 'tasks' )" "$admission_lock" || true)" != "1" ]]; then
+    echo "ERROR: finite-capacity admission expanded beyond fixed native named-lock coordination." >&2
+    exit 1
+fi
+
+# Any new DB member must be reviewed explicitly. The coordinator has no
+# generic query/insert/update/delete method and never receives raw SQL.
+if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$admission_lock" |
+    grep -vE '\$wpdb->(get_var|prepare|options|posts|dbname)([^A-Za-z0-9_]|$)'; then
+    echo "ERROR: bounded admission coordinator acquired unexpected database access." >&2
     exit 1
 fi
 
