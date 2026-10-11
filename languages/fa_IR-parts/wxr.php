@@ -5,7 +5,7 @@
  * @package WP_AI_Bridge
  */
 return array(
-	'Discover WordPress WXR Exports' => 'شناسایی خروجی‌های WXR وردپرس',
+	'Discover WordPress WXR Exports'         => 'شناسایی خروجی‌های WXR وردپرس',
 	'Lists WordPress-native exportable content types and exact supported filters; this read-only operation does not create or deliver a WXR file.' => 'نوع‌های محتوای قابل خروجی‌گرفتن در وردپرس و فیلترهای پشتیبانی‌شده را فهرست می‌کند؛ این عملیات فقط‌خواندنی فایل WXR ایجاد یا تحویل نمی‌دهد.',
 	'Site Configuration and native WordPress export permission are required.' => 'دسترسی تنظیمات سایت و مجوز اصلی برون‌بری وردپرس لازم است.',
 	'Invalid WXR export discovery selector.' => 'پارامترهای شناسایی خروجی WXR نامعتبر است.',
