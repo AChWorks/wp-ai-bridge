@@ -427,7 +427,7 @@ if [[ -n "$unexpected_db_files" ]]; then
 fi
 
 # The finite create-claim / Workspace capacity admission coordinator is
-# confined to three literal scopes and the four native MySQL lock reads.
+# confined to four literal scopes (including Cron) and four native MySQL lock reads.
 # No caller-selected SQL, lock names, or general database access is permitted.
 if [[ ! -f "$admission_lock" ||
       "$(grep -cF '$wpdb->get_var(' "$admission_lock" || true)" != "4" ||
@@ -436,8 +436,8 @@ if [[ ! -f "$admission_lock" ||
       "$(grep -cF 'SELECT IS_USED_LOCK(%s)' "$admission_lock" || true)" != "1" ||
       "$(grep -cF 'SELECT CONNECTION_ID()' "$admission_lock" || true)" != "1" ||
       "$(grep -cF 'SELECT RELEASE_LOCK(%s)' "$admission_lock" || true)" != "1" ||
-      "$(grep -cF "array( 'claims', 'documents', 'tasks' )" "$admission_lock" || true)" != "1" ]]; then
-    echo "ERROR: finite-capacity admission expanded beyond fixed native named-lock coordination." >&2
+      "$(grep -cF "array( 'claims', 'documents', 'tasks', 'cron' )" "$admission_lock" || true)" != "1" ]]; then
+    echo "ERROR: bounded claim/Workspace/Cron admission expanded beyond fixed named-lock coordination." >&2
     exit 1
 fi
 

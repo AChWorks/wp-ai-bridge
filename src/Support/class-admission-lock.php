@@ -10,7 +10,7 @@ namespace WP_AI_Bridge\Support;
 /**
  * MySQL connection-scoped named locks guard check-and-create boundaries.
  *
- * Only the fixed Bridge claim and Workspace capacities can acquire a lock.
+ * Only the fixed Bridge claim, Workspace capacities and native Cron mutations can acquire a lock.
  * A failed/unsupported database lock means no new write may begin. A worker
  * death releases the MySQL lock; the underlying durable objects/claims are
  * never erased or inferred rolled back by the coordinator.
@@ -35,13 +35,13 @@ final class Admission_Lock {
 	 * WordPress's exact site-local table. Independent databases on the same
 	 * MySQL host commonly have identical wp_ table names.
 	 *
-	 * @param string $scope One of the three fixed Bridge admission scopes.
+	 * @param string $scope One of the four fixed Bridge admission scopes.
 	 * @param string $table The actual current blog's native table name.
 	 * @param string $database Stable shared WordPress database/schema identity.
 	 * @return string Empty for an unsupported/ambiguous identity.
 	 */
 	private static function lock_name( $scope, $table, $database ) {
-		if ( ! in_array( $scope, array( 'claims', 'documents', 'tasks' ), true ) ||
+		if ( ! in_array( $scope, array( 'claims', 'documents', 'tasks', 'cron' ), true ) ||
 			! is_string( $table ) || '' === $table ||
 			! is_string( $database ) || '' === trim( $database ) ) {
 			return '';
@@ -66,7 +66,7 @@ final class Admission_Lock {
 		// DB_NAME is shared across horizontally scaled nodes, while the
 		// current blog's table differentiates multisite tenants.
 		$database = defined( 'DB_NAME' ) && is_string( DB_NAME ) ? DB_NAME : '';
-		$table    = 'claims' === $scope ? ( $wpdb->options ?? '' ) : ( $wpdb->posts ?? '' );
+		$table    = in_array( $scope, array( 'claims', 'cron' ), true ) ? ( $wpdb->options ?? '' ) : ( $wpdb->posts ?? '' );
 		// Standard wpdb exposes the connection's configured schema. If a DB
 		// router reports a different one, do not create an ambiguous lock.
 		if ( isset( $wpdb->dbname ) && $wpdb->dbname !== $database ) {

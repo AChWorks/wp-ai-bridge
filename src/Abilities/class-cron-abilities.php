@@ -141,7 +141,6 @@ final class Cron_Abilities {
 			return new WP_Error( 'cron_inventory_unavailable', __( 'Native WordPress Cron inventory was unavailable.', 'wp-ai-bridge' ) );
 		}
 
-
 		// WordPress itself loads the native Cron option as an array. Do not
 		// amplify that unavoidable cost by accumulating and sorting a second
 		// copy of every event just to return a small result page.
@@ -232,17 +231,17 @@ final class Cron_Abilities {
 		}
 		$when = (int) $timestamp;
 		return array(
-			'event_id'              => $identity,
-			'hook'                  => $visible_hook,
-			'hook_truncated'        => strlen( $name ) > 200,
-			'next_run_utc'          => gmdate( 'c', $when ),
-			'next_run_timestamp'    => $when,
-			'recurrence'            => $visible_recurrence,
-			'recurrence_truncated'  => strlen( $recurrence ) > 80,
-			'interval_seconds'      => $interval,
-			'arguments_count'       => $args_count,
-			'callback_registered'   => false !== has_action( $name ),
-			'overdue'               => $when < $now,
+			'event_id'             => $identity,
+			'hook'                 => $visible_hook,
+			'hook_truncated'       => strlen( $name ) > 200,
+			'next_run_utc'         => gmdate( 'c', $when ),
+			'next_run_timestamp'   => $when,
+			'recurrence'           => $visible_recurrence,
+			'recurrence_truncated' => strlen( $recurrence ) > 80,
+			'interval_seconds'     => $interval,
+			'arguments_count'      => $args_count,
+			'callback_registered'  => false !== has_action( $name ),
+			'overdue'              => $when < $now,
 		);
 	}
 
@@ -264,17 +263,17 @@ final class Cron_Abilities {
 		$entry = array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'event_id'            => array( 'type' => 'string' ),
-				'hook'                => array( 'type' => 'string' ),
-				'hook_truncated'      => array( 'type' => 'boolean' ),
-				'next_run_utc'        => array( 'type' => 'string' ),
-				'next_run_timestamp'  => array( 'type' => 'integer' ),
-				'recurrence'          => array( 'type' => 'string' ),
+				'event_id'             => array( 'type' => 'string' ),
+				'hook'                 => array( 'type' => 'string' ),
+				'hook_truncated'       => array( 'type' => 'boolean' ),
+				'next_run_utc'         => array( 'type' => 'string' ),
+				'next_run_timestamp'   => array( 'type' => 'integer' ),
+				'recurrence'           => array( 'type' => 'string' ),
 				'recurrence_truncated' => array( 'type' => 'boolean' ),
-				'arguments_count'     => array( 'type' => 'integer' ),
-				'interval_seconds'    => array( 'type' => 'integer' ),
-				'callback_registered' => array( 'type' => 'boolean' ),
-				'overdue'             => array( 'type' => 'boolean' ),
+				'arguments_count'      => array( 'type' => 'integer' ),
+				'interval_seconds'     => array( 'type' => 'integer' ),
+				'callback_registered'  => array( 'type' => 'boolean' ),
+				'overdue'              => array( 'type' => 'boolean' ),
 			),
 			'required'             => array( 'event_id', 'hook', 'hook_truncated', 'next_run_utc', 'next_run_timestamp', 'recurrence', 'recurrence_truncated', 'interval_seconds', 'arguments_count', 'callback_registered', 'overdue' ),
 			'additionalProperties' => false,
