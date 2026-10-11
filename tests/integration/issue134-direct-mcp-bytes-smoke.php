@@ -75,8 +75,12 @@ $store      = new OAuth_Store();
 $oauth      = new OAuth_Server( $store );
 $token      = '';
 $session    = '';
-$attachment = 0;
-$post_id    = 0;
+$attachment     = 0;
+$zip_attachment = 0;
+$zip_path       = '';
+$zip_size       = 0;
+$zip_wire_bytes = 0;
+$post_id        = 0;
 
 try {
 	wpai134_mcp_assert( $actor > 0, 'Native fixture requires authenticated WordPress administrator.' );
@@ -158,6 +162,54 @@ try {
 		'Existing direct MCP Media metadata read failed.'
 	);
 
+	// Representative finite-size opaque ZIP ingress through the EXISTING
+	// native Media Library Ability; there is no installation/extraction,
+	// general private handoff, public binary endpoint or provider-specific
+	// ZIP pipeline. This uses a disposable random synthetic archive only.
+	wpai134_mcp_assert( class_exists( 'ZipArchive' ), 'Native ZIP extension unavailable for representative upload proof.' );
+	$zip_path = wp_tempnam( 'wpai134-media-upload.zip' );
+	wpai134_mcp_assert( is_string( $zip_path ) && '' !== $zip_path, 'Could not allocate disposable ZIP input.' );
+	$zip = new ZipArchive();
+	wpai134_mcp_assert(
+		true === $zip->open( $zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE ),
+		'Could not initialize disposable ZIP fixture.'
+	);
+	$zip_payload = random_bytes( 1024 * 1024 );
+	wpai134_mcp_assert( $zip->addFromString( 'payload.bin', $zip_payload ), 'ZIP fixture payload creation failed.' );
+	unset( $zip_payload );
+	wpai134_mcp_assert( true === $zip->close(), 'ZIP fixture close failed.' );
+	$zip_input = file_get_contents( $zip_path );
+	wpai134_mcp_assert(
+		is_string( $zip_input ) && strlen( $zip_input ) > 1024 * 1024 &&
+		strlen( $zip_input ) < wp_max_upload_size(),
+		'Generated ZIP is outside native WordPress permitted Media upload size.'
+	);
+	$zip_size = strlen( $zip_input );
+	$zip_args = array(
+		'filename'       => 'wpai134-direct-opaque.zip',
+		'content_base64' => base64_encode( $zip_input ),
+	);
+	$zip_wire = wp_json_encode( array( 'ability_name' => 'wp-ai-bridge/media-upload', 'parameters' => $zip_args ) );
+	$zip_wire_bytes = is_string( $zip_wire ) ? strlen( $zip_wire ) : 0;
+	list( $zip_result ) = wpai134_mcp_request( $token, $session, 4, 'wp-ai-bridge/media-upload', $zip_args );
+	unset( $zip_args, $zip_wire );
+	$zip_returned = $zip_result['result']['structuredContent'] ?? array();
+	wpai134_mcp_assert(
+		true === ( $zip_returned['success'] ?? false ) && (int) ( $zip_returned['data']['id'] ?? 0 ) > 0,
+		'Valid finite ZIP file was not accepted by native Media Library MCP upload.'
+	);
+	$zip_attachment = (int) $zip_returned['data']['id'];
+	wp_set_current_user( $actor );
+	$zip_saved = get_attached_file( $zip_attachment );
+	wpai134_mcp_assert(
+		is_string( $zip_saved ) && is_file( $zip_saved ) &&
+		$zip_size === filesize( $zip_saved ) &&
+		hash( 'sha256', $zip_input ) === hash_file( 'sha256', $zip_saved ),
+		'WordPress Media Library changed the opaque ZIP payload bytes.'
+	);
+	unset( $zip_input );
+	wp_set_current_user( 0 );
+
 	// Existing data egress for large multilingual post content. The client
 	// reconstructs immutable byte-offset windows and validates SHA-256.
 	$source = str_repeat( "سلام WordPress / exact UTF-8 🌍\n", 6500 );
@@ -237,9 +289,11 @@ try {
 	// Results describe the native local MCP REST response only, not unknown
 	// Gateway or external ChatGPT host attachment/transport limits.
 	echo sprintf(
-		"MEASURE: #134 media_bytes=%d media_base64_bytes=%d utf8_source_bytes=%d text_windows=%d largest_encoded_mcp_result_bytes=%d php_peak_bytes=%d.\n",
+		"MEASURE: #134 media_bytes=%d media_base64_bytes=%d opaque_zip_bytes=%d zip_mcp_arguments_bytes=%d utf8_source_bytes=%d text_windows=%d largest_encoded_mcp_result_bytes=%d php_peak_bytes=%d.\n",
 		strlen( $png ),
 		strlen( base64_encode( $png ) ),
+		$zip_size,
+		$zip_wire_bytes,
 		strlen( $source ),
 		$read_window_count,
 		$max_encoded_result,
@@ -250,6 +304,12 @@ try {
 	wp_set_current_user( $actor );
 	if ( $attachment > 0 ) {
 		wp_delete_attachment( $attachment, true );
+	}
+	if ( $zip_attachment > 0 ) {
+		wp_delete_attachment( $zip_attachment, true );
+	}
+	if ( '' !== $zip_path ) {
+		wp_delete_file( $zip_path );
 	}
 	if ( is_int( $post_id ) && $post_id > 0 ) {
 		wp_delete_post( $post_id, true );
