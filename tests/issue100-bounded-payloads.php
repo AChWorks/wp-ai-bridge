@@ -361,6 +361,66 @@ wpai_issue100_assert( is_wp_error( $bad_field_identity ) && 'stale_content_confl
 
 
 
+// Size-aware #134 regression: a response/window ceiling is not a WordPress
+// post body size ceiling. This proves only provider-local reconstruction and
+// native write argument handling, NOT a real connected client input/upload.
+$post->post_title   = 'Long-form round-trip fixture';
+$post->post_excerpt = '';
+$very_large_text    = str_repeat( "متن بلند فارسی 🧪 \"WordPress\" \\ test\n", 26000 );
+wpai_issue100_assert( strlen( $very_large_text ) > 1024 * 1024, 'Long-form test did not exceed 1 MiB.' );
+$before_large_write = $content->read(
+	array(
+		'action' => 'get',
+		'id'     => 100,
+	)
+);
+wpai_issue100_assert( ! is_wp_error( $before_large_write ) && ! empty( $before_large_write['items'][0]['state_hash'] ), 'Long-form write needs fresh target state.' );
+$written_large = $content->upsert(
+	array(
+		'action'                => 'update',
+		'id'                    => 100,
+		'content'               => $very_large_text,
+		'expected_modified_gmt' => $post->post_modified_gmt,
+		'expected_state_hash'   => $before_large_write['items'][0]['state_hash'],
+	)
+);
+wpai_issue100_assert( ! is_wp_error( $written_large ) && Bounded_Payload::fits( $written_large ), 'Large native content write must return a bounded verified acknowledgment, not an oversized result.' );
+wpai_issue100_assert( $very_large_text === $post->post_content && hash( 'sha256', $very_large_text ) === $written_large['content_hash'], 'Large write changed bytes or returned an incorrect committed digest.' );
+$long_meta = $content->read(
+	array(
+		'action' => 'get',
+		'id'     => 100,
+	)
+);
+wpai_issue100_assert( ! is_wp_error( $long_meta ) && ! $long_meta['items'][0]['content_complete'] && Bounded_Payload::fits( $long_meta ), 'Large body must return bounded continuation metadata.' );
+$long_digest = $long_meta['items'][0]['content_hash'];
+$long_offset = 0;
+$long_joined = '';
+$long_steps  = 0;
+do {
+	$part = $content->read(
+		array(
+			'action'                => 'get',
+			'id'                    => 100,
+			'content_offset'        => $long_offset,
+			'content_max_bytes'     => Bounded_Payload::TEXT_WINDOW_BYTES,
+			'expected_content_hash' => $long_digest,
+		)
+	);
+	wpai_issue100_assert( ! is_wp_error( $part ) && Bounded_Payload::fits( $part ), 'Long-form window exceeded MCP response budget or was rejected.' );
+	$item = $part['items'][0];
+	wpai_issue100_assert( $item['content_next_offset'] > $long_offset && $item['content_next_offset'] <= strlen( $very_large_text ), 'Long-form UTF-8 continuation did not progress safely.' );
+	$long_joined .= $item['content'];
+	$long_offset  = $item['content_next_offset'];
+	++$long_steps;
+	wpai_issue100_assert( $long_steps < 2000, 'Long-form continuation stalled or became unbounded.' );
+} while ( ! $item['content_complete'] );
+$verified_large = strlen( $long_joined ) === strlen( $very_large_text )
+	&& $very_large_text === $long_joined
+	&& hash( 'sha256', $long_joined ) === $long_digest;
+wpai_issue100_assert( $verified_large, 'Long-form greater-than-1-MiB Unicode body was not reconstructed byte for byte.' );
+unset( $very_large_text, $long_joined );
+
 // Deeply nested fixture: the finder must remain iterative and the target read flat.
 $leaf = wpai_issue100_block( 'core/button', 'deep-target' );
 for ( $depth = 0; $depth < 96; ++$depth ) {
