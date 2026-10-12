@@ -14,9 +14,10 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 - Read and update posts, pages, supported custom post types, revisions, and Gutenberg blocks.
 - Admin-controlled generic post/term metadata access for exact WordPress objects the connected user may edit, including protected/private metadata without provider/post-type/taxonomy/meta-key allowlists.
 - Media Library read, upload, safe URL import, update, and delete operations.
+- WordPress-native WXR content export and consent-bound official Importer execution over private OAuth/MCP byte windows (**main-integrated PR #146; not in published v0.5.1**). This is neither complete site backup nor proof of hosted model attachment exchange.
 - Taxonomy and classic navigation management.
 - Bounded WordPress site settings.
-- WordPress.org plugin/theme lifecycle operations and separately authorized public HTTPS package installation (no automatic activation). **No manual private-ZIP staging UI:** AI/client-to-WordPress private file transfer is a separate not-yet-delivered outcome ([#134](https://github.com/AChWorks/wp-ai-bridge/issues/134)).
+- WordPress.org plugin/theme lifecycle operations and separately authorized public HTTPS package installation (no automatic activation). **No manual private-ZIP staging UI:** the generic authenticated private byte plane is integrated in `main` (PR #145), but not in published v0.5.1; hosted client attachment acceptance remains under [#134](https://github.com/AChWorks/wp-ai-bridge/issues/134).
 - Separately enabled installed plugin/theme source read, preview, apply, and conflict-safe recovery using native WordPress authority.
 - Filtered, bounded discovery of registered Core/provider REST routes and high-trust guarded native invocation, under independent default-off administrator grants and real provider permissions.
 - User lifecycle and assignment of **existing editable roles** behind explicit permission checks; creation/editing of role definitions belongs to the owning WordPress/plugin API, not a second role editor inside Bridge.
