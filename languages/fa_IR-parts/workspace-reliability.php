@@ -1,6 +1,9 @@
 <?php
 /** Persian translations for Workspace fidelity, keyed create and native health. */
 return array(
+	'Project ID' => 'شناسه پروژه',
+	'Unbound' => 'بدون شناسه پروژه',
+	'Mixed Workspace; no single site-wide focus.' => 'فضای کار ترکیبی است؛ تمرکز واحدی برای کل سایت تعیین نشده است.',
 	'This project already has a document with the same canonical key, possibly archived. Inspect or unarchive that record.' => 'این پروژه از قبل سندی با کلید یکسان دارد که ممکن است بایگانی شده باشد. سند را بررسی یا بازیابی کنید.',
 	'A reserved document create may have failed; verify before another attempt.' => 'ایجاد سند با کلید رزروشده ممکن است شکست خورده باشد؛ پیش از تلاش دوباره وضعیت را بررسی کنید.',
 	'Document creation may have committed; inspect the project key before another create.' => 'ممکن است سند ایجاد شده باشد؛ پیش از ایجاد دوباره کلید پروژه را بررسی کنید.',
