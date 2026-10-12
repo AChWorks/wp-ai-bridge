@@ -37,6 +37,38 @@ final class WXR_Import_Preflight {
 	 * @return array<string,mixed>|WP_Error Read-only structural summary, no path.
 	 */
 	public function inspect( $artifact, $max_bytes, $max_nodes, $max_items ) {
+		return $this->inspect_private( $artifact, $max_bytes, $max_nodes, $max_items, false );
+	}
+
+	/**
+	 * Preview only a verified, same-principal authenticated WXR private lease.
+	 * The client supplies a lease ID, never a filesystem path or XML endpoint.
+	 *
+	 * @param string $id Source-bound private transfer identifier.
+	 * @param int    $max_bytes Source byte budget.
+	 * @param int    $max_nodes XMLReader node budget.
+	 * @param int    $max_items WXR item budget.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function inspect_transfer( $id, $max_bytes, $max_nodes, $max_items ) {
+		$source = ( new Private_Transfer_Session( $this->permissions ) )->verified_private_source( $id, 'wxr' );
+		if ( is_wp_error( $source ) ) {
+			return $source;
+		}
+		return $this->inspect_private( $source, $max_bytes, $max_nodes, $max_items, true );
+	}
+
+	/**
+	 * Internal common parser after trusted native producer/verified-lease input.
+	 *
+	 * @param array<string,mixed> $artifact Trusted source descriptor.
+	 * @param int $max_bytes Byte budget.
+	 * @param int $max_nodes XML node budget.
+	 * @param int $max_items Item budget.
+	 * @param bool $verified_lease True only after authenticated lease lookup.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private function inspect_private( $artifact, $max_bytes, $max_nodes, $max_items, $verified_lease ) {
 		if ( ! $this->permissions->allowed( Settings::GROUP_SITE_CONFIG, 'import' ) ) {
 			return new WP_Error( 'wxr_preview_denied', __( 'Native WordPress import and Site Configuration authorization are required.', 'wp-ai-bridge' ) );
 		}
@@ -63,8 +95,8 @@ final class WXR_Import_Preflight {
 		if (
 			! is_string( $canonical ) || ! is_string( $temp_dir ) ||
 			is_link( $path ) || ! is_file( $path ) || ! is_readable( $path ) ||
-			dirname( $canonical ) !== $temp_dir ||
-			0 !== strpos( basename( $canonical ), 'wpai-private-artifact' ) ||
+			( ! $verified_lease && ( dirname( $canonical ) !== $temp_dir ||
+				0 !== strpos( basename( $canonical ), 'wpai-private-artifact' ) ) ) ||
 			0600 !== ( fileperms( $canonical ) & 0777 )
 		) {
 			return new WP_Error( 'wxr_preview_storage', __( 'WXR preview requires an owner-only internal temporary artifact.', 'wp-ai-bridge' ) );

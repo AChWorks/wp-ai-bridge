@@ -158,6 +158,7 @@ final class Transfer_Session_Abilities {
 		// rechecks exact blog, WordPress user, OAuth client and purpose.
 		return $this->can_purpose( 'media' ) ||
 			$this->can_purpose( 'media_read' ) ||
+			$this->can_purpose( 'wxr_read' ) ||
 			$this->can_purpose( 'text' ) ||
 			$this->can_purpose( 'wxr' );
 	}
@@ -169,6 +170,10 @@ final class Transfer_Session_Abilities {
 		}
 		if ( 'media_read' === $purpose ) {
 			return $this->permissions->allowed( Settings::GROUP_SITE_READ, 'read' );
+		}
+		if ( 'wxr_read' === $purpose ) {
+			return $this->permissions->allowed( Settings::GROUP_SITE_CONFIG, 'export' ) &&
+				( ! is_multisite() || current_user_can( 'manage_network_options' ) );
 		}
 		if ( 'text' === $purpose ) {
 			return $this->permissions->allowed( Settings::GROUP_BUILDER_WRITE, 'edit_posts' );

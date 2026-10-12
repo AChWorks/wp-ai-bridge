@@ -346,6 +346,62 @@ final class Private_Transfer_Session {
 			! is_array( $policy ) ) {
 			return $this->denied();
 		}
+		return $this->stage_native_export( $path, $policy, 'media_read', $attachment_id );
+	}
+
+	/**
+	 * Freeze an already-generated WordPress Core WXR private artifact.
+	 * Caller is the exact native producer, never a remote filesystem path.
+	 *
+	 * @param array<string,mixed> $artifact Trusted, just-generated native WXR descriptor.
+	 * @param array<string,int>   $policy Current administrator-owned transfer budgets.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function stage_wxr_export( $artifact, $policy ) {
+		if ( ! $this->allowed( 'wxr_read' ) || ! is_array( $artifact ) || ! is_array( $policy ) ||
+			! isset( $artifact['path'], $artifact['bytes'], $artifact['sha256'], $artifact['blog_id'] ) ||
+			! is_string( $artifact['path'] ) || ! is_int( $artifact['bytes'] ) ||
+			! is_int( $artifact['blog_id'] ) || (int) get_current_blog_id() !== $artifact['blog_id'] ||
+			$artifact['bytes'] < 1 || $artifact['bytes'] > $policy['file'] ||
+			! is_string( $artifact['sha256'] ) ||
+			1 !== preg_match( '/^[a-f0-9]{64}$/D', $artifact['sha256'] ) ) {
+			return $this->denied();
+		}
+		$path      = $artifact['path'];
+		$canonical = realpath( $path );
+		$temp_dir  = realpath( get_temp_dir() );
+		if ( ! is_string( $canonical ) || ! is_string( $temp_dir ) ||
+			is_link( $path ) || ! is_file( $path ) || ! is_readable( $path ) ||
+			dirname( $canonical ) !== $temp_dir ||
+			! str_starts_with( basename( $canonical ), 'wpai-private-artifact' ) ||
+			0600 !== ( fileperms( $canonical ) & 0777 ) ) {
+			return new WP_Error( 'wxr_export_storage', 'WordPress WXR source must be a restricted private artifact.' );
+		}
+		clearstatcache( true, $canonical );
+		if ( filesize( $canonical ) !== $artifact['bytes'] ||
+			! hash_equals( $artifact['sha256'], (string) hash_file( 'sha256', $canonical ) ) ) {
+			return new WP_Error( 'wxr_export_stale', 'Private Core WXR bytes changed before snapshotting.' );
+		}
+		$receipt = $this->stage_native_export( $canonical, $policy, 'wxr_read', (int) get_current_blog_id() );
+		if ( ! is_wp_error( $receipt ) && ( $receipt['total'] !== $artifact['bytes'] ||
+			! hash_equals( $receipt['sha256'], $artifact['sha256'] ) ) ) {
+			$this->cancel( $receipt['id'] );
+			return new WP_Error( 'wxr_export_stale', 'Private Core WXR snapshot bytes differ from the generated source.' );
+		}
+		return $receipt;
+	}
+
+	/**
+	 * One private snapshot writer, reused by native Media and WXR producers.
+	 * Permissions and exact provider identity are rechecked before receipt.
+	 *
+	 * @param string $path Trusted provider-constrained file.
+	 * @param array<string,int> $policy Administrator capacity limits.
+	 * @param string $purpose Internal private read lease type.
+	 * @param int $source_id Exact attachment ID or originating blog ID.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private function stage_native_export( $path, $policy, $purpose, $source_id ) {
 		clearstatcache( true, $path );
 		$size = filesize( $path );
 		if ( ! is_int( $size ) || $size < 0 || $size > $policy['file'] ) {
@@ -356,7 +412,7 @@ final class Private_Transfer_Session {
 			return new WP_Error( 'transfer_source_changed', 'The WordPress source could not be hashed before export.' );
 		}
 		$chunk = min( $policy['chunk'], max( 1, intdiv( max( 1, $policy['request'] - 4096 ) * 3, 4 ) ) );
-		$lease = $this->begin( 'media_read', $size, $sha256, $policy['file'], $chunk, $policy['sessions'], $policy['ttl'], $policy['active'] );
+		$lease = $this->begin( $purpose, $size, $sha256, $policy['file'], $chunk, $policy['sessions'], $policy['ttl'], $policy['active'] );
 		if ( is_wp_error( $lease ) ) {
 			return $lease;
 		}
@@ -388,12 +444,13 @@ final class Private_Transfer_Session {
 			}
 			list( $root, $handle, $meta ) = $loaded;
 			try {
-				if ( 'verified' !== $meta['state'] || 'media_read' !== $meta['purpose'] ||
-					! current_user_can( 'read_post', $attachment_id ) ||
-					'attachment' !== get_post_type( $attachment_id ) ) {
+				if ( 'verified' !== $meta['state'] || $purpose !== $meta['purpose'] || ! $this->allowed( $purpose ) ||
+					( 'media_read' === $purpose && ( ! current_user_can( 'read_post', $source_id ) ||
+						'attachment' !== get_post_type( $source_id ) ) ) ||
+					( 'wxr_read' === $purpose && (int) get_current_blog_id() !== $source_id ) ) {
 					return $this->denied();
 				}
-				$meta['source_id'] = $attachment_id;
+				$meta['source_id'] = $source_id;
 				if ( ! $this->save_meta( $handle, $meta ) ) {
 					return new WP_Error( 'transfer_outcome_unknown', 'Media snapshot receipt could not be stored.' );
 				}
@@ -430,11 +487,13 @@ final class Private_Transfer_Session {
 		}
 		list( $root, $handle, $meta ) = $loaded;
 		try {
-			if ( 'media_read' !== $meta['purpose'] || 'verified' !== $meta['state'] ||
-				! $this->allowed( 'media_read' ) ||
+			if ( ! in_array( $meta['purpose'], array( 'media_read', 'wxr_read' ), true ) ||
+				'verified' !== $meta['state'] || ! $this->allowed( $meta['purpose'] ) ||
 				! is_int( $meta['source_id'] ?? null ) ||
-				'attachment' !== get_post_type( $meta['source_id'] ) ||
-				! current_user_can( 'read_post', $meta['source_id'] ) ||
+				( 'media_read' === $meta['purpose'] && (
+					'attachment' !== get_post_type( $meta['source_id'] ) ||
+					! current_user_can( 'read_post', $meta['source_id'] ) ) ) ||
+				( 'wxr_read' === $meta['purpose'] && (int) get_current_blog_id() !== $meta['source_id'] ) ||
 				! is_int( $offset ) || $offset < 0 || $offset > $meta['total'] ||
 				! is_int( $max_bytes ) || $max_bytes < 1 || $max_bytes > $meta['chunk'] ) {
 				return $this->invalid();
@@ -712,6 +771,9 @@ final class Private_Transfer_Session {
 				return $this->permissions->allowed( Settings::GROUP_BUILDER_WRITE, 'upload_files' );
 			case 'media_read':
 				return $this->permissions->allowed( Settings::GROUP_SITE_READ, 'read' );
+			case 'wxr_read':
+				return $this->permissions->allowed( Settings::GROUP_SITE_CONFIG, 'export' ) &&
+					( ! is_multisite() || current_user_can( 'manage_network_options' ) );
 			case 'text':
 				return $this->permissions->allowed( Settings::GROUP_BUILDER_WRITE, 'edit_posts' );
 			case 'wxr':
@@ -956,7 +1018,7 @@ final class Private_Transfer_Session {
 			is_int( $meta['user'] ) && $meta['user'] >= 1 &&
 			is_int( $meta['expires'] ) && $meta['expires'] >= 1 &&
 			is_string( $meta['client'] ) && is_string( $meta['purpose'] ) &&
-			in_array( $meta['purpose'], array( 'media', 'media_read', 'text', 'wxr' ), true ) &&
+			in_array( $meta['purpose'], array( 'media', 'media_read', 'wxr_read', 'text', 'wxr' ), true ) &&
 			is_string( $meta['sha256'] ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $meta['sha256'] ) &&
 			in_array( $meta['state'], array( 'open', 'preparing', 'verified', 'committing', 'committed', 'rejected', 'observed' ), true ) &&
 			( ! in_array( $meta['state'], array( 'committing', 'committed', 'rejected', 'observed' ), true ) ||

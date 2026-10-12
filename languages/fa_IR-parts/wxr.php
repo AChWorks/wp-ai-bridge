@@ -5,6 +5,14 @@
  * @package WP_AI_Bridge
  */
 return array(
+	'Create Private WordPress WXR Export' => 'ایجاد خروجی خصوصی WXR وردپرس',
+	'Produces a Core WXR export as an authenticated private transfer; read and verify byte windows using private-transfer, then cancel the lease.' => 'خروجی WXR وردپرس را به‌صورت انتقال خصوصی احراز هویت‌شده تولید می‌کند؛ بخش‌های فایل را با private-transfer دریافت و راستی‌آزمایی و سپس انتقال را لغو کنید.',
+	'Preview Verified Private WXR Import' => 'پیش‌نمایش درون‌بری WXR خصوصی تأییدشده',
+	'Read-only structural inspection of an exact verified authenticated WXR lease; no content is imported or modified.' => 'بررسی فقط‌خواندنی ساختار فایل WXR از انتقال احراز هویت‌شده و تأییدشده؛ هیچ محتوایی وارد یا ویرایش نمی‌شود.',
+	'An authorized WordPress export principal and one native content type are required.' => 'کاربر دارای مجوز برون‌بری وردپرس و یک نوع محتوای معتبر لازم است.',
+	'Private WXR producer cleanup requires administrator inspection.' => 'پاک‌سازی فایل موقت تولید خروجی WXR به بررسی مدیر نیاز دارد.',
+	'An authorized verified WXR transfer is required to preview an import.' => 'برای پیش‌نمایش درون‌بری، انتقال WXR تأییدشده با مجوز معتبر لازم است.',
+	'WXR summary exceeds the configured MCP response budget.' => 'خلاصه WXR از ظرفیت پاسخ MCP تنظیم‌شده فراتر رفته است.',
 	'Discover WordPress WXR Exports'              => 'شناسایی خروجی‌های WXR وردپرس',
 	'Lists WordPress-native exportable content types and exact supported filters; this read-only operation does not create or deliver a WXR file.' => 'نوع‌های محتوای قابل خروجی‌گرفتن در وردپرس و فیلترهای پشتیبانی‌شده را فهرست می‌کند؛ این عملیات فقط‌خواندنی فایل WXR ایجاد یا تحویل نمی‌دهد.',
 	'Site Configuration and native WordPress export permission are required.' => 'دسترسی تنظیمات سایت و مجوز اصلی برون‌بری وردپرس لازم است.',
