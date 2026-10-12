@@ -144,7 +144,7 @@ final class Settings_Page {
 			<h2><?php echo esc_html__( 'Workspace overview', 'wp-ai-bridge' ); ?></h2>
 			<table class="widefat striped" style="max-width: 900px">
 				<tbody>
-					<tr><th scope="row"><?php echo esc_html__( 'Current focus', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( $resume['current_focus'] ? $resume['current_focus'] : ( 'mixed' === $resume['scope'] ? __( 'Multiple projects; no single site-wide focus.', 'wp-ai-bridge' ) : __( 'No in-progress task', 'wp-ai-bridge' ) ) ); ?></td></tr>
+					<tr><th scope="row"><?php echo esc_html__( 'Current focus', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( $resume['current_focus'] ? $resume['current_focus'] : ( 'mixed' === $resume['scope'] ? __( 'Mixed Workspace; no single site-wide focus.', 'wp-ai-bridge' ) : __( 'No in-progress task', 'wp-ai-bridge' ) ) ); ?></td></tr>
 					<tr><th scope="row"><?php echo esc_html__( 'Documents', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( (string) $resume['counts']['documents'] ); ?></td></tr>
 					<tr><th scope="row"><?php echo esc_html__( 'Active tasks', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( (string) $resume['counts']['active_tasks'] ); ?></td></tr>
 					<tr><th scope="row"><?php echo esc_html__( 'Blocked tasks', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( (string) $resume['counts']['blocked'] ); ?></td></tr>
