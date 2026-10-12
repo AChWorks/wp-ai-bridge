@@ -9,6 +9,7 @@ namespace WP_AI_Bridge\Workspace;
 
 use WP_Error;
 use WP_AI_Bridge\Support\Bounded_Payload;
+use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Create_Claim;
 use WP_AI_Bridge\Support\Admission_Lock;
 
@@ -20,10 +21,26 @@ final class Store {
 	const TASK_POST_TYPE     = 'wpai_task';
 	const META_STATE         = '_wpai_workspace_state';
 	const MAX_RECORDS        = 200;
-	const MAX_DOCUMENT_BYTES = 100000;
-	const MAX_NOTES_BYTES    = 20000;
+	const MAX_DOCUMENT_BYTES = Payload_Settings::DEFAULT_DOCUMENT_KIB * 1024;
+	const MAX_NOTES_BYTES    = Payload_Settings::DEFAULT_NOTES_KIB * 1024;
 	const MAX_LIST_ITEMS     = 25;
 	const MAX_ITEM_BYTES     = 1000;
+
+	/**
+	 * Per-site Workspace record limits, independent of MCP response budgets.
+	 *
+	 * @return int
+	 */
+	public static function document_limit() {
+		$settings = new Payload_Settings();
+		return $settings->all()[ Payload_Settings::DOCUMENT_KEY ] * 1024;
+	}
+
+	/** @return int */
+	public static function notes_limit() {
+		$settings = new Payload_Settings();
+		return $settings->all()[ Payload_Settings::NOTES_KEY ] * 1024;
+	}
 
 	/**
 	 * Registers private/internal Workspace object types.
@@ -172,7 +189,7 @@ final class Store {
 				return $claim;
 			}
 		}
-		$content = $this->bounded_markdown( $input['content'] ?? '', self::MAX_DOCUMENT_BYTES );
+		$content = $this->bounded_markdown( $input['content'] ?? '', self::document_limit() );
 		$now     = gmdate( 'c' );
 		if ( ! $lock->is_owned() ) {
 			return new WP_Error( 'workspace_admission_unavailable', __( 'Workspace capacity admission is unavailable; no create was attempted.', 'wp-ai-bridge' ) );
@@ -294,7 +311,7 @@ final class Store {
 				}
 
 				if ( array_key_exists( 'content', $input ) ) {
-					$state['content'] = $this->bounded_markdown( $input['content'], self::MAX_DOCUMENT_BYTES );
+					$state['content'] = $this->bounded_markdown( $input['content'], self::document_limit() );
 				}
 
 				return $state;
@@ -568,22 +585,34 @@ final class Store {
 			return new WP_Error( 'workspace_stale', __( 'Guarded Workspace field reads require the current record version and hash.', 'wp-ai-bridge' ) );
 		}
 		$offset = isset( $input['offset'] ) ? $input['offset'] : 0;
-		$limit  = isset( $input['max_bytes'] ) ? $input['max_bytes'] : 8192;
-		$window = Bounded_Payload::text_window( (string) $record[ $field ], $offset, $limit );
-		if ( is_wp_error( $window ) ) {
-			return $window;
+		$limit  = isset( $input['max_bytes'] ) ? $input['max_bytes'] : Bounded_Payload::window_limit();
+		if ( ! is_int( $limit ) || $limit < 1 || $limit > Bounded_Payload::window_limit() ) {
+			return new WP_Error( 'invalid_content_window', __( 'The requested content window is outside the supported bounds.', 'wp-ai-bridge' ) );
 		}
-		$summary                 = 'document' === $kind ? $this->document_summary( $record ) : $this->task_summary( $record );
-		$summary['field_window'] = array(
-			'field'       => $field,
-			'text'        => $window['content'],
-			'total_bytes' => $window['total_bytes'],
-			'next_offset' => $window['next_offset'],
-			'complete'    => $window['complete'],
-		);
-		$result                  = array( 'items' => array( $summary ) );
-		return Bounded_Payload::fits( $result ) ? $result :
-			new WP_Error( 'workspace_window_too_large', __( 'Workspace window exceeds the serialized response budget; reduce max_bytes.', 'wp-ai-bridge' ) );
+		$summary = 'document' === $kind ? $this->document_summary( $record ) : $this->task_summary( $record );
+		// The administrator's maximum is not a promise that Unicode-escaped
+		// JSON can carry that many source bytes in one response. Shrink a
+		// single response automatically while preserving exact byte offsets.
+		for ( $size = $limit; $size >= 1; $size = 1 === $size ? 0 : max( 1, (int) floor( $size / 2 ) ) ) {
+			$window = Bounded_Payload::text_window( (string) $record[ $field ], $offset, $size );
+			if ( is_wp_error( $window ) ) {
+				// An invalid UTF-8 offset or encoding must not be
+				// disguised as a response-size failure.
+				return $window;
+			}
+			$summary['field_window'] = array(
+				'field'       => $field,
+				'text'        => $window['content'],
+				'total_bytes' => $window['total_bytes'],
+				'next_offset' => $window['next_offset'],
+				'complete'    => $window['complete'],
+			);
+			$result                  = array( 'items' => array( $summary ) );
+			if ( Bounded_Payload::fits( $result ) ) {
+				return $result;
+			}
+		}
+		return new WP_Error( 'workspace_window_too_large', __( 'Workspace window exceeds the serialized response budget; reduce max_bytes.', 'wp-ai-bridge' ) );
 	}
 
 	/**
@@ -666,7 +695,7 @@ final class Store {
 			'acceptance'   => $this->bounded_string_list( $input['acceptance'] ?? array() ),
 			'dependencies' => $this->bounded_string_list( $input['dependencies'] ?? array() ),
 			'target_refs'  => $this->bounded_string_list( $input['target_refs'] ?? array() ),
-			'notes'        => $this->bounded_text( $input['notes'] ?? '', self::MAX_NOTES_BYTES, true ),
+			'notes'        => $this->bounded_text( $input['notes'] ?? '', self::notes_limit(), true ),
 			'progress'     => $progress,
 			'review'       => $review,
 			'delivery'     => $delivery,
@@ -737,7 +766,7 @@ final class Store {
 					$state['target_refs'] = $this->bounded_string_list( $input['target_refs'] );
 				}
 				if ( array_key_exists( 'notes', $input ) ) {
-					$state['notes'] = $this->bounded_text( $input['notes'], self::MAX_NOTES_BYTES, true );
+					$state['notes'] = $this->bounded_text( $input['notes'], self::notes_limit(), true );
 				}
 
 				return $state;
@@ -1365,12 +1394,12 @@ final class Store {
 		$limits = 'document' === $kind
 			? array(
 				'title'   => 500,
-				'content' => self::MAX_DOCUMENT_BYTES,
+				'content' => self::document_limit(),
 			)
 			: array(
 				'title'       => 500,
 				'goal'        => 5000,
-				'notes'       => self::MAX_NOTES_BYTES,
+				'notes'       => self::notes_limit(),
 				'next_action' => 1000,
 				'blocker'     => 1000,
 			);

@@ -8,6 +8,9 @@ use WP_AI_Bridge\Admin\Settings_Page;
 use WP_AI_Bridge\Support\Environment;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Payload_Settings;
+use WP_AI_Bridge\Workspace\Store;
+use WP_AI_Bridge\Support\Bounded_Payload;
 use WP_AI_Bridge\Support\Settings;
 
 $failures = 0;
@@ -79,6 +82,119 @@ $registered_setting = $GLOBALS['wpai_test']['registered_settings'][ Settings::OP
 wpai_assert( Settings::OPTION_GROUP === $registered_setting['group'], 'Settings register in the bridge option group.' );
 wpai_assert( false === $registered_setting['args']['show_in_rest'], 'Bridge access settings are not exposed for REST writes.' );
 wpai_assert( is_callable( $registered_setting['args']['sanitize_callback'] ), 'Settings have a sanitize callback.' );
+
+// Operator-configurable response budgets are an independent Settings API
+// option; changing them must not alter WordPress/Bridge access grants.
+$payload = new Payload_Settings();
+wpai_assert( 512 === $payload->defaults()[ Payload_Settings::DOCUMENT_KEY ] &&
+	128 === $payload->defaults()[ Payload_Settings::NOTES_KEY ], 'Workspace record defaults are higher and independent of the transport envelope.' );
+wpai_assert( 512 * 1024 === Store::document_limit() &&
+	128 * 1024 === Store::notes_limit(), 'Workspace storage quotas must not inherit MCP response/window budgets.' );
+wpai_assert( 128 === $payload->defaults()[ Payload_Settings::RESPONSE_KEY ] &&
+	128 === $payload->defaults()[ Payload_Settings::WINDOW_KEY ], 'Conservative wire-compatible defaults must exceed the original fixed limits.' );
+wpai_assert( 128 * 1024 === Bounded_Payload::response_limit() &&
+	128 * 1024 === Bounded_Payload::window_limit(), 'Default per-site limits must be effective without a saved option.' );
+$payload->register();
+$payload_registration = $GLOBALS['wpai_test']['registered_settings'][ Payload_Settings::OPTION_NAME ] ?? array();
+wpai_assert( Payload_Settings::OPTION_GROUP === ( $payload_registration['group'] ?? '' ) &&
+	false === ( $payload_registration['args']['show_in_rest'] ?? true ) &&
+	is_callable( $payload_registration['args']['sanitize_callback'] ?? null ), 'Independent payload setting must be private and registered through WP Settings API.' );
+$payload_valid = $payload->sanitize(
+	array(
+		Payload_Settings::RESPONSE_KEY => '128',
+		Payload_Settings::WINDOW_KEY   => '256',
+	)
+);
+wpai_assert( 128 === $payload_valid[ Payload_Settings::RESPONSE_KEY ] && 256 === $payload_valid[ Payload_Settings::WINDOW_KEY ], 'Whole-KiB per-site transport values were rejected.' );
+wpai_assert( 512 === $payload_valid[ Payload_Settings::DOCUMENT_KEY ] &&
+	128 === $payload_valid[ Payload_Settings::NOTES_KEY ], 'Saving only transport budgets must preserve current Workspace quotas.' );
+
+update_option( Payload_Settings::OPTION_NAME, $payload_valid );
+wpai_assert( 128 * 1024 === Bounded_Payload::response_limit() && 256 * 1024 === Bounded_Payload::window_limit(), 'Runtime limits ignored validated administrator values.' );
+wpai_assert(
+	Bounded_Payload::fits( str_repeat( 'a', 60 * 1024 ) ) &&
+	! Bounded_Payload::fits( str_repeat( 'a', 100 * 1024 ) ),
+	'Expanded MCP budget must permit useful larger results but count the duplicated Adapter envelope.'
+);
+$wire_fixture      = array( 'content' => str_repeat( 'سلام WordPress', 2200 ) );
+$wire_structured   = array( 'success' => true, 'data' => $wire_fixture );
+$wire_text         = wp_json_encode( $wire_structured );
+$wire_actual       = wp_json_encode(
+	array(
+		'jsonrpc' => '2.0',
+		'id'      => 42,
+		'result'  => array(
+			'content'           => array( array( 'type' => 'text', 'text' => $wire_text ) ),
+			'isError'           => false,
+			'structuredContent' => $wire_structured,
+		),
+	)
+);
+wpai_assert(
+	is_string( $wire_actual ) &&
+	Bounded_Payload::projected_mcp_bytes( $wire_fixture ) >= strlen( $wire_actual ),
+	'Projected MCP wire budget omitted official Adapter duplicated text/structured content.'
+);
+$sample_window = Bounded_Payload::text_window( str_repeat( 'b', 320 * 1024 ), 0, 120 * 1024 );
+wpai_assert( ! is_wp_error( $sample_window ) && 120 * 1024 === $sample_window['next_offset'] && ! $sample_window['complete'], 'Increased per-request text window did not advance correctly.' );
+wpai_assert( is_wp_error( Bounded_Payload::text_window( 'abc', 0, 257 * 1024 ) ), 'Oversized requested window bypassed current admin limit.' );
+
+$payload_after_bad = $payload->sanitize(
+	array(
+		Payload_Settings::RESPONSE_KEY => '9999999999999999999999999',
+		Payload_Settings::WINDOW_KEY   => '2e3',
+		Settings::GROUP_BUILDER_WRITE  => 1,
+	)
+);
+wpai_assert( $payload_valid === $payload_after_bad, 'Invalid/unknown values silently changed transfer or access settings.' );
+$payload_after_mixed = $payload->sanitize(
+	array(
+		Payload_Settings::RESPONSE_KEY => '96',
+		Payload_Settings::WINDOW_KEY   => array( 'unexpected' ),
+	)
+);
+wpai_assert( 96 === $payload_after_mixed[ Payload_Settings::RESPONSE_KEY ] &&
+	256 === $payload_after_mixed[ Payload_Settings::WINDOW_KEY ], 'Invalid nested field discarded a valid independent setting.' );
+update_option( Payload_Settings::OPTION_NAME, $payload_after_mixed );
+wpai_assert( ! Bounded_Payload::fits( str_repeat( 'a', 60 * 1024 ) ), 'Lowered runtime MCP wire-response budget was not honored.' );
+wpai_assert( 96 * 1024 === Bounded_Payload::response_limit(), 'Decreased configured budget not effective.' );
+$payload_with_workspace = $payload->sanitize(
+	array(
+		Payload_Settings::DOCUMENT_KEY => '512',
+		Payload_Settings::NOTES_KEY    => '128',
+	)
+);
+update_option( Payload_Settings::OPTION_NAME, $payload_with_workspace );
+wpai_assert( 512 * 1024 === Store::document_limit() && 128 * 1024 === Store::notes_limit(), 'Increasing Workspace quota changed transport settings or failed to apply.' );
+$store = new Store();
+$validate_record = new ReflectionMethod( Store::class, 'validate_input_fidelity' );
+wpai_assert( true === $validate_record->invoke( $store, array( 'content' => str_repeat( 'd', 300 * 1024 ) ), 'document' ),
+	'Administrator-expanded Workspace document quota was ignored.' );
+wpai_assert( true === $validate_record->invoke( $store, array( 'notes' => str_repeat( 'n', 100 * 1024 ) ), 'task' ),
+	'Administrator-expanded Workspace task notes quota was ignored.' );
+wpai_assert( is_wp_error( $validate_record->invoke( $store, array( 'content' => str_repeat( 'd', 513 * 1024 ) ), 'document' ) ),
+	'Oversized document was silently accepted or truncated.' );
+wpai_assert( is_wp_error( $validate_record->invoke( $store, array( 'notes' => str_repeat( 'n', 129 * 1024 ) ), 'task' ) ),
+	'Oversized task notes were silently accepted or truncated.' );
+$reduced_workspace = $payload->sanitize(
+	array(
+		Payload_Settings::DOCUMENT_KEY => '64',
+		Payload_Settings::NOTES_KEY    => '16',
+	)
+);
+update_option( Payload_Settings::OPTION_NAME, $reduced_workspace );
+wpai_assert( is_wp_error( $validate_record->invoke( $store, array( 'content' => str_repeat( 'd', 65 * 1024 ) ), 'document' ) ),
+	'Lowering admin quota failed to reject a new oversized document write.' );
+wpai_assert( is_wp_error( $validate_record->invoke( $store, array( 'notes' => str_repeat( 'n', 17 * 1024 ) ), 'task' ) ),
+	'Lowering admin notes quota failed to reject new oversized task notes.' );
+wpai_assert( $payload->defaults()[ Payload_Settings::RESPONSE_KEY ] !== $payload->defaults()[ Payload_Settings::DOCUMENT_KEY ],
+	'Transport and storage limits were conflated.' );
+wpai_assert( $payload->defaults() === ( new Payload_Settings() )->all() ||
+	96 === $payload->all()[ Payload_Settings::RESPONSE_KEY ], 'Payload setting readback failed.' );
+// The test suite also needs the fresh-install defaults on all unrelated
+// content fixture cases; local per-site operator values never remain global.
+$GLOBALS['wpai_test']['options'][ Payload_Settings::OPTION_NAME ] = array();
+wpai_assert( 128 * 1024 === Bounded_Payload::response_limit(), 'Restoring defaults did not clear the per-site override.' );
 
 $GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = array( Settings::GROUP_SITE_READ => 1 );
 $permissions = new Permissions( $settings );
@@ -402,6 +518,12 @@ $page->render_settings();
 $html = ob_get_clean();
 wpai_assert( in_array( Settings::OPTION_GROUP, $GLOBALS['wpai_test']['settings_fields'], true ), 'Settings page uses WordPress Settings API nonce fields.' );
 wpai_assert( false !== strpos( $html, 'options.php' ), 'Settings page posts access groups through the WordPress Settings API.' );
+wpai_assert( in_array( Payload_Settings::OPTION_GROUP, $GLOBALS['wpai_test']['settings_fields'], true ), 'Dedicated payload settings form must have its own WordPress nonce/action.' );
+wpai_assert( false !== strpos( $html, 'wpai-response-kib' ) &&
+	false !== strpos( $html, 'wpai-text-window-kib' ) &&
+	false !== strpos( $html, 'wpai-document-kib' ) && false !== strpos( $html, 'wpai-notes-kib' ) &&
+	false !== strpos( $html, 'name="' . Payload_Settings::OPTION_NAME . '[' . Payload_Settings::RESPONSE_KEY . ']' . '"' ), 'Admin payload controls not rendered as separately named, labeled inputs.' );
+
 wpai_assert( false !== strpos( $html, 'wpai_workspace_export' ), 'Settings page exposes explicit Workspace export.' );
 wpai_assert( false !== strpos( $html, 'wpai_workspace_clear' ), 'Settings page exposes explicit confirmed Workspace clear.' );
 
