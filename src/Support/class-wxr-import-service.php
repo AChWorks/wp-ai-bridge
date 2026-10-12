@@ -438,6 +438,9 @@ final class WXR_Import_Service {
 		if ( ! function_exists( 'wp_insert_category' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/taxonomy.php';
 		}
+		if ( ! function_exists( 'comment_exists' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/comment.php';
+		}
 		return $version;
 	}
 
