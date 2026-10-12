@@ -11,7 +11,7 @@ use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Private_Transfer_Session;
 use WP_AI_Bridge\Support\Settings;
-use WP_AI_Bridge\Support\Payload_Settings;
+use WP_AI_Bridge\Support\Bounded_Payload;
 use WP_AI_Bridge\Support\Transfer_Settings;
 use WP_Error;
 
@@ -44,37 +44,38 @@ final class Transfer_Session_Abilities {
 				'input_schema'        => array(
 					'type'                 => 'object',
 					'properties'           => array(
-						'action'         => array(
+						'action'              => array(
 							'type' => 'string',
-							'enum' => array( 'limits', 'begin', 'append', 'status', 'verify', 'cancel', 'read' ),
+							'enum' => array( 'limits', 'begin', 'append', 'status', 'verify', 'cancel', 'read', 'release' ),
 						),
-						'purpose'        => array(
+						'purpose'             => array(
 							'type' => 'string',
 							'enum' => array( 'media', 'text', 'wxr' ),
 						),
-						'total_bytes'    => array(
+						'total_bytes'         => array(
 							'type'    => 'integer',
 							'minimum' => 0,
 						),
-						'sha256'         => array(
+						'sha256'              => array(
 							'type'      => 'string',
 							'minLength' => 64,
 							'maxLength' => 64,
 						),
-						'transfer_id'    => array(
+						'transfer_id'         => array(
 							'type'      => 'string',
 							'minLength' => 64,
 							'maxLength' => 64,
 						),
-						'max_bytes'      => array(
+						'max_bytes'           => array(
 							'type'    => 'integer',
 							'minimum' => 1,
 						),
-						'offset'         => array(
+						'offset'              => array(
 							'type'    => 'integer',
 							'minimum' => 0,
 						),
-						'content_base64' => array( 'type' => 'string' ),
+						'content_base64'      => array( 'type' => 'string' ),
+						'acknowledge_unknown' => array( 'type' => 'boolean' ),
 					),
 					'required'             => array( 'action' ),
 					'additionalProperties' => false,
@@ -82,27 +83,32 @@ final class Transfer_Session_Abilities {
 				'output_schema'       => array(
 					'type'                 => 'object',
 					'properties'           => array(
-						'action'           => array( 'type' => 'string' ),
-						'state'            => array( 'type' => 'string' ),
-						'transfer_id'      => array( 'type' => 'string' ),
-						'purpose'          => array( 'type' => 'string' ),
-						'complete'         => array( 'type' => 'boolean' ),
-						'received_bytes'   => array( 'type' => 'integer' ),
-						'total_bytes'      => array( 'type' => 'integer' ),
-						'sha256'           => array( 'type' => 'string' ),
-						'expires_at'       => array( 'type' => 'integer' ),
-						'max_chunk_bytes'  => array( 'type' => 'integer' ),
-						'request_bytes'    => array( 'type' => 'integer' ),
-						'max_file_bytes'   => array( 'type' => 'integer' ),
-						'max_active_bytes' => array( 'type' => 'integer' ),
-						'max_sessions'     => array( 'type' => 'integer' ),
-						'lease_seconds'    => array( 'type' => 'integer' ),
-						'destination_id'   => array( 'type' => 'integer' ),
-						'read_offset'      => array( 'type' => 'integer' ),
-						'read_next_offset' => array( 'type' => 'integer' ),
-						'read_complete'    => array( 'type' => 'boolean' ),
-						'content_base64'   => array( 'type' => 'string' ),
-						'chunk_sha256'     => array( 'type' => 'string' ),
+						'action'                => array( 'type' => 'string' ),
+						'state'                 => array( 'type' => 'string' ),
+						'transfer_id'           => array( 'type' => 'string' ),
+						'purpose'               => array( 'type' => 'string' ),
+						'complete'              => array( 'type' => 'boolean' ),
+						'received_bytes'        => array( 'type' => 'integer' ),
+						'total_bytes'           => array( 'type' => 'integer' ),
+						'sha256'                => array( 'type' => 'string' ),
+						'expires_at'            => array( 'type' => 'integer' ),
+						'max_chunk_bytes'       => array( 'type' => 'integer' ),
+						'request_bytes'         => array( 'type' => 'integer' ),
+						'max_file_bytes'        => array( 'type' => 'integer' ),
+						'max_active_bytes'      => array( 'type' => 'integer' ),
+						'max_sessions'          => array( 'type' => 'integer' ),
+						'lease_seconds'         => array( 'type' => 'integer' ),
+						'destination_id'        => array( 'type' => 'integer' ),
+						'outcome'               => array( 'type' => 'string' ),
+						'intent'                => array( 'type' => 'string' ),
+						'target_id'             => array( 'type' => 'integer' ),
+						'payload_released'      => array( 'type' => 'boolean' ),
+						'source_representation' => array( 'type' => 'string' ),
+						'read_offset'           => array( 'type' => 'integer' ),
+						'read_next_offset'      => array( 'type' => 'integer' ),
+						'read_complete'         => array( 'type' => 'boolean' ),
+						'content_base64'        => array( 'type' => 'string' ),
+						'chunk_sha256'          => array( 'type' => 'string' ),
 					),
 					'required'             => array( 'action', 'state', 'transfer_id', 'purpose', 'complete', 'received_bytes', 'total_bytes', 'sha256', 'expires_at', 'max_chunk_bytes', 'request_bytes', 'max_file_bytes', 'max_active_bytes', 'max_sessions', 'lease_seconds', 'destination_id' ),
 					'additionalProperties' => false,
@@ -190,13 +196,14 @@ final class Transfer_Session_Abilities {
 		// Leave space for nested execute-ability arguments and MCP headers.
 		$chunk        = min( $policy['chunk'], max( 1, intdiv( max( 1, $budget - 4096 ) * 3, 4 ) ) );
 		$allowed_keys = array(
-			'limits' => array( 'action' ),
-			'begin'  => array( 'action', 'purpose', 'total_bytes', 'sha256' ),
-			'append' => array( 'action', 'transfer_id', 'offset', 'content_base64' ),
-			'status' => array( 'action', 'transfer_id' ),
-			'verify' => array( 'action', 'transfer_id' ),
-			'cancel' => array( 'action', 'transfer_id' ),
-			'read'   => array( 'action', 'transfer_id', 'offset', 'max_bytes' ),
+			'limits'  => array( 'action' ),
+			'begin'   => array( 'action', 'purpose', 'total_bytes', 'sha256' ),
+			'append'  => array( 'action', 'transfer_id', 'offset', 'content_base64' ),
+			'status'  => array( 'action', 'transfer_id' ),
+			'verify'  => array( 'action', 'transfer_id' ),
+			'cancel'  => array( 'action', 'transfer_id' ),
+			'read'    => array( 'action', 'transfer_id', 'offset', 'max_bytes' ),
+			'release' => array( 'action', 'transfer_id', 'acknowledge_unknown' ),
 		);
 		if ( ! isset( $allowed_keys[ $action ] ) ||
 			array_diff( array_keys( $input ), $allowed_keys[ $action ] ) ) {
@@ -258,28 +265,49 @@ final class Transfer_Session_Abilities {
 				! is_int( $input['max_bytes'] ) || $input['max_bytes'] < 1 ) {
 				return $this->invalid();
 			}
-			// MCP returns JSON/Base64. Respect independently administrator-tunable
-			// wire response and source lease budgets without reading whole files.
-			$response_budget = ( new Payload_Settings() )->all()[ Payload_Settings::RESPONSE_KEY ] * 1024;
-			$out_chunk       = min( $chunk, max( 1, intdiv( max( 1, $response_budget - 8192 ) * 3, 4 ) ) );
-			if ( $input['max_bytes'] > $out_chunk ) {
-				return new WP_Error( 'transfer_message_budget', __( 'Requested outbound window exceeds the current MCP response budget. Request fewer bytes or adjust the administrator response setting.', 'wp-ai-bridge' ) );
-			}
-			$window = $this->store->read_media_export( $id, $input['offset'], $input['max_bytes'] );
-			if ( is_wp_error( $window ) ) {
-				return $window;
-			}
+			// The official Adapter duplicates the data in structuredContent
+			// and JSON-escaped text. Fit the *complete* projected result; a
+			// single 3/4 Base64 estimate is not a valid MCP wire budget.
 			$receipt = $this->store->status( $id );
 			if ( is_wp_error( $receipt ) ) {
 				return $receipt;
 			}
-			$result                     = $this->result( $action, $receipt, $policy, $out_chunk );
-			$result['read_offset']      = $window['offset'];
-			$result['read_next_offset'] = $window['next_offset'];
-			$result['read_complete']    = $window['complete'];
-			$result['content_base64']   = $window['base64'];
-			$result['chunk_sha256']     = $window['chunk_sha256'];
-			return $result;
+			$low  = 1;
+			$high = min( $chunk, $input['max_bytes'], (int) $receipt['chunk'] );
+			$best = null;
+			while ( $low <= $high ) {
+				$middle = intdiv( $low + $high, 2 );
+				$window = $this->store->read_media_export( $id, $input['offset'], $middle );
+				if ( is_wp_error( $window ) ) {
+					return $window;
+				}
+				$candidate                     = $this->result( $action, $receipt, $policy, $middle );
+				$candidate['read_offset']      = $window['offset'];
+				$candidate['read_next_offset'] = $window['next_offset'];
+				$candidate['read_complete']    = $window['complete'];
+				$candidate['content_base64']   = $window['base64'];
+				$candidate['chunk_sha256']     = $window['chunk_sha256'];
+				if ( Bounded_Payload::fits( $candidate ) ) {
+					$best = $candidate;
+					$low  = $middle + 1;
+				} else {
+					$high = $middle - 1;
+				}
+			}
+			if ( ! is_array( $best ) ||
+				( $receipt['total'] > $input['offset'] && $best['read_next_offset'] === $input['offset'] ) ) {
+				return new WP_Error( 'transfer_message_budget', __( 'Requested outbound window exceeds the current MCP response budget. Request fewer bytes or adjust the administrator response setting.', 'wp-ai-bridge' ) );
+			}
+			return $best;
+		} elseif ( 'release' === $action ) {
+			// Only an explicitly confirmed administrator may discard bytes
+			// from a genuinely unknown native effect; the immutable receipt
+			// and claim fence remain for reconciliation and never replay.
+			$ack = $input['acknowledge_unknown'] ?? false;
+			if ( ! is_bool( $ack ) ) {
+				return $this->invalid();
+			}
+			$receipt = $this->store->release_payload( $id, $ack );
 		} elseif ( 'status' === $action ) {
 			$receipt = $this->store->status( $id );
 		} elseif ( 'verify' === $action ) {
@@ -305,22 +333,27 @@ final class Transfer_Session_Abilities {
 	private function result( $action, $receipt, $policy, $chunk ) {
 		$receipt = is_array( $receipt ) ? $receipt : array();
 		return array(
-			'action'           => $action,
-			'state'            => (string) ( $receipt['state'] ?? 'limits' ),
-			'transfer_id'      => (string) ( $receipt['id'] ?? '' ),
-			'purpose'          => (string) ( $receipt['purpose'] ?? '' ),
-			'complete'         => ! empty( $receipt['complete'] ),
-			'received_bytes'   => (int) ( $receipt['received'] ?? 0 ),
-			'total_bytes'      => (int) ( $receipt['total'] ?? 0 ),
-			'sha256'           => (string) ( $receipt['sha256'] ?? '' ),
-			'expires_at'       => (int) ( $receipt['expires'] ?? 0 ),
-			'max_chunk_bytes'  => min( $chunk, (int) ( $receipt['chunk'] ?? $chunk ) ),
-			'request_bytes'    => $policy['request'],
-			'max_file_bytes'   => $policy['file'],
-			'max_active_bytes' => $policy['active'],
-			'max_sessions'     => $policy['sessions'],
-			'lease_seconds'    => $policy['ttl'],
-			'destination_id'   => (int) ( $receipt['destination_id'] ?? 0 ),
+			'action'                => $action,
+			'state'                 => (string) ( $receipt['state'] ?? 'limits' ),
+			'transfer_id'           => (string) ( $receipt['id'] ?? '' ),
+			'purpose'               => (string) ( $receipt['purpose'] ?? '' ),
+			'complete'              => ! empty( $receipt['complete'] ),
+			'received_bytes'        => (int) ( $receipt['received'] ?? 0 ),
+			'total_bytes'           => (int) ( $receipt['total'] ?? 0 ),
+			'sha256'                => (string) ( $receipt['sha256'] ?? '' ),
+			'expires_at'            => (int) ( $receipt['expires'] ?? 0 ),
+			'max_chunk_bytes'       => min( $chunk, (int) ( $receipt['chunk'] ?? $chunk ) ),
+			'request_bytes'         => $policy['request'],
+			'max_file_bytes'        => $policy['file'],
+			'max_active_bytes'      => $policy['active'],
+			'max_sessions'          => $policy['sessions'],
+			'lease_seconds'         => $policy['ttl'],
+			'destination_id'        => (int) ( $receipt['destination_id'] ?? 0 ),
+			'outcome'               => (string) ( $receipt['outcome'] ?? 'none' ),
+			'intent'                => (string) ( $receipt['intent'] ?? '' ),
+			'target_id'             => (int) ( $receipt['target_id'] ?? 0 ),
+			'payload_released'      => ! empty( $receipt['payload_released'] ),
+			'source_representation' => (string) ( $receipt['source_representation'] ?? '' ),
 		);
 	}
 }

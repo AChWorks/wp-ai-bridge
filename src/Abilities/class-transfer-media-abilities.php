@@ -151,15 +151,17 @@ final class Transfer_Media_Abilities {
 		if ( is_wp_error( $claim ) ) {
 			return $claim;
 		}
-		$temp = $claim['temp'];
+		$temp    = $claim['temp'];
+		$result  = null;
+		$cleaned = false;
 		try {
 			if ( ! function_exists( 'media_handle_sideload' ) ) {
 				require_once ABSPATH . 'wp-admin/includes/file.php';
 				require_once ABSPATH . 'wp-admin/includes/media.php';
 				require_once ABSPATH . 'wp-admin/includes/image.php';
 			}
-			// Native Core/provider uploader retains all WordPress MIME,
-			// location, file policy, error and attachment lifecycle hooks.
+			// The per-lease coordinator remains held until Core returns:
+			// no concurrent scratch copies or duplicate effects are admitted.
 			$result = media_handle_sideload(
 				array(
 					'name'     => $name,
@@ -169,30 +171,33 @@ final class Transfer_Media_Abilities {
 				),
 				0
 			);
-			if ( is_wp_error( $result ) ) {
-				return $this->uncertain();
-			}
-			$receipt = $this->store->finish_media( $input['transfer_id'], (int) $result );
-			if ( is_wp_error( $receipt ) ) {
-				return $receipt;
-			}
-			return array(
-				'transfer_id' => $input['transfer_id'],
-				'state'       => $receipt['state'],
-				'media_id'    => (int) $receipt['destination_id'],
-				'filename'    => $name,
-				'bytes'       => $claim['bytes'],
-				'sha256'      => $claim['sha256'],
-			);
 		} catch ( \Throwable $error ) {
-			// Once claimed, a PHP/provider exception must never trigger a
-			// duplicate native WordPress effect on naive client retry.
-			return $this->uncertain();
+			$result = new WP_Error( 'transfer_outcome_unknown', 'Native Media sideload raised an exception after a durable claim.' );
 		} finally {
-			// WordPress may have moved the source temp file. Any leftover
-			// temporary duplicate is private and must be explicitly removed.
-			$this->store->cleanup_media_temporary( $temp );
+			// Native Core may have moved the scratch source to uploads. Cleanup
+			// always releases the stable per-lease lock and scratch reservation.
+			$cleaned = $this->store->cleanup_media_temporary( $temp, $claim );
 		}
+		if ( is_wp_error( $result ) || ! is_int( $result ) || $result < 1 ) {
+			return $this->uncertain();
+		}
+		// Record the observed WordPress ID whether or not its image editor
+		// kept the original upload as the currently selected Media filename.
+		$receipt = $this->store->finish_media( $input['transfer_id'], $result );
+		if ( is_wp_error( $receipt ) ) {
+			return $receipt;
+		}
+		if ( ! $cleaned ) {
+			return new WP_Error( 'transfer_cleanup_uncertain', 'Native Media destination was committed, but private scratch cleanup requires inspection.' );
+		}
+		return array(
+			'transfer_id' => $input['transfer_id'],
+			'state'       => $receipt['state'],
+			'media_id'    => (int) $receipt['destination_id'],
+			'filename'    => $name,
+			'bytes'       => $claim['bytes'],
+			'sha256'      => $claim['sha256'],
+		);
 	}
 
 	/** @return WP_Error */

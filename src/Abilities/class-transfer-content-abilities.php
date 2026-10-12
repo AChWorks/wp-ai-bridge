@@ -11,6 +11,7 @@ use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Private_Transfer_Session;
+use WP_AI_Bridge\Support\Native_Content_CAS;
 use WP_AI_Bridge\Support\Settings;
 use WP_Error;
 
@@ -216,13 +217,24 @@ final class Transfer_Content_Abilities {
 		if ( ! $this->can_commit( $input ) ) {
 			return new WP_Error( 'transfer_content_denied', __( 'WordPress content authority changed before the transfer could be committed.', 'wp-ai-bridge' ) );
 		}
-		$claim = $this->store->claim_content( $input['transfer_id'] );
-		if ( is_wp_error( $claim ) ) {
-			return $claim;
+		if ( 'update' === $action ) {
+			$result = $this->native_cas_update( $input, $args );
+		} else {
+			$claim = $this->store->claim_content( $input['transfer_id'], 'create', 0 );
+			if ( is_wp_error( $claim ) ) {
+				return $claim;
+			}
+			try {
+				$result = $this->content->upsert( $args );
+			} catch ( \Throwable $error ) {
+				return $this->uncertain();
+			}
+		}
+		if ( is_wp_error( $result ) ) {
+			return $result;
 		}
 		try {
-			$result = $this->content->upsert( $args );
-			if ( is_wp_error( $result ) || ! is_array( $result ) || ! isset( $result['id'] ) ) {
+			if ( ! is_array( $result ) || ! isset( $result['id'] ) ) {
 				return $this->uncertain();
 			}
 			$post_id = (int) $result['id'];
@@ -242,6 +254,54 @@ final class Transfer_Content_Abilities {
 		} catch ( \Throwable $error ) {
 			return $this->uncertain();
 		}
+	}
+
+	/**
+	 * One conditional native WordPress update, not merely a pre-write check.
+	 * The physical post and metadata locks cover both the last state check
+	 * and the Core writer; the claim fence remains one-way on any uncertainty.
+	 *
+	 * @param array<string,mixed> $input Authorized intended target identity.
+	 * @param array<string,mixed> $args Native WordPress content arguments.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private function native_cas_update( $input, $args ) {
+		$cas = new Native_Content_CAS();
+		return $cas->with_locked_post(
+			$input['post_id'],
+			function () use ( $input, $args ) {
+				$check = $this->content->check_expected_identity(
+					get_post( $input['post_id'] ),
+					$input['expected_modified_gmt'],
+					$input['expected_state_hash']
+				);
+				if ( is_wp_error( $check ) ) {
+					return $check; // No lease claim or Core write.
+				}
+				if ( ! $this->can_commit( $input ) ) {
+					return new WP_Error( 'transfer_content_denied', 'Native editing authority changed before the conditional write.' );
+				}
+				$claim = $this->store->claim_content(
+					$input['transfer_id'],
+					'update',
+					$input['post_id']
+				);
+				if ( is_wp_error( $claim ) ) {
+					return $claim;
+				}
+				$result = $this->content->upsert( $args );
+				if ( is_wp_error( $result ) ) {
+					// The original content adapter raises this particular
+					// conflict strictly before wp_update_post() is invoked.
+					if ( 'stale_content_conflict' === $result->get_error_code() ) {
+						$known = $this->store->record_known_no_effect( $input['transfer_id'] );
+						return is_wp_error( $known ) ? $known : $result;
+					}
+					return $this->uncertain();
+				}
+				return $result;
+			}
+		);
 	}
 
 	/** @return WP_Error */
