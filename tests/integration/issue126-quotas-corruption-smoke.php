@@ -16,13 +16,19 @@ function wpai126_quota_assert( $ok, $reason ) {
 		throw new RuntimeException( $reason );
 	}
 }
+
+/** The PHP limit must remain finite and at most 96MiB, not -1/unlimited. */
+function wpai126_memory_clamped() {
+	$bytes = wp_convert_hr_to_bytes( (string) ini_get( 'memory_limit' ) );
+	return $bytes > 0 && $bytes <= 96 * 1048576;
+}
 // #153 R2: started by the integration runner with php -d memory_limit=96M.
 // A missing/ineffective clamp is a FAIL, never an optional skipped check.
 $required_memory = getenv( 'WPAI153_MEMORY_CEILING' );
 $actual_limit    = (string) ini_get( 'memory_limit' );
 $limit_bytes     = wp_convert_hr_to_bytes( $actual_limit );
 wpai126_quota_assert(
-	'96M' === $required_memory && $limit_bytes > 0 && $limit_bytes <= 96 * 1048576,
+	'96M' === $required_memory && wpai126_memory_clamped(),
 	'Workspace real integration MUST execute at or below 96MiB, with no fallback.'
 );
 echo 'WPAI153_MEMORY_BEGIN effective=' . $actual_limit .
@@ -213,7 +219,7 @@ try {
 		'Post-200 Workspace task summaries omitted or duplicated records.'
 	);
 	wpai126_quota_assert(
-		wp_convert_hr_to_bytes( (string) ini_get( 'memory_limit' ) ) <= 96 * 1048576,
+		wpai126_memory_clamped(),
 		'The Workspace 250/201 task workload escaped the 96MiB limit.'
 	);
 	echo 'WPAI153_MEMORY_WORKLOAD effective=' . ini_get( 'memory_limit' ) .
@@ -357,7 +363,7 @@ try {
 	update_post_meta( $task_id, Store::META_STATE, wp_slash( $original_task ) );
 
 	wpai126_quota_assert(
-		wp_convert_hr_to_bytes( (string) ini_get( 'memory_limit' ) ) <= 96 * 1048576 &&
+		wpai126_memory_clamped() &&
 		memory_get_peak_usage( true ) <= 96 * 1048576,
 		'The Workspace integrity and recovery fixture exceeded its 96MiB ceiling.'
 	);
