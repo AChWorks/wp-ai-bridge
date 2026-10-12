@@ -428,6 +428,16 @@ final class WXR_Import_Service {
 			! method_exists( 'WP_Import', 'parse' ) ) {
 			return new WP_Error( 'wxr_import_unsupported_provider', __( 'Use a reviewed compatible version of the official WordPress Importer before executing imports.', 'wp-ai-bridge' ) );
 		}
+		// WP_Import normally runs under wp-admin where these official Core
+		// helpers are eagerly loaded. Public OAuth REST/MCP execution does
+		// not have that admin bootstrap: import post_exists() and taxonomy
+		// helpers explicitly, not a forged admin.php request or form nonce.
+		if ( ! function_exists( 'post_exists' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/post.php';
+		}
+		if ( ! function_exists( 'wp_insert_category' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/taxonomy.php';
+		}
 		return $version;
 	}
 
