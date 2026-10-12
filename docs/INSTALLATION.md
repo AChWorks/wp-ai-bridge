@@ -18,6 +18,12 @@ The settings screen reports whether the WordPress Abilities API, MCP Adapter, an
 
 Canonical builds install with the `wp-ai-bridge/` directory and `wp-ai-bridge.php` entrypoint. Version 0.4.1 established the native canonical baseline; later releases retain the identity and do not contain the retired pre-0.4.0 migration runtime. The GitHub source branch or release candidate is not evidence of an installed build.
 
+### v0.6.0 transfer and WXR distribution
+
+Starting with v0.6.0 source/distributable, Bridge provides private, principal/client/site-bound byte windows for text/Media/WXR, and native WXR Core export and official WordPress Importer 0.9.6 import planning/execution. Install a **published tagged release ZIP**, not an unmerged branch. The importer requires WordPress/Bridge administrator authorization and the official WordPress Importer activated and loaded with `WP_LOAD_IMPORTERS=true` **before** request bootstrap. Published imports/existing-target effects additionally require deliberately enabled Live Content authorization. Neither transfer staging nor export automatically imports, installs, publishes or fetches remote attachments.
+
+Native WXR import is non-atomic; it returns a durable receipt and disallows blind replay after uncertain/partial execution. Inspect WordPress state before attempting another import. WXR does not include a complete database/media backup; a standard MCP JSON response is not automatically a downloaded ChatGPT attachment. Public-network, Gateway-brokered and multi-host environments require their own acceptance. Validate the exact published tag, installed plugin version and current authorization before use.
+
 ### Updating an already-canonical installation
 
 An existing canonical 0.4.0-or-newer installation can be updated normally with WordPress's replace/update flow, subject to the selected release's compatibility and hosting notes. The plugin directory, Workspace identifiers, settings identity, OAuth routes and Ability namespace remain canonical; the version number alone is not a reason to erase persistent Workspace data or reset a working OAuth client. Verify actual post-upgrade OAuth health and current Bridge delegation rather than inferring it from source or a successful ZIP upload.

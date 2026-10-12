@@ -198,10 +198,10 @@ jobs:
           - name: Canonical identity
             runner: bin/run-canonical-identity.sh
             wordpress_tag: php8.4-apache
-          - name: Published 0.4.2 upgrade to candidate
+          - name: Published release ZIP upgrade
             runner: bin/run-published-upgrade.sh
             wordpress_tag: 6.9-php8.4-apache
-          - name: Published 0.4.2 upgrade to candidate
+          - name: Published release ZIP upgrade
             runner: bin/run-published-upgrade.sh
             wordpress_tag: php8.4-apache
     steps:
