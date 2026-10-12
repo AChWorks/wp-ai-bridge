@@ -10,6 +10,8 @@ Use it to confirm that the plugin is active and to orient a connected client bef
 
 **WP AI Bridge → Documents** stores durable project documents inside private WordPress-native storage.
 
+The read-only **Project ID** column and document inspector display the exact stored `project_ref` beside its title. Records without a project binding show **Unbound**; the admin does not infer, assign, or create projects.
+
 Documents support:
 
 - create;
@@ -24,7 +26,7 @@ A client must refresh a document after another actor changes it before overwriti
 
 **WP AI Bridge → Tasks** stores durable work items. Each task keeps progress, review, and delivery as independent state dimensions so one status does not accidentally imply another.
 
-Task filters are available for progress, review, delivery, and archived state.
+Task filters are available for progress, review, delivery, and archived state. The read-only **Project ID** column and task inspector show the same exact project reference or **Unbound** marker. No separate project registry or Projects admin screen is required.
 
 Tasks use the same `version` + `state_hash` stale-write protection as Workspace documents.
 
@@ -47,7 +49,7 @@ Enable the smallest access set needed for the current work. Version 0.4.0 uses o
 
 The `workspace-resume` Ability returns compact orientation information for a connected client. Its public Ability identifier uses the canonical `wp-ai-bridge/*` namespace. It is designed to help continue a site project without dumping complete document bodies, task notes, or chat history into every new conversation.
 
-### Project-specific recovery (PR #143 candidate)
+### Project-specific recovery
 
 An optional exact project_ref scopes Workspace discovery and resume to one logical project on the authenticated WordPress site. It is not a new tenant role or privacy boundary. Legacy items remain unbound until explicitly associated using their current version and state_hash. When a site has multiple projects, an unfiltered resume is labelled mixed and deliberately does not select an arbitrary current task. Project task summaries show separate progress, review, delivery, next_action and blocker.
 
@@ -55,7 +57,7 @@ Use workspace-document or workspace-task with action=list, view=summary, limit (
 
 Canonical document keys such as project-brief are unique within a site/project_ref pair, including after archival. Reopening uses guarded unarchive, not a new document. Invalid UTF-8, oversized fields and sanitization that would change submitted text are rejected before persisting.
 
-### Optional duplicate-safe creation (PR #143 candidate)
+### Optional duplicate-safe creation
 
 Six existing Bridge create operations accept an optional client-provided, stable operation_id: content create, media upload, media URL import, comment reply, Workspace document create and Workspace task create. Reuse exactly the same ID AND input only for a retry of the same intended create. A different intent must use another ID. An existing committed result is read back only under current WordPress and Bridge permissions, while a conflicting payload is rejected. When the effect is uncertain or incomplete, do not invent a new ID and blindly repeat the mutation. Keyless legacy creates retain their previous behavior and are not guaranteed duplicate-safe.
 

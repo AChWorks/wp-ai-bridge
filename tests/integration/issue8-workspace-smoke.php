@@ -229,6 +229,10 @@ try {
 		$page->{$method}();
 		$screen_html = ob_get_clean();
 		wpai_issue8_assert( false !== strpos( $screen_html, $needle ), 'Admin screen did not render expected content: ' . $method );
+		if ( in_array( $method, array( 'render_documents', 'render_tasks' ), true ) ) {
+			wpai_issue8_assert( false !== strpos( $screen_html, '<th>' . esc_html__( 'Project ID', 'wp-ai-bridge' ) . '</th>' ), 'Workspace table is missing the project ID column.' );
+			wpai_issue8_assert( false !== strpos( $screen_html, '<span class="description">' . esc_html__( 'Unbound', 'wp-ai-bridge' ) . '</span>' ), 'Legacy unbound Workspace record is not clearly labelled.' );
+		}
 		if ( 'render_tasks' === $method ) {
 			wpai_issue8_assert( false !== strpos( $screen_html, 'style="margin: 16px 0 18px;"' ), 'Task filters should retain vertical spacing from the description and results table.' );
 		}
@@ -244,6 +248,14 @@ try {
 	wpai_issue8_assert( ! is_wp_error( $cleared ) && 1 === $cleared['documents'] && 1 === $cleared['tasks'], 'Explicit Workspace clear did not remove both fixture records.' );
 	$empty_resume = $store->resume();
 	wpai_issue8_assert( 0 === $empty_resume['counts']['documents'] && 0 === $empty_resume['counts']['tasks'], 'Workspace was not empty after explicit clear.' );
+	ob_start();
+	$page->render_documents();
+	$empty_documents_html = ob_get_clean();
+	wpai_issue8_assert( false !== strpos( $empty_documents_html, 'colspan="7"' ), 'Empty Documents table colspan does not match the project ID column.' );
+	ob_start();
+	$page->render_tasks();
+	$empty_tasks_html = ob_get_clean();
+	wpai_issue8_assert( false !== strpos( $empty_tasks_html, 'colspan="8"' ), 'Empty Tasks table colspan does not match the project ID column.' );
 
 	echo "PASS: Issue #8 Persistent Workspace storage, isolation, concurrency, permissions, admin UX, export, and clear.\n";
 } finally {

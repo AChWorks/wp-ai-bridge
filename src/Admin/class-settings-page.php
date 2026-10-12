@@ -144,7 +144,7 @@ final class Settings_Page {
 			<h2><?php echo esc_html__( 'Workspace overview', 'wp-ai-bridge' ); ?></h2>
 			<table class="widefat striped" style="max-width: 900px">
 				<tbody>
-					<tr><th scope="row"><?php echo esc_html__( 'Current focus', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( $resume['current_focus'] ? $resume['current_focus'] : __( 'No in-progress task', 'wp-ai-bridge' ) ); ?></td></tr>
+					<tr><th scope="row"><?php echo esc_html__( 'Current focus', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( $resume['current_focus'] ? $resume['current_focus'] : ( 'mixed' === $resume['scope'] ? __( 'Multiple projects; no single site-wide focus.', 'wp-ai-bridge' ) : __( 'No in-progress task', 'wp-ai-bridge' ) ) ); ?></td></tr>
 					<tr><th scope="row"><?php echo esc_html__( 'Documents', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( (string) $resume['counts']['documents'] ); ?></td></tr>
 					<tr><th scope="row"><?php echo esc_html__( 'Active tasks', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( (string) $resume['counts']['active_tasks'] ); ?></td></tr>
 					<tr><th scope="row"><?php echo esc_html__( 'Blocked tasks', 'wp-ai-bridge' ); ?></th><td><?php echo esc_html( (string) $resume['counts']['blocked'] ); ?></td></tr>
@@ -197,13 +197,14 @@ final class Settings_Page {
 				<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::DOCUMENTS_SLUG . '&workspace_status=all' ) ); ?>"><?php echo esc_html__( 'All', 'wp-ai-bridge' ); ?></a>
 			</p>
 			<table class="widefat striped">
-				<thead><tr><th><?php echo esc_html__( 'Title', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Key', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'State', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Version', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Modified (UTC)', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'View', 'wp-ai-bridge' ); ?></th></tr></thead>
+				<thead><tr><th><?php echo esc_html__( 'Title', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Project ID', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Key', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'State', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Version', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Modified (UTC)', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'View', 'wp-ai-bridge' ); ?></th></tr></thead>
 				<tbody>
 				<?php if ( ! $documents ) : ?>
-					<tr><td colspan="6"><?php echo esc_html__( 'No Workspace documents found.', 'wp-ai-bridge' ); ?></td></tr><?php endif; ?>
+					<tr><td colspan="7"><?php echo esc_html__( 'No Workspace documents found.', 'wp-ai-bridge' ); ?></td></tr><?php endif; ?>
 				<?php foreach ( $documents as $document ) : ?>
 					<tr>
 						<td><?php echo esc_html( $document['title'] ); ?></td>
+						<td><?php $this->render_project_id( $document['project_ref'] ?? '' ); ?></td>
 						<td><code><?php echo esc_html( $document['key'] ); ?></code></td>
 						<td><?php echo esc_html( $document['archived'] ? __( 'Archived', 'wp-ai-bridge' ) : __( 'Active', 'wp-ai-bridge' ) ); ?></td>
 						<td><?php echo esc_html( (string) $document['version'] ); ?></td>
@@ -216,6 +217,7 @@ final class Settings_Page {
 
 			<?php if ( is_array( $view ) ) : ?>
 				<h2><?php echo esc_html( $view['title'] ); ?></h2>
+				<p><strong><?php echo esc_html__( 'Project ID', 'wp-ai-bridge' ); ?></strong> <?php $this->render_project_id( $view['project_ref'] ?? '' ); ?></p>
 				<p><strong><?php echo esc_html__( 'State hash:', 'wp-ai-bridge' ); ?></strong> <code><?php echo esc_html( $view['state_hash'] ); ?></code></p>
 				<pre style="white-space: pre-wrap; overflow-wrap: anywhere; max-width: 1100px"><?php echo esc_html( $view['content'] ); ?></pre>
 			<?php endif; ?>
@@ -256,20 +258,21 @@ final class Settings_Page {
 				<?php submit_button( __( 'Filter', 'wp-ai-bridge' ), 'secondary', '', false ); ?>
 			</form>
 			<table class="widefat striped">
-				<thead><tr><th><?php echo esc_html__( 'Title', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Progress', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Review', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Delivery', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Version', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Modified (UTC)', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'View', 'wp-ai-bridge' ); ?></th></tr></thead>
+				<thead><tr><th><?php echo esc_html__( 'Title', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Project ID', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Progress', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Review', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Delivery', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Version', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Modified (UTC)', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'View', 'wp-ai-bridge' ); ?></th></tr></thead>
 				<tbody>
 				<?php
 				if ( ! $tasks ) :
 					?>
-					<tr><td colspan="7"><?php echo esc_html__( 'No Workspace tasks found.', 'wp-ai-bridge' ); ?></td></tr><?php endif; ?>
+					<tr><td colspan="8"><?php echo esc_html__( 'No Workspace tasks found.', 'wp-ai-bridge' ); ?></td></tr><?php endif; ?>
 				<?php foreach ( $tasks as $task ) : ?>
-					<tr><td><?php echo esc_html( $task['title'] ); ?></td><td><?php echo esc_html( $this->enum_label( $task['progress'] ) ); ?></td><td><?php echo esc_html( $this->enum_label( $task['review'] ) ); ?></td><td><?php echo esc_html( $this->enum_label( $task['delivery'] ) ); ?></td><td><?php echo esc_html( (string) $task['version'] ); ?></td><td><?php echo esc_html( $task['modified_gmt'] ); ?></td><td><a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::TASKS_SLUG . '&task=' . (int) $task['id'] ) ); ?>"><?php echo esc_html__( 'Inspect', 'wp-ai-bridge' ); ?></a></td></tr>
+					<tr><td><?php echo esc_html( $task['title'] ); ?></td><td><?php $this->render_project_id( $task['project_ref'] ?? '' ); ?></td><td><?php echo esc_html( $this->enum_label( $task['progress'] ) ); ?></td><td><?php echo esc_html( $this->enum_label( $task['review'] ) ); ?></td><td><?php echo esc_html( $this->enum_label( $task['delivery'] ) ); ?></td><td><?php echo esc_html( (string) $task['version'] ); ?></td><td><?php echo esc_html( $task['modified_gmt'] ); ?></td><td><a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::TASKS_SLUG . '&task=' . (int) $task['id'] ) ); ?>"><?php echo esc_html__( 'Inspect', 'wp-ai-bridge' ); ?></a></td></tr>
 				<?php endforeach; ?>
 				</tbody>
 			</table>
 
 			<?php if ( is_array( $view ) ) : ?>
 				<h2><?php echo esc_html( $view['title'] ); ?></h2>
+				<p><strong><?php echo esc_html__( 'Project ID', 'wp-ai-bridge' ); ?></strong> <?php $this->render_project_id( $view['project_ref'] ?? '' ); ?></p>
 				<p><strong><?php echo esc_html__( 'Goal:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html( $view['goal'] ); ?></p>
 				<p><strong><?php echo esc_html__( 'Notes:', 'wp-ai-bridge' ); ?></strong></p><pre style="white-space: pre-wrap; overflow-wrap: anywhere; max-width: 1100px"><?php echo esc_html( $view['notes'] ); ?></pre>
 				<p><strong><?php echo esc_html__( 'State hash:', 'wp-ai-bridge' ); ?></strong> <code><?php echo esc_html( $view['state_hash'] ); ?></code></p>
@@ -591,6 +594,20 @@ final class Settings_Page {
 			<li><?php echo esc_html__( 'After connecting, check the exact WordPress user capability and Bridge access group for denied operations; rescan stale tools. Diagnose Gateway routing separately from direct MCP.', 'wp-ai-bridge' ); ?></li>
 		</ul>
 		<?php
+	}
+
+	/**
+	 * Displays an exact Workspace project reference or a truthful unbound marker.
+	 *
+	 * @param string $project_ref Project reference stored with the record.
+	 * @return void
+	 */
+	private function render_project_id( $project_ref ) {
+		if ( '' === (string) $project_ref ) {
+			echo '<span class="description">' . esc_html__( 'Unbound', 'wp-ai-bridge' ) . '</span>';
+			return;
+		}
+		echo '<code dir="ltr">' . esc_html( (string) $project_ref ) . '</code>';
 	}
 
 	/**
