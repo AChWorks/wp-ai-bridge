@@ -4,7 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 export WORDPRESS_TAG="${1:-6.9-php8.4-apache}"
 export COMPOSE_PROJECT_NAME="wpai134-media-race-$$"
-compose=(docker compose -f "$root/tests/integration/compose.yml")
+compose=(docker compose -f "$root/tests/integration/compose.yml" -f "$root/tests/integration/compose-shared-private.yml")
 cleanup() { "${compose[@]}" down -v --remove-orphans >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 bash "$root/bin/build-zip.sh"

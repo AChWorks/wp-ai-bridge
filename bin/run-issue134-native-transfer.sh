@@ -7,7 +7,7 @@ export WORDPRESS_TAG="$tag"
 export COMPOSE_PROJECT_NAME="wpai134-native-$(printf '%s' "$tag" | tr -c 'A-Za-z0-9' '-')-$$"
 compose=(docker compose -f "$root/tests/integration/compose.yml")
 cleanup() {
-    "${compose[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
+    docker compose -f "$root/tests/integration/compose.yml" -f "$root/tests/integration/compose-shared-private.yml" down -v --remove-orphans >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 

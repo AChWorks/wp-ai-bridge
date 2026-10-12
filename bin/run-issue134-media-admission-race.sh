@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-dc() { docker compose -f "$root/tests/integration/compose.yml" "$@"; }
+dc() { docker compose -f "$root/tests/integration/compose.yml" -f "$root/tests/integration/compose-shared-private.yml" "$@"; }
 fixture='wp-content/plugins/wp-ai-bridge/tests/integration/issue134-media-admission-race.php'
 key="media-$(date +%s)-$RANDOM-$$"
 one="$(mktemp)"
