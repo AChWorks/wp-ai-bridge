@@ -87,7 +87,7 @@ for ( $step = 0; $step < 25; ++$step ) {
 			'limit'   => 50,
 		)
 	);
-	wpai110_assert( ! is_wp_error( $page ) && Bounded_Payload::fits( $page ) && strlen( wp_json_encode( $page ) ) <= 30720, 'Plugin page exceeded finite JSON response envelope.' );
+	wpai110_assert( ! is_wp_error( $page ) && Bounded_Payload::fits( $page ) && strlen( wp_json_encode( $page ) ) <= Bounded_Payload::response_limit() - \WP_AI_Bridge\Abilities\Site_Abilities::RESPONSE_HEADROOM_BYTES, 'Plugin page exceeded finite JSON response envelope.' );
 	wpai110_assert( 0 < count( $page['plugins'] ) && count( $page['plugins'] ) === $page['page']['returned'], 'Paged plugin selection made no progress.' );
 	foreach ( $page['plugins'] as $record ) {
 		$observed_plugins[] = $record['file'];

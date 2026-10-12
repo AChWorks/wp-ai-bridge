@@ -17,12 +17,21 @@ trap cleanup EXIT
 
 "${compose[@]}" up -d db wordpress
 
-for attempt in $(seq 1 30); do
-    if "${compose[@]}" exec -T wordpress test -f /var/www/html/wp-load.php; then
+# The official image copies WordPress into the named volume on first boot.
+# wp-load.php alone may exist before the Core tree finishes extracting.
+# Require bootstrap, Core upgrade API and generated config before WP-CLI.
+for attempt in $(seq 1 45); do
+    if "${compose[@]}" exec -T wordpress sh -c '
+        test -s /var/www/html/wp-load.php &&
+        test -s /var/www/html/wp-settings.php &&
+        test -s /var/www/html/wp-includes/version.php &&
+        test -s /var/www/html/wp-admin/includes/upgrade.php &&
+        test -s /var/www/html/wp-config.php
+    '; then
         break
     fi
-    if [[ "$attempt" == "30" ]]; then
-        echo "ERROR: WordPress files were not initialized." >&2
+    if [[ "$attempt" == "45" ]]; then
+        echo "ERROR: WordPress Core files and configuration were not initialized." >&2
         exit 1
     fi
     sleep 2
@@ -90,6 +99,10 @@ for test in \
     issue6-direct-oauth-negative-smoke.php \
     issue6-direct-mcp-tools-smoke.php \
     issue6-i18n-smoke.php \
+    issue134-payload-settings-smoke.php \
+    issue134-direct-mcp-bytes-smoke.php \
+    issue134-public-session-smoke.php \
+    issue134-private-staging-smoke.php \
     issue126-128-workspace-smoke.php \
     issue128-native-creates-smoke.php \
     issue8-workspace-smoke.php

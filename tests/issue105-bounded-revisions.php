@@ -323,7 +323,7 @@ $GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = $settings->defaults(
 // Fifty revisions with individually modest but collectively oversized titles.
 $GLOBALS['wpai105_revisions'] = array();
 for ( $i = 1; $i <= 50; ++$i ) {
-	$GLOBALS['wpai105_revisions'][ $i ] = wpai105_rev( $i, 'Tiny body', str_repeat( 'History title ' . $i, 55 ), 'Excerpt ' . $i );
+	$GLOBALS['wpai105_revisions'][ $i ] = wpai105_rev( $i, 'Tiny body', str_repeat( 'History title ' . $i, (int) ceil( Bounded_Payload::response_limit() / 45 / strlen( 'History title ' . $i ) ) + 80 ), 'Excerpt ' . $i );
 }
 $batch = $ability->read_revisions(
 	array(

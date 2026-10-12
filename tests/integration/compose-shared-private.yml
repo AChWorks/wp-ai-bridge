@@ -1,0 +1,9 @@
+# Two independent CLI PHP processes emulate workers sharing ONE WordPress
+# node's private temp storage. They must NOT have separate container /tmp.
+# This is disposable test-only, not multi-host/shared production acceptance.
+services:
+  cli:
+    volumes:
+      - wpai-private-temporary:/tmp
+volumes:
+  wpai-private-temporary: {}

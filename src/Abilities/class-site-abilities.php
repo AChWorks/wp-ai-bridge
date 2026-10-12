@@ -236,12 +236,13 @@ final class Site_Abilities {
 	 */
 	private function fits_response( $result ) {
 		// Avoid allocating a huge encoded string for very large provider fields.
-		$remaining = Bounded_Payload::RESPONSE_BYTES - self::RESPONSE_HEADROOM_BYTES;
+		$remaining = Bounded_Payload::response_limit() - self::RESPONSE_HEADROOM_BYTES;
 		if ( ! $this->within_raw_budget( $result, $remaining ) ) {
 			return false;
 		}
-		$json = wp_json_encode( $result );
-		return is_string( $json ) && strlen( $json ) <= Bounded_Payload::RESPONSE_BYTES - self::RESPONSE_HEADROOM_BYTES;
+		// This Ability also traverses the official Adapter's duplicated
+		// text + structured result. A raw JSON size alone underestimates it.
+		return Bounded_Payload::fits( $result );
 	}
 
 	/**

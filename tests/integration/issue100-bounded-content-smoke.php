@@ -133,6 +133,20 @@ try {
 	);
 	wpai_issue100_real_assert( is_wp_error( $stale ) && 'stale_content_conflict' === $stale->get_error_code(), 'Targeted reads did not honor content revisions.' );
 
+	// The content is intentionally larger than the *effective* administrator
+	// budget. The older 960-block fixture alone fit after #134 raised default
+	// per-response and UTF-8 window budgets, so it no longer proved fallback.
+	$unit    = "سلام WordPress گوتنبرگ! ";
+	$padding = str_repeat( $unit, 2 + intdiv( max( Bounded_Payload::response_limit(), Bounded_Payload::window_limit() ), strlen( $unit ) ) );
+	$long    = wp_update_post(
+		array(
+			'ID'           => $post_id,
+			'post_content' => wp_slash( get_post( $post_id )->post_content . "\n" . $padding ),
+		),
+		true
+	);
+	wpai_issue100_real_assert( ! is_wp_error( $long ), 'Could not grow the native WordPress UTF-8 content fixture beyond the active budget.' );
+
 	$meta = $content_read->execute(
 		array(
 			'action' => 'get',
@@ -154,8 +168,10 @@ try {
 	// Confirm a successful large full-content mutation never emits oversized readback.
 
 	$huge_body = str_repeat( 'سلام گوتنبرگ! ', 5000 );
-	$huge_title = str_repeat( 'Really long saved WordPress title ', 1200 );
-	$huge_excerpt = str_repeat( 'Very large saved WordPress excerpt ', 1200 );
+	// Two native WordPress TEXT fields stay below their independent storage
+	// bounds but require far more JSON-encoded bytes for escaped UTF-8.
+	$huge_title   = str_repeat( 'عنوان طولانی وردپرس ', 1400 );
+	$huge_excerpt = str_repeat( 'توضیحات طولانی وردپرس ', 1400 );
 	// A real WordPress fixture may have much larger stored metadata than
 	// the ordinary MCP mutation request body can safely carry.
 	$seeded = wp_update_post(
@@ -172,8 +188,8 @@ try {
 	$stored_title   = (string) $stored_before->post_title;
 	$stored_excerpt = (string) $stored_before->post_excerpt;
 	wpai_issue100_real_assert(
-		strlen( $stored_title ) + strlen( $stored_excerpt ) > Bounded_Payload::RESPONSE_BYTES,
-		'Seeded WordPress metadata was not large enough to exercise compact acknowledgments.'
+		! Bounded_Payload::fits( array( 'title' => $stored_title, 'excerpt' => $stored_excerpt ) ),
+		'Seeded WordPress metadata JSON was not large enough to exercise the effective response budget.'
 	);
 	$pre_update = $content_read->execute( array( 'action' => 'get', 'id' => $post_id ) );
 	wpai_issue100_real_assert(
