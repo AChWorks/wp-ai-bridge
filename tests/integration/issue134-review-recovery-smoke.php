@@ -30,6 +30,9 @@ try {
 	$pending    = $root . '/' . $pending_id . '.claim.pending.0123456789abcdef';
 	wpai134_review_require( false !== file_put_contents( $pending, '{"partial":' ), 'Cannot emulate process death before claim publication.' );
 	touch( $pending, time() - 300 );
+	$empty_pending = $root . '/' . $pending_id . '.claim.pending.1111111111111111';
+	wpai134_review_require( false !== file_put_contents( $empty_pending, '' ), 'Cannot emulate zero-byte unpublished claim.' );
+	touch( $empty_pending, time() - 300 );
 	$before = wpai134_review_transfer(
 		$admin_token,
 		$admin_session,
@@ -40,7 +43,7 @@ try {
 	);
 	wpai134_review_require( 'verified' === ( $before['result']['structuredContent']['data']['state'] ?? '' ), 'Unpublished temporary was incorrectly interpreted as committed effect.' );
 	$admission = wpai134_review_stage( $admin_token, $admin_session, 'text', '' );
-	wpai134_review_require( ! file_exists( $pending ), 'Orphan unpublished claim file was not reconciled at admission.' );
+	wpai134_review_require( ! file_exists( $pending ) && ! file_exists( $empty_pending ), 'Zero/partial unpublished claim files were not reconciled at admission.' );
 	wpai134_review_transfer(
 		$admin_token,
 		$admin_session,

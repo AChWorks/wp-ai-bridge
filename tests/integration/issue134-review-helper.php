@@ -110,7 +110,7 @@ function wpai134_review_stage( $token, $session, $purpose, $bytes ) {
 		)
 	);
 	$data  = $begin['result']['structuredContent']['data'] ?? array();
-	wpai134_review_require( true === ( $begin['result']['structuredContent']['success'] ?? false ), 'Unable to begin fixture transfer.' );
+	wpai134_review_require( true === ( $begin['result']['structuredContent']['success'] ?? false ), 'Unable to begin fixture transfer: ' . wp_json_encode( $begin['result'] ?? array() ) );
 	$id     = $data['transfer_id'];
 	$offset = 0;
 	while ( $offset < strlen( $bytes ) ) {
