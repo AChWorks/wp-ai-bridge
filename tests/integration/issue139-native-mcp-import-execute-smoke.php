@@ -281,7 +281,7 @@ try {
 	);
 	foreach ( $unsafe_values as $type => $serialized ) {
 		wpai139_effect_assert(
-			is_serialized( $serialized ) && false === $scanner->invoke( $reader, $serialized ),
+			( 'C' === $type || is_serialized( $serialized ) ) && false === $scanner->invoke( $reader, $serialized ),
 			'Unsafe WordPress-serialized ' . $type . ' type was accepted by the structural allowlist.'
 		);
 	}
