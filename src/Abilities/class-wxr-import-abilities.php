@@ -72,6 +72,13 @@ final class WXR_Import_Abilities {
 				'author_mapping'        => $choices['author_mapping'],
 				'default_author_id'     => array( 'type' => 'integer' ),
 				'conflict_count'        => array( 'type' => 'integer' ),
+				'existing_targets'      => array(
+					'type'  => 'array',
+					'items' => array(
+						'type'  => 'array',
+						'items' => array( 'type' => 'integer' ),
+					),
+				),
 				'publish_candidates'    => array( 'type' => 'integer' ),
 				'on_conflict'           => array( 'type' => 'string' ),
 				'attachment_candidates' => array( 'type' => 'integer' ),
@@ -95,6 +102,7 @@ final class WXR_Import_Abilities {
 				'author_mapping',
 				'default_author_id',
 				'conflict_count',
+				'existing_targets',
 				'publish_candidates',
 				'on_conflict',
 				'attachment_candidates',

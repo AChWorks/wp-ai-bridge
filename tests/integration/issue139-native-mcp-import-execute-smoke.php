@@ -96,6 +96,7 @@ $oauth          = new OAuth_Server( $store );
 $marker         = 'wpai139-import-' . bin2hex( random_bytes( 5 ) );
 $source_id      = 0;
 $restored_id    = 0;
+$partial_id     = 0;
 $lease_ids      = array();
 $token          = '';
 $session        = '';
@@ -487,10 +488,14 @@ try {
 		array( 'transfer_id' => $second )
 	);
 	wpai139_effect_assert( true === ( $next['success'] ?? false ) && 0 === ( $next['data']['conflict_count'] ?? -1 ), 'Pre-interruption native plan invalid.' );
-	$fail_on_start = static function () {
-		throw new RuntimeException( 'disposable importer interruption probe' );
+	// Stop AFTER Core writes the first post. A native Importer error is not
+	// a transaction rollback and must never trigger an automatic replay.
+	$fail_after_insert = static function ( $post_id ) {
+		if ( is_int( $post_id ) && $post_id > 0 ) {
+			throw new RuntimeException( 'disposable after-insert importer interruption probe' );
+		}
 	};
-	add_action( 'import_start', $fail_on_start, 1 );
+	add_action( 'wp_import_insert_post', $fail_after_insert, 1, 1 );
 	$interrupted = wpai139_effect_execute(
 		$token,
 		$session,
@@ -502,9 +507,19 @@ try {
 			'confirm'     => true,
 		)
 	);
-	remove_action( 'import_start', $fail_on_start, 1 );
+	remove_action( 'wp_import_insert_post', $fail_after_insert, 1 );
 	wpai139_effect_assert( false === ( $interrupted['success'] ?? true ), 'Importer exception did not return an uncertain state.' );
-	$unknown = wpai139_effect_execute(
+	$partial_objects = get_posts(
+		array(
+			'post_type'      => $post_type,
+			'post_status'    => 'any',
+			'title'          => $marker,
+			'posts_per_page' => 3,
+		)
+	);
+	wpai139_effect_assert( 1 === count( $partial_objects ), 'Native partial-operation fixture did not insert a post before interruption.' );
+	$partial_id = (int) $partial_objects[0]->ID;
+	$unknown    = wpai139_effect_execute(
 		$token,
 		$session,
 		$seq,
@@ -532,7 +547,20 @@ try {
 		)
 	);
 	wpai139_effect_assert( false === ( $retry['success'] ?? true ), 'Claimed interrupted WXR import was silently retried.' );
-	echo "PASS: #139 native Importer interrupted before write; durable unknown claim, exact-status recovery and no blind retry.\n";
+	wpai139_effect_assert(
+		1 === count(
+			get_posts(
+				array(
+					'post_type'      => $post_type,
+					'post_status'    => 'any',
+					'title'          => $marker,
+					'posts_per_page' => 3,
+				)
+			)
+		),
+		'Unknown import was repeated and duplicated a partially created post.'
+	);
+	echo "PASS: #139 native Importer interrupted after an actual WordPress write; partial outcome, durable unknown claim and no blind retry.\n";
 } finally {
 	wp_set_current_user( $actor );
 	if ( $source_id > 0 ) {
@@ -540,6 +568,9 @@ try {
 	}
 	if ( $restored_id > 0 ) {
 		wp_delete_post( $restored_id, true );
+	}
+	if ( $partial_id > 0 ) {
+		wp_delete_post( $partial_id, true );
 	}
 	if ( '' !== $artifact_path ) {
 		wp_delete_file( $artifact_path );

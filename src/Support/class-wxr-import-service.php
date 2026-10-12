@@ -139,6 +139,7 @@ final class WXR_Import_Service {
 		$attachments      = 0;
 		$publishing       = 0;
 		$conflict_targets = array();
+		$seen_source_ids  = array();
 		foreach ( $native['posts'] as $post ) {
 			if ( ! is_array( $post ) || ! is_string( $post['post_type'] ?? null ) ||
 				! is_string( $post['post_title'] ?? null ) ||
@@ -146,8 +147,13 @@ final class WXR_Import_Service {
 				! is_string( $post['post_author'] ?? null ) ) {
 				return $this->invalid();
 			}
-			$type      = $post['post_type'];
-			$post_type = get_post_type_object( $type );
+			$source_id = (int) ( $post['post_id'] ?? 0 );
+			if ( $source_id < 1 || isset( $seen_source_ids[ $source_id ] ) ) {
+				return $this->invalid();
+			}
+			$seen_source_ids[ $source_id ] = true;
+			$type                          = $post['post_type'];
+			$post_type                     = get_post_type_object( $type );
 			if ( ! $post_type ) {
 				return new WP_Error( 'wxr_import_missing_post_type', __( 'Import requires the same registered content types as its native WXR source.', 'wp-ai-bridge' ) );
 			}
@@ -171,8 +177,12 @@ final class WXR_Import_Service {
 			if ( 'auto-draft' !== ( $post['status'] ?? '' ) ) {
 				$existing = (int) post_exists( $post['post_title'], '', $post['post_date'], $type );
 				if ( $existing > 0 ) {
+					$source_id = (int) ( $post['post_id'] ?? 0 );
+					if ( $source_id < 1 ) {
+						return $this->invalid();
+					}
 					++$conflicts;
-					$conflict_targets[] = array( (int) ( $post['post_id'] ?? 0 ), $existing );
+					$conflict_targets[] = array( $source_id, $existing );
 				}
 			}
 		}
@@ -258,6 +268,7 @@ final class WXR_Import_Service {
 			'author_mapping'        => $mapping,
 			'default_author_id'     => (int) get_current_user_id(),
 			'conflict_count'        => $conflicts,
+			'existing_targets'      => $conflict_targets,
 			'publish_candidates'    => $publishing,
 			'on_conflict'           => $mode,
 			'attachment_candidates' => $attachments,
@@ -301,15 +312,36 @@ final class WXR_Import_Service {
 		if ( is_wp_error( $claim ) ) {
 			return $claim;
 		}
-		$reported  = null;
-		$failed    = false;
-		$finished  = false;
-		$level     = ob_get_level();
-		$old_lib   = libxml_use_internal_errors();
-		$importer  = null;
-		$http_veto = static function () {
+		$reported         = null;
+		$failed           = false;
+		$finished         = false;
+		$level            = ob_get_level();
+		$old_lib          = libxml_use_internal_errors();
+		$importer         = null;
+		$expected_targets = array();
+		foreach ( $plan['existing_targets'] as $pair ) {
+			$expected_targets[ $pair[0] ] = $pair[1];
+		}
+		// The native provider may race another WordPress writer after the
+		// plan recheck. Compare its exact per-post existing-target result
+		// immediately before Core acts; never silently add meta/comments to
+		// an unapproved post, even if previous items were already imported.
+		$existing_guard = function ( $existing, $post ) use ( $expected_targets, $plan ) {
+			$source_id = (int) ( $post['post_id'] ?? 0 );
+			$expected  = (int) ( $expected_targets[ $source_id ] ?? 0 );
+			if ( ! $this->can_execute() || (int) $existing !== $expected ||
+				( $plan['publish_candidates'] > 0 &&
+					! $this->permissions->allowed( Settings::GROUP_LIVE_CONTENT, 'publish_posts' ) ) ||
+				( 'allow_existing' === $plan['on_conflict'] &&
+					! $this->permissions->allowed( Settings::GROUP_LIVE_CONTENT, 'edit_others_posts' ) ) ) {
+				throw new \RuntimeException( 'Native WXR target or authority changed during an irrevocable import.' );
+			}
+			return $existing;
+		};
+		$http_veto      = static function () {
 			return new WP_Error( 'wxr_import_network_denied', 'Native WXR import does not authorize remote connections.' );
 		};
+		add_filter( 'wp_import_existing_post', $existing_guard, PHP_INT_MAX, 2 );
 		add_filter( 'pre_http_request', $http_veto, 1 );
 		try {
 			if ( ! ob_start(
@@ -332,6 +364,7 @@ final class WXR_Import_Service {
 				}
 			}
 			remove_filter( 'pre_http_request', $http_veto, 1 );
+			remove_filter( 'wp_import_existing_post', $existing_guard, PHP_INT_MAX );
 			libxml_clear_errors();
 			libxml_use_internal_errors( $old_lib );
 			if ( ! $finished ) {

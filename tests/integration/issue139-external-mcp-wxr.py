@@ -144,9 +144,49 @@ try:
     assert preview["authoritative_plan"] is False
     print("PASS: external HTTPS OAuth WXR uploaded chunks=%d; native read-only preview count=%d; no WordPress mutation." %
           (chunks, preview["item_count"]))
+
+    # New public effect route: a separate-process external client consents to
+    # updating only exact preexisting disposable fixture objects. No new
+    # WordPress users or remote file downloads can be authorized here.
+    author_choice = {"transfer_id": inbound, "on_conflict": "allow_existing"}
+    agreed = ability("wp-ai-bridge/wxr-import-plan", author_choice)
+    assert agreed["content_sha256"] == digest
+    assert agreed["item_count"] >= 1
+    assert agreed["conflict_count"] >= 1
+    assert len(agreed["existing_targets"]) == agreed["conflict_count"]
+    assert agreed["fetch_attachments"] is False and agreed["create_users"] is False
+    assert agreed["publish_candidates"] == 0
+    importer = ability("wp-ai-bridge/wxr-import-execute", {
+        **author_choice, "plan_token": agreed["plan_token"], "confirm": True
+    })
+    assert importer["transfer_id"] == inbound
+    assert importer["native_provider_returned"] is True
+    assert importer["processed_posts"] == agreed["item_count"]
+    assert importer["created_users"] is False
+    assert importer["fetched_attachments"] is False
+    native_state = ability("wp-ai-bridge/private-transfer", {
+        "action": "status", "transfer_id": inbound,
+    })
+    assert native_state["outcome"] == "provider_returned"
+    assert native_state["state"] == "committed"
+    assert native_state["import_processed"] == agreed["item_count"]
+    ability("wp-ai-bridge/wxr-import-execute", {
+        **author_choice, "plan_token": agreed["plan_token"], "confirm": True
+    }, expected_success=False)
+    print("PASS: separate-process HTTPS/OAuth WXR native Importer accepted explicit exact existing-target consent, durable nonreplay receipt, no external media/users.")
     print("MEASURE: largest_actual_MCP_HTTP_response_bytes=%d." % max_wire_bytes)
 finally:
-    for transfer in (inbound, outbound):
-        if transfer:
-            ability("wp-ai-bridge/private-transfer", {"action": "cancel", "transfer_id": transfer})
+    if inbound:
+        # After claim, release() retains claim fence and receipt.
+        status = ability("wp-ai-bridge/private-transfer", {
+            "action": "status", "transfer_id": inbound,
+        })
+        action = "release" if status["state"] in ("committing", "committed", "observed", "rejected") else "cancel"
+        ability("wp-ai-bridge/private-transfer", {
+            "action": action, "transfer_id": inbound,
+        })
+    if outbound:
+        ability("wp-ai-bridge/private-transfer", {
+            "action": "cancel", "transfer_id": outbound,
+        })
 print("PASS: external standard MCP WXR producer/consumer data-plane, integrity and private cleanup.")

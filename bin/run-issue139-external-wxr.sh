@@ -34,6 +34,8 @@ host_port="$("${compose[@]}" port wordpress 443 | awk -F: '{print $NF}')"
 "${wp[@]}" rewrite flush --hard --allow-root
 "${wp[@]}" plugin install https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip --activate --allow-root
 "${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
+"${wp[@]}" plugin install wordpress-importer --version=0.9.6 --activate --allow-root
+"${wp[@]}" config set WP_LOAD_IMPORTERS true --raw --allow-root >/dev/null
 "${compose[@]}" exec -T wordpress bash -ec 'a2enmod ssl >/dev/null; openssl req -x509 -nodes -newkey rsa:2048 -keyout /etc/ssl/private/wpai-local.key -out /etc/ssl/certs/wpai-local.crt -days 1 -subj "/CN=localhost" >/dev/null 2>&1; sed -i "s@/etc/ssl/certs/ssl-cert-snakeoil.pem@/etc/ssl/certs/wpai-local.crt@; s@/etc/ssl/private/ssl-cert-snakeoil.key@/etc/ssl/private/wpai-local.key@" /etc/apache2/sites-available/default-ssl.conf; a2ensite default-ssl >/dev/null; apache2ctl graceful >/dev/null'
 sleep 2
 curl -ksf --max-time 15 "https://localhost:$host_port/wp-json/" | python3 -c 'import json,sys; assert "namespaces" in json.load(sys.stdin)'
@@ -44,6 +46,7 @@ $grants = $settings->defaults();
 $grants[\WP_AI_Bridge\Support\Settings::GROUP_SITE_READ] = 1;
 $grants[\WP_AI_Bridge\Support\Settings::GROUP_SITE_CONFIG] = 1;
 $grants[\WP_AI_Bridge\Support\Settings::GROUP_BUILDER_WRITE] = 1;
+$grants[\WP_AI_Bridge\Support\Settings::GROUP_LIVE_CONTENT] = 1;
 update_option(\WP_AI_Bridge\Support\Settings::OPTION_NAME, $grants, false);
 $marker = 'wxr-e2e-' . bin2hex(random_bytes(5));
 $post = wp_insert_post(array(
@@ -64,4 +67,4 @@ PHP
 [[ "$(wc -c < "$token_file")" -gt 20 ]] || { echo 'ERROR: disposable OAuth token not issued' >&2; exit 1; }
 
 python3 "$root/tests/integration/issue139-external-mcp-wxr.py" "$host_port" "$token_file"
-echo 'PASS: #139 separate-process real HTTPS OAuth MCP Core WXR export, binary receipt and verified private import preview.'
+echo 'PASS: #139 separate-process HTTPS/OAuth/MCP WordPress WXR complete send, import and effect receipt.'
