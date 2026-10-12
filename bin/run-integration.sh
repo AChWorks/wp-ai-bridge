@@ -155,15 +155,15 @@ if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION
     "${compose[@]}" run --rm --entrypoint php -e WPAI153_MEMORY_CEILING=96M cli \
         -d memory_limit=96M -r '
             if (ini_get("memory_limit") !== "96M") {
-                fwrite(STDERR, "WPAI153_MEMORY_ERROR: entrypoint PHP limit is not 96M.\\n");
+                fwrite(STDERR, "WPAI153_MEMORY_ERROR: entrypoint PHP limit is not 96M.\n");
                 exit(1);
             }
-            echo "WPAI153_MEMORY_ENTRY effective=" . ini_get("memory_limit") . "\\n";
+            echo "WPAI153_MEMORY_ENTRY effective=" . ini_get("memory_limit") . "\n";
             $_SERVER["HTTP_HOST"] = "localhost";
             $_SERVER["SERVER_NAME"] = "localhost";
             require "/var/www/html/wp-load.php";
             if (!function_exists("wp_set_current_user") || !get_user_by("id", 1)) {
-                fwrite(STDERR, "WPAI153_MEMORY_ERROR: isolated WordPress admin identity is missing.\\n");
+                fwrite(STDERR, "WPAI153_MEMORY_ERROR: isolated WordPress admin identity is missing.\n");
                 exit(1);
             }
             wp_set_current_user(1);
