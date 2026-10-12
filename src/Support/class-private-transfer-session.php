@@ -76,7 +76,13 @@ final class Private_Transfer_Session {
 					if ( ! preg_match( '/^[a-f0-9]{64}\\.meta$/D', $name ) ) {
 						continue;
 					}
-					$id   = substr( $name, 0, 64 );
+					$id = substr( $name, 0, 64 );
+					if ( file_exists( $root . '/' . $id . '.tombstone' ) ) {
+						if ( ! $this->erase( $root, $id ) ) {
+							return new WP_Error( 'transfer_cleanup_uncertain', 'Previously cancelled private lease cleanup requires attention.' );
+						}
+						continue;
+					}
 					$info = $this->open_meta( $root, $id );
 					if ( is_wp_error( $info ) ) {
 						return new WP_Error( 'transfer_storage_uncertain', 'Private transfer state is inconsistent; inspect storage before beginning another transfer.' );
@@ -627,18 +633,33 @@ final class Private_Transfer_Session {
 
 	/** @param string $id Opaque session. @return bool|WP_Error */
 	public function cancel( $id ) {
-		$loaded = $this->load( $id );
-		if ( is_wp_error( $loaded ) ) {
-			return $loaded;
+		$root = $this->root();
+		if ( is_wp_error( $root ) ) {
+			return $root;
 		}
-		list( $root, $handle, $meta ) = $loaded;
-		if ( 'committing' === $meta['state'] ) {
-			$this->close_meta( $handle );
-			return new WP_Error( 'transfer_outcome_unknown', 'A WordPress Media effect may be in progress or unacknowledged. Inspect the destination before removing its receipt.' );
+		$guard = $this->guard( $root );
+		if ( is_wp_error( $guard ) ) {
+			return $guard;
 		}
-		$deleted = $this->erase( $root, $id );
-		$this->close_meta( $handle );
-		return $deleted ? true : new WP_Error( 'transfer_cleanup_uncertain', 'Private transfer deletion could not be verified; inspect and retry cleanup.' );
+		try {
+			$loaded = $this->load( $id );
+			if ( is_wp_error( $loaded ) ) {
+				return $loaded;
+			}
+			list( $root, $handle, $meta ) = $loaded;
+			try {
+				if ( in_array( $meta['state'], array( 'committing', 'observed', 'preparing' ), true ) ) {
+					return new WP_Error( 'transfer_outcome_unknown', 'Native effect may have occurred or preparation is active. Use explicit payload release and retain recovery identity.' );
+				}
+				return $this->erase( $root, $id ) ? true :
+					new WP_Error( 'transfer_cleanup_uncertain', 'Private cancellation was not completed; its durable tombstone prevents lease replay.' );
+			} finally {
+				$this->close_meta( $handle );
+			}
+		} finally {
+			flock( $guard, LOCK_UN );
+			fclose( $guard );
+		}
 	}
 
 	/** @param string $purpose Explicit caller workflow. @return bool */
@@ -741,6 +762,14 @@ final class Private_Transfer_Session {
 				fclose( $h );
 			}
 			return new WP_Error( 'transfer_storage_uncertain', 'Private transfer coordination lock could not be safely opened.' );
+		}
+		// A canceller can unlink the stable coordinator while a peer waits
+		// on its inode. Check the live directory identity *after* locking.
+		if ( ! $this->secure_file( $h, $path ) ||
+			file_exists( $root . '/' . $id . '.tombstone' ) ||
+			is_link( $root . '/' . $id . '.tombstone' ) ) {
+			$this->close_meta( $h );
+			return new WP_Error( 'transfer_cancelled', 'This private lease is removed or has a durable deletion marker.' );
 		}
 		$meta      = null;
 		$highest   = 0;
@@ -981,7 +1010,13 @@ final class Private_Transfer_Session {
 					continue;
 				}
 				$owner = substr( $name, 0, 64 );
-				$info  = $this->open_meta( $root, $owner );
+				if ( file_exists( $root . '/' . $owner . '.tombstone' ) ) {
+					if ( ! $this->erase( $root, $owner ) ) {
+						return new WP_Error( 'transfer_cleanup_uncertain', 'Interrupted private cancellation could not be reconciled.' );
+					}
+					continue;
+				}
+				$info = $this->open_meta( $root, $owner );
 				if ( is_wp_error( $info ) ) {
 					return $info;
 				}
@@ -1216,6 +1251,10 @@ final class Private_Transfer_Session {
 		if ( is_wp_error( $root ) ) {
 			return $root;
 		}
+		if ( file_exists( $root . '/' . $id . '.tombstone' ) ||
+			is_link( $root . '/' . $id . '.tombstone' ) ) {
+			return new WP_Error( 'transfer_cancelled', 'This transfer has a durable cancellation tombstone.' );
+		}
 		$info = $this->open_meta( $root, $id );
 		if ( is_wp_error( $info ) ) {
 			return $info;
@@ -1354,12 +1393,28 @@ final class Private_Transfer_Session {
 
 	/** @param string $root Root. @param string $id Session. @return bool */
 	private function erase( $root, $id ) {
-		foreach ( array( '.scratch', '.bytes', '.meta.state.0', '.meta.state.1', '.claim' ) as $suffix ) {
+		// Crash-safe deletion marker: after any worker termination between
+		// deleting checkpoints and the stable lock inode, the lease cannot
+		// silently fall back to an unclaimed legacy manifest.
+		$marker = $root . '/' . $id . '.tombstone';
+		if ( ! file_exists( $marker ) ) {
+			$h = @fopen( $marker, 'x+b' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Durable one-way lease deletion marker.
+			if ( ! is_resource( $h ) ) {
+				return false;
+			}
+			$secure = $this->secure_file( $h, $marker ) && 1 === fwrite( $h, '1' ) &&
+				fflush( $h ) && ( ! function_exists( 'fsync' ) || fsync( $h ) );
+			fclose( $h );
+			if ( ! $secure ) {
+				return false;
+			}
+		}
+		foreach ( array( '.scratch', '.bytes', '.meta.state.0', '.meta.state.1', '.claim', '.meta' ) as $suffix ) {
 			if ( ! $this->remove_file( $root . '/' . $id . $suffix ) ) {
 				return false;
 			}
 		}
-		return $this->remove_file( $root . '/' . $id . '.meta' );
+		return $this->remove_file( $marker );
 	}
 
 	/** @param string $path Fixed private file. @return bool */

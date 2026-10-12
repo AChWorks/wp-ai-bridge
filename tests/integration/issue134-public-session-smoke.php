@@ -12,6 +12,8 @@ use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Auth\OAuth_Store;
 use WP_AI_Bridge\Support\Settings;
 use WP_AI_Bridge\Support\Transfer_Settings;
+use WP_AI_Bridge\Support\Payload_Settings;
+use WP_AI_Bridge\Support\Bounded_Payload;
 
 function wpai134_session_assert( $condition, $message ) {
 	if ( ! $condition ) {
@@ -137,6 +139,7 @@ $actor           = get_current_user_id();
 $settings        = new Settings();
 $original        = get_option( Settings::OPTION_NAME, false );
 $original_size   = get_option( Transfer_Settings::OPTION_NAME, false );
+$original_wire   = get_option( Payload_Settings::OPTION_NAME, false );
 $grants          = $settings->defaults();
 $policy          = new Transfer_Settings();
 $store           = new OAuth_Store();
@@ -415,6 +418,31 @@ try {
 		(int) $media_status['result']['structuredContent']['data']['destination_id'] === $media_id,
 		'Committed Media effect had no durable status/attachment receipt.'
 	);
+	// R1: verify after a native effect must never reopen the same lease.
+	$reverify_media = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'verify',
+			'transfer_id' => $media_lease,
+		)
+	);
+	wpai134_session_assert( ! empty( $reverify_media['result']['isError'] ), 'R1: verified committed Media reopened.' );
+	$media_again = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'status',
+			'transfer_id' => $media_lease,
+		)
+	);
+	wpai134_session_assert(
+		'committed' === ( $media_again['result']['structuredContent']['data']['state'] ?? '' ) &&
+		( $media_again['result']['structuredContent']['data']['destination_id'] ?? 0 ) === $media_id,
+		'R1: committed Media receipt changed on reverify.'
+	);
 	// Outbound producer: a source-bound private snapshot, losslessly read by
 	// the same external JSON-RPC-style MCP client without a public URL/path.
 	list( $exported ) = wpai134_session_request(
@@ -567,8 +595,57 @@ try {
 		hash( 'sha256', $opaque_bytes ) === ( $big_receipt['data']['sha256'] ?? '' ),
 		'Private snapshot could not freeze the original large Media file.'
 	);
-	$big_id         = $big_receipt['data']['transfer_id'];
-	$identities[]   = $big_id;
+	$big_id       = $big_receipt['data']['transfer_id'];
+	$identities[] = $big_id;
+	// R4: a request for the maximum raw window shrinks against the
+	// Adapter's doubled, escaped serialized MCP output, not just Base64.
+	$wire_small                                   = ( new Payload_Settings() )->defaults();
+	$wire_small[ Payload_Settings::RESPONSE_KEY ] = 16;
+	wp_set_current_user( $actor );
+	update_option( Payload_Settings::OPTION_NAME, $wire_small, false );
+	wp_set_current_user( 0 );
+	$small_read   = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'read',
+			'transfer_id' => $big_id,
+			'offset'      => 0,
+			'max_bytes'   => 49152,
+		)
+	);
+	$small_result = $small_read['result']['structuredContent']['data'] ?? array();
+	wpai134_session_assert(
+		true === ( $small_read['result']['structuredContent']['success'] ?? false ) &&
+		$small_result['read_next_offset'] > 0 && $small_result['read_next_offset'] < 49152 &&
+		Bounded_Payload::fits( $small_result ) &&
+		strlen( wp_json_encode( $small_read ) ) <= 16 * 1024,
+		'R4: minimum 16 KiB MCP response overflowed instead of adaptively shrinking.'
+	);
+	$wire_default = ( new Payload_Settings() )->defaults();
+	wp_set_current_user( $actor );
+	update_option( Payload_Settings::OPTION_NAME, $wire_default, false );
+	wp_set_current_user( 0 );
+	$default_read   = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'read',
+			'transfer_id' => $big_id,
+			'offset'      => 0,
+			'max_bytes'   => 49152,
+		)
+	);
+	$default_result = $default_read['result']['structuredContent']['data'] ?? array();
+	wpai134_session_assert(
+		true === ( $default_read['result']['structuredContent']['success'] ?? false ) &&
+		$default_result['read_next_offset'] > 0 && $default_result['read_next_offset'] < 49152 &&
+		Bounded_Payload::fits( $default_result ) &&
+		strlen( wp_json_encode( $default_read ) ) <= 128 * 1024,
+		'R4: default 128 KiB MCP response overflowed with a double-encoded maximum raw chunk.'
+	);
 	$received_bytes = '';
 	$big_offset     = 0;
 	$big_windows    = 0;
@@ -687,6 +764,30 @@ try {
 		)
 	);
 	wpai134_session_assert( ! empty( $duplicate_text['result']['isError'] ), 'Claimed WordPress create was replayed as a duplicate post.' );
+	$reverify_text = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'verify',
+			'transfer_id' => $text_id,
+		)
+	);
+	wpai134_session_assert( ! empty( $reverify_text['result']['isError'] ), 'R1: consumed text source reverified.' );
+	list( $replayed_text ) = wpai134_session_request(
+		$token,
+		$session,
+		$seq++,
+		'wp-ai-bridge/transfer-content-commit',
+		array(
+			'action'      => 'create',
+			'transfer_id' => $text_id,
+			'post_type'   => 'post',
+			'title'       => 'no second native post',
+		)
+	);
+	wpai134_session_assert( ! empty( $replayed_text['result']['isError'] ), 'R1: reverified text produced a duplicate WordPress post.' );
+
 	$revised_text  = str_repeat( "متن جدید 🌿 HTML <em>ارزش</em> و \\\\ اسلش\n", 40000 );
 	$revision_id   = wpai134_client_stage( $token, $session, $seq, 'text', $revised_text, $identities );
 	list( $stale ) = wpai134_session_request(
@@ -751,7 +852,7 @@ try {
 	);
 	wp_set_current_user( $actor );
 	wpai134_session_assert(
-		$revised_text === get_post( $post_id )->post_content,
+		get_post( $post_id )->post_content === $revised_text,
 		'Post update truncated or rewrote Markdown, UTF-8, literal backslashes or HTML.'
 	);
 	wp_set_current_user( 0 );
@@ -765,9 +866,89 @@ try {
 		)
 	);
 	wpai134_session_assert(
-		$post_id === ( $updated_status['result']['structuredContent']['data']['destination_id'] ?? 0 ),
+		( $updated_status['result']['structuredContent']['data']['destination_id'] ?? 0 ) === $post_id,
 		'Successful native content commit lacked a durable destination receipt.'
 	);
+	$reverify_updated = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'verify',
+			'transfer_id' => $revision_id,
+		)
+	);
+	wpai134_session_assert( ! empty( $reverify_updated['result']['isError'] ), 'R1: committed content update reopened.' );
+	// R7: WordPress filters may legitimately change the resulting body,
+	// but the observed native destination ID must never disappear.
+	$modify_post = static function ( $data ) {
+		if ( isset( $data['post_title'] ) && 'wpai134-transformed-source' === $data['post_title'] ) {
+			$data['post_content'] .= ' [WordPress native filter changed body]';
+		}
+		return $data;
+	};
+	add_filter( 'wp_insert_post_data', $modify_post );
+	$changed_id             = wpai134_client_stage( $token, $session, $seq, 'text', 'Original exact verified input.', $identities );
+	list( $changed_result ) = wpai134_session_request(
+		$token,
+		$session,
+		$seq++,
+		'wp-ai-bridge/transfer-content-commit',
+		array(
+			'action'      => 'create',
+			'transfer_id' => $changed_id,
+			'post_type'   => 'post',
+			'title'       => 'wpai134-transformed-source',
+		)
+	);
+	remove_filter( 'wp_insert_post_data', $modify_post );
+	wpai134_session_assert( ! empty( $changed_result['result']['isError'] ), 'R7: native transformed result was wrongly marked byte-exact.' );
+	$observed      = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'status',
+			'transfer_id' => $changed_id,
+		)
+	);
+	$observed_data = $observed['result']['structuredContent']['data'] ?? array();
+	$observed_id   = (int) ( $observed_data['destination_id'] ?? 0 );
+	wpai134_session_assert(
+		$observed_id > 0 && 'observed' === ( $observed_data['state'] ?? '' ) &&
+		'observed_changed' === ( $observed_data['outcome'] ?? '' ),
+		'R7: changed WordPress create lost observed identity/outcome receipt.'
+	);
+	$content_ids[]     = $observed_id;
+	$released_observed = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'release',
+			'transfer_id' => $changed_id,
+		)
+	);
+	wpai134_session_assert(
+		true === ( $released_observed['result']['structuredContent']['success'] ?? false ) &&
+		true === ( $released_observed['result']['structuredContent']['data']['payload_released'] ?? false ),
+		'R7: releasing known transformed payload failed.'
+	);
+	$still_known = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'status',
+			'transfer_id' => $changed_id,
+		)
+	);
+	wpai134_session_assert(
+		( $still_known['result']['structuredContent']['data']['destination_id'] ?? 0 ) === $observed_id &&
+		'observed' === ( $still_known['result']['structuredContent']['data']['state'] ?? '' ),
+		'R7: releasing payload destroyed durable observed destination ID.'
+	);
+	echo "PASS: #134 review R1/R4/R7 verify replay denial, MCP dual-wire adaptive windows, observed ID and safe reservation release.\n";
 	echo "PASS: #134 real WordPress native MCP bidirectional Media snapshot and >1 MiB lossless UTF-8 content create/update with CAS, no replay.\n";
 
 	// Reject malformed UTF-8 before the irreversible native write claim.
@@ -868,6 +1049,11 @@ try {
 		delete_option( Transfer_Settings::OPTION_NAME );
 	} else {
 		update_option( Transfer_Settings::OPTION_NAME, $original_size, false );
+	}
+	if ( false === $original_wire ) {
+		delete_option( Payload_Settings::OPTION_NAME );
+	} else {
+		update_option( Payload_Settings::OPTION_NAME, $original_wire, false );
 	}
 	if ( false === $original ) {
 		delete_option( Settings::OPTION_NAME );

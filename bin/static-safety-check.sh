@@ -21,11 +21,11 @@ fi
 # allowing a new generic filesystem adapter across Bridge Abilities.
 private_stage='src/Support/class-private-transfer-session.php'
 if [[ ! -f "$private_stage" ||
-      "$(grep -cF '@fopen(' "$private_stage" || true)" != "14" ||
-      "$(grep -cF 'fwrite(' "$private_stage" || true)" != "3" ||
+      "$(grep -cF '@fopen(' "$private_stage" || true)" != "15" ||
+      "$(grep -cF 'fwrite(' "$private_stage" || true)" != "4" ||
       "$(grep -cF 'stream_copy_to_stream(' "$private_stage" || true)" != "1" ||
       "$(grep -cF '@mkdir(' "$private_stage" || true)" != "1" ||
-      "$(grep -cF 'flock(' "$private_stage" || true)" != "5" ||
+      "$(grep -cF 'flock(' "$private_stage" || true)" != "6" ||
       "$(grep -cF 'ftruncate(' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'rename(' "$private_stage" || true)" != "1" ]]; then
     echo "ERROR: internal-only private transfer filesystem/lock surface changed." >&2
