@@ -505,12 +505,13 @@ if grep -nE '(^|[^A-Za-z_])(INSERT|UPDATE|DELETE|REPLACE|ALTER|DROP|CREATE|FOR U
 fi
 if [[ ! -f "$create_claim_store" ||
       "$(grep -cF '$wpdb->update(' "$create_claim_store" || true)" != "1" ||
-      "$(grep -cF '$wpdb->get_var(' "$create_claim_store" || true)" != "1" ||
-      "$(grep -cF '$wpdb->prepare(' "$create_claim_store" || true)" != "2" ||
+      "$(grep -cF '$wpdb->get_var(' "$create_claim_store" || true)" != "2" ||
+      "$(grep -cF '$wpdb->prepare(' "$create_claim_store" || true)" != "3" ||
       "$(grep -cF '$wpdb->query(' "$create_claim_store" || true)" != "1" ||
+      "$(grep -cF 'WHERE option_name LIKE %s AND option_value LIKE %s' "$create_claim_store" || true)" != "1" ||
       "$(grep -cF 'INSERT IGNORE INTO ' "$create_claim_store" || true)" != "1" ||
       "$(grep -cF "Admission_Lock::acquire( 'claims' )" "$create_claim_store" || true)" != "1" ]]; then
-    echo "ERROR: create receipt store must retain one conditional update, one exclusive insert, and one prepared capacity query." >&2
+    echo "ERROR: create receipt store must retain one conditional update, one exclusive insert, and two exact prepared capacity queries." >&2
     exit 1
 fi
 unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" || true)"

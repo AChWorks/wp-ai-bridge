@@ -142,7 +142,12 @@ fi
 # Exercise the Workspace 200-item ceiling and unexpected corruption in one
 # representative lane, instead of repeating 200 writes in all four lanes.
 if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
-    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-quotas-corruption-smoke.php --user=1 --allow-root
+    # #153 R2: enforce 96MiB from the CLI process entrypoint.
+    # The fixture verifies effective limit and logs workload/peak memory.
+    echo '== #153 deterministic external PHP 96MiB Workspace integration =='
+    "${compose[@]}" run --rm --entrypoint php -e WPAI153_MEMORY_CEILING=96M cli -d memory_limit=96M /usr/local/bin/wp eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-quotas-corruption-smoke.php --user=1 --allow-root
+    echo '== #153 typed receipt isolation against real MariaDB and native creates =='
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue153-mixed-receipts-smoke.php --user=1 --allow-root
     # Distinct-identity 2047/2048 and 199/200 cross-process capacities plus
     # true PHP process death, once on a representative native MariaDB lane.
     # The broader four-lane suite still covers ordinary Core/Adapter behavior.

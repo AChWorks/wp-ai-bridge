@@ -59,11 +59,15 @@ final class Create_Claim_Store {
 	 *
 	 * @param string $name Fixed hashed option name.
 	 * @param string $initial Initial receipt.
+	 * @param string $domain Receipt's immutable admission domain.
 	 * @return string acquired|existing|capacity|error
 	 */
-	public static function try_claim_bounded( $name, $initial ) {
+	public static function try_claim_bounded( $name, $initial, $domain ) {
+		$state = is_string( $initial ) ? json_decode( $initial, true ) : null;
 		if ( ! self::valid_name( $name ) || ! is_string( $initial ) ||
-			'' === $initial || strlen( $initial ) > 1024 ) {
+			'' === $initial || strlen( $initial ) > 1024 ||
+			! in_array( $domain, array( Create_Claim::DOMAIN_OPERATION, Create_Claim::DOMAIN_CANONICAL ), true ) ||
+			! is_array( $state ) || ( $state['admission_domain'] ?? '' ) !== $domain ) {
 			return 'error';
 		}
 		$lock = Admission_Lock::acquire( 'claims' );
@@ -79,7 +83,11 @@ final class Create_Claim_Store {
 			if ( is_string( $existing ) && '' !== $existing ) {
 				return 'existing';
 			}
-			if ( self::count() >= Create_Claim::receipt_limit() ) {
+			// Count ONLY receipts created in this domain after the
+			// introduction of typed admission. Old untyped option receipts
+			// remain exact-name durable tombstones/readbacks but can no
+			// longer exhaust a different type's logical capacity.
+			if ( self::count_domain( $domain ) >= Create_Claim::receipt_limit( $domain ) ) {
 				return 'capacity';
 			}
 			if ( ! $lock->is_owned() ) {
@@ -129,6 +137,31 @@ final class Create_Claim_Store {
 		wp_cache_delete( 'notoptions', 'options' );
 		$observed = get_option( $name, false );
 		return $observed === $after;
+	}
+
+	/**
+	 * Count immutable *new* operation or canonical-key receipts separately.
+	 * Both kinds intentionally retain their original, database-unique option
+	 * SHA key to prevent cross-version duplicate effects and preserve old
+	 * recovery. Legacy untagged keys are still reserved, but do not consume
+	 * either new type's independent quota.
+	 *
+	 * @param string $domain Fixed receipt domain.
+	 * @return int Fail-closed PHP_INT_MAX on a DB error.
+	 */
+	public static function count_domain( $domain ) {
+		if ( ! in_array( $domain, array( Create_Claim::DOMAIN_OPERATION, Create_Claim::DOMAIN_CANONICAL ), true ) ) {
+			return PHP_INT_MAX;
+		}
+		global $wpdb;
+		$count = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s AND option_value LIKE %s",
+				$wpdb->esc_like( Create_Claim::PREFIX ) . '%',
+				'%' . $wpdb->esc_like( '"admission_domain":"' . $domain . '"' ) . '%'
+			)
+		);
+		return is_numeric( $count ) && '' === $wpdb->last_error ? max( 0, (int) $count ) : PHP_INT_MAX;
 	}
 
 	/**

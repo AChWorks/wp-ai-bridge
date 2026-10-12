@@ -16,6 +16,18 @@ function wpai126_quota_assert( $ok, $reason ) {
 		throw new RuntimeException( $reason );
 	}
 }
+// #153 R2: started by the integration runner with php -d memory_limit=96M.
+// A missing/ineffective clamp is a FAIL, never an optional skipped check.
+$required_memory = getenv( 'WPAI153_MEMORY_CEILING' );
+$actual_limit    = (string) ini_get( 'memory_limit' );
+$limit_bytes     = wp_convert_hr_to_bytes( $actual_limit );
+wpai126_quota_assert(
+	'96M' === $required_memory && $limit_bytes > 0 && $limit_bytes <= 96 * 1048576,
+	'Workspace real integration MUST execute at or below 96MiB, with no fallback.'
+);
+echo 'WPAI153_MEMORY_BEGIN effective=' . $actual_limit .
+	' bytes=' . $limit_bytes . ' bootstrap_peak=' . memory_get_peak_usage( true ) . "\n";
+
 $store                 = new Store();
 $created               = array();
 $extra                 = 0;
@@ -122,18 +134,10 @@ try {
 		wpai126_quota_assert( ! is_wp_error( $record ) && ! empty( $record['id'] ), 'A valid post-200 WordPress document was rejected.' );
 		$created[] = (int) $record['id'];
 	}
-	// Keep page and resume usable even under realistic limited PHP memory,
-	// with ten recent 450-KiB documents requiring size-aware SQL grouping.
-	$previous_memory = ini_get( 'memory_limit' );
-	$test_memory     = memory_get_usage( true ) < 67108864 ? ini_set( 'memory_limit', '96M' ) : false;
-	try {
-		$large_page   = $store->page_documents( array( 'limit' => 25 ) );
-		$large_resume = $store->resume();
-	} finally {
-		if ( false !== $test_memory ) {
-			ini_set( 'memory_limit', (string) $previous_memory );
-		}
-	}
+	// This ENTIRE fixture has used the same externally enforced memory
+	// bound since PHP startup; no opportunistic mid-test ini_set().
+	$large_page   = $store->page_documents( array( 'limit' => 25 ) );
+	$large_resume = $store->resume();
 	$large_export = $store->export_snapshot();
 	wpai126_quota_assert(
 		! is_wp_error( $large_page ) && 250 === $large_page['total'] &&
@@ -208,6 +212,14 @@ try {
 		! is_wp_error( $task_page ) && 201 === $task_page['total'] && $task_page['has_more'],
 		'Post-200 Workspace task summaries omitted or duplicated records.'
 	);
+	wpai126_quota_assert(
+		wp_convert_hr_to_bytes( (string) ini_get( 'memory_limit' ) ) <= 96 * 1048576,
+		'The Workspace 250/201 task workload escaped the 96MiB limit.'
+	);
+	echo 'WPAI153_MEMORY_WORKLOAD effective=' . ini_get( 'memory_limit' ) .
+		' documents=250 tasks=201 projects=30 large_docs=10 large_doc_bytes=460800' .
+		' peak_bytes=' . memory_get_peak_usage( true ) . "\n";
+
 	// These task fixtures are isolated from subsequent semantic corruption tests.
 	foreach ( $scaled_task_ids as $scaled_task_id ) {
 		wp_delete_post( $scaled_task_id, true );
@@ -344,6 +356,13 @@ try {
 	);
 	update_post_meta( $task_id, Store::META_STATE, wp_slash( $original_task ) );
 
+	wpai126_quota_assert(
+		wp_convert_hr_to_bytes( (string) ini_get( 'memory_limit' ) ) <= 96 * 1048576 &&
+		memory_get_peak_usage( true ) <= 96 * 1048576,
+		'The Workspace integrity and recovery fixture exceeded its 96MiB ceiling.'
+	);
+	echo 'WPAI153_MEMORY_FINAL effective=' . ini_get( 'memory_limit' ) .
+		' peak_bytes=' . memory_get_peak_usage( true ) . "\n";
 	echo "PASS: #126/#153 0/25/200/250+ scalable quota, project pagination, legacy compatibility and fail-closed export.\n";
 } finally {
 	foreach ( $scaled_task_ids as $scaled_task_id ) {

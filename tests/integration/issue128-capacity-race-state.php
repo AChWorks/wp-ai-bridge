@@ -20,21 +20,26 @@ if ( ! is_string( $key ) || ! preg_match( '/^cap-[a-z0-9-]{8,55}$/D', $key ) ||
 	throw new RuntimeException( 'Invalid isolated capacity-race setup.' );
 }
 $record_key = 'wpai128_test_seed_' . $key . '_' . $mode;
+$domain     = 'operation' === $mode ? Create_Claim::DOMAIN_OPERATION : Create_Claim::DOMAIN_CANONICAL;
+if ( Create_Claim::MAX_CLAIMS !== Create_Claim::receipt_limit( $domain ) ) {
+	throw new RuntimeException( 'Historical default 2048 limit must remain available for the independent typed receipt race.' );
+}
 if ( 'setup' === $action ) {
 	if ( false !== get_option( $record_key, false ) ) {
 		throw new RuntimeException( 'Cannot reuse old capacity fixture state.' );
 	}
-	$before = Create_Claim_Store::count();
+	$before = Create_Claim_Store::count_domain( $domain );
 	if ( $before >= Create_Claim::MAX_CLAIMS - 1 ) {
 		throw new RuntimeException( 'Disposable DB has insufficient claim slots for fixture.' );
 	}
 	$seed_count = Create_Claim::MAX_CLAIMS - 1 - $before;
 	$receipt    = wp_json_encode(
 		array(
-			'fingerprint' => str_repeat( '0', 64 ),
-			'state'       => 'in_progress',
-			'created_at'  => time(),
-			'id'          => 0,
+			'fingerprint'      => str_repeat( '0', 64 ),
+			'admission_domain' => $domain,
+			'state'            => 'in_progress',
+			'created_at'       => time(),
+			'id'               => 0,
 		)
 	);
 	for ( $i = 0; $i < $seed_count; ++$i ) {
@@ -44,7 +49,7 @@ if ( 'setup' === $action ) {
 		}
 	}
 	if ( ! add_option( $record_key, (string) $seed_count, '', 'off' ) ||
-		Create_Claim::MAX_CLAIMS - 1 !== Create_Claim_Store::count() ) {
+		Create_Claim::MAX_CLAIMS - 1 !== Create_Claim_Store::count_domain( $domain ) ) {
 		throw new RuntimeException( 'Did not reach exact 2047-claim admission boundary.' );
 	}
 	// Force an actual SQL admission-coordinator failure before the effect;
@@ -78,13 +83,13 @@ if ( 'setup' === $action ) {
 		$wpdb->suppress_errors( false );
 	}
 	if ( ! is_wp_error( $denied ) || 'create_claim_outcome_unknown' !== $denied->get_error_code() ||
-		$performed || Create_Claim::MAX_CLAIMS - 1 !== Create_Claim_Store::count() ) {
+		$performed || Create_Claim::MAX_CLAIMS - 1 !== Create_Claim_Store::count_domain( $domain ) ) {
 		throw new RuntimeException( 'Unavailable claim coordinator executed an effect or changed capacity.' );
 	}
 	echo "PASS: seeded exactly 2047 claims.\n";
 	return;
 }
-if ( Create_Claim::MAX_CLAIMS !== Create_Claim_Store::count() ) {
+if ( Create_Claim::MAX_CLAIMS !== Create_Claim_Store::count_domain( $domain ) ) {
 	throw new RuntimeException( 'Concurrent creates exceeded or failed to fill the hard 2048-claim bound.' );
 }
 $matching = array();
@@ -123,7 +128,7 @@ for ( $i = 0; $i < $seed_count; ++$i ) {
 	delete_option( Create_Claim::PREFIX . hash( 'sha256', $key . '|' . $mode . '|seed|' . $i ) );
 }
 delete_option( $record_key );
-if ( Create_Claim_Store::count() !== Create_Claim::MAX_CLAIMS - 1 - $seed_count ) {
+if ( Create_Claim_Store::count_domain( $domain ) !== Create_Claim::MAX_CLAIMS - 1 - $seed_count ) {
 	throw new RuntimeException( 'Fixture cleanup changed the prior claim count.' );
 }
 echo "PASS: 2047->2048 distinct-key atomic admission, one WordPress effect; restored fixture DB.\n";
