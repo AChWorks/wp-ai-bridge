@@ -103,6 +103,13 @@ try {
 		$cursor = $page['next_cursor'];
 	}
 	wpai126_quota_assert( 200 === count( $seen ), 'A full-capacity enumeration silently omitted records.' );
+	$small_export = $store->export_snapshot();
+	wpai126_quota_assert(
+		! is_wp_error( $small_export ) && true === $small_export['complete'] &&
+		200 === $small_export['counts']['documents'] && 200 === count( $small_export['documents'] ),
+		'A small 200-document Workspace must export completely within the memory budget.'
+	);
+	unset( $small_export );
 	$resume = $store->resume();
 	wpai126_quota_assert(
 		! is_wp_error( $resume ) && 200 === $resume['counts']['documents_total'] &&
@@ -145,13 +152,24 @@ try {
 	$large_page   = $store->page_documents( array( 'limit' => 25 ) );
 	$large_resume = $store->resume();
 	$large_export = $store->export_snapshot();
+	// At 96MiB, the in-memory full-collection budget is only 6MiB, while
+	// the deliberately large valid records exceed 7MiB. A full export must
+	// either include EVERY record or return the explicit safe-size error:
+	// never silently truncate/mark a partial snapshot as complete.
+	$large_export_complete = ! is_wp_error( $large_export ) &&
+		! empty( $large_export['complete'] ) &&
+		250 === $large_export['counts']['documents'] &&
+		250 === count( $large_export['documents'] );
+	$large_export_limited = is_wp_error( $large_export ) &&
+		'workspace_collection_too_large' === $large_export->get_error_code();
 	wpai126_quota_assert(
 		! is_wp_error( $large_page ) && 250 === $large_page['total'] &&
 		! is_wp_error( $large_resume ) && 250 === $large_resume['counts']['documents_total'] &&
-		! is_wp_error( $large_export ) && 250 === $large_export['counts']['documents'] &&
-		true === $large_export['complete'],
-		'The site cannot page, resume, and completely export a valid 250-document Workspace.'
+		( $large_export_complete || $large_export_limited ),
+		'The site cannot page/resume the valid 250-document Workspace or its export was neither complete nor an explicit memory-budget error.'
 	);
+	echo 'WPAI153_MEMORY_EXPORT mode=' . ( $large_export_complete ? 'complete' : 'workspace_collection_too_large' ) . "\n";
+	unset( $large_export );
 	// The real RTL WordPress administrator view must also page rather than
 	// render 250 complete documents and their private Markdown in one table.
 	$admin_page  = new Settings_Page( new Environment(), new Settings(), null, $store );
