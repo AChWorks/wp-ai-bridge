@@ -150,6 +150,7 @@ $identities      = array();
 $media_id        = 0;
 $opaque_media_id = 0;
 $content_ids     = array();
+$extra_media_ids = array();
 $seq             = 20;
 
 function wpai134_session_action( $token, $session, &$seq, $action ) {
@@ -833,6 +834,225 @@ try {
 	);
 	wpai134_session_assert( true === ( $big_cancel['result']['structuredContent']['success'] ?? false ), 'Large Media export lease was not released.' );
 	echo 'MEASURE: #134 outbound Media bytes=' . strlen( $opaque_bytes ) . ' windows=' . $big_windows . " SHA256 exact.\n";
+	// R6: the native Media scratch copy consumes the same configurable
+	// aggregate reservation and no claimed effect occurs on a denial.
+	$scratch_id = wpai134_client_stage(
+		$token,
+		$session,
+		$seq,
+		'media',
+		$opaque_bytes,
+		$identities
+	);
+	wp_set_current_user( $actor );
+	$limits[ Transfer_Settings::ACTIVE_MIB ] = 2;
+	update_option( Transfer_Settings::OPTION_NAME, $limits, false );
+	wp_set_current_user( 0 );
+	list( $scratch_denied ) = wpai134_session_request(
+		$token,
+		$session,
+		$seq++,
+		'wp-ai-bridge/transfer-media-import',
+		array(
+			'transfer_id' => $scratch_id,
+			'filename'    => 'wpai134-budgeted.zip',
+		)
+	);
+	wpai134_session_assert(
+		! empty( $scratch_denied['result']['isError'] ),
+		'R6: Media scratch copy ignored the aggregate 2 MiB private capacity.'
+	);
+	$scratch_denied_status = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'status',
+			'transfer_id' => $scratch_id,
+		)
+	);
+	wpai134_session_assert(
+		'verified' === ( $scratch_denied_status['result']['structuredContent']['data']['state'] ?? '' ) &&
+		! file_exists( $private_root . '/' . $scratch_id . '.scratch' ),
+		'R6: denied scratch reservation nevertheless created bytes or a native effect.'
+	);
+	wp_set_current_user( $actor );
+	$limits[ Transfer_Settings::ACTIVE_MIB ] = 32;
+	update_option( Transfer_Settings::OPTION_NAME, $limits, false );
+	wp_set_current_user( 0 );
+	list( $scratch_imported ) = wpai134_session_request(
+		$token,
+		$session,
+		$seq++,
+		'wp-ai-bridge/transfer-media-import',
+		array(
+			'transfer_id' => $scratch_id,
+			'filename'    => 'wpai134-budgeted.zip',
+		)
+	);
+	$imported_data            = $scratch_imported['result']['structuredContent']['data'] ?? array();
+	wpai134_session_assert(
+		true === ( $scratch_imported['result']['structuredContent']['success'] ?? false ) &&
+		'committed' === ( $imported_data['state'] ?? '' ) &&
+		( $imported_data['media_id'] ?? 0 ) > 0 &&
+		! file_exists( $private_root . '/' . $scratch_id . '.scratch' ),
+		'R6: correctly budgeted Media import failed or retained a private scratch duplicate.'
+	);
+	$extra_media_ids[] = (int) $imported_data['media_id'];
+
+	// R6: simulate a worker that finished copy creation, then died
+	// before claiming an effect. The next admission must reconcile
+	// exactly that orphan and release its active reservation.
+	$orphan_id                = wpai134_client_stage( $token, $session, $seq, 'media', $png, $identities );
+	$state0                   = $private_root . '/' . $orphan_id . '.meta.state.0';
+	$state1                   = $private_root . '/' . $orphan_id . '.meta.state.1';
+	$check0                   = json_decode( (string) file_get_contents( $state0 ), true );
+	$check1                   = json_decode( (string) file_get_contents( $state1 ), true );
+	$latest                   = $check0['generation'] > $check1['generation'] ? $check0 : $check1;
+	$meta                     = json_decode( $latest['body'], true );
+	$meta['generation']       = $latest['generation'] + 1;
+	$meta['state']            = 'preparing';
+	$meta['scratch_reserved'] = strlen( $png );
+	$body                     = wp_json_encode( $meta );
+	$wire                     = wp_json_encode(
+		array(
+			'generation' => $meta['generation'],
+			'sha256'     => hash( 'sha256', $body ),
+			'body'       => $body,
+		)
+	);
+	$next_slot                = $private_root . '/' . $orphan_id . '.meta.state.' . ( $meta['generation'] % 2 );
+	$orphan_scratch           = $private_root . '/' . $orphan_id . '.scratch';
+	wpai134_session_assert(
+		false !== file_put_contents( $next_slot, $wire ) &&
+		false !== file_put_contents( $orphan_scratch, $png ),
+		'R6: could not simulate a checkpointed unclaimed scratch after disposable worker death.'
+	);
+	$reject_cleanup = static function ( $path ) use ( $orphan_scratch ) {
+		return $path === $orphan_scratch ? false : $path;
+	};
+	add_filter( 'wp_delete_file', $reject_cleanup );
+	$blocked_admission = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'begin',
+			'purpose'     => 'media',
+			'total_bytes' => 0,
+			'sha256'      => hash( 'sha256', '' ),
+		)
+	);
+	remove_filter( 'wp_delete_file', $reject_cleanup );
+	wpai134_session_assert(
+		! empty( $blocked_admission['result']['isError'] ) &&
+		file_exists( $orphan_scratch ),
+		'R6: failed scratch cleanup was incorrectly counted as free capacity.'
+	);
+	$swept    = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'begin',
+			'purpose'     => 'media',
+			'total_bytes' => 0,
+			'sha256'      => hash( 'sha256', '' ),
+		)
+	);
+	$swept_id = $swept['result']['structuredContent']['data']['transfer_id'] ?? '';
+	wpai134_session_assert(
+		true === ( $swept['result']['structuredContent']['success'] ?? false ) &&
+		! file_exists( $orphan_scratch ),
+		'R6: new admission did not safely recover a dead worker unclaimed scratch.'
+	);
+	$identities[] = $swept_id;
+	$orphan_state = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'status',
+			'transfer_id' => $orphan_id,
+		)
+	);
+	wpai134_session_assert(
+		'verified' === ( $orphan_state['result']['structuredContent']['data']['state'] ?? '' ) &&
+		! file_exists( $orphan_scratch ),
+		'R6: abandoned pre-effect Media lease remained preparing or retained scratch.'
+	);
+	echo "PASS: #134 review R6 Media scratch budget denial, verified native import, orphan recovery and deletion-veto retry.\n";
+	// R5: full-size 3200px native JPEG exceeds the default 2560px WordPress
+	// big-image threshold. WordPress keeps original bytes separately while
+	// the current attachment path is its scaled derivative.
+	wpai134_session_assert(
+		function_exists( 'imagecreatetruecolor' ) && function_exists( 'imagejpeg' ) &&
+		function_exists( 'wp_get_original_image_path' ) &&
+		wp_image_editor_supports( array( 'mime_type' => 'image/jpeg' ) ),
+		'R5: disposable native image editor cannot exercise real WordPress large-image scaling.'
+	);
+	$canvas = imagecreatetruecolor( 3200, 90 );
+	wpai134_session_assert( false !== $canvas, 'R5: could not create native 3200px JPEG fixture.' );
+	$color = imagecolorallocate( $canvas, 21, 107, 153 );
+	imagefill( $canvas, 0, 0, $color );
+	ob_start();
+	$image_written = imagejpeg( $canvas, null, 88 );
+	$jpeg          = ob_get_clean();
+	imagedestroy( $canvas );
+	wpai134_session_assert(
+		$image_written && is_string( $jpeg ) && strlen( $jpeg ) > 0,
+		'R5: native 3200px JPEG source could not be encoded.'
+	);
+	$jpeg_id               = wpai134_client_stage( $token, $session, $seq, 'media', $jpeg, $identities );
+	list( $scaled_result ) = wpai134_session_request(
+		$token,
+		$session,
+		$seq++,
+		'wp-ai-bridge/transfer-media-import',
+		array(
+			'transfer_id' => $jpeg_id,
+			'filename'    => 'wpai134-large-jpeg.jpg',
+		)
+	);
+	$scaled_data           = $scaled_result['result']['structuredContent']['data'] ?? array();
+	wpai134_session_assert(
+		true === ( $scaled_result['result']['structuredContent']['success'] ?? false ) &&
+		'committed' === ( $scaled_data['state'] ?? '' ) &&
+		( $scaled_data['media_id'] ?? 0 ) > 0,
+		'R5: native WordPress large-image processing was incorrectly declared uncertain.'
+	);
+	$scaled_id         = (int) $scaled_data['media_id'];
+	$extra_media_ids[] = $scaled_id;
+	wp_set_current_user( $actor );
+	$current_image      = get_attached_file( $scaled_id );
+	$original_image     = wp_get_original_image_path( $scaled_id );
+	$current_dimensions = is_string( $current_image ) ? getimagesize( $current_image ) : false;
+	wpai134_session_assert(
+		is_string( $current_image ) && is_string( $original_image ) &&
+		$current_image !== $original_image &&
+		file_exists( $original_image ) &&
+		hash_file( 'sha256', $original_image ) === hash( 'sha256', $jpeg ) &&
+		is_array( $current_dimensions ) && $current_dimensions[0] <= 2560,
+		'R5: WordPress large-image derivative was not separated from its original exact uploaded source.'
+	);
+	wp_set_current_user( 0 );
+	$scaled_status = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'status',
+			'transfer_id' => $jpeg_id,
+		)
+	);
+	wpai134_session_assert(
+		( $scaled_status['result']['structuredContent']['data']['destination_id'] ?? 0 ) === $scaled_id &&
+		'original_upload' === ( $scaled_status['result']['structuredContent']['data']['source_representation'] ?? '' ),
+		'R5: original byte identity and native derivative representation were confused.'
+	);
+	echo "PASS: #134 review R5 native WordPress 3200px JPEG scaling, original SHA256 and current derived path.\n";
+
+
 
 
 	list( $duplicate ) = wpai134_session_request(
@@ -1181,6 +1401,9 @@ try {
 	}
 	if ( $opaque_media_id > 0 ) {
 		wp_delete_attachment( $opaque_media_id, true );
+	}
+	foreach ( $extra_media_ids as $extra_media_id ) {
+		wp_delete_attachment( $extra_media_id, true );
 	}
 	foreach ( $content_ids as $content_id ) {
 		wp_delete_post( $content_id, true );
