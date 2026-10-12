@@ -4,6 +4,15 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.6.0
+
+- Introduce explicit, authenticated native WordPress WXR content portability: Core XML export in bounded private byte windows, verified private import staging, read-only structural inspection, exact-source/destination-bound importer plan, and explicit consent before official WordPress Importer 0.9.6 effects (#139, PR #146). The importer denies remote media fetching and new user creation, rejects unsafe PHP object/reference metadata, preserves approved exact-string bytes, and records non-atomic/unknown results durably with no blind replay. This is content portability, NOT a complete database/media site backup.
+- Deliver configurable site-administrator finite private-transfer capacities, purpose-bound and SHA-256-verified multipart ingress/egress, Media snapshots/import, optional bounded inline Media/file fallback sizes, and long UTF-8 content commit with native optimistic concurrency (#134, PR #145). Client-side attachment materialization, Gateway forwarding, multi-host private storage and public-network performance still require separate verification; a successful MCP tool response is NOT automatically an attached file.
+- Add project-aware, lossless and page-resumable Workspace documents/tasks with stable project identity and readback, plus optional durable operation_id deduplication for six Bridge-owned non-idempotent create operations (#126, #128, PR #143). Unknown or interrupted effects must not be blindly retried.
+- Add native WordPress Site Health diagnostics with ordinary WordPress and Bridge permissions, read-only cached Core update availability with truthful stale/unknown states (NO WordPress Core upgrade executor), and more accurate local-vs-remote OAuth/MCP connection diagnostics (#130, #140, #141, PRs #142/#143).
+- Preserve the canonical wp-ai-bridge/wp-ai-bridge.php installation, existing OAuth clients/refresh sessions, WordPress Workspace data, and previously configured Bridge grants across normal v0.5.1 replacement. Newly available effectful Abilities remain subject to current WordPress capabilities and default-off Bridge access groups. No reauthorization, reset or permission broadening is automatic.
+- Native WordPress and official MCP Adapter 0.6.1/0.7.0 acceptance includes import-effect/partial-outcome tests, bounded transfer fidelity, real isolated HTTPS/OAuth/MCP interactions and published-release-to-candidate upgrade regression. These tests do NOT prove a production deployment or hosted ChatGPT file upload/download support.
+
 ## 0.5.1
 
 - Retire the unwanted manual WordPress-dashboard Private ZIP Packages upload/inspection/install subsystem and its runtime/CI/documentation surface; preserve existing native WordPress.org/public HTTPS installation and Media capabilities (#135). Existing historic v0.5.0 files/options are left for optional manual removal; the maintained plugin adds no migration or cleanup code.
