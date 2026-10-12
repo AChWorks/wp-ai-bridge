@@ -426,6 +426,25 @@ try {
 		true === ( $tail_verified['result']['structuredContent']['success'] ?? false ),
 		'R3: resumed exact byte source could not complete after worker-death tail recovery.'
 	);
+	foreach ( array(
+		$journal_id,
+		$tail_id,
+		$new_admission['result']['structuredContent']['data']['transfer_id'],
+	) as $recovered_id ) {
+		$recovery_cancel = wpai134_session_action(
+			$token,
+			$session,
+			$seq,
+			array(
+				'action'      => 'cancel',
+				'transfer_id' => $recovered_id,
+			)
+		);
+		wpai134_session_assert(
+			true === ( $recovery_cancel['result']['structuredContent']['success'] ?? false ),
+			'R3: finished recovery test did not release its private active-session reservation.'
+		);
+	}
 	echo "PASS: #134 review R3 stable-manifest generation recovery, unacknowledged byte-tail repair and unrelated admission.\n";
 	wp_set_current_user( 0 );
 
@@ -899,6 +918,20 @@ try {
 		'R6: correctly budgeted Media import failed or retained a private scratch duplicate.'
 	);
 	$extra_media_ids[] = (int) $imported_data['media_id'];
+	$scratch_release   = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'release',
+			'transfer_id' => $scratch_id,
+		)
+	);
+	wpai134_session_assert(
+		true === ( $scratch_release['result']['structuredContent']['success'] ?? false ),
+		'R6: completed Media import could not free a private reservation.'
+	);
+
 
 	// R6: simulate a worker that finished copy creation, then died
 	// before claiming an effect. The next admission must reconcile
@@ -981,6 +1014,21 @@ try {
 		! file_exists( $orphan_scratch ),
 		'R6: abandoned pre-effect Media lease remained preparing or retained scratch.'
 	);
+	foreach ( array( $orphan_id, $swept_id ) as $scratch_test_id ) {
+		$scratch_cancel = wpai134_session_action(
+			$token,
+			$session,
+			$seq,
+			array(
+				'action'      => 'cancel',
+				'transfer_id' => $scratch_test_id,
+			)
+		);
+		wpai134_session_assert(
+			true === ( $scratch_cancel['result']['structuredContent']['success'] ?? false ),
+			'R6: recovered but unused scratch lease was not properly cancelled.'
+		);
+	}
 	echo "PASS: #134 review R6 Media scratch budget denial, verified native import, orphan recovery and deletion-veto retry.\n";
 	// R5: full-size 3200px native JPEG exceeds the default 2560px WordPress
 	// big-image threshold. WordPress keeps original bytes separately while
@@ -1049,6 +1097,19 @@ try {
 		( $scaled_status['result']['structuredContent']['data']['destination_id'] ?? 0 ) === $scaled_id &&
 		'original_upload' === ( $scaled_status['result']['structuredContent']['data']['source_representation'] ?? '' ),
 		'R5: original byte identity and native derivative representation were confused.'
+	);
+	$jpeg_released = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'release',
+			'transfer_id' => $jpeg_id,
+		)
+	);
+	wpai134_session_assert(
+		true === ( $jpeg_released['result']['structuredContent']['success'] ?? false ),
+		'R5: verified original native Media object could not release temporary staging bytes.'
 	);
 	echo "PASS: #134 review R5 native WordPress 3200px JPEG scaling, original SHA256 and current derived path.\n";
 
