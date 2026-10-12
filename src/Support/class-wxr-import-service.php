@@ -475,12 +475,114 @@ final class WXR_Import_Service {
 					return false;
 				}
 				$value = $meta['value'];
-				if ( is_serialized( $value ) &&
-					preg_match( '/(?:O|C):[0-9]{1,12}:"|(?:^|[;{])(?:r|R):[0-9]{1,12};/', $value ) ) {
+				if ( is_serialized( $value ) && ! $this->safe_serialized_primitive_or_array( $value ) ) {
 					return false;
 				}
 			}
 		}
+		return true;
+	}
+
+	/**
+	 * Inspect PHP's serialized wire format without ever deserializing it.
+	 *
+	 * The official Importer calls maybe_unserialize() on WXR metadata. Only
+	 * primitives and arrays containing primitives/arrays are permitted.
+	 * PHP object, custom object, Enum and reference opcodes (O/C/E/r/R), plus
+	 * any unknown future opcode, fail closed at the planning boundary.
+	 * Strings are skipped by their EXACT byte length, not a token regex:
+	 * harmless object-looking text inside a serialized string remains safe.
+	 *
+	 * @param string $serialized One WordPress-recognized serialized value.
+	 * @return bool Only a fully consumed primitive/array serialization.
+	 */
+	private function safe_serialized_primitive_or_array( $serialized ) {
+		$offset = 0;
+		$nodes  = 0;
+		$size   = strlen( $serialized );
+		return $this->consume_safe_serialized_value( $serialized, $offset, $size, $nodes, 0, false ) &&
+			$offset === $size;
+	}
+
+	/**
+	 * Bounded, forward-only wire parser; never loads PHP objects or references.
+	 *
+	 * @param string $data Raw serialized bytes.
+	 * @param int    $offset Current parser position, updated by reference.
+	 * @param int    $size Full byte length.
+	 * @param int    $nodes Cumulative token budget, updated by reference.
+	 * @param int    $depth Array nesting depth.
+	 * @param bool   $key Whether this value must be a PHP array key.
+	 * @return bool Whether exactly one safe value was consumed.
+	 */
+	private function consume_safe_serialized_value( $data, &$offset, $size, &$nodes, $depth, $key ) {
+		if ( $depth > 64 || ++$nodes > $size || $offset >= $size ) {
+			return false;
+		}
+		$type = $data[ $offset++ ];
+		if ( $key && ! in_array( $type, array( 'i', 's' ), true ) ) {
+			return false;
+		}
+		if ( 'N' === $type ) {
+			if ( $offset >= $size || ';' !== $data[ $offset ] ) {
+				return false;
+			}
+			++$offset;
+			return true;
+		}
+		if ( $offset >= $size || ':' !== $data[ $offset++ ] ) {
+			return false;
+		}
+		if ( 'b' === $type ) {
+			if ( $offset + 1 >= $size ||
+				! in_array( $data[ $offset ], array( '0', '1' ), true ) ||
+				';' !== $data[ $offset + 1 ] ) {
+				return false;
+			}
+			$offset += 2;
+			return true;
+		}
+		if ( 'i' === $type || 'd' === $type ) {
+			$pattern = 'i' === $type ? '/\G-?[0-9]+;/A' :
+				'/\G(?:NAN|-?INF|-?(?:[0-9]+(?:\.[0-9]+)?)(?:[eE][+-]?[0-9]+)?);/A';
+			if ( ! preg_match( $pattern, $data, $number, 0, $offset ) ) {
+				return false;
+			}
+			$offset += strlen( $number[0] );
+			return true;
+		}
+		if ( 's' !== $type && 'a' !== $type ) {
+			return false;
+		}
+		if ( ! preg_match( '/\G([0-9]{1,18}):/A', $data, $count_match, 0, $offset ) ) {
+			return false;
+		}
+		$count   = (int) $count_match[1];
+		$offset += strlen( $count_match[0] );
+		if ( $offset >= $size ) {
+			return false;
+		}
+		if ( 's' === $type ) {
+			if ( '"' !== $data[ $offset++ ] || $count > $size - $offset - 2 ||
+				'"' !== $data[ $offset + $count ] || ';' !== $data[ $offset + $count + 1 ] ) {
+				return false;
+			}
+			$offset += $count + 2;
+			return true;
+		}
+		if ( '{' !== $data[ $offset++ ] || $count > intdiv( $size - $offset, 4 ) ) {
+			return false;
+		}
+		for ( $index = 0; $index < $count; ++$index ) {
+			if ( ! $this->consume_safe_serialized_value( $data, $offset, $size, $nodes, $depth + 1, true ) ||
+				! $this->consume_safe_serialized_value( $data, $offset, $size, $nodes, $depth + 1, false ) ) {
+				return false;
+			}
+		}
+		if ( $offset >= $size || '}' !== $data[ $offset ] ) {
+			return false;
+		}
+		++$offset;
 		return true;
 	}
 

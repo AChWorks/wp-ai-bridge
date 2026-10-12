@@ -14,6 +14,11 @@ use WP_AI_Bridge\Auth\OAuth_Store;
 use WP_AI_Bridge\Support\Settings;
 use WP_AI_Bridge\Support\Transfer_Settings;
 
+/** PHP 8.4 Enum fixture proving unsafe E: is an actual WordPress-serialized type. */
+enum WPAI139_Unsafe_Metadata_Enum {
+	case SENTINEL;
+}
+
 /** @param bool $condition Assertion. @param string $reason Reason. */
 function wpai139_effect_assert( $condition, $reason ) {
 	if ( ! $condition ) {
@@ -238,21 +243,150 @@ try {
 		return $id;
 	}
 
-	// A byte-verifiable, structurally valid WXR must still reject PHP-object
-	// metadata before the upstream native importer deserializes anything.
-	$object_meta = '<wp:postmeta><wp:meta_key><![CDATA[wpai139_object_probe]]></wp:meta_key><wp:meta_value><![CDATA[O:8:"stdClass":0:{}]]></wp:meta_value></wp:postmeta>';
+	// Prove both the byte-level allowlist and the actual authenticated MCP
+	// planning boundary. No test payload is deserialized or imported.
+	$scanner     = new ReflectionMethod( \WP_AI_Bridge\Support\WXR_Import_Service::class, 'safe_serialized_primitive_or_array' );
+	$reader      = ( new ReflectionClass( \WP_AI_Bridge\Support\WXR_Import_Service::class ) )->newInstanceWithoutConstructor();
+	$safe_values = array(
+		serialize( null ),
+		serialize( true ),
+		serialize( -321 ),
+		serialize( 1.25 ),
+		serialize(
+			array(
+				'nested' => array( false, -3, null, 2.75, 'فارسی 🌍' ),
+				'key'    => 'E:16:"Pretend:INSIDE"; O:8:"stdClass":0:{}',
+			)
+		),
+		serialize( 'O:8:"stdClass":0:{}' ),
+	);
+	foreach ( $safe_values as $serialized ) {
+		wpai139_effect_assert(
+			is_serialized( $serialized ) && true === $scanner->invoke( $reader, $serialized ),
+			'Legitimate serialized primitive/array or opaque string was rejected.'
+		);
+	}
+	$unsafe_values = array(
+		'O'        => serialize( (object) array( 'marker' => 'should never materialize' ) ),
+		'C'        => 'C:5:"Probe":0:{}',
+		'r'        => 'a:2:{i:0;O:8:"stdClass":0:{}i:1;r:2;}',
+		'R'        => 'a:2:{i:0;s:1:"x";i:1;R:2;}',
+		'E-top'    => serialize( WPAI139_Unsafe_Metadata_Enum::SENTINEL ),
+		'E-nested' => serialize(
+			array(
+				'allowed' => array( 1, 'safe' ),
+				'unsafe'  => array( WPAI139_Unsafe_Metadata_Enum::SENTINEL ),
+			)
+		),
+	);
+	foreach ( $unsafe_values as $type => $serialized ) {
+		wpai139_effect_assert(
+			is_serialized( $serialized ) && false === $scanner->invoke( $reader, $serialized ),
+			'Unsafe WordPress-serialized ' . $type . ' type was accepted by the structural allowlist.'
+		);
+	}
+	$deep = 'safe';
+	for ( $depth = 0; $depth < 70; ++$depth ) {
+		$deep = array( $deep );
+	}
+	wpai139_effect_assert(
+		false === $scanner->invoke( $reader, serialize( $deep ) ) &&
+		false === $scanner->invoke( $reader, 's:999999999999999999:"";' ) &&
+		false === $scanner->invoke( $reader, serialize( array( true ) ) . 'extra' ),
+		'Malformed, over-budget or overly deep PHP-serialized input was accepted.'
+	);
+	echo "PASS: #139 exact-byte grammar allows primitive/nested arrays and quoted object-like text; rejects O/C/E/r/R, deep, truncated and trailing payloads.\n";
+
+	// Attach real unsafe meta to a Core-generated, structurally valid WXR,
+	// then assert pre-claim denial over the authenticated official Adapter.
 	wpai139_effect_assert( false !== strpos( $bytes, '</item>' ), 'Core WXR lacks item boundary for unsafe-meta probe.' );
-	$poisoned    = substr_replace( $bytes, $object_meta, strpos( $bytes, '</item>' ), 0 );
-	$poison_id   = wpai139_effect_stage( $poisoned, $token, $session, $seq, $lease_ids );
-	$poison_plan = wpai139_effect_execute(
+	$import_starts = 0;
+	$observe_start = static function () use ( &$import_starts ) {
+		++$import_starts;
+	};
+	add_action( 'import_start', $observe_start, 1 );
+	foreach ( array( 'O', 'E-top', 'E-nested' ) as $type ) {
+		$value           = $unsafe_values[ $type ];
+		$meta            = '<wp:postmeta><wp:meta_key><![CDATA[wpai139_unsafe_' . $type . ']]></wp:meta_key>' .
+			'<wp:meta_value><![CDATA[' . $value . ']]></wp:meta_value></wp:postmeta>';
+		$poisoned        = substr_replace( $bytes, $meta, strpos( $bytes, '</item>' ), 0 );
+		$poison_id       = wpai139_effect_stage( $poisoned, $token, $session, $seq, $lease_ids );
+		$poison_plan     = wpai139_effect_execute(
+			$token,
+			$session,
+			$seq,
+			'wp-ai-bridge/wxr-import-plan',
+			array( 'transfer_id' => $poison_id )
+		);
+		$poison_status   = wpai139_effect_execute(
+			$token,
+			$session,
+			$seq,
+			'wp-ai-bridge/private-transfer',
+			array(
+				'action'      => 'status',
+				'transfer_id' => $poison_id,
+			)
+		);
+		$current_content = (string) get_post( $source_id )->post_content;
+		$current_marker  = (string) get_post_meta( $source_id, 'wpai139_verified_import', true );
+		$current_users   = (int) count_users()['total_users'];
+		wpai139_effect_assert(
+			false === ( $poison_plan['success'] ?? true ) &&
+			true === ( $poison_status['success'] ?? false ) &&
+			'verified' === ( $poison_status['data']['state'] ?? '' ) &&
+			'none' === ( $poison_status['data']['outcome'] ?? '' ) &&
+			0 === $import_starts &&
+			$source_content === $current_content &&
+			$marker === $current_marker &&
+			$owner_count === $current_users,
+			'Unsafe ' . $type . ' WXR passed plan, durably claimed a lease or changed WordPress before explicit consent.'
+		);
+		$canceled = wpai139_effect_execute(
+			$token,
+			$session,
+			$seq,
+			'wp-ai-bridge/private-transfer',
+			array(
+				'action'      => 'cancel',
+				'transfer_id' => $poison_id,
+			)
+		);
+		wpai139_effect_assert( true === ( $canceled['success'] ?? false ), 'Rejected WXR should remain safe to cancel without a claim.' );
+	}
+	remove_action( 'import_start', $observe_start, 1 );
+	echo "PASS: #139 real OAuth MCP verified WXR O/E top-level and nested denied pre-claim; no native importer, no mutation, cancel succeeds.\n";
+
+	// Legitimate serialized nested array metadata remains import-plannable.
+	$safe_meta  = '<wp:postmeta><wp:meta_key><![CDATA[wpai139_safe_array]]></wp:meta_key>' .
+		'<wp:meta_value><![CDATA[' . serialize(
+			array(
+				'flag'   => true,
+				'nested' => array( 'E:9:"as-text";', 'فارسی' ),
+			)
+		) . ']]></wp:meta_value></wp:postmeta>';
+	$safe_wxr   = substr_replace( $bytes, $safe_meta, strpos( $bytes, '</item>' ), 0 );
+	$safe_lease = wpai139_effect_stage( $safe_wxr, $token, $session, $seq, $lease_ids );
+	$safe_plan  = wpai139_effect_execute(
 		$token,
 		$session,
 		$seq,
 		'wp-ai-bridge/wxr-import-plan',
-		array( 'transfer_id' => $poison_id )
+		array( 'transfer_id' => $safe_lease )
 	);
-	wpai139_effect_assert( false === ( $poison_plan['success'] ?? true ), 'Serialized PHP object meta was approved for native WXR import.' );
-	echo "PASS: #139 exact-byte verified WXR serialized PHP object rejected before any native mutation.\n";
+	wpai139_effect_assert( true === ( $safe_plan['success'] ?? false ) && 0 === $import_starts, 'Valid nested primitive-array metadata was not accepted for read-only planning.' );
+	$safe_cancel = wpai139_effect_execute(
+		$token,
+		$session,
+		$seq,
+		'wp-ai-bridge/private-transfer',
+		array(
+			'action'      => 'cancel',
+			'transfer_id' => $safe_lease,
+		)
+	);
+	wpai139_effect_assert( true === ( $safe_cancel['success'] ?? false ), 'Legitimate read-only plan must not claim or prevent lease cancellation.' );
+	echo "PASS: #139 native plan accepts safe serialized nested arrays with opaque object-looking string bytes; no effect or claim.\n";
 
 	// Importing published content is an effect stronger than draft creation.
 	// Test status-based Live Content gate independently from filename/format.
