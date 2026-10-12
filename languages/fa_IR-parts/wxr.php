@@ -5,6 +5,8 @@
  * @package WP_AI_Bridge
  */
 return array(
+	'WXR contains serialized PHP objects or references that are not safe to import.' => 'فایل WXR حاوی اشیای سریال سازی شده یا ارجاعات ناامن PHP است.',
+	'Publishing imported WXR content requires Live Content authorization.' => 'برای انتشار نوشته های درون ریزی شده WXR دسترسی Live Content لازم است.',
 	'Plan Official WordPress WXR Import' => 'برنامه ریزی درون ریزی WXR رسمی وردپرس',
 	'Reads a verified WXR private transfer with the installed official Importer, detects conflicts and author mappings, and returns a principal-bound consent token without mutating WordPress.' => 'فایل خصوصی WXR تأییدشده را با درون ریز رسمی بررسی می کند و بدون تغییر وردپرس توکن تأیید عملیات را برمی گرداند.',
 	'Execute Reviewed WordPress WXR Import' => 'اجرای درون ریزی WXR بازبینی شده',

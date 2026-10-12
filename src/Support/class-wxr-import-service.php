@@ -130,10 +130,14 @@ final class WXR_Import_Service {
 			return new WP_Error( 'wxr_import_provider_parse', __( 'Official WordPress Importer could not safely parse the exact private WXR.', 'wp-ai-bridge' ) );
 		}
 
+		if ( ! $this->safe_serialized_meta( $native ) ) {
+			return new WP_Error( 'wxr_import_unsafe_meta', __( 'WXR contains serialized PHP objects or references that are not safe to import.', 'wp-ai-bridge' ) );
+		}
 		$types            = array();
 		$authors          = array();
 		$conflicts        = 0;
 		$attachments      = 0;
+		$publishing       = 0;
 		$conflict_targets = array();
 		foreach ( $native['posts'] as $post ) {
 			if ( ! is_array( $post ) || ! is_string( $post['post_type'] ?? null ) ||
@@ -142,9 +146,19 @@ final class WXR_Import_Service {
 				! is_string( $post['post_author'] ?? null ) ) {
 				return $this->invalid();
 			}
-			$type = $post['post_type'];
-			if ( ! post_type_exists( $type ) ) {
+			$type      = $post['post_type'];
+			$post_type = get_post_type_object( $type );
+			if ( ! $post_type ) {
 				return new WP_Error( 'wxr_import_missing_post_type', __( 'Import requires the same registered content types as its native WXR source.', 'wp-ai-bridge' ) );
+			}
+			if ( ! current_user_can( $post_type->cap->edit_posts ) || ! current_user_can( $post_type->cap->create_posts ) ) {
+				return $this->denied();
+			}
+			if ( in_array( $post['status'] ?? '', array( 'publish', 'private', 'future' ), true ) ) {
+				if ( ! current_user_can( $post_type->cap->publish_posts ) ) {
+					return $this->denied();
+				}
+				++$publishing;
 			}
 			$types[ $type ] = ( $types[ $type ] ?? 0 ) + 1;
 			$name           = sanitize_user( $post['post_author'], true );
@@ -162,6 +176,9 @@ final class WXR_Import_Service {
 				}
 			}
 		}
+		if ( $publishing > 0 && ! $this->permissions->allowed( Settings::GROUP_LIVE_CONTENT, 'publish_posts' ) ) {
+			return new WP_Error( 'wxr_import_publish_denied', __( 'Publishing imported WXR content requires Live Content authorization.', 'wp-ai-bridge' ) );
+		}
 		foreach ( array( 'categories', 'tags', 'terms' ) as $group ) {
 			if ( ! is_array( $native[ $group ] ?? null ) ) {
 				return $this->invalid();
@@ -172,12 +189,20 @@ final class WXR_Import_Service {
 				! taxonomy_exists( $term['term_taxonomy'] ) ) {
 				return new WP_Error( 'wxr_import_missing_taxonomy', __( 'Import requires registered taxonomies from the verified WXR.', 'wp-ai-bridge' ) );
 			}
+			$taxonomy = get_taxonomy( $term['term_taxonomy'] );
+			if ( ! $taxonomy || ! current_user_can( $taxonomy->cap->manage_terms ) ) {
+				return $this->denied();
+			}
 		}
 		foreach ( $native['posts'] as $post ) {
 			foreach ( $post['terms'] ?? array() as $term ) {
 				if ( ! is_array( $term ) || ! is_string( $term['domain'] ?? null ) ||
 					! taxonomy_exists( $term['domain'] ) ) {
 					return new WP_Error( 'wxr_import_missing_taxonomy', __( 'Import requires registered taxonomies from the verified WXR.', 'wp-ai-bridge' ) );
+				}
+				$taxonomy = get_taxonomy( $term['domain'] );
+				if ( ! $taxonomy || ! current_user_can( $taxonomy->cap->assign_terms ) ) {
+					return $this->denied();
 				}
 			}
 		}
@@ -199,20 +224,21 @@ final class WXR_Import_Service {
 			return new WP_Error( 'wxr_import_stale', __( 'Private WXR bytes changed after the native preview.', 'wp-ai-bridge' ) );
 		}
 		$identity = array(
-			'version'          => 1,
-			'blog'             => (int) get_current_blog_id(),
-			'user'             => (int) get_current_user_id(),
-			'client'           => OAuth_Server::authenticated_mcp_client_id(),
-			'lease'            => $input['transfer_id'],
-			'bytes'            => $source['bytes'],
-			'sha256'           => $source['sha256'],
-			'provider'         => $provider,
-			'types'            => $types,
-			'authors'          => array_keys( $authors ),
-			'mapping'          => $mapping,
-			'conflicts'        => $conflicts,
-			'conflict_targets' => $conflict_targets,
-			'conflict'         => $mode,
+			'version'            => 1,
+			'blog'               => (int) get_current_blog_id(),
+			'user'               => (int) get_current_user_id(),
+			'client'             => OAuth_Server::authenticated_mcp_client_id(),
+			'lease'              => $input['transfer_id'],
+			'bytes'              => $source['bytes'],
+			'sha256'             => $source['sha256'],
+			'provider'           => $provider,
+			'types'              => $types,
+			'authors'            => array_keys( $authors ),
+			'mapping'            => $mapping,
+			'conflicts'          => $conflicts,
+			'publish_candidates' => $publishing,
+			'conflict_targets'   => $conflict_targets,
+			'conflict'           => $mode,
 		);
 		$wire     = wp_json_encode( $identity );
 		$token    = is_string( $wire ) ? hash_hmac( 'sha256', $wire, wp_salt( 'auth' ) ) : '';
@@ -232,6 +258,7 @@ final class WXR_Import_Service {
 			'author_mapping'        => $mapping,
 			'default_author_id'     => (int) get_current_user_id(),
 			'conflict_count'        => $conflicts,
+			'publish_candidates'    => $publishing,
 			'on_conflict'           => $mode,
 			'attachment_candidates' => $attachments,
 			'fetch_attachments'     => false,
@@ -369,6 +396,46 @@ final class WXR_Import_Service {
 			return new WP_Error( 'wxr_import_unsupported_provider', __( 'Use a reviewed compatible version of the official WordPress Importer before executing imports.', 'wp-ai-bridge' ) );
 		}
 		return $version;
+	}
+
+	/**
+	 * WordPress Importer deserializes post/term/comment metadata and may invoke
+	 * provider callbacks on values. Refuse serialized PHP objects/custom types
+	 * and reference aliases before any native effect; primitive/array metadata
+	 * remain handled by the owning WordPress Importer.
+	 *
+	 * @param array<string,mixed> $native Official parsed WXR tree.
+	 * @return bool No serialized object/reference payload found.
+	 */
+	private function safe_serialized_meta( $native ) {
+		$meta_groups = array();
+		foreach ( $native['posts'] as $post ) {
+			$meta_groups[] = $post['postmeta'] ?? array();
+			foreach ( $post['comments'] ?? array() as $comment ) {
+				$meta_groups[] = $comment['commentmeta'] ?? array();
+			}
+		}
+		foreach ( array( 'categories', 'tags', 'terms' ) as $group ) {
+			foreach ( $native[ $group ] ?? array() as $term ) {
+				$meta_groups[] = $term['termmeta'] ?? array();
+			}
+		}
+		foreach ( $meta_groups as $items ) {
+			if ( ! is_array( $items ) ) {
+				return false;
+			}
+			foreach ( $items as $meta ) {
+				if ( ! is_array( $meta ) || ! is_string( $meta['value'] ?? null ) ) {
+					return false;
+				}
+				$value = $meta['value'];
+				if ( is_serialized( $value ) &&
+					preg_match( '/(?:O|C):[0-9]{1,12}:"|(?:^|[;{])(?:r|R):[0-9]{1,12};/', $value ) ) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	/** @return WP_Error */

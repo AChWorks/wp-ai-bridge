@@ -234,6 +234,75 @@ try {
 		return $id;
 	}
 
+	// A byte-verifiable, structurally valid WXR must still reject PHP-object
+	// metadata before the upstream native importer deserializes anything.
+	$object_meta = '<wp:postmeta><wp:meta_key><![CDATA[wpai139_object_probe]]></wp:meta_key><wp:meta_value><![CDATA[O:8:"stdClass":0:{}]]></wp:meta_value></wp:postmeta>';
+	wpai139_effect_assert( false !== strpos( $bytes, '</item>' ), 'Core WXR lacks item boundary for unsafe-meta probe.' );
+	$poisoned    = substr_replace( $bytes, $object_meta, strpos( $bytes, '</item>' ), 0 );
+	$poison_id   = wpai139_effect_stage( $poisoned, $token, $session, $seq, $lease_ids );
+	$poison_plan = wpai139_effect_execute(
+		$token,
+		$session,
+		$seq,
+		'wp-ai-bridge/wxr-import-plan',
+		array( 'transfer_id' => $poison_id )
+	);
+	wpai139_effect_assert( false === ( $poison_plan['success'] ?? true ), 'Serialized PHP object meta was approved for native WXR import.' );
+	echo "PASS: #139 exact-byte verified WXR serialized PHP object rejected before any native mutation.\n";
+
+	// Importing published content is an effect stronger than draft creation.
+	// Test status-based Live Content gate independently from filename/format.
+	$published = preg_replace(
+		'~(<wp:status>\s*(?:<!\[CDATA\[)?)draft((?:\]\]>)?\s*</wp:status>)~',
+		'$1publish$2',
+		$bytes,
+		1,
+		$publish_subs
+	);
+	wpai139_effect_assert( 1 === $publish_subs && is_string( $published ), 'Core WXR status fixture could not be safely changed to publish.' );
+	$published_id   = wpai139_effect_stage( $published, $token, $session, $seq, $lease_ids );
+	$publish_denied = wpai139_effect_execute(
+		$token,
+		$session,
+		$seq,
+		'wp-ai-bridge/wxr-import-plan',
+		array( 'transfer_id' => $published_id )
+	);
+	wpai139_effect_assert( false === ( $publish_denied['success'] ?? true ), 'WXR published post bypassed default-off Live Content grant.' );
+	wp_set_current_user( $actor );
+	$grants[ Settings::GROUP_LIVE_CONTENT ] = 1;
+	update_option( Settings::OPTION_NAME, $grants, false );
+	wp_set_current_user( 0 );
+	$publish_plan = wpai139_effect_execute(
+		$token,
+		$session,
+		$seq,
+		'wp-ai-bridge/wxr-import-plan',
+		array( 'transfer_id' => $published_id )
+	);
+	wpai139_effect_assert(
+		true === ( $publish_plan['success'] ?? false ) &&
+		1 === ( $publish_plan['data']['publish_candidates'] ?? 0 ),
+		'Native WXR published content was not explicitly counted with Live Content consent.'
+	);
+	wp_set_current_user( $actor );
+	$grants[ Settings::GROUP_LIVE_CONTENT ] = 0;
+	update_option( Settings::OPTION_NAME, $grants, false );
+	wp_set_current_user( 0 );
+	$publish_revoked = wpai139_effect_execute(
+		$token,
+		$session,
+		$seq,
+		'wp-ai-bridge/wxr-import-execute',
+		array(
+			'transfer_id' => $published_id,
+			'plan_token'  => $publish_plan['data']['plan_token'],
+			'confirm'     => true,
+		)
+	);
+	wpai139_effect_assert( false === ( $publish_revoked['success'] ?? true ), 'Revoked Live Content grant did not block published WXR import.' );
+	echo "PASS: #139 published import Live Content grant, source-bound plan and revocation deny.\n";
+
 	$id   = wpai139_effect_stage( $bytes, $token, $session, $seq, $lease_ids );
 	$info = wpai139_effect_execute(
 		$token,
