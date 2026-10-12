@@ -642,7 +642,10 @@ final class Private_Transfer_Session {
 			return $guard;
 		}
 		try {
-			$loaded = $this->load( $id );
+			// A previous deletion may have been refused after writing the
+			// tombstone. An authorized owner must still be able to resume
+			// cleanup, without exposing the lease for data-plane operations.
+			$loaded = $this->load( $id, true );
 			if ( is_wp_error( $loaded ) ) {
 				return $loaded;
 			}
@@ -754,7 +757,7 @@ final class Private_Transfer_Session {
 	 * @param string $id Fixed hexadecimal transfer identity.
 	 * @return array<int,mixed>|WP_Error
 	 */
-	private function open_meta( $root, $id ) {
+	private function open_meta( $root, $id, $allow_tombstone = false ) {
 		$path = $root . '/' . $id . '.meta';
 		$h    = @fopen( $path, 'r+b' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Stable private coordination inode, never replaced.
 		if ( false === $h || ! $this->secure_file( $h, $path ) || ! flock( $h, LOCK_EX ) ) {
@@ -766,8 +769,9 @@ final class Private_Transfer_Session {
 		// A canceller can unlink the stable coordinator while a peer waits
 		// on its inode. Check the live directory identity *after* locking.
 		if ( ! $this->secure_file( $h, $path ) ||
-			file_exists( $root . '/' . $id . '.tombstone' ) ||
-			is_link( $root . '/' . $id . '.tombstone' ) ) {
+			( ! $allow_tombstone &&
+				( file_exists( $root . '/' . $id . '.tombstone' ) ||
+					is_link( $root . '/' . $id . '.tombstone' ) ) ) ) {
 			$this->close_meta( $h );
 			return new WP_Error( 'transfer_cancelled', 'This private lease is removed or has a durable deletion marker.' );
 		}
@@ -1243,7 +1247,7 @@ final class Private_Transfer_Session {
 	}
 
 	/** @param string $id Exact opaque id. @return array<int,mixed>|WP_Error */
-	private function load( $id ) {
+	private function load( $id, $allow_tombstone = false ) {
 		if ( ! is_string( $id ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $id ) ) {
 			return $this->invalid();
 		}
@@ -1251,11 +1255,12 @@ final class Private_Transfer_Session {
 		if ( is_wp_error( $root ) ) {
 			return $root;
 		}
-		if ( file_exists( $root . '/' . $id . '.tombstone' ) ||
-			is_link( $root . '/' . $id . '.tombstone' ) ) {
+		if ( ! $allow_tombstone &&
+			( file_exists( $root . '/' . $id . '.tombstone' ) ||
+				is_link( $root . '/' . $id . '.tombstone' ) ) ) {
 			return new WP_Error( 'transfer_cancelled', 'This transfer has a durable cancellation tombstone.' );
 		}
-		$info = $this->open_meta( $root, $id );
+		$info = $this->open_meta( $root, $id, $allow_tombstone );
 		if ( is_wp_error( $info ) ) {
 			return $info;
 		}

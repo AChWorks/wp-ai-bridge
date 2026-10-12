@@ -283,6 +283,149 @@ try {
 		hash_file( 'sha256', $internal['path'] ) === hash( 'sha256', $source ),
 		'Native WordPress private storage differs from externally staged MCP bytes.'
 	);
+	// R3: kill a checkpoint update after an incomplete JSON publication.
+	// A prior checksum-protected generation must remain authoritative,
+	// and unrelated admission must not be globally poisoned.
+	$private_root = dirname( $internal['path'] );
+	wp_set_current_user( 0 );
+	$journal_id = wpai134_client_stage( $token, $session, $seq, 'text', 'journal recovery exact source bytes', $identities );
+	$slot0      = $private_root . '/' . $journal_id . '.meta.state.0';
+	$slot1      = $private_root . '/' . $journal_id . '.meta.state.1';
+	$wire0      = json_decode( (string) file_get_contents( $slot0 ), true );
+	$wire1      = json_decode( (string) file_get_contents( $slot1 ), true );
+	wpai134_session_assert(
+		is_array( $wire0 ) && is_array( $wire1 ) &&
+		$wire0['generation'] !== $wire1['generation'],
+		'R3: two distinct committed private manifest generations were not created.'
+	);
+	$newest = $wire0['generation'] > $wire1['generation'] ? $slot0 : $slot1;
+	wpai134_session_assert(
+		false !== file_put_contents( $newest, '{"generation":' ),
+		'R3: could not emulate a torn manifest checkpoint on disposable WordPress.'
+	);
+	$recovered = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'status',
+			'transfer_id' => $journal_id,
+		)
+	);
+	wpai134_session_assert(
+		true === ( $recovered['result']['structuredContent']['success'] ?? false ) &&
+		'open' === ( $recovered['result']['structuredContent']['data']['state'] ?? '' ),
+		'R3: torn newest checkpoint did not recover its last complete generation.'
+	);
+	$verified_again = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'verify',
+			'transfer_id' => $journal_id,
+		)
+	);
+	wpai134_session_assert(
+		true === ( $verified_again['result']['structuredContent']['success'] ?? false ) &&
+		'verified' === ( $verified_again['result']['structuredContent']['data']['state'] ?? '' ),
+		'R3: last committed checkpoint could not reverify the exact persisted bytes.'
+	);
+	$new_admission = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'begin',
+			'purpose'     => 'text',
+			'total_bytes' => 0,
+			'sha256'      => hash( 'sha256', '' ),
+		)
+	);
+	wpai134_session_assert(
+		true === ( $new_admission['result']['structuredContent']['success'] ?? false ),
+		'R3: recoverable torn checkpoint still blocked unrelated private admission.'
+	);
+	$identities[] = $new_admission['result']['structuredContent']['data']['transfer_id'];
+	// Flush a chunk into the data stream without publishing the matching
+	// received-offset checkpoint, as if PHP died between these two effects.
+	$tail_full  = 'prefix-restart-source';
+	$tail_begin = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'begin',
+			'purpose'     => 'text',
+			'total_bytes' => strlen( $tail_full ),
+			'sha256'      => hash( 'sha256', $tail_full ),
+		)
+	);
+	$tail_id    = $tail_begin['result']['structuredContent']['data']['transfer_id'] ?? '';
+	wpai134_session_assert( strlen( $tail_id ) === 64, 'R3: resumable tail fixture failed to begin.' );
+	$identities[] = $tail_id;
+	$prefix       = 'prefix-';
+	$first        = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'         => 'append',
+			'transfer_id'    => $tail_id,
+			'offset'         => 0,
+			'content_base64' => base64_encode( $prefix ),
+		)
+	);
+	wpai134_session_assert(
+		true === ( $first['result']['structuredContent']['success'] ?? false ),
+		'R3: prefix fixture append failed.'
+	);
+	$tail_path = $private_root . '/' . $tail_id . '.bytes';
+	wpai134_session_assert(
+		false !== file_put_contents( $tail_path, 'unacknowledged', FILE_APPEND ),
+		'R3: failed to emulate a flushed uncheckpointed tail.'
+	);
+	$recovered_tail = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'status',
+			'transfer_id' => $tail_id,
+		)
+	);
+	wpai134_session_assert(
+		true === ( $recovered_tail['result']['structuredContent']['success'] ?? false ) &&
+		strlen( $prefix ) === ( $recovered_tail['result']['structuredContent']['data']['received_bytes'] ?? 0 ) &&
+		filesize( $tail_path ) === strlen( $prefix ),
+		'R3: unacknowledged tail bytes did not roll back to last durable receipt.'
+	);
+	$continued     = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'         => 'append',
+			'transfer_id'    => $tail_id,
+			'offset'         => strlen( $prefix ),
+			'content_base64' => base64_encode( substr( $tail_full, strlen( $prefix ) ) ),
+		)
+	);
+	$tail_verified = wpai134_session_action(
+		$token,
+		$session,
+		$seq,
+		array(
+			'action'      => 'verify',
+			'transfer_id' => $tail_id,
+		)
+	);
+	wpai134_session_assert(
+		true === ( $continued['result']['structuredContent']['success'] ?? false ) &&
+		true === ( $tail_verified['result']['structuredContent']['success'] ?? false ),
+		'R3: resumed exact byte source could not complete after worker-death tail recovery.'
+	);
+	echo "PASS: #134 review R3 stable-manifest generation recovery, unacknowledged byte-tail repair and unrelated admission.\n";
 	wp_set_current_user( 0 );
 
 	$cancel = wpai134_session_action(
