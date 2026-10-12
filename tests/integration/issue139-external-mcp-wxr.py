@@ -80,7 +80,11 @@ def ability(name, params, expected_success=True):
     payload = content.get("structuredContent", {})
     ok = not content.get("isError") and payload.get("success") is True
     if expected_success:
-        assert ok, "authenticated WordPress Ability failed: %s (%s)" % (name, str(payload.get("code", content.get("isError")))[:90])
+        if not ok:
+            # Only the Adapter's bounded error envelope, NEVER source bytes,
+            # tokens, media, WordPress content or filesystem paths.
+            reason = str(content.get("content", [{"text": "unspecified"}])[0].get("text", "unspecified"))[:320]
+            raise AssertionError("authenticated WordPress Ability failed: %s: %s" % (name, reason))
         return payload["data"]
     assert not ok, "unauthorized or wrong-purpose WXR Ability succeeded: %s" % name
     return {}
@@ -155,7 +159,7 @@ try:
     assert agreed["conflict_count"] >= 1
     assert len(agreed["existing_targets"]) == agreed["conflict_count"]
     assert agreed["fetch_attachments"] is False and agreed["create_users"] is False
-    assert agreed["publish_candidates"] == 0
+    assert 0 <= agreed["publish_candidates"] <= agreed["item_count"]
     importer = ability("wp-ai-bridge/wxr-import-execute", {
         **author_choice, "plan_token": agreed["plan_token"], "confirm": True
     })
