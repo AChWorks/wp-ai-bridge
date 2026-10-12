@@ -5,13 +5,30 @@ cd "$(dirname "$0")/.."
 
 forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir)[[:space:]]*\('
 
-unexpected_primitives="$(grep -R -nE "$forbidden" src --include='*.php' --exclude='class-media-abilities.php' --exclude='class-source-editing-abilities.php' --exclude='class-private-transfer-session.php' |
+unexpected_primitives="$(grep -R -nE "$forbidden" src --include='*.php' --exclude='class-media-abilities.php' --exclude='class-source-editing-abilities.php' --exclude='class-private-artifact-writer.php' --exclude='class-private-transfer-session.php' |
     grep -vE "^src/Support/class-extension-install-lock.php:[0-9]+:[[:space:]]+[$]handle = @fopen[(] [$]path, '[xr]' [)];" || true)"
 if [[ -n "$unexpected_primitives" ||
       "$(grep -cF "@fopen( \$path, 'x' );" src/Support/class-extension-install-lock.php || true)" != "1" ||
       "$(grep -cF "@fopen( \$path, 'r' );" src/Support/class-extension-install-lock.php || true)" != "1" ]]; then
     printf '%s\n' "$unexpected_primitives"
     echo "ERROR: forbidden direct execution/filesystem primitive found in production source." >&2
+    exit 1
+fi
+
+# One narrowly auditable internal-only opaque byte writer is used by native
+# producers (#134/#139). Keep the blanket command/filesystem guard intact
+# elsewhere. The exception is exactly a WordPress-created private temp inode
+# with exactly one append writer; no supplied path, shell, arbitrary copy or
+# extension/Source Editor write entrypoint is permitted.
+private_writer=src/Support/class-private-artifact-writer.php
+private_forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|unlink|rename|copy|mkdir|rmdir)[[:space:]]*\('
+if grep -nE "$private_forbidden" "$private_writer" ||
+   [[ "$(grep -cF "wp_tempnam( 'wpai-private-artifact.bin' )" "$private_writer" || true)" != "1" ]] ||
+   [[ "$(grep -cF "fopen( \$real, 'wb' )" "$private_writer" || true)" != "1" ]] ||
+   [[ "$(grep -cF 'fwrite( $this->handle, substr( $bytes, $offset ) )' "$private_writer" || true)" != "1" ]] ||
+   [[ "$(grep -Ec '(^|[^[:alnum:]_])fopen[[:space:]]*\(' "$private_writer" || true)" != "1" ]] ||
+   [[ "$(grep -Ec '(^|[^[:alnum:]_])fwrite[[:space:]]*\(' "$private_writer" || true)" != "1" ]]; then
+    echo "ERROR: private artifact writer exceeded its single guarded temp-file stream exception." >&2
     exit 1
 fi
 
@@ -41,7 +58,7 @@ if [[ "$(grep -cF 'rename( $temp, $dest )' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'rename( $temporary, $path )' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'durably_sync_claim_directory( $root )' "$private_stage" || true)" != "2" ||
       "$(grep -cF '@fsync( $directory )' "$private_stage" || true)" != "1" ||
-      "$(grep -cF 'fence_native_effect(' "$private_stage" || true)" != "4" ||
+      "$(grep -cF 'fence_native_effect(' "$private_stage" || true)" != "5" ||
       "$(grep -cF 'recover_scratch(' "$private_stage" || true)" != "4" ]]; then
     echo "ERROR: transfer checkpoint or coordinated scratch recovery changed." >&2
     exit 1

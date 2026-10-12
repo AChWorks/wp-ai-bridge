@@ -78,6 +78,12 @@ for test in \
     issue99-extension-authorization-smoke.php \
     issue130-141-diagnostics-smoke.php \
     issue140-site-health-smoke.php \
+    issue139-wxr-discovery-smoke.php \
+    issue139-native-wxr-export-smoke.php \
+    issue139-wxr-staged-stream-smoke.php \
+    issue139-wxr-budget-rejection-smoke.php \
+    issue139-wxr-import-preflight-smoke.php \
+    issue139-private-mcp-wxr-smoke.php \
     issue119-registered-rest-smoke.php \
     issue119-native-execution-smoke.php \
     issue44-native-ability-delegation-smoke.php \
@@ -119,6 +125,19 @@ do
         "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-content/mu-plugins/wpai-issue44-native-provider.php
     fi
 done
+
+# Run the official WordPress Importer semantic roundtrip in one representative
+# isolated lane. The importer is a separate native plugin, not a Bridge-owned
+# PHP/XML import engine, and is intentionally excluded from the shipped ZIP.
+if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
+    echo '== Issue #139 native WXR/official WordPress Importer roundtrip =='
+    "${wp[@]}" plugin install wordpress-importer --version="${WPAI_IMPORTER_VERSION:-0.9.6}" --activate --allow-root
+    "${wp[@]}" config set WP_LOAD_IMPORTERS true --raw --allow-root >/dev/null
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue139-native-import-roundtrip-smoke.php --user=1 --allow-root
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue139-wxr-native-plan-smoke.php --user=1 --allow-root
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue139-native-mcp-import-execute-smoke.php --user=1 --allow-root
+    "${wp[@]}" config delete WP_LOAD_IMPORTERS --allow-root >/dev/null
+fi
 
 # Exercise the Workspace 200-item ceiling and unexpected corruption in one
 # representative lane, instead of repeating 200 writes in all four lanes.
