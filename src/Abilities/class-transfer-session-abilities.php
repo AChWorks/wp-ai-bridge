@@ -104,6 +104,9 @@ final class Transfer_Session_Abilities {
 						'target_id'             => array( 'type' => 'integer' ),
 						'payload_released'      => array( 'type' => 'boolean' ),
 						'source_representation' => array( 'type' => 'string' ),
+						'plan_hash'             => array( 'type' => 'string' ),
+						'import_items'          => array( 'type' => 'integer' ),
+						'import_processed'      => array( 'type' => 'integer' ),
 						'read_offset'           => array( 'type' => 'integer' ),
 						'read_next_offset'      => array( 'type' => 'integer' ),
 						'read_complete'         => array( 'type' => 'boolean' ),
@@ -372,6 +375,9 @@ final class Transfer_Session_Abilities {
 			'target_id'             => (int) ( $receipt['target_id'] ?? 0 ),
 			'payload_released'      => ! empty( $receipt['payload_released'] ),
 			'source_representation' => (string) ( $receipt['source_representation'] ?? '' ),
+			'plan_hash'             => (string) ( $receipt['plan_hash'] ?? '' ),
+			'import_items'          => (int) ( $receipt['import_items'] ?? 0 ),
+			'import_processed'      => (int) ( $receipt['import_processed'] ?? 0 ),
 		);
 	}
 }

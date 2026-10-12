@@ -58,7 +58,7 @@ if [[ "$(grep -cF 'rename( $temp, $dest )' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'rename( $temporary, $path )' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'durably_sync_claim_directory( $root )' "$private_stage" || true)" != "2" ||
       "$(grep -cF '@fsync( $directory )' "$private_stage" || true)" != "1" ||
-      "$(grep -cF 'fence_native_effect(' "$private_stage" || true)" != "4" ||
+      "$(grep -cF 'fence_native_effect(' "$private_stage" || true)" != "5" ||
       "$(grep -cF 'recover_scratch(' "$private_stage" || true)" != "4" ]]; then
     echo "ERROR: transfer checkpoint or coordinated scratch recovery changed." >&2
     exit 1

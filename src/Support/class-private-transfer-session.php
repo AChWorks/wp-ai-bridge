@@ -1022,7 +1022,7 @@ final class Private_Transfer_Session {
 			is_string( $meta['sha256'] ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $meta['sha256'] ) &&
 			in_array( $meta['state'], array( 'open', 'preparing', 'verified', 'committing', 'committed', 'rejected', 'observed' ), true ) &&
 			( ! in_array( $meta['state'], array( 'committing', 'committed', 'rejected', 'observed' ), true ) ||
-				( ( in_array( $meta['consumer'] ?? '', array( 'media', 'content' ), true ) ||
+				( ( in_array( $meta['consumer'] ?? '', array( 'media', 'content', 'wxr' ), true ) ||
 				( 'committing' === $meta['state'] && 'unknown' === ( $meta['consumer'] ?? '' ) &&
 					'unknown' === ( $meta['outcome'] ?? '' ) ) ) &&
 				is_int( $meta['destination_id'] ?? null ) && $meta['destination_id'] >= 0 ) );
@@ -1073,7 +1073,7 @@ final class Private_Transfer_Session {
 			}
 			$wire = json_decode( (string) stream_get_contents( $h, 2048 ), true );
 			if ( ! is_array( $wire ) ||
-				! in_array( $wire['consumer'] ?? '', array( 'media', 'content' ), true ) ||
+				! in_array( $wire['consumer'] ?? '', array( 'media', 'content', 'wxr' ), true ) ||
 				! is_string( $wire['intent'] ?? null ) ||
 				! is_int( $wire['target_id'] ?? null ) ) {
 				return new WP_Error( 'transfer_outcome_unknown', 'Claim fence is incomplete; no native retry is safe.' );
@@ -1184,6 +1184,112 @@ final class Private_Transfer_Session {
 				@fsync( $directory ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Unsupported directory fsync must fail closed before the WordPress effect.
 		} finally {
 			fclose( $directory );
+		}
+	}
+
+	/**
+	 * Lock and irreversibly claim one exact verified WXR lease. Keep the stable
+	 * session lock held across the *entire* native WordPress Importer call;
+	 * cancellation, competing effects and byte release cannot race the parser.
+	 * A fatal exit leaves an immutable claim and an unknown receipt, NEVER a
+	 * retryable verified lease. No source path is returned to MCP clients.
+	 *
+	 * @param string $id Opaque inbound WXR lease.
+	 * @param string $plan_hash Exact authenticated, validated import plan.
+	 * @return array<string,mixed>|WP_Error Locked private descriptor.
+	 */
+	public function claim_wxr_import( $id, $plan_hash ) {
+		if ( ! is_string( $plan_hash ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $plan_hash ) ) {
+			return $this->invalid();
+		}
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		$claimed                      = false;
+		try {
+			if ( 'wxr' !== $meta['purpose'] || ! $this->allowed( 'wxr' ) ) {
+				return $this->denied();
+			}
+			if ( 'verified' !== $meta['state'] ) {
+				return new WP_Error( 'transfer_consume_uncertain', 'WXR lease already claimed; inspect status and WordPress objects, never repeat import.' );
+			}
+			$path = $this->check_file( $root, $id, $meta );
+			if ( is_wp_error( $path ) || ! hash_equals( $meta['sha256'], (string) hash_file( 'sha256', $path ) ) ) {
+				return new WP_Error( 'transfer_source_changed', 'WXR source changed before native import.' );
+			}
+			if ( ! $this->fence_native_effect( $root, $id, 'wxr', 'import', 0 ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'Native WXR claim could not be durably fenced; never retry.' );
+			}
+			$meta['state']          = 'committing';
+			$meta['consumer']       = 'wxr';
+			$meta['intent']         = 'import';
+			$meta['target_id']      = 0;
+			$meta['outcome']        = 'unknown';
+			$meta['destination_id'] = 0;
+			$meta['plan_hash']      = $plan_hash;
+			if ( ! $this->save_meta( $handle, $meta ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'WXR claim was published but checkpoint could not be saved; never retry.' );
+			}
+			$claimed = true;
+			return array(
+				'id'     => $id,
+				'path'   => $path,
+				'bytes'  => $meta['total'],
+				'sha256' => $meta['sha256'],
+				'lock'   => $handle,
+				'meta'   => $meta,
+			);
+		} finally {
+			if ( ! $claimed ) {
+				$this->close_meta( $handle );
+			}
+		}
+	}
+
+	/**
+	 * Record the native importer's observed outcome while holding its
+	 * original coordinator. No claim is ever removed or made retryable.
+	 *
+	 * @param array<string,mixed> $claim Internal locked claim.
+	 * @param int $items Planned WXR item count.
+	 * @param int $processed Actually mapped native post count (may include preexisting).
+	 * @param bool $finished Whether official Importer returned normally.
+	 * @return array<string,mixed>|WP_Error Outcome and durable receipt.
+	 */
+	public function finish_wxr_import( $claim, $items, $processed, $finished ) {
+		if ( ! is_array( $claim ) || ! is_resource( $claim['lock'] ?? null ) ) {
+			return new WP_Error( 'transfer_outcome_unknown', 'WXR native claim lock is absent.' );
+		}
+		$handle = $claim['lock'];
+		try {
+			$meta = $claim['meta'];
+			if ( 'wxr' !== $meta['purpose'] || 'committing' !== $meta['state'] ||
+				'wxr' !== ( $meta['consumer'] ?? '' ) ||
+				! is_int( $items ) || $items < 0 ||
+				! is_int( $processed ) || $processed < 0 || $processed > $items ||
+				! is_bool( $finished ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'Native WXR outcome cannot be certified.' );
+			}
+			$meta['import_items']     = $items;
+			$meta['import_processed'] = $processed;
+			$meta['state']            = $finished && $processed === $items ? 'committed' : 'observed';
+			$meta['outcome']          = ! $finished ? 'partial_or_unknown' :
+				( $processed === $items ? 'provider_returned' : 'partial_observed' );
+			if ( ! $this->save_meta( $handle, $meta ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'WXR importer returned but durable receipt is uncertain.' );
+			}
+			return $this->receipt( $meta );
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
+	/** @param array<string,mixed> $claim Locked WXR source after interruption. */
+	public function abandon_wxr_import( $claim ) {
+		if ( is_array( $claim ) && is_resource( $claim['lock'] ?? null ) ) {
+			$this->close_meta( $claim['lock'] );
 		}
 	}
 
@@ -1740,6 +1846,9 @@ final class Private_Transfer_Session {
 			'target_id'             => (int) ( $meta['target_id'] ?? 0 ),
 			'source_representation' => (string) ( $meta['source_representation'] ?? '' ),
 			'payload_released'      => ! empty( $meta['payload_released'] ),
+			'plan_hash'             => (string) ( $meta['plan_hash'] ?? '' ),
+			'import_items'          => (int) ( $meta['import_items'] ?? 0 ),
+			'import_processed'      => (int) ( $meta['import_processed'] ?? 0 ),
 		);
 	}
 }

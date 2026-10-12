@@ -135,6 +135,7 @@ if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION
     "${wp[@]}" config set WP_LOAD_IMPORTERS true --raw --allow-root >/dev/null
     "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue139-native-import-roundtrip-smoke.php --user=1 --allow-root
     "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue139-wxr-native-plan-smoke.php --user=1 --allow-root
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue139-native-mcp-import-execute-smoke.php --user=1 --allow-root
     "${wp[@]}" config delete WP_LOAD_IMPORTERS --allow-root >/dev/null
 fi
 
