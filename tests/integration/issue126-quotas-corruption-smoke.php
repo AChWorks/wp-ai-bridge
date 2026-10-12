@@ -51,12 +51,14 @@ try {
 		'Empty Workspace state is not truthful.'
 	);
 	for ( $i = 0; $i < Store::MAX_RECORDS; ++$i ) {
-		$record = $store->create_document(
-			array(
-				'title'   => 'WPAI126 quota ' . $i,
-				'content' => 'Bounded canonical fixture ' . $i,
-			)
+		$input = array(
+			'title'   => 'WPAI126 quota ' . $i,
+			'content' => 'Bounded canonical fixture ' . $i,
 		);
+		if ( $i >= 1 && $i <= 30 ) {
+			$input['project_ref'] = 'wpai-project-' . sprintf( '%03d', $i );
+		}
+		$record = $store->create_document( $input );
 		wpai126_quota_assert( ! is_wp_error( $record ) && (int) $record['id'] > 0, 'Failed to create a documented-capacity record.' );
 		$created[] = (int) $record['id'];
 	}
@@ -88,6 +90,13 @@ try {
 		! is_wp_error( $resume ) && 200 === $resume['counts']['documents_total'] &&
 		200 === $resume['sections']['documents']['total'] && $resume['sections']['documents']['has_more'],
 		'Resume concealed index truncation at the quota.'
+	);
+	wpai126_quota_assert(
+		! empty( $resume['projects_truncated'] ) && 25 === count( $resume['project_refs'] ) &&
+		'wpai-project-001' === $resume['project_refs'][0] &&
+		'wpai-project-025' === $resume['project_refs'][24] &&
+		'mixed' === $resume['scope'],
+		'Resume did not preserve the exact first 25 project references or truthful truncation.'
 	);
 
 	$at_limit = $store->create_document( array( 'title' => 'Over quota' ) );

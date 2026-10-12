@@ -911,9 +911,10 @@ final class Store {
 		if ( null !== $project_ref && ! $this->valid_project_filter( $project_ref ) ) {
 			return new WP_Error( 'workspace_invalid_project', __( 'Requested Workspace project reference is invalid.', 'wp-ai-bridge' ) );
 		}
-		$projects       = array();
-		$unbound        = false;
-		$counts         = array(
+		$projects           = array();
+		$projects_truncated = false;
+		$unbound            = false;
+		$counts             = array(
 			'documents'          => 0,
 			'tasks'              => 0,
 			'active_tasks'       => 0,
@@ -925,24 +926,39 @@ final class Store {
 			'documents_archived' => 0,
 			'tasks_archived'     => 0,
 		);
-		$sections       = array(
+		$sections           = array(
 			'active_tasks'  => array(),
 			'blocked_tasks' => array(),
 			'review_needed' => array(),
 			'documents'     => array(),
 		);
-		$section_totals = array_fill_keys( array_keys( $sections ), 0 );
-		$focus          = '';
-		$last_modified  = '';
-		$track_project  = static function ( $item ) use ( &$projects, &$unbound ) {
+		$section_totals     = array_fill_keys( array_keys( $sections ), 0 );
+		$focus              = '';
+		$last_modified      = '';
+		$track_project      = static function ( $item ) use ( &$projects, &$projects_truncated, &$unbound ) {
 			$reference = (string) $item['project_ref'];
 			if ( '' === $reference ) {
 				$unbound = true;
-			} else {
-				$projects[ $reference ] = true;
+				return;
 			}
+			if ( isset( $projects[ $reference ] ) ) {
+				return;
+			}
+			// Retain only the lexicographically first 25 distinct project
+			// references. This preserves deterministic discovery without a
+			// 50k-item per-request PHP set for a very large Workspace.
+			if ( 25 === count( $projects ) ) {
+				$projects_truncated = true;
+				ksort( $projects, SORT_STRING );
+				$largest = array_key_last( $projects );
+				if ( strcmp( $reference, $largest ) >= 0 ) {
+					return;
+				}
+				unset( $projects[ $largest ] );
+			}
+			$projects[ $reference ] = true;
 		};
-		$track_modified = static function ( $item ) use ( &$last_modified ) {
+		$track_modified     = static function ( $item ) use ( &$last_modified ) {
 			if ( '' === $last_modified || strcmp( $item['modified_gmt'], $last_modified ) > 0 ) {
 				$last_modified = $item['modified_gmt'];
 			}
@@ -1032,7 +1048,7 @@ final class Store {
 			'project_ref'             => null !== $project_ref ? $project_ref : '',
 			'scope'                   => $scope,
 			'project_refs'            => array_slice( $project_refs, 0, 25 ),
-			'projects_truncated'      => count( $project_refs ) > 25,
+			'projects_truncated'      => $projects_truncated,
 			'current_focus'           => $this->summary_prefix( $focus, 160 ),
 			'current_focus_truncated' => strlen( $focus ) > strlen( $this->summary_prefix( $focus, 160 ) ),
 			'counts'                  => $counts,
