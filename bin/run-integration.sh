@@ -145,7 +145,15 @@ if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION
     # #153 R2: enforce 96MiB from the CLI process entrypoint.
     # The fixture verifies effective limit and logs workload/peak memory.
     echo '== #153 deterministic external PHP 96MiB Workspace integration =='
+    # WordPress otherwise raises a 96M CLI process to WP_MAX_MEMORY_LIMIT
+    # (normally 256M) during bootstrap. Set BOTH WordPress limits in this
+    # disposable installation; php -d independently sets the process entry
+    # limit. The fixture rejects an ineffective/raised limit and tracks peak.
+    "${wp[@]}" config set WP_MEMORY_LIMIT 96M --allow-root
+    "${wp[@]}" config set WP_MAX_MEMORY_LIMIT 96M --allow-root
     "${compose[@]}" run --rm --entrypoint php -e WPAI153_MEMORY_CEILING=96M cli -d memory_limit=96M /usr/local/bin/wp eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-quotas-corruption-smoke.php --user=1 --allow-root
+    "${wp[@]}" config delete WP_MAX_MEMORY_LIMIT --allow-root
+    "${wp[@]}" config delete WP_MEMORY_LIMIT --allow-root
     echo '== #153 typed receipt isolation against real MariaDB and native creates =='
     "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue153-mixed-receipts-smoke.php --user=1 --allow-root
     # Distinct-identity 2047/2048 and 199/200 cross-process capacities plus
