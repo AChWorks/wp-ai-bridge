@@ -41,4 +41,9 @@ for fixture in issue134-payload-settings-smoke.php issue134-direct-mcp-bytes-smo
     echo "== $fixture =="
     "${wp[@]}" eval-file "wp-content/plugins/wp-ai-bridge/tests/integration/$fixture" --user=1 --allow-root
 done
+# One deterministic two-process native CAS race, with independent staged
+# leases and an ordinary WordPress writer as a competing author.
+if [[ "$tag" == '6.9-php8.4-apache' ]]; then
+    bash "$root/bin/run-issue134-cas-race.sh"
+fi
 echo "PASS: Issue #134 native source/consumer integration suite for $tag."
