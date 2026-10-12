@@ -145,13 +145,30 @@ if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION
     # #153 R2: enforce 96MiB from the CLI process entrypoint.
     # The fixture verifies effective limit and logs workload/peak memory.
     echo '== #153 deterministic external PHP 96MiB Workspace integration =='
-    # WordPress otherwise raises a 96M CLI process to WP_MAX_MEMORY_LIMIT
-    # (normally 256M) during bootstrap. Set BOTH WordPress limits in this
-    # disposable installation; php -d independently sets the process entry
-    # limit. The fixture rejects an ineffective/raised limit and tracks peak.
+    # WP-CLI's Runner unconditionally sets memory_limit=-1 AFTER WordPress
+    # bootstrap, defeating even php -d and WP_MAX_MEMORY_LIMIT=96M.
+    # Execute only this test fixture with actual wp-load.php in a fresh PHP
+    # process. Do not run the fixture through WP-CLI or relax its 96MiB gate.
+    # Both WordPress ceilings are bounded for the disposable test installation.
     "${wp[@]}" config set WP_MEMORY_LIMIT 96M --allow-root
     "${wp[@]}" config set WP_MAX_MEMORY_LIMIT 96M --allow-root
-    "${compose[@]}" run --rm --entrypoint php -e WPAI153_MEMORY_CEILING=96M cli -d memory_limit=96M /usr/local/bin/wp eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-quotas-corruption-smoke.php --user=1 --allow-root
+    "${compose[@]}" run --rm --entrypoint php -e WPAI153_MEMORY_CEILING=96M cli \
+        -d memory_limit=96M -r '
+            if (ini_get("memory_limit") !== "96M") {
+                fwrite(STDERR, "WPAI153_MEMORY_ERROR: entrypoint PHP limit is not 96M.\\n");
+                exit(1);
+            }
+            echo "WPAI153_MEMORY_ENTRY effective=" . ini_get("memory_limit") . "\\n";
+            $_SERVER["HTTP_HOST"] = "localhost";
+            $_SERVER["SERVER_NAME"] = "localhost";
+            require "/var/www/html/wp-load.php";
+            if (!function_exists("wp_set_current_user") || !get_user_by("id", 1)) {
+                fwrite(STDERR, "WPAI153_MEMORY_ERROR: isolated WordPress admin identity is missing.\\n");
+                exit(1);
+            }
+            wp_set_current_user(1);
+            require "/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue126-quotas-corruption-smoke.php";
+        '
     "${wp[@]}" config delete WP_MAX_MEMORY_LIMIT --allow-root
     "${wp[@]}" config delete WP_MEMORY_LIMIT --allow-root
     echo '== #153 typed receipt isolation against real MariaDB and native creates =='
