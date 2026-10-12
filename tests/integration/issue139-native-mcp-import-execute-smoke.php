@@ -357,14 +357,49 @@ try {
 	remove_action( 'import_start', $observe_start, 1 );
 	echo "PASS: #139 real OAuth MCP verified WXR O/E top-level and nested denied pre-claim; no native importer, no mutation, cancel succeeds.\n";
 
-	// Legitimate serialized nested array metadata remains import-plannable.
+	// Use the exact upstream object-rewrite pattern to guarantee this test
+	// covers a NON-no-op differential inside a legitimately serialized string.
+	$opaque          = 'opaque O:6:"Gadget":0:{} literal';
+	$safe_nested     = array(
+		'flag'     => true,
+		'nested'   => array( 'E:9:"as-text";', 'فارسی', $opaque ),
+		'raw_text' => array( 'C:5:"Probe":0:{}', 'r:2;', 'R:2;' ),
+	);
+	$safe_wire       = serialize( $safe_nested );
+	$upstream_mutant = preg_replace( '/O:\d+:"[^"]+":/', 'O:8:"stdClass":', $safe_wire );
+	wpai139_effect_assert(
+		$safe_wire !== $upstream_mutant && is_serialized( $safe_wire ) &&
+		true === $scanner->invoke( $reader, $safe_wire ),
+		'Test fixture did not discriminate the real upstream non-byte-preserving metadata regex.'
+	);
+	// Defense in depth: the protected native decoder must consume exactly
+	// the bytes the pre-claim allowlist approved, never rewrite string data.
+	$protected_decoder = new \WP_AI_Bridge\Support\WXR_Safe_Importer(
+		array(),
+		$actor,
+		static function ( $serialized ) use ( $scanner, $reader ) {
+			return $scanner->invoke( $reader, $serialized );
+		}
+	);
+	$decoder_method    = new ReflectionMethod( $protected_decoder, 'maybe_unserialize' );
+	wpai139_effect_assert(
+		$safe_nested === $decoder_method->invoke( $protected_decoder, $safe_wire ),
+		'Constrained native decoder modified or objectified validated opaque strings.'
+	);
+	foreach ( array( 'O', 'E-top', 'E-nested', 'R' ) as $type ) {
+		$refused = false;
+		try {
+			$decoder_method->invoke( $protected_decoder, $unsafe_values[ $type ] );
+		} catch ( \UnexpectedValueException $error ) {
+			$refused = true;
+		}
+		wpai139_effect_assert( $refused, 'Provider decoder bypassed last-moment object/Enum/ref wire guard.' );
+	}
+	echo "PASS: #139 constrained official decoder preserves non-byte-identical O: class-looking literals and blocks structural objects, Enum and reference.\n";
+	// The verified private WXR must preserve the full nested metadata through
+	// actual authorized MCP plan + native import, not just a read-only plan.
 	$safe_meta  = '<wp:postmeta><wp:meta_key><![CDATA[wpai139_safe_array]]></wp:meta_key>' .
-		'<wp:meta_value><![CDATA[' . serialize(
-			array(
-				'flag'   => true,
-				'nested' => array( 'E:9:"as-text";', 'فارسی' ),
-			)
-		) . ']]></wp:meta_value></wp:postmeta>';
+		'<wp:meta_value><![CDATA[' . $safe_wire . ']]></wp:meta_value></wp:postmeta>';
 	$safe_wxr   = substr_replace( $bytes, $safe_meta, strpos( $bytes, '</item>' ), 0 );
 	$safe_lease = wpai139_effect_stage( $safe_wxr, $token, $session, $seq, $lease_ids );
 	$safe_plan  = wpai139_effect_execute(
@@ -387,6 +422,9 @@ try {
 	);
 	wpai139_effect_assert( true === ( $safe_cancel['success'] ?? false ), 'Legitimate read-only plan must not claim or prevent lease cancellation.' );
 	echo "PASS: #139 native plan accepts safe serialized nested arrays with opaque object-looking string bytes; no effect or claim.\n";
+	// Continue the real positive/negative importer lifecycle using this
+	// exact same safe modified WXR, not the original no-op-only fixture.
+	$bytes = $safe_wxr;
 
 	// Importing published content is an effect stronger than draft creation.
 	// Test status-based Live Content gate independently from filename/format.
@@ -576,6 +614,12 @@ try {
 		get_post_meta( $restored_id, 'wpai139_verified_import', true ) === $marker,
 		'Native Importer changed imported multilingual body, author or metadata.'
 	);
+	$imported_nested = get_post_meta( $restored_id, 'wpai139_safe_array', true );
+	wpai139_effect_assert(
+		$safe_nested === $imported_nested && is_array( $imported_nested ),
+		'Native WordPress Importer rewrote or structurally reinterpreted exact approved opaque-string metadata.'
+	);
+	echo "PASS: #139 authenticated OAuth MCP plan + actual native effect preserves every safe nested metadata string, including length-changing upstream O: regex match.\n";
 	$term_names = wp_get_post_terms( $restored_id, $taxonomy, array( 'fields' => 'names' ) );
 	wpai139_effect_assert( ! is_wp_error( $term_names ) && in_array( $source_term, $term_names, true ), 'Native Importer did not preserve CPT taxonomy association.' );
 	$status = wpai139_effect_execute(

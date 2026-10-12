@@ -350,7 +350,13 @@ final class WXR_Import_Service {
 			) ) {
 				$failed = true;
 			} else {
-				$importer = new WXR_Safe_Importer( $plan['author_mapping'], get_current_user_id() );
+				$importer = new WXR_Safe_Importer(
+					$plan['author_mapping'],
+					get_current_user_id(),
+					function ( $serialized ) {
+						return $this->safe_serialized_primitive_or_array( $serialized );
+					}
+				);
 				$importer->import( $claim['path'], array( 'rewrite_urls' => false ) );
 				$finished = true;
 			}

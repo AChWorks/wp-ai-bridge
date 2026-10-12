@@ -19,10 +19,18 @@ final class WXR_Safe_Importer extends \WP_Import {
 	/** @var int */
 	private $current_author;
 
-	/** @param array<string,int> $authors Sanitized source-login => existing user ID. @param int $actor Current principal. */
-	public function __construct( $authors, $actor ) {
+	/** @var \Closure Exact shared planning-time serialized-grammar validator. */
+	private $serialized_guard;
+
+	/**
+	 * @param array<string,int> $authors Sanitized source-login => existing user ID.
+	 * @param int               $actor Current principal.
+	 * @param \Closure         $serialized_guard Reuse the pre-claim strict wire grammar.
+	 */
+	public function __construct( $authors, $actor, \Closure $serialized_guard ) {
 		$this->target_authors    = $authors;
 		$this->current_author    = $actor;
+		$this->serialized_guard  = $serialized_guard;
 		$this->fetch_attachments = false;
 	}
 
@@ -34,6 +42,35 @@ final class WXR_Safe_Importer extends \WP_Import {
 	/** @return bool No new users or roles. */
 	public function allow_create_users() {
 		return false;
+	}
+
+
+	/**
+	 * Override the official Importer's protected metadata decoder ONLY.
+	 *
+	 * Its upstream implementation runs a global O:class-name rewrite on the
+	 * serialized blob (including inside byte-length-delimited *strings*),
+	 * changing the grammar AFTER the Bridge's strict pre-claim inspection.
+	 * Decode the exact original bytes instead, after reusing the very same
+	 * bounded allowlist at this final consumption boundary. Disallow class
+	 * materialization at the PHP runtime as a second independent safeguard.
+	 * All post/term/comment/meta import semantics still belong to WP_Import.
+	 *
+	 * @param mixed $data Native parsed metadata input.
+	 * @return mixed The unchanged scalar or exact decoded primitive/array.
+	 */
+	protected function maybe_unserialize( $data ) {
+		if ( ! is_string( $data ) || ! is_serialized( $data ) ) {
+			return $data;
+		}
+		if ( ! ( $this->serialized_guard )( $data ) ) {
+			throw new \UnexpectedValueException( 'Unsafe serialized WXR metadata reached the native importer.' );
+		}
+		$value = @unserialize( $data, array( 'allowed_classes' => false ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize,WordPress.PHP.NoSilencedErrors.Discouraged -- Prevalidated exact complete primitive/array grammar and runtime class-denial, preserving native WordPress maybe_unserialize semantics for valid b:0;.
+		if ( false === $value && 'b:0;' !== $data ) {
+			throw new \UnexpectedValueException( 'Previously verified WXR serialized metadata could not be decoded safely.' );
+		}
+		return $value;
 	}
 
 	/**
