@@ -471,6 +471,35 @@ fi
 admission_lock='src/Support/class-admission-lock.php'
 create_claim_store='src/Support/class-create-claim-store.php'
 native_content_cas='src/Support/class-native-content-cas.php'
+workspace_scan='src/Workspace/class-record-scan-store.php'
+# #153 permits one read-only, per-blog, private-post-type Workspace
+# enumeration store. It is not a general-purpose SQL or record editor.
+# Freeze the exact three read queries and forbid all mutation primitives.
+if [[ ! -f "$workspace_scan" ||
+      "$(grep -cF '$wpdb->get_var(' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF '$wpdb->get_col(' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF '$wpdb->get_results(' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF '$wpdb->prepare(' "$workspace_scan" || true)" != "3" ||
+      "$(grep -cF 'SELECT COUNT(*) FROM ' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'SELECT ID FROM ' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'SELECT post_id, meta_value FROM ' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'Store::META_STATE' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'Store::DOCUMENT_POST_TYPE' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'Store::TASK_POST_TYPE' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'const SCAN_BATCH = 16;' "$workspace_scan" || true)" != "1" ]]; then
+    echo "ERROR: Workspace bounded database reader exceeded its audited read-only query inventory." >&2
+    exit 1
+fi
+if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$workspace_scan" |
+    grep -vE '\$wpdb->(posts|postmeta|get_var|get_col|get_results|prepare|last_error)([^A-Za-z0-9_]|$)'; then
+    echo "ERROR: Workspace scanner grew unapproved database primitives." >&2
+    exit 1
+fi
+if grep -nE '(^|[^A-Za-z_])(INSERT|UPDATE|DELETE|REPLACE|ALTER|DROP|CREATE|FOR UPDATE)([^A-Za-z_]|$)' "$workspace_scan" |
+    grep -vE '^[0-9]+:[[:space:]]*(//|\*|#)'; then
+    echo "ERROR: Workspace scanner must remain read-only." >&2
+    exit 1
+fi
 if [[ ! -f "$create_claim_store" ||
       "$(grep -cF '$wpdb->update(' "$create_claim_store" || true)" != "1" ||
       "$(grep -cF '$wpdb->get_var(' "$create_claim_store" || true)" != "1" ||
@@ -481,7 +510,7 @@ if [[ ! -f "$create_claim_store" ||
     echo "ERROR: create receipt store must retain one conditional update, one exclusive insert, and one prepared capacity query." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2

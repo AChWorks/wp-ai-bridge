@@ -1,21 +1,27 @@
 <?php
 /**
- * Real WordPress 0/25/200/201-record completeness and invalid-state smoke.
+ * Real WordPress 0/25/200/201+ scalable-count completeness and invalid-state smoke.
  *
  * @package WP_AI_Bridge
  */
 use WP_AI_Bridge\Support\Bounded_Payload;
 use WP_AI_Bridge\Workspace\Store;
+use WP_AI_Bridge\Support\Workspace_Limits;
+use WP_AI_Bridge\Admin\Settings_Page;
+use WP_AI_Bridge\Support\Environment;
+use WP_AI_Bridge\Support\Settings;
 
 function wpai126_quota_assert( $ok, $reason ) {
 	if ( ! $ok ) {
 		throw new RuntimeException( $reason );
 	}
 }
-$store   = new Store();
-$created = array();
-$extra   = 0;
-$task_id = 0;
+$store                 = new Store();
+$created               = array();
+$extra                 = 0;
+$task_id               = 0;
+$scaled_task_ids       = array();
+$prior_capacity_option = get_option( Workspace_Limits::OPTION_NAME, null );
 try {
 	// A failed native coordinator must reject BEFORE the first WP insert.
 	$failure_filter = static function ( $query ) {
@@ -90,6 +96,122 @@ try {
 		'Normal create exceeded the 200-record documented site cap.'
 	);
 
+	// Administrators can safely increase the per-site document count policy.
+	// Existing 200 records and their hash/version identities remain unchanged.
+	$policy = new Workspace_Limits();
+	$larger = $policy->sanitize( array( Workspace_Limits::DOCUMENTS_KEY => '250' ) );
+	update_option( Workspace_Limits::OPTION_NAME, $larger, false );
+	wpai126_quota_assert( 250 === $policy->all()[ Workspace_Limits::DOCUMENTS_KEY ], 'Site-local capacity increase was not saved.' );
+	for ( $i = 200; $i < 250; ++$i ) {
+		$record = $store->create_document(
+			array(
+				'title'       => 'WPAI153 large-count ' . $i,
+				'content'     => str_repeat( 'x', 65536 ) . ' ' . $i,
+				'project_ref' => 'wpai-scale-153',
+			)
+		);
+		wpai126_quota_assert( ! is_wp_error( $record ) && ! empty( $record['id'] ), 'A valid post-200 WordPress document was rejected.' );
+		$created[] = (int) $record['id'];
+	}
+	$large_page   = $store->page_documents( array( 'limit' => 25 ) );
+	$large_resume = $store->resume();
+	$large_export = $store->export_snapshot();
+	wpai126_quota_assert(
+		! is_wp_error( $large_page ) && 250 === $large_page['total'] &&
+		! is_wp_error( $large_resume ) && 250 === $large_resume['counts']['documents_total'] &&
+		! is_wp_error( $large_export ) && 250 === $large_export['counts']['documents'] &&
+		true === $large_export['complete'],
+		'The site cannot page, resume, and completely export a valid 250-document Workspace.'
+	);
+	// The real RTL WordPress administrator view must also page rather than
+	// render 250 complete documents and their private Markdown in one table.
+	$admin_page  = new Settings_Page( new Environment(), new Settings(), null, $store );
+	$saved_query = $_GET;
+	try {
+		$_GET = array();
+		ob_start();
+		$admin_page->render_documents();
+		$admin_html = ob_get_clean();
+		wpai126_quota_assert(
+			25 === substr_count( $admin_html, '<td dir="auto"' ) &&
+			false !== strpos( $admin_html, 'workspace_cursor=' ) &&
+			false !== strpos( $admin_html, '250' ),
+			'Administrator Documents page is not bounded to 25 records or hides continuation.'
+		);
+		$_GET = array( 'workspace_cursor' => (int) $large_page['next_cursor'] );
+		ob_start();
+		$admin_page->render_documents();
+		$older_html = ob_get_clean();
+		wpai126_quota_assert( 25 === substr_count( $older_html, '<td dir="auto"' ), 'Admin Documents cursor was not preserved.' );
+	} finally {
+		$_GET = $saved_query;
+	}
+	ob_start();
+	$admin_page->render_settings();
+	$settings_html = ob_get_clean();
+	wpai126_quota_assert(
+		false !== strpos( $settings_html, Workspace_Limits::OPTION_NAME . '[' . Workspace_Limits::DOCUMENTS_KEY . ']' ) &&
+		false !== strpos( $settings_html, Workspace_Limits::OPTION_NAME . '[' . Workspace_Limits::TASKS_KEY . ']' ),
+		'Independent per-site Workspace count Settings API controls were not rendered.'
+	);
+
+	$project_page = $store->page_documents(
+		array(
+			'limit'       => 25,
+			'project_ref' => 'wpai-scale-153',
+		)
+	);
+	wpai126_quota_assert(
+		! is_wp_error( $project_page ) && 50 === $project_page['total'] && $project_page['has_more'],
+		'Post-200 project-filtered pagination is not complete and accurate.'
+	);
+	// A separate task policy must likewise work beyond the historical 200 cap.
+	$task_settings = $policy->sanitize( array( Workspace_Limits::TASKS_KEY => '210' ) );
+	update_option( Workspace_Limits::OPTION_NAME, $task_settings, false );
+	for ( $i = 0; $i < 201; ++$i ) {
+		$created_task = $store->create_task(
+			array(
+				'title'       => 'WPAI153 scalable task ' . $i,
+				'project_ref' => 'wpai-scale-153',
+				'progress'    => 'done',
+			)
+		);
+		wpai126_quota_assert( ! is_wp_error( $created_task ), 'Post-200 Workspace task capacity unexpectedly rejected a valid record.' );
+		$scaled_task_ids[] = (int) $created_task['id'];
+	}
+	$task_page = $store->page_tasks(
+		array(
+			'limit'       => 25,
+			'project_ref' => 'wpai-scale-153',
+		)
+	);
+	wpai126_quota_assert(
+		! is_wp_error( $task_page ) && 201 === $task_page['total'] && $task_page['has_more'],
+		'Post-200 Workspace task summaries omitted or duplicated records.'
+	);
+	// These task fixtures are isolated from subsequent semantic corruption tests.
+	foreach ( $scaled_task_ids as $scaled_task_id ) {
+		wp_delete_post( $scaled_task_id, true );
+	}
+	$scaled_task_ids = array();
+	update_option( Workspace_Limits::OPTION_NAME, $larger, false );
+
+	$at_extended_limit = $store->create_document( array( 'title' => 'Over extended count policy' ) );
+	wpai126_quota_assert(
+		is_wp_error( $at_extended_limit ) && 'workspace_document_limit' === $at_extended_limit->get_error_code(),
+		'Concurrent admission policy can be exceeded at an administrator-set record count.'
+	);
+
+	// Lowering the admission policy must not hide or delete historical data.
+	update_option( Workspace_Limits::OPTION_NAME, $policy->defaults(), false );
+	$lowered_page   = $store->page_documents( array( 'limit' => 1 ) );
+	$lowered_create = $store->create_document( array( 'title' => 'Should be blocked while above lower policy' ) );
+	wpai126_quota_assert(
+		! is_wp_error( $lowered_page ) && 250 === $lowered_page['total'] &&
+		is_wp_error( $lowered_create ) && 'workspace_document_limit' === $lowered_create->get_error_code(),
+		'Lowering the admission limit erased records or allowed over-quota inserts.'
+	);
+
 	// Simulate unexpected records from other WordPress code. Do not claim
 	// completeness if extra entries or malformed state exist.
 	$extra = wp_insert_post(
@@ -104,9 +226,9 @@ try {
 	$overflow = $store->page_documents( array( 'limit' => 1 ) );
 	$export   = $store->export_snapshot();
 	wpai126_quota_assert(
-		is_wp_error( $overflow ) && 'workspace_overflow' === $overflow->get_error_code() &&
-		is_wp_error( $export ) && 'workspace_overflow' === $export->get_error_code(),
-		'Over-quota results claimed completeness or exported omitted records.'
+		is_wp_error( $overflow ) && 'workspace_incomplete' === $overflow->get_error_code() &&
+		is_wp_error( $export ) && 'workspace_incomplete' === $export->get_error_code(),
+		'A malformed unexpected post was silently skipped instead of making reads fail closed.'
 	);
 
 	wp_delete_post( $extra, true );
@@ -193,8 +315,16 @@ try {
 	);
 	update_post_meta( $task_id, Store::META_STATE, wp_slash( $original_task ) );
 
-	echo "PASS: #126 0/25/200/201 quota, canonical semantics, legacy compatibility and fail-closed export.\n";
+	echo "PASS: #126/#153 0/25/200/250+ scalable quota, project pagination, legacy compatibility and fail-closed export.\n";
 } finally {
+	foreach ( $scaled_task_ids as $scaled_task_id ) {
+		wp_delete_post( (int) $scaled_task_id, true );
+	}
+	if ( null === $prior_capacity_option ) {
+		delete_option( Workspace_Limits::OPTION_NAME );
+	} else {
+		update_option( Workspace_Limits::OPTION_NAME, $prior_capacity_option, false );
+	}
 	if ( $task_id > 0 ) {
 		wp_delete_post( $task_id, true );
 	}

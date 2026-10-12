@@ -22,6 +22,7 @@ class WPAI_Claim_Fake_DB {
 	public $options = 'wp_options';
 	public $posts = 'wp_posts';
 	public $dbname = 'wpai_fake_schema';
+	public $last_error = '';
 	public function esc_like( $input ) { return (string) $input; }
 	public function prepare( $sql, ...$args ) {
 		foreach ( $args as $arg ) {

@@ -79,7 +79,7 @@ final class Create_Claim_Store {
 			if ( is_string( $existing ) && '' !== $existing ) {
 				return 'existing';
 			}
-			if ( self::count() >= Create_Claim::MAX_CLAIMS ) {
+			if ( self::count() >= Create_Claim::receipt_limit() ) {
 				return 'capacity';
 			}
 			if ( ! $lock->is_owned() ) {
@@ -144,6 +144,6 @@ final class Create_Claim_Store {
 				$wpdb->esc_like( Create_Claim::PREFIX ) . '%'
 			)
 		);
-		return is_numeric( $count ) ? max( 0, (int) $count ) : Create_Claim::MAX_CLAIMS;
+		return is_numeric( $count ) && '' === $wpdb->last_error ? max( 0, (int) $count ) : PHP_INT_MAX;
 	}
 }

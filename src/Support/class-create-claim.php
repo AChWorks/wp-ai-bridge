@@ -21,6 +21,23 @@ final class Create_Claim {
 	const MAX_ID_BYTES     = 128;
 
 	/**
+	 * Durable create receipts also cover canonical document keys. The legacy
+	 * site-wide 2048 ceiling must not strand administrator-expanded Workspace
+	 * capacity. Bound the larger allowance to the independently validated
+	 * finite per-blog record policy, without deleting/reusing any receipts.
+	 *
+	 * @return int
+	 */
+	public static function receipt_limit() {
+		$limits = ( new Workspace_Limits() )->all();
+		return max(
+			self::MAX_CLAIMS,
+			2 * $limits[ Workspace_Limits::DOCUMENTS_KEY ] + $limits[ Workspace_Limits::TASKS_KEY ]
+		);
+	}
+
+
+	/**
 	 * Executes the legacy effect only once per stable, authorized identity.
 	 *
 	 * @param string   $operation Exact Bridge-owned operation.
