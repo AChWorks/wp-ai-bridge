@@ -90,10 +90,11 @@ if ( 'importer' === $mode ) {
 	// media_handle_sideload() call while the importer owns the .meta flock.
 	$hold = static function ( $metadata, $attachment_id ) use ( $dir ) {
 		// Native provider re-entry must not wait on its own Media lock.
-		$nested = new \WP_AI_Bridge\Support\Private_Transfer_Session(
+		$nested   = new \WP_AI_Bridge\Support\Private_Transfer_Session(
 			new \WP_AI_Bridge\Support\Permissions( new Settings() )
 		);
-		$start  = $nested->begin( 'text', 0, hash( 'sha256', '' ), 1, 1, 8, 120, 8 );
+		$capacity = ( new \WP_AI_Bridge\Support\Transfer_Settings() )->bytes();
+		$start    = $nested->begin( 'text', 0, hash( 'sha256', '' ), $capacity['file'], $capacity['chunk'], $capacity['sessions'], $capacity['ttl'], $capacity['active'] );
 		wpai134_review_require( ! is_wp_error( $start ), 'Reentrant admission blocked inside Media processing.' );
 		wpai134_review_require( true === $nested->cancel( $start['id'] ), 'Reentrant admission cleanup failed.' );
 		wpai134_review_require(

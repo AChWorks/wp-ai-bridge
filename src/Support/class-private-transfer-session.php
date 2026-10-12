@@ -854,6 +854,13 @@ final class Private_Transfer_Session {
 			return;
 		}
 		$path = $root . '/' . $entry->getFilename();
+		// A cancelled lease can lose its .meta coordinator while a killed
+		// pre-publication writer left only an inert, old pending file.
+		$manifest = $root . '/' . $id . '.meta';
+		if ( ! file_exists( $manifest ) && ! is_link( $manifest ) ) {
+			$this->remove_file( $path );
+			return;
+		}
 		$info = $this->open_meta( $root, $id, false, true );
 		if ( ! is_wp_error( $info ) ) {
 			$this->remove_file( $path );
@@ -969,7 +976,9 @@ final class Private_Transfer_Session {
 			is_string( $meta['sha256'] ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $meta['sha256'] ) &&
 			in_array( $meta['state'], array( 'open', 'preparing', 'verified', 'committing', 'committed', 'rejected', 'observed' ), true ) &&
 			( ! in_array( $meta['state'], array( 'committing', 'committed', 'rejected', 'observed' ), true ) ||
-				( in_array( $meta['consumer'] ?? '', array( 'media', 'content' ), true ) &&
+				( ( in_array( $meta['consumer'] ?? '', array( 'media', 'content' ), true ) ||
+				( 'committing' === $meta['state'] && 'unknown' === ( $meta['consumer'] ?? '' ) &&
+					'unknown' === ( $meta['outcome'] ?? '' ) ) ) &&
 				is_int( $meta['destination_id'] ?? null ) && $meta['destination_id'] >= 0 ) );
 	}
 
