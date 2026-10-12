@@ -38,7 +38,7 @@ actual_php="$("${wp[@]}" eval 'echo PHP_VERSION;' --allow-root | tail -n 1)"
 echo "FOCUSED candidate $(git -c safe.directory="$root" -C "$root" rev-parse HEAD); WordPress $actual_wp; PHP $actual_php; Adapter ${MCP_ADAPTER_EXPECTED_VERSION:-0.7.0}"
 for fixture in issue134-payload-settings-smoke.php issue134-direct-mcp-bytes-smoke.php \
     issue134-public-session-smoke.php issue134-private-staging-smoke.php \
-    issue134-review-recovery-smoke.php; do
+    issue134-review-recovery-smoke.php issue134-claim-dir-fsync-smoke.php; do
     echo "== $fixture =="
     "${wp[@]}" eval-file "wp-content/plugins/wp-ai-bridge/tests/integration/$fixture" --user=1 --allow-root
 done
@@ -47,5 +47,6 @@ done
 if [[ "$tag" == '6.9-php8.4-apache' ]]; then
     bash "$root/bin/run-issue134-cas-race.sh"
     bash "$root/bin/run-issue134-media-admission-race.sh"
+    bash "$root/bin/run-issue134-media-crash-recovery.sh"
 fi
 echo "PASS: Issue #134 native source/consumer integration suite for $tag."

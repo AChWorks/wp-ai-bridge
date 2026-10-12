@@ -160,6 +160,16 @@ function wpai134_session_action( $token, $session, &$seq, $action ) {
 
 try {
 	wpai134_session_assert( $actor > 0 && current_user_can( 'manage_options' ), 'Disposable integration requires a current WordPress administrator.' );
+	$export_ability = wp_get_ability( 'wp-ai-bridge/transfer-media-export' );
+	$export_meta    = $export_ability instanceof WP_Ability ? $export_ability->get_meta() : array();
+	$export_flags   = $export_meta['annotations'] ?? array();
+	wpai134_session_assert(
+		false === ( $export_flags['readonly'] ?? null ) &&
+		false === ( $export_flags['destructive'] ?? null ) &&
+		false === ( $export_flags['idempotent'] ?? null ),
+		'Media export creates a new private session and must advertise effectful, non-idempotent MCP annotations.'
+	);
+	echo "PASS: #134 P1 native public Media export contract declares stateful non-idempotent transport.\n";
 	$grants[ Settings::GROUP_BUILDER_WRITE ] = 1;
 	$grants[ Settings::GROUP_SITE_READ ]     = 1;
 	update_option( Settings::OPTION_NAME, $grants, false );

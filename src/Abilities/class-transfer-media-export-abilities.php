@@ -71,7 +71,7 @@ final class Transfer_Media_Export_Abilities {
 						'type'   => 'tool',
 					),
 					'annotations' => array(
-						'readonly'    => true,
+						'readonly'    => false,
 						'destructive' => false,
 						'idempotent'  => false,
 					),

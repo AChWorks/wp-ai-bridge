@@ -21,7 +21,7 @@ fi
 # allowing a new generic filesystem adapter across Bridge Abilities.
 private_stage='src/Support/class-private-transfer-session.php'
 if [[ ! -f "$private_stage" ||
-      "$(grep -cF '@fopen(' "$private_stage" || true)" != "15" ||
+      "$(grep -cF '@fopen(' "$private_stage" || true)" != "16" ||
       "$(grep -cF 'fwrite(' "$private_stage" || true)" != "4" ||
       "$(grep -cF 'stream_copy_to_stream(' "$private_stage" || true)" != "1" ||
       "$(grep -cF '@mkdir(' "$private_stage" || true)" != "1" ||
@@ -39,8 +39,10 @@ fi
 # never admit caller-named rename, generic filesystem endpoints or shell IO.
 if [[ "$(grep -cF 'rename( $temp, $dest )' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'rename( $temporary, $path )' "$private_stage" || true)" != "1" ||
+      "$(grep -cF 'durably_sync_claim_directory( $root )' "$private_stage" || true)" != "2" ||
+      "$(grep -cF '@fsync( $directory )' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'fence_native_effect(' "$private_stage" || true)" != "4" ||
-      "$(grep -cF 'recover_scratch(' "$private_stage" || true)" != "3" ]]; then
+      "$(grep -cF 'recover_scratch(' "$private_stage" || true)" != "4" ]]; then
     echo "ERROR: transfer checkpoint or coordinated scratch recovery changed." >&2
     exit 1
 fi

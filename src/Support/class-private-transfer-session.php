@@ -617,19 +617,8 @@ final class Private_Transfer_Session {
 				( ! $ack_unknown || ! current_user_can( 'manage_options' ) ) ) {
 				return new WP_Error( 'transfer_outcome_unknown', 'Native effect may have happened; site administrator must explicitly acknowledge uncertainty before releasing the private bytes.' );
 			}
-			if ( ! empty( $meta['payload_released'] ) ) {
-				return $this->receipt( $meta );
-			}
-			// Delete only bytes; retain immutable claim fence, consumer,
-			// destination, digest and intent as an inspectable audit receipt.
-			if ( ! $this->remove_file( $root . '/' . $id . '.bytes' ) ) {
-				return new WP_Error( 'transfer_cleanup_uncertain', 'Private payload cleanup failed; reservation remains active.' );
-			}
-			$meta['payload_released'] = true;
-			if ( ! $this->save_meta( $handle, $meta ) ) {
-				return new WP_Error( 'transfer_cleanup_uncertain', 'Payload was removed but durable reservation release was uncertain.' );
-			}
-			return $this->receipt( $meta );
+			$released = $this->release_private_payload( $root, $id, $handle, $meta );
+			return is_wp_error( $released ) ? $released : $this->receipt( $meta );
 		} finally {
 			$this->close_meta( $handle );
 		}
@@ -663,14 +652,9 @@ final class Private_Transfer_Session {
 				'committing' !== $meta['state'] || 'unknown' !== $meta['outcome'] ) {
 				return new WP_Error( 'transfer_admin_recovery_denied', 'Only a same-site administrator may release an explicitly unknown native-effect payload.' );
 			}
-			if ( empty( $meta['payload_released'] ) ) {
-				if ( ! $this->remove_file( $root . '/' . $id . '.bytes' ) ) {
-					return new WP_Error( 'transfer_cleanup_uncertain', 'Administrator recovery could not remove the private source.' );
-				}
-				$meta['payload_released'] = true;
-				if ( ! $this->save_meta( $handle, $meta ) ) {
-					return new WP_Error( 'transfer_cleanup_uncertain', 'Administrator release was not durably checkpointed.' );
-				}
+			$released = $this->release_private_payload( $root, $id, $handle, $meta );
+			if ( is_wp_error( $released ) ) {
+				return $released;
 			}
 			// Expose only the opaque ID and release result. Never disclose
 			// another principal's digest, byte count, origin or private path.
@@ -1082,7 +1066,7 @@ final class Private_Transfer_Session {
 				}
 				$offset += $written;
 			}
-			$complete = fflush( $h ) && ( ! function_exists( 'fsync' ) || fsync( $h ) );
+			$complete = fflush( $h ) && function_exists( 'fsync' ) && fsync( $h );
 		} finally {
 			fclose( $h );
 			if ( ! $complete ) {
@@ -1102,11 +1086,43 @@ final class Private_Transfer_Session {
 			$this->remove_file( $temporary );
 			return false;
 		}
+		// A successful rename and readback prove visibility, NOT durability
+		// across machine/power loss. Synchronize the containing directory's
+		// entry before allowing any irreversible WordPress native effect.
+		// If unsupported/failed, keep the final claim and fail CLOSED.
+		if ( ! $this->durably_sync_claim_directory( $root ) ) {
+			return false;
+		}
 		$published = $this->read_claim_fence( $root, $id );
 		return is_array( $published ) &&
 			$consumer === $published['consumer'] &&
 			$intent === $published['intent'] &&
 			$target_id === $published['target_id'];
+	}
+
+	/**
+	 * Synchronize the exact private claim directory, including its just-renamed
+	 * final filename. fopen() of a directory as an r-stream is supported by
+	 * Linux/PHP's native file wrapper; other backends must fail closed.
+	 *
+	 * @param string $root Previously validated 0700, non-symlink private root.
+	 * @return bool Directory entry was synchronously flushed to backing storage.
+	 */
+	private function durably_sync_claim_directory( $root ) {
+		if ( ! function_exists( 'fsync' ) || ! is_dir( $root ) || is_link( $root ) ) {
+			return false;
+		}
+		$directory = @fopen( $root, 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- The private owner-only directory itself must be fsync'ed after atomic claim publication.
+		if ( ! is_resource( $directory ) ) {
+			return false;
+		}
+		try {
+			$stat = fstat( $directory );
+			return is_array( $stat ) && 0040000 === ( $stat['mode'] & 0170000 ) &&
+				@fsync( $directory ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Unsupported directory fsync must fail closed before the WordPress effect.
+		} finally {
+			fclose( $directory );
+		}
 	}
 
 	/**
@@ -1303,8 +1319,10 @@ final class Private_Transfer_Session {
 	}
 
 	/**
-	 * Reconcile abandoned scratch only while holding both global admission and
-	 * the stable per-lease lock. An active worker cannot lose its temporary file.
+	 * Reconcile abandoned scratch under the stable per-lease coordinator.
+	 * Admission additionally holds the global guard; an explicit same-site
+	 * administrator release holds only this lease lock. Neither may delete
+	 * an actively owned native Media temporary file.
 	 *
 	 * @param string $root Private storage.
 	 * @param string $id Lease ID.
@@ -1313,12 +1331,14 @@ final class Private_Transfer_Session {
 	 * @return bool
 	 */
 	private function recover_scratch( $root, $id, $handle, &$meta ) {
-		if ( empty( $meta['scratch_reserved'] ) ) {
+		$path = $root . '/' . $id . '.scratch';
+		clearstatcache( true, $path );
+		if ( empty( $meta['scratch_reserved'] ) && ! file_exists( $path ) && ! is_link( $path ) ) {
 			return true;
 		}
 		// If the old process still owns the lock, open_meta cannot return.
 		// Therefore this reservation is not being used by WordPress now.
-		if ( ! $this->remove_file( $root . '/' . $id . '.scratch' ) ) {
+		if ( ! $this->remove_file( $path ) ) {
 			return false;
 		}
 		$meta['scratch_reserved'] = 0;
@@ -1326,6 +1346,34 @@ final class Private_Transfer_Session {
 			$meta['state'] = 'verified';
 		}
 		return $this->save_meta( $handle, $meta );
+	}
+
+	/**
+	 * Release ALL exact private payload representations (including abandoned
+	 * Media scratch) while holding the original per-lease coordinator. A
+	 * successful acknowledgement is never returned while private bytes remain.
+	 * Do not remove native-effect claims or operation identity receipts.
+	 *
+	 * @param string $root Owner-only private storage root.
+	 * @param string $id Exact opaque lease identifier.
+	 * @param resource $handle Held per-lease coordinator.
+	 * @param array<string,mixed> $meta Updated only on durable checkpoint.
+	 * @return true|WP_Error
+	 */
+	private function release_private_payload( $root, $id, $handle, &$meta ) {
+		if ( ! $this->recover_scratch( $root, $id, $handle, $meta ) ) {
+			return new WP_Error( 'transfer_cleanup_uncertain', 'Private Media scratch cleanup could not be verified; reservation remains active.' );
+		}
+		if ( ! $this->remove_file( $root . '/' . $id . '.bytes' ) ) {
+			return new WP_Error( 'transfer_cleanup_uncertain', 'Private staged bytes could not be verified as removed; reservation remains active.' );
+		}
+		if ( empty( $meta['payload_released'] ) ) {
+			$meta['payload_released'] = true;
+			if ( ! $this->save_meta( $handle, $meta ) ) {
+				return new WP_Error( 'transfer_cleanup_uncertain', 'Private payload removal succeeded but the release receipt could not be checkpointed.' );
+			}
+		}
+		return true;
 	}
 
 	/**
