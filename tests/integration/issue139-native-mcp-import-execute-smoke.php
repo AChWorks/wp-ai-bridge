@@ -97,6 +97,8 @@ $marker         = 'wpai139-import-' . bin2hex( random_bytes( 5 ) );
 $source_id      = 0;
 $restored_id    = 0;
 $partial_id     = 0;
+$late_id        = 0;
+$source_date    = '';
 $lease_ids      = array();
 $token          = '';
 $session        = '';
@@ -140,6 +142,7 @@ try {
 		true
 	);
 	wpai139_effect_assert( ! is_wp_error( $source_id ) && $source_id > 0, 'Could not seed source WXR CPT fixture.' );
+	$source_date = (string) get_post( $source_id )->post_date;
 	add_post_meta( $source_id, 'wpai139_verified_import', $marker, true );
 	$term = wp_insert_term( $source_term, $taxonomy );
 	wpai139_effect_assert( ! is_wp_error( $term ), 'Cannot create source WXR taxonomy fixture.' );
@@ -561,6 +564,78 @@ try {
 		'Unknown import was repeated and duplicated a partially created post.'
 	);
 	echo "PASS: #139 native Importer interrupted after an actual WordPress write; partial outcome, durable unknown claim and no blind retry.\n";
+
+	// In a second independent effect, a competing writer creates an existing
+	// target AFTER consent planning, inside native importer start. A hook at
+	// its actual wp_import_existing_post decision must refuse changing that
+	// unconsented new target even though the one-way claim is already held.
+	wp_set_current_user( $actor );
+	wp_delete_post( $partial_id, true );
+	$partial_id = 0;
+	wp_set_current_user( 0 );
+	$race_lease = wpai139_effect_stage( $bytes, $token, $session, $seq, $lease_ids );
+	$race_plan  = wpai139_effect_execute(
+		$token,
+		$session,
+		$seq,
+		'wp-ai-bridge/wxr-import-plan',
+		array( 'transfer_id' => $race_lease )
+	);
+	wpai139_effect_assert( true === ( $race_plan['success'] ?? false ) && 0 === ( $race_plan['data']['conflict_count'] ?? -1 ), 'Target race fixture started with an existing object.' );
+	$inject_late = static function () use ( &$late_id, $source_date, $post_type, $marker, $actor ) {
+		$late_id = wp_insert_post(
+			array(
+				'post_type'    => $post_type,
+				'post_status'  => 'draft',
+				'post_title'   => $marker,
+				'post_date'    => $source_date,
+				'post_author'  => $actor,
+				'post_content' => 'competing author content: do not overwrite',
+			),
+			true
+		);
+		if ( is_wp_error( $late_id ) ) {
+			throw new RuntimeException( 'race fixture could not create competing post' );
+		}
+	};
+	add_action( 'import_start', $inject_late, 1 );
+	$race_result = wpai139_effect_execute(
+		$token,
+		$session,
+		$seq,
+		'wp-ai-bridge/wxr-import-execute',
+		array(
+			'transfer_id' => $race_lease,
+			'plan_token'  => $race_plan['data']['plan_token'],
+			'confirm'     => true,
+		)
+	);
+	remove_action( 'import_start', $inject_late, 1 );
+	wpai139_effect_assert(
+		false === ( $race_result['success'] ?? true ) &&
+		is_int( $late_id ) && $late_id > 0 &&
+		'competing author content: do not overwrite' === (string) get_post( $late_id )->post_content &&
+		'' === (string) get_post_meta( $late_id, 'wpai139_verified_import', true ),
+		'Target conflict race modified an unapproved competing post.'
+	);
+	$race_state = wpai139_effect_execute(
+		$token,
+		$session,
+		$seq,
+		'wp-ai-bridge/private-transfer',
+		array(
+			'action'      => 'status',
+			'transfer_id' => $race_lease,
+		)
+	);
+	wpai139_effect_assert(
+		true === ( $race_state['success'] ?? false ) &&
+		'committing' === ( $race_state['data']['state'] ?? '' ) &&
+		'unknown' === ( $race_state['data']['outcome'] ?? '' ),
+		'Last-moment target conflict was not durably recorded as an unknown one-way effect.'
+	);
+	echo "PASS: #139 newly raced native importer target rejected without modifying competing content; immutable uncertain receipt retained.\n";
+
 } finally {
 	wp_set_current_user( $actor );
 	if ( $source_id > 0 ) {
@@ -571,6 +646,9 @@ try {
 	}
 	if ( $partial_id > 0 ) {
 		wp_delete_post( $partial_id, true );
+	}
+	if ( $late_id > 0 ) {
+		wp_delete_post( $late_id, true );
 	}
 	if ( '' !== $artifact_path ) {
 		wp_delete_file( $artifact_path );
