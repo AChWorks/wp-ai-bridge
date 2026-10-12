@@ -77,8 +77,6 @@ try {
 	try {
 		$_GET = array( 'document' => (int) $a['items'][0]['id'] );
 		ob_start();
-		$documents_html = ob_get_clean();
-		ob_start();
 		$admin_page->render_documents();
 		$documents_html = ob_get_clean();
 		wpai126_assert( 2 <= substr_count( $documents_html, '<code dir="ltr">' . esc_html( $project_a ) . '</code>' ), 'Document list/inspection omitted the exact selected project.' );
