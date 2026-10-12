@@ -305,6 +305,57 @@ try {
 	update_option( Settings::OPTION_NAME, $grants, false );
 	wp_set_current_user( 0 );
 
+	// A verified private lease must never bypass XMLReader's DTD/entity
+	// rejection just because its bytes passed transport SHA-256 checks.
+	$unsafe_xml   = '<?xml version="1.0"?><!DOCTYPE rss [<!ENTITY leak SYSTEM "file:///etc/passwd">]><rss><channel><item>unsafe</item></channel></rss>';
+	$unsafe_begin = wpai139_mcp_execute(
+		$token,
+		$session,
+		$seq,
+		'wp-ai-bridge/private-transfer',
+		array(
+			'action'      => 'begin',
+			'purpose'     => 'wxr',
+			'total_bytes' => strlen( $unsafe_xml ),
+			'sha256'      => hash( 'sha256', $unsafe_xml ),
+		)
+	);
+	wpai139_mcp_assert( true === ( $unsafe_begin['success'] ?? false ), 'Disposable malformed XML lease could not begin.' );
+	$unsafe_id      = $unsafe_begin['data']['transfer_id'];
+	$transfer_ids[] = $unsafe_id;
+	$unsafe_part    = wpai139_mcp_execute(
+		$token,
+		$session,
+		$seq,
+		'wp-ai-bridge/private-transfer',
+		array(
+			'action'         => 'append',
+			'transfer_id'    => $unsafe_id,
+			'offset'         => 0,
+			'content_base64' => base64_encode( $unsafe_xml ),
+		)
+	);
+	wpai139_mcp_assert( true === ( $unsafe_part['success'] ?? false ), 'Malformed XML transport fixture could not be staged.' );
+	$unsafe_verified = wpai139_mcp_execute(
+		$token,
+		$session,
+		$seq,
+		'wp-ai-bridge/private-transfer',
+		array(
+			'action'      => 'verify',
+			'transfer_id' => $unsafe_id,
+		)
+	);
+	wpai139_mcp_assert( true === ( $unsafe_verified['success'] ?? false ), 'Malformed XML transport fixture did not verify raw bytes.' );
+	$unsafe_preview = wpai139_mcp_execute(
+		$token,
+		$session,
+		$seq,
+		'wp-ai-bridge/wxr-import-preview',
+		array( 'transfer_id' => $unsafe_id )
+	);
+	wpai139_mcp_assert( false === ( $unsafe_preview['success'] ?? true ), 'Verified WXR ingress admitted a DTD/entity payload.' );
+
 	echo "PASS: #139 WXR transfer purpose isolation, revoke/resume checks and MCP annotations.\n";
 } finally {
 	wp_set_current_user( $actor );
