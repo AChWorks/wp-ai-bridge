@@ -93,7 +93,7 @@ try {
 		ob_start();
 		$admin_page->render_dashboard();
 		$dashboard_html = ob_get_clean();
-		wpai126_assert( false !== strpos( $dashboard_html, esc_html__( 'Multiple projects; no single site-wide focus.', 'wp-ai-bridge' ) ), 'Mixed-project Dashboard incorrectly claimed there was no in-progress task.' );
+		wpai126_assert( false !== strpos( $dashboard_html, esc_html__( 'Mixed Workspace; no single site-wide focus.', 'wp-ai-bridge' ) ), 'Mixed-project Dashboard incorrectly claimed there was no in-progress task.' );
 	} finally {
 		$_GET = $prior_query;
 	}
