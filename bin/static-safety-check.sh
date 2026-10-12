@@ -27,7 +27,7 @@ if [[ ! -f "$private_stage" ||
       "$(grep -cF '@mkdir(' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'flock(' "$private_stage" || true)" != "6" ||
       "$(grep -cF 'ftruncate(' "$private_stage" || true)" != "1" ||
-      "$(grep -cF 'rename(' "$private_stage" || true)" != "1" ]]; then
+      "$(grep -cF 'rename(' "$private_stage" || true)" != "2" ]]; then
     echo "ERROR: internal-only private transfer filesystem/lock surface changed." >&2
     exit 1
 fi
@@ -35,9 +35,10 @@ if grep -nE '(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|e
     echo "ERROR: private transfer staging grew forbidden execution/network/filesystem primitives." >&2
     exit 1
 fi
-# Exactly one atomic, same-directory checkpoint publication is authorized;
+# Exactly two audited same-directory atomic publications (checkpoint and claim);
 # never admit caller-named rename, generic filesystem endpoints or shell IO.
 if [[ "$(grep -cF 'rename( $temp, $dest )' "$private_stage" || true)" != "1" ||
+      "$(grep -cF 'rename( $temporary, $path )' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'fence_native_effect(' "$private_stage" || true)" != "4" ||
       "$(grep -cF 'recover_scratch(' "$private_stage" || true)" != "3" ]]; then
     echo "ERROR: transfer checkpoint or coordinated scratch recovery changed." >&2

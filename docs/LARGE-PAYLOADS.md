@@ -91,6 +91,14 @@ The direct WordPress client and the Gateway route must preserve the *same source
 
 For future MCP protocol features, negotiate actual Adapter/client versions rather than assuming a newer specification, resource-link support or asynchronous task support is present. Existing tested ChatGPT and Gateway OAuth/MCP operation must continue to function until separately reviewed replacement/upgrade paths are accepted.
 
+### Native private effect recovery (unmerged PR #145)
+
+The one-way native `.claim` is written into an owner-only unpublished temporary and atomically published **only after complete flush**, under the stable per-lease lock. A process dying before publication leaves an inert pending file; an existing final claim is never deleted to permit replay. Published/legacy incomplete claims remain fenced as `committing`/unknown. Stale unpublished pending files are reconciled only when their session is not locked. The dual-generation `.meta` journal remains the source of truth for reservations and crash-resumable offsets.
+
+`private-transfer(action=admin_release, transfer_id, acknowledge_unknown=true)` is a **separate narrow management action** requiring authenticated MCP OAuth and the current blog's WordPress `manage_options`, even when the original Editor's Builder Write grant was revoked. It can only release the private bytes/reservation for an exact `committing`/unknown claim. It cannot read, append, cancel, retry, verify, change ownership, or delete the immutable claim fence; the response omits the originating principal's content digest and byte count. Inspect the actual WordPress destination **before** acknowledging uncertainty; byte release cannot undo a native effect.
+
+Unrelated admissions inspect atomically published, conservative reservation generations non-blockingly while one Media sideload holds its own per-lease lock through Core image processing; the global admission guard never waits on that long-running lock. If a busy reservation cannot be safely classified, admission fails promptly without relaxing capacity or confidentiality. Cancellation of the active lease is refused while the native Media operation holds it. These are source contracts requiring independent approval and external client acceptance before publication.
+
 ## Contract ownership and development sequence
 
 The **Bridge** owns independently usable **direct WordPress** data exchange and its own administrator-controlled response/window/Workspace storage limits. [Bridge #134](https://github.com/AChWorks/wp-ai-bridge/issues/134) is the pending inbound large UTF-8 and authenticated **two-way** private binary/file transport outcome. Keep normal small typed Abilities cheap. Do not invent a hard aggregate file maximum from a JSON limit, a 16 KiB SFTP inline call, a Workspace record quota, or the WordPress single-request Media cap. A passive ZIP/other archive receipt never automatically installs, extracts or executes it.

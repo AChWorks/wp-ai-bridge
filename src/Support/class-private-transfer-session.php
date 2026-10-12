@@ -73,6 +73,10 @@ final class Private_Transfer_Session {
 				$entries = new \FilesystemIterator( $root, \FilesystemIterator::SKIP_DOTS );
 				foreach ( $entries as $entry ) {
 					$name = $entry->getFilename();
+					if ( preg_match( '/^([a-f0-9]{64})\\.claim\\.pending\\.[a-f0-9]{16}$/D', $name, $found ) ) {
+						$this->reconcile_unpublished_claim( $root, $found[1], $entry );
+						continue;
+					}
 					if ( ! preg_match( '/^[a-f0-9]{64}\\.meta$/D', $name ) ) {
 						continue;
 					}
@@ -83,16 +87,16 @@ final class Private_Transfer_Session {
 						}
 						continue;
 					}
-					$info = $this->open_meta( $root, $id );
+					$info = $this->admission_meta( $root, $id );
 					if ( is_wp_error( $info ) ) {
-						return new WP_Error( 'transfer_storage_uncertain', 'Private transfer state is inconsistent; inspect storage before beginning another transfer.' );
+						return $info;
 					}
 					list( $handle, $meta ) = $info;
-					if ( ! $this->recover_scratch( $root, $id, $handle, $meta ) ) {
+					if ( is_resource( $handle ) && ! $this->recover_scratch( $root, $id, $handle, $meta ) ) {
 						$this->close_meta( $handle );
 						return new WP_Error( 'transfer_cleanup_uncertain', 'Private scratch could not be reconciled before capacity admission.' );
 					}
-					if ( $meta['expires'] <= time() && ! in_array( $meta['state'], array( 'committing', 'observed' ), true ) ) {
+					if ( is_resource( $handle ) && $meta['expires'] <= time() && ! in_array( $meta['state'], array( 'committing', 'observed' ), true ) ) {
 						if ( ! $this->erase( $root, $id ) ) {
 							$this->close_meta( $handle );
 							return new WP_Error( 'transfer_cleanup_uncertain', 'Expired private transfer bytes could not be fully deleted. Manual cleanup is required.' );
@@ -631,6 +635,55 @@ final class Private_Transfer_Session {
 		}
 	}
 
+	/**
+	 * Administrator-only, exact-site release of unknown-effect private bytes.
+	 * Does NOT grant read/append/verify/cancel/retry or lease ownership.
+	 * The final native-effect claim and identity journal are never removed.
+	 *
+	 * @param string $id Exact opaque lease ID.
+	 * @return array<string,mixed>|WP_Error Minimal acknowledgement, no source metadata.
+	 */
+	public function admin_release_unknown( $id ) {
+		if ( ! current_user_can( 'manage_options' ) ||
+			'' === OAuth_Server::authenticated_mcp_client_id() ||
+			! is_string( $id ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $id ) ) {
+			return $this->denied();
+		}
+		$root = $this->root();
+		if ( is_wp_error( $root ) ) {
+			return $root;
+		}
+		$info = $this->open_meta( $root, $id );
+		if ( is_wp_error( $info ) ) {
+			return $info;
+		}
+		list( $handle, $meta ) = $info;
+		try {
+			if ( (int) get_current_blog_id() !== $meta['blog'] ||
+				'committing' !== $meta['state'] || 'unknown' !== $meta['outcome'] ) {
+				return new WP_Error( 'transfer_admin_recovery_denied', 'Only a same-site administrator may release an explicitly unknown native-effect payload.' );
+			}
+			if ( empty( $meta['payload_released'] ) ) {
+				if ( ! $this->remove_file( $root . '/' . $id . '.bytes' ) ) {
+					return new WP_Error( 'transfer_cleanup_uncertain', 'Administrator recovery could not remove the private source.' );
+				}
+				$meta['payload_released'] = true;
+				if ( ! $this->save_meta( $handle, $meta ) ) {
+					return new WP_Error( 'transfer_cleanup_uncertain', 'Administrator release was not durably checkpointed.' );
+				}
+			}
+			// Expose only the opaque ID and release result. Never disclose
+			// another principal's digest, byte count, origin or private path.
+			return array(
+				'id'               => $id,
+				'state'            => 'committing',
+				'payload_released' => true,
+			);
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
 	/** @param string $id Opaque session. @return bool|WP_Error */
 	public function cancel( $id ) {
 		$root = $this->root();
@@ -645,7 +698,7 @@ final class Private_Transfer_Session {
 			// A previous deletion may have been refused after writing the
 			// tombstone. An authorized owner must still be able to resume
 			// cleanup, without exposing the lease for data-plane operations.
-			$loaded = $this->load( $id, true );
+			$loaded = $this->load( $id, true, true );
 			if ( is_wp_error( $loaded ) ) {
 				return $loaded;
 			}
@@ -748,6 +801,67 @@ final class Private_Transfer_Session {
 	}
 
 	/**
+	 * Admission can inspect stable, atomically published generations without
+	 * waiting for a Media native effect's long-held per-lease flock. Global
+	 * guard serializes new/scratch reservations; two generations are kept
+	 * conservative for concurrent payload release and append progress.
+	 *
+	 * @return array<int,mixed>|WP_Error [lock|null, capacity metadata].
+	 */
+	private function admission_meta( $root, $id ) {
+		$info = $this->open_meta( $root, $id, false, true );
+		if ( ! is_wp_error( $info ) || 'transfer_session_busy' !== $info->get_error_code() ) {
+			return $info;
+		}
+		$snapshots = array();
+		foreach ( array( 0, 1 ) as $slot ) {
+			$read = $this->read_checkpoint( $root . '/' . $id . '.meta.state.' . $slot );
+			if ( is_array( $read ) && $this->valid_meta( $read['body'], $id ) ) {
+				$snapshots[] = $read;
+			}
+		}
+		if ( ! $snapshots ) {
+			return new WP_Error( 'transfer_session_busy', 'A native WordPress effect is active and its reservation cannot be safely read.' );
+		}
+		usort(
+			$snapshots,
+			static function ( $a, $b ) {
+				return $b['generation'] <=> $a['generation'];
+			}
+		);
+		$meta = $snapshots[0]['body'];
+		foreach ( $snapshots as $snapshot ) {
+			$candidate = $snapshot['body'];
+			if ( $candidate['total'] !== $meta['total'] || $candidate['blog'] !== $meta['blog'] ) {
+				return new WP_Error( 'transfer_session_busy', 'Busy private reservation generations disagree.' );
+			}
+			$meta['scratch_reserved'] = max( (int) ( $meta['scratch_reserved'] ?? 0 ), (int) ( $candidate['scratch_reserved'] ?? 0 ) );
+			$meta['received']         = min( $meta['received'], $candidate['received'] );
+			$meta['payload_released'] = ! empty( $meta['payload_released'] ) && ! empty( $candidate['payload_released'] );
+		}
+		// Do not expire, delete or mutate an actively held lease. The
+		// conservative snapshot counts its full maximum reservation instead.
+		return array( null, $meta );
+	}
+
+	/**
+	 * A killed writer may leave only an unpublished .claim.pending.* file.
+	 * Never promote it to a native-effect fence, and never remove one while
+	 * its owner still holds the stable per-session coordinator.
+	 */
+	private function reconcile_unpublished_claim( $root, $id, $entry ) {
+		if ( $entry->getMTime() > time() - 120 ) {
+			return;
+		}
+		$path = $root . '/' . $entry->getFilename();
+		$info = $this->open_meta( $root, $id, false, true );
+		if ( ! is_wp_error( $info ) ) {
+			$this->remove_file( $path );
+			$this->close_meta( $info[0] );
+		}
+	}
+
+	/**
 	 * Lock identity is stable across checkpoint replacement. The .meta inode is
 	 * never truncated or renamed. Two alternating, checksum-protected generations
 	 * make partial writes and worker death recoverable without accepting a torn
@@ -757,14 +871,18 @@ final class Private_Transfer_Session {
 	 * @param string $id Fixed hexadecimal transfer identity.
 	 * @return array<int,mixed>|WP_Error
 	 */
-	private function open_meta( $root, $id, $allow_tombstone = false ) {
+	private function open_meta( $root, $id, $allow_tombstone = false, $nonblocking = false ) {
 		$path = $root . '/' . $id . '.meta';
 		$h    = @fopen( $path, 'r+b' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Stable private coordination inode, never replaced.
-		if ( false === $h || ! $this->secure_file( $h, $path ) || ! flock( $h, LOCK_EX ) ) {
+		if ( false === $h || ! $this->secure_file( $h, $path ) ) {
 			if ( is_resource( $h ) ) {
 				fclose( $h );
 			}
 			return new WP_Error( 'transfer_storage_uncertain', 'Private transfer coordination lock could not be safely opened.' );
+		}
+		if ( ! flock( $h, LOCK_EX | ( $nonblocking ? LOCK_NB : 0 ) ) ) {
+			fclose( $h );
+			return new WP_Error( $nonblocking ? 'transfer_session_busy' : 'transfer_storage_uncertain', 'Private transfer is busy with another native operation; retry after it completes.' );
 		}
 		// A canceller can unlink the stable coordinator while a peer waits
 		// on its inode. Check the live directory identity *after* locking.
@@ -804,8 +922,15 @@ final class Private_Transfer_Session {
 		// A torn newer checkpoint can never reauthorize a consumed old one.
 		$claim = $this->read_claim_fence( $root, $id );
 		if ( is_wp_error( $claim ) ) {
-			$this->close_meta( $h );
-			return $claim;
+			// An incomplete legacy final fence is NEVER discarded or replayed.
+			// Fail this lease closed as an unknown native effect, while still
+			// allowing unrelated capacity accounting and admin-only cleanup.
+			$meta['state']          = 'committing';
+			$meta['consumer']       = 'unknown';
+			$meta['destination_id'] = 0;
+			$meta['intent']         = 'unknown';
+			$meta['target_id']      = 0;
+			$meta['outcome']        = 'unknown';
 		}
 		if ( is_array( $claim ) && in_array( $meta['state'], array( 'open', 'verified', 'preparing' ), true ) ) {
 			$meta['state']          = 'committing';
@@ -916,11 +1041,19 @@ final class Private_Transfer_Session {
 	 * @return bool
 	 */
 	private function fence_native_effect( $root, $id, $consumer, $intent, $target_id ) {
+		// The final claim name MUST NOT become visible until its full
+		// immutable contents are flushed. The stable .meta coordinator is
+		// held by the caller across publication and the subsequent Core effect.
 		$path = $root . '/' . $id . '.claim';
-		$h    = @fopen( $path, 'x+b' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Once-only claim fence; exclusive creation.
+		if ( file_exists( $path ) || is_link( $path ) ) {
+			return false;
+		}
+		$temporary = $path . '.pending.' . bin2hex( random_bytes( 8 ) );
+		$h         = @fopen( $temporary, 'x+b' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Owner-only unpublished claim, exclusive creation.
 		if ( ! is_resource( $h ) ) {
 			return false;
 		}
+		$complete = false;
 		try {
 			$wire = wp_json_encode(
 				array(
@@ -929,12 +1062,42 @@ final class Private_Transfer_Session {
 					'target_id' => $target_id,
 				)
 			);
-			return $this->secure_file( $h, $path ) && is_string( $wire ) &&
-				strlen( $wire ) === fwrite( $h, $wire ) && fflush( $h ) &&
-				( ! function_exists( 'fsync' ) || fsync( $h ) );
+			if ( ! is_string( $wire ) || ! $this->secure_file( $h, $temporary ) ) {
+				return false;
+			}
+			$offset = 0;
+			while ( $offset < strlen( $wire ) ) {
+				$written = fwrite( $h, substr( $wire, $offset ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Bounded unpublished private claim.
+				if ( ! is_int( $written ) || $written < 1 ) {
+					return false;
+				}
+				$offset += $written;
+			}
+			$complete = fflush( $h ) && ( ! function_exists( 'fsync' ) || fsync( $h ) );
 		} finally {
 			fclose( $h );
+			if ( ! $complete ) {
+				$this->remove_file( $temporary );
+			}
 		}
+		if ( ! $complete ) {
+			return false;
+		}
+		// The per-lease coordinator prevents a concurrent claimant from
+		// racing this final-name check. Never replace an existing fence.
+		if ( file_exists( $path ) || is_link( $path ) ) {
+			$this->remove_file( $temporary );
+			return false;
+		}
+		if ( ! rename( $temporary, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomic same-directory claim publication under stable per-lease lock.
+			$this->remove_file( $temporary );
+			return false;
+		}
+		$published = $this->read_claim_fence( $root, $id );
+		return is_array( $published ) &&
+			$consumer === $published['consumer'] &&
+			$intent === $published['intent'] &&
+			$target_id === $published['target_id'];
 	}
 
 	/**
@@ -1020,12 +1183,12 @@ final class Private_Transfer_Session {
 					}
 					continue;
 				}
-				$info = $this->open_meta( $root, $owner );
+				$info = $this->admission_meta( $root, $owner );
 				if ( is_wp_error( $info ) ) {
 					return $info;
 				}
 				list( $handle, $meta ) = $info;
-				if ( ! $this->recover_scratch( $root, $owner, $handle, $meta ) ) {
+				if ( is_resource( $handle ) && ! $this->recover_scratch( $root, $owner, $handle, $meta ) ) {
 					$this->close_meta( $handle );
 					return new WP_Error( 'transfer_cleanup_uncertain', 'An abandoned private Media scratch reservation could not be reconciled.' );
 				}
@@ -1039,7 +1202,7 @@ final class Private_Transfer_Session {
 				}
 				$this->close_meta( $handle );
 			}
-			$loaded = $this->load( $id );
+			$loaded = $this->load( $id, false, true );
 			if ( is_wp_error( $loaded ) ) {
 				return $loaded;
 			}
@@ -1247,7 +1410,7 @@ final class Private_Transfer_Session {
 	}
 
 	/** @param string $id Exact opaque id. @return array<int,mixed>|WP_Error */
-	private function load( $id, $allow_tombstone = false ) {
+	private function load( $id, $allow_tombstone = false, $nonblocking = false ) {
 		if ( ! is_string( $id ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $id ) ) {
 			return $this->invalid();
 		}
@@ -1260,7 +1423,7 @@ final class Private_Transfer_Session {
 				is_link( $root . '/' . $id . '.tombstone' ) ) ) {
 			return new WP_Error( 'transfer_cancelled', 'This transfer has a durable cancellation tombstone.' );
 		}
-		$info = $this->open_meta( $root, $id, $allow_tombstone );
+		$info = $this->open_meta( $root, $id, $allow_tombstone, $nonblocking );
 		if ( is_wp_error( $info ) ) {
 			return $info;
 		}

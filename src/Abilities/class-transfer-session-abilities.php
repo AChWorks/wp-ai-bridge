@@ -46,7 +46,7 @@ final class Transfer_Session_Abilities {
 					'properties'           => array(
 						'action'              => array(
 							'type' => 'string',
-							'enum' => array( 'limits', 'begin', 'append', 'status', 'verify', 'cancel', 'read', 'release' ),
+							'enum' => array( 'limits', 'begin', 'append', 'status', 'verify', 'cancel', 'read', 'release', 'admin_release' ),
 						),
 						'purpose'             => array(
 							'type' => 'string',
@@ -149,6 +149,11 @@ final class Transfer_Session_Abilities {
 		if ( 'begin' === $action ) {
 			return $this->can_purpose( $input['purpose'] ?? '' );
 		}
+		if ( 'admin_release' === $action ) {
+			// Explicit same-blog recovery when the original Builder grant or
+			// originating principal has been revoked. No general lease access.
+			return current_user_can( 'manage_options' );
+		}
 		// These are availability checks only; the opaque lease store binds and
 		// rechecks exact blog, WordPress user, OAuth client and purpose.
 		return $this->can_purpose( 'media' ) ||
@@ -196,14 +201,15 @@ final class Transfer_Session_Abilities {
 		// Leave space for nested execute-ability arguments and MCP headers.
 		$chunk        = min( $policy['chunk'], max( 1, intdiv( max( 1, $budget - 4096 ) * 3, 4 ) ) );
 		$allowed_keys = array(
-			'limits'  => array( 'action' ),
-			'begin'   => array( 'action', 'purpose', 'total_bytes', 'sha256' ),
-			'append'  => array( 'action', 'transfer_id', 'offset', 'content_base64' ),
-			'status'  => array( 'action', 'transfer_id' ),
-			'verify'  => array( 'action', 'transfer_id' ),
-			'cancel'  => array( 'action', 'transfer_id' ),
-			'read'    => array( 'action', 'transfer_id', 'offset', 'max_bytes' ),
-			'release' => array( 'action', 'transfer_id', 'acknowledge_unknown' ),
+			'limits'        => array( 'action' ),
+			'begin'         => array( 'action', 'purpose', 'total_bytes', 'sha256' ),
+			'append'        => array( 'action', 'transfer_id', 'offset', 'content_base64' ),
+			'status'        => array( 'action', 'transfer_id' ),
+			'verify'        => array( 'action', 'transfer_id' ),
+			'cancel'        => array( 'action', 'transfer_id' ),
+			'read'          => array( 'action', 'transfer_id', 'offset', 'max_bytes' ),
+			'release'       => array( 'action', 'transfer_id', 'acknowledge_unknown' ),
+			'admin_release' => array( 'action', 'transfer_id', 'acknowledge_unknown' ),
 		);
 		if ( ! isset( $allowed_keys[ $action ] ) ||
 			array_diff( array_keys( $input ), $allowed_keys[ $action ] ) ) {
@@ -238,6 +244,13 @@ final class Transfer_Session_Abilities {
 		$id = $input['transfer_id'] ?? '';
 		if ( ! is_string( $id ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $id ) ) {
 			return $this->invalid();
+		}
+		if ( 'admin_release' === $action ) {
+			if ( 3 !== count( $input ) || true !== ( $input['acknowledge_unknown'] ?? null ) ) {
+				return $this->invalid();
+			}
+			$released = $this->store->admin_release_unknown( $id );
+			return is_wp_error( $released ) ? $released : $this->result( $action, $released, $policy, $chunk );
 		}
 		if ( 'append' === $action ) {
 			if ( count( $input ) !== 4 || ! is_int( $input['offset'] ) ||

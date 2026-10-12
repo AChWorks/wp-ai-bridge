@@ -246,6 +246,10 @@ The draft payload branch proposes **wp-ai-bridge/file-bytes-read**, a read-only,
 
 This is NOT a complete private binary ingress, file transport session, HTTP streaming protocol, WXR artifact export, downloadable model attachment, ChatGPT top-level fileParams extension, or verified Gateway compatibility. Review and approve its public contract before release; do not expose server paths.
 
+## Private transfer administrator recovery (PR #145, unmerged)
+
+`private-transfer` has an explicit `admin_release` variant, requiring `transfer_id` and `acknowledge_unknown=true` with current WordPress `manage_options` **and** an authenticated OAuth MCP client. It is strictly same-blog and applies only to a `committing`/unknown, one-way claimed native effect. It removes private staging payload/reservation while preserving the immutable claim fence and operation identity; it does not grant access to the original client's private bytes, does not cancel/retry the effect, and returns no owner digest/byte count. This administrator exception is separate from the original user's authenticated, purpose-bound `status/verify/read/append/release/cancel` operations. Revoking Builder Write does not disable administrator cleanup; unrelated site administrators cannot operate across site boundaries. Draft source is not a release.
+
 ## Draft private transfer sessions (Issue #134; not shipped)
 
 The proposed wp-ai-bridge/private-transfer Ability uses existing Bridge OAuth, the registered Core Abilities API and the official MCP Adapter. It can report current configurable inbound message/chunk/file/reserved-disk/concurrency/lease budgets and privately stage client-supplied bytes via begin, append, status, verify, cancel, plus read for frozen Media exports and release for claimed effect receipts. Only current purpose-appropriate native WordPress capabilities and Bridge grants can create or access a lease; every resume binds current site, principal and OAuth client. Unknown/malformed requests, differing replay, stale leases, hash mismatch, revocation, full disk and short writes fail explicitly. No filesystem path is returned, and no staged file is imported or executed.
