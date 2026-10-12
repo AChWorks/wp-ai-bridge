@@ -95,6 +95,9 @@ if ( 'importer' === $mode ) {
 		);
 		$capacity = ( new \WP_AI_Bridge\Support\Transfer_Settings() )->bytes();
 		$start    = $nested->begin( 'text', 0, hash( 'sha256', '' ), $capacity['file'], $capacity['chunk'], $capacity['sessions'], $capacity['ttl'], $capacity['active'] );
+		if ( is_wp_error( $start ) ) {
+			file_put_contents( $dir . '/native.error', $start->get_error_code() . ': ' . $start->get_error_message() );
+		}
 		wpai134_review_require( ! is_wp_error( $start ), 'Reentrant admission blocked inside Media processing.' );
 		wpai134_review_require( true === $nested->cancel( $start['id'] ), 'Reentrant admission cleanup failed.' );
 		wpai134_review_require(
@@ -123,7 +126,7 @@ if ( 'importer' === $mode ) {
 		);
 		wpai134_review_require(
 			true === ( $response['result']['structuredContent']['success'] ?? false ),
-			'Native Media importer failed after concurrent admission.'
+			'Native Media importer failed before/during provider phase: ' . wp_json_encode( $response['result'] ?? array() ) . ' native.error=' . ( is_file( $dir . '/native.error' ) ? file_get_contents( $dir . '/native.error' ) : 'none' )
 		);
 		$data = $response['result']['structuredContent']['data'];
 		wpai134_review_require( false !== file_put_contents( $dir . '/result.json', wp_json_encode( $data ) ), 'Cannot persist imported WordPress identity.' );
