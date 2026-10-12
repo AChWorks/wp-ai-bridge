@@ -188,8 +188,7 @@ try {
 	wpai139_effect_assert( 202 === rest_do_request( $notice )->get_status(), 'Native MCP import initialization missing.' );
 
 	/** @param string $payload Exact validated WXR bytes. @return string Private inbound lease. */
-	function wpai139_effect_stage( $payload ) {
-		global $token, $session, $seq, $lease_ids;
+	function wpai139_effect_stage( $payload, $token, $session, &$seq, &$lease_ids ) {
 		$begin = wpai139_effect_execute(
 			$token,
 			$session,
@@ -235,7 +234,7 @@ try {
 		return $id;
 	}
 
-	$id   = wpai139_effect_stage( $bytes );
+	$id   = wpai139_effect_stage( $bytes, $token, $session, $seq, $lease_ids );
 	$info = wpai139_effect_execute(
 		$token,
 		$session,
@@ -410,7 +409,7 @@ try {
 	wp_delete_post( $restored_id, true );
 	$restored_id = 0;
 	wp_set_current_user( 0 );
-	$second = wpai139_effect_stage( $bytes );
+	$second = wpai139_effect_stage( $bytes, $token, $session, $seq, $lease_ids );
 	$next   = wpai139_effect_execute(
 		$token,
 		$session,
