@@ -106,15 +106,25 @@ try {
 		$record = $store->create_document(
 			array(
 				'title'       => 'WPAI153 large-count ' . $i,
-				'content'     => str_repeat( 'x', 65536 ) . ' ' . $i,
+				'content'     => str_repeat( 'x', $i >= 240 ? 450 * 1024 : 65536 ) . ' ' . $i,
 				'project_ref' => 'wpai-scale-153',
 			)
 		);
 		wpai126_quota_assert( ! is_wp_error( $record ) && ! empty( $record['id'] ), 'A valid post-200 WordPress document was rejected.' );
 		$created[] = (int) $record['id'];
 	}
-	$large_page   = $store->page_documents( array( 'limit' => 25 ) );
-	$large_resume = $store->resume();
+	// Keep page and resume usable even under realistic limited PHP memory,
+	// with ten recent 450-KiB documents requiring size-aware SQL grouping.
+	$previous_memory = ini_get( 'memory_limit' );
+	$test_memory     = memory_get_usage( true ) < 67108864 ? ini_set( 'memory_limit', '96M' ) : false;
+	try {
+		$large_page   = $store->page_documents( array( 'limit' => 25 ) );
+		$large_resume = $store->resume();
+	} finally {
+		if ( false !== $test_memory ) {
+			ini_set( 'memory_limit', (string) $previous_memory );
+		}
+	}
 	$large_export = $store->export_snapshot();
 	wpai126_quota_assert(
 		! is_wp_error( $large_page ) && 250 === $large_page['total'] &&
@@ -242,6 +252,16 @@ try {
 		is_wp_error( $damaged_export ) && 'workspace_incomplete' === $damaged_export->get_error_code(),
 		'Corrupt Workspace backing state was silently omitted or exported as complete.'
 	);
+
+	// The bounded native reader must never materialize an anomalously huge
+	// private meta payload into the PHP process or claim a complete result.
+	update_post_meta( $created[0], Store::META_STATE, str_repeat( 'x', 8388609 ) );
+	$huge_page = $store->page_documents( array( 'limit' => 1 ) );
+	wpai126_quota_assert(
+		is_wp_error( $huge_page ) && 'workspace_incomplete' === $huge_page->get_error_code(),
+		'Unexpected oversized Workspace metadata bypassed the bounded reader.'
+	);
+	update_post_meta( $created[0], Store::META_STATE, wp_slash( $original_document ) );
 
 	// Syntactically valid JSON with a damaged project/key must NOT become
 	// an unbound legacy record, nor permit complete export or mixed resume.

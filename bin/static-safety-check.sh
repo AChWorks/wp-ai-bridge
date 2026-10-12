@@ -474,19 +474,22 @@ native_content_cas='src/Support/class-native-content-cas.php'
 workspace_scan='src/Workspace/class-record-scan-store.php'
 # #153 permits one read-only, per-blog, private-post-type Workspace
 # enumeration store. It is not a general-purpose SQL or record editor.
-# Freeze the exact three read queries and forbid all mutation primitives.
+# Freeze the exact four read queries (including a size-only preflight) and forbid all mutation primitives.
 if [[ ! -f "$workspace_scan" ||
       "$(grep -cF '$wpdb->get_var(' "$workspace_scan" || true)" != "1" ||
       "$(grep -cF '$wpdb->get_col(' "$workspace_scan" || true)" != "1" ||
-      "$(grep -cF '$wpdb->get_results(' "$workspace_scan" || true)" != "1" ||
-      "$(grep -cF '$wpdb->prepare(' "$workspace_scan" || true)" != "3" ||
+      "$(grep -cF '$wpdb->get_results(' "$workspace_scan" || true)" != "2" ||
+      "$(grep -cF '$wpdb->prepare(' "$workspace_scan" || true)" != "4" ||
       "$(grep -cF 'SELECT COUNT(*) FROM ' "$workspace_scan" || true)" != "1" ||
       "$(grep -cF 'SELECT ID FROM ' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'SELECT post_id, OCTET_LENGTH(meta_value) AS payload_bytes FROM ' "$workspace_scan" || true)" != "1" ||
       "$(grep -cF 'SELECT post_id, meta_value FROM ' "$workspace_scan" || true)" != "1" ||
-      "$(grep -cF 'Store::META_STATE' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'Store::META_STATE' "$workspace_scan" || true)" != "2" ||
       "$(grep -cF 'Store::DOCUMENT_POST_TYPE' "$workspace_scan" || true)" != "1" ||
       "$(grep -cF 'Store::TASK_POST_TYPE' "$workspace_scan" || true)" != "1" ||
-      "$(grep -cF 'const SCAN_BATCH = 16;' "$workspace_scan" || true)" != "1" ]]; then
+      "$(grep -cF 'const SCAN_BATCH = 16;' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'const MAX_STATE_BYTES = 8388608;' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'OCTET_LENGTH(meta_value) <= 8388608' "$workspace_scan" || true)" != "1" ]]; then
     echo "ERROR: Workspace bounded database reader exceeded its audited read-only query inventory." >&2
     exit 1
 fi
