@@ -218,7 +218,7 @@ final class Settings_Page {
 			<?php if ( is_array( $view ) ) : ?>
 				<h2 dir="auto" style="text-align: left; overflow-wrap: anywhere;"><?php echo esc_html( $view['title'] ); ?></h2>
 				<p><strong><?php echo esc_html__( 'Project ID', 'wp-ai-bridge' ); ?></strong> <?php $this->render_project_id( $view['project_ref'] ?? '' ); ?></p>
-				<p><strong><?php echo esc_html__( 'State hash:', 'wp-ai-bridge' ); ?></strong> <code><?php echo esc_html( $view['state_hash'] ); ?></code></p>
+				<p><strong><?php echo esc_html__( 'State hash:', 'wp-ai-bridge' ); ?></strong> <code dir="ltr"><?php echo esc_html( $view['state_hash'] ); ?></code></p>
 				<pre dir="ltr" style="direction: ltr; text-align: left; unicode-bidi: isolate; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 1100px"><?php echo esc_html( $view['content'] ); ?></pre>
 			<?php endif; ?>
 		</div>
@@ -275,7 +275,7 @@ final class Settings_Page {
 				<p><strong><?php echo esc_html__( 'Project ID', 'wp-ai-bridge' ); ?></strong> <?php $this->render_project_id( $view['project_ref'] ?? '' ); ?></p>
 				<p><strong><?php echo esc_html__( 'Goal:', 'wp-ai-bridge' ); ?></strong> <span dir="ltr" style="display: block; direction: ltr; text-align: left; overflow-wrap: anywhere; white-space: pre-wrap;"><?php echo esc_html( $view['goal'] ); ?></span></p>
 				<p><strong><?php echo esc_html__( 'Notes:', 'wp-ai-bridge' ); ?></strong></p><pre dir="ltr" style="direction: ltr; text-align: left; unicode-bidi: isolate; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 1100px"><?php echo esc_html( $view['notes'] ); ?></pre>
-				<p><strong><?php echo esc_html__( 'State hash:', 'wp-ai-bridge' ); ?></strong> <code><?php echo esc_html( $view['state_hash'] ); ?></code></p>
+				<p><strong><?php echo esc_html__( 'State hash:', 'wp-ai-bridge' ); ?></strong> <code dir="ltr"><?php echo esc_html( $view['state_hash'] ); ?></code></p>
 			<?php endif; ?>
 		</div>
 		<?php
