@@ -357,6 +357,7 @@ final class Settings_Page {
 			<h2><?php echo esc_html__( 'MCP response and text budgets', 'wp-ai-bridge' ); ?></h2>
 			<p><?php echo esc_html__( 'These are per-request response and text-window budgets, not limits on the size of a WordPress document or transferred file. No capacity is preallocated when idle.', 'wp-ai-bridge' ); ?></p>
 			<p><?php echo esc_html__( 'Workspace record storage limits below are separate quotas; they do not change the maximum MCP request size or create a file upload path.', 'wp-ai-bridge' ); ?></p>
+			<p class="description"><?php echo esc_html__( 'Units: 1 KiB = 1,024 bytes; 1 MiB = 1,024 KiB; 128 KiB is about 131 KB.', 'wp-ai-bridge' ); ?></p>
 			<form action="options.php" method="post">
 				<?php settings_fields( Payload_Settings::OPTION_GROUP ); ?>
 				<table class="form-table" role="presentation"><tbody>

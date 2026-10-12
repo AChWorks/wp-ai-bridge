@@ -5,13 +5,13 @@
  * @package WP_AI_Bridge
  */
 return array(
-	'Incoming MCP request budget (KiB)' => 'بودجه درخواست ورودی MCP (کیبی‌بایت)',
+	'Incoming MCP request budget (KiB)' => 'بودجه درخواست ورودی MCP (KiB)',
 	'Bounds one encoded inbound tool message, not the aggregate file. Larger WordPress, proxy or MCP client limits must be configured separately.' => 'برای یک پیام ورودی رمزگذاری‌شده ابزار است، نه کل فایل. سقف‌های وردپرس، پراکسی یا کلاینت MCP را در صورت نیاز جداگانه تنظیم کنید.',
-	'Maximum raw transfer chunk (KiB)' => 'حداکثر اندازه بخش خام انتقال (کیبی‌بایت)',
+	'Maximum raw transfer chunk (KiB)' => 'حداکثر اندازه بخش خام انتقال (KiB)',
 	'Chunk bytes are also reduced automatically to fit the effective incoming MCP JSON budget. This is not a total file-size ceiling.' => 'اندازه بخش به صورت خودکار برای جاگیری در بودجه مؤثر JSON ورودی MCP کاهش می‌یابد. این محدودیت حجم کل فایل نیست.',
-	'One staged transfer reservation (MiB)' => 'رزرو یک انتقال موقت (مبی‌بایت)',
+	'One staged transfer reservation (MiB)' => 'رزرو یک انتقال موقت (MiB)',
 	'Adjust for actual private disk capacity and workloads. No archive, document or file extension has a universal Bridge-side aggregate cap.' => 'با توجه به ظرفیت واقعی فضای خصوصی و بار کاری تنظیم کنید. هیچ فرمت آرشیو، سند یا پسوند فایل سقف یکسان سراسری در بریج ندارد.',
-	'Aggregate live reservation budget (MiB)' => 'بودجه مجموع رزروهای فعال (مبی‌بایت)',
+	'Aggregate live reservation budget (MiB)' => 'بودجه مجموع رزروهای فعال (MiB)',
 	'Limits total outstanding private storage reservations per WordPress site independently of the per-file budget.' => 'مجموع رزروهای باقی‌مانده ذخیره‌سازی خصوصی را برای هر سایت وردپرس مستقل از بودجه هر فایل محدود می‌کند.',
 	'Concurrent private transfer sessions' => 'نشست‌های هم‌زمان انتقال خصوصی',
 	'Maximum non-expired transfers; expired sessions are cleaned on subsequent admissions.' => 'حداکثر انتقال‌هایی که منقضی نشده‌اند؛ نشست‌های منقضی در پذیرش‌های بعدی پاک می‌شوند.',
