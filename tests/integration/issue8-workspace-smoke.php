@@ -116,7 +116,7 @@ try {
 	);
 	wpai_issue8_assert( is_wp_error( $stale_document ) && 'workspace_stale' === $stale_document->get_error_code(), 'Stale Workspace document write was not rejected deterministically.' );
 
-	$task_notes  = "Owner text: first line\nیادداشت فارسی & <script>alert('x')</script>";
+	$task_notes  = "Owner text: first line\nیادداشت فارسی & \"quoted\" &lt;script&gt; literal text";
 	$task_create = wpai_issue8_execute(
 		'wp-ai-bridge/workspace-task',
 		array(
@@ -282,7 +282,8 @@ try {
 		wpai_issue8_assert( false !== strpos( $task_html, '<code dir="ltr">' . esc_html( $task_progress['state_hash'] ) . '</code>' ), 'Task state hash must keep LTR character order.' );
 		wpai_issue8_assert( 1 === substr_count( $task_html, 'direction: ltr; text-align: left; unicode-bidi: isolate;' ), 'Only the escaped task Notes body may force LTR/left alignment on the task inspector.' );
 		wpai_issue8_assert( false === strpos( $task_html, 'dir="auto"' ) && false === strpos( $task_html, '<h2 dir=' ) && false === strpos( $task_html, '<span dir="ltr"' ), 'Task table, title and goal must inherit native WordPress direction and alignment.' );
-		wpai_issue8_assert( false === strpos( $task_html, '<script>' ), 'Escaped task notes must never become trusted executable HTML.' );
+		wpai_issue8_assert( false !== strpos( $task_html, '&amp;lt;script&amp;gt;' ) && false !== strpos( $task_html, '&quot;quoted&quot;' ), 'Mixed task text ampersands and quotes must remain visibly escaped in the bounded Notes block.' );
+		wpai_issue8_assert( false === strpos( $task_html, '<script>' ), 'Task Notes must never turn escaped literal markers into executable HTML.' );
 	} finally {
 		$_GET = $previous_query;
 	}

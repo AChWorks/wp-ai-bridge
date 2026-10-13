@@ -79,7 +79,7 @@ wp=("${compose[@]}" run --rm cli)
     --skip-email \
     --allow-root
 
-adapter_url="${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.6.2/mcp-adapter.zip}"
+adapter_url="${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.6.1/mcp-adapter.zip}"
 "${wp[@]}" plugin install "$adapter_url" --activate --allow-root
 "${wp[@]}" plugin install /var/www/html/wpai124-published-v0.6.2.zip --activate --allow-root
 baseline_installed="$("${wp[@]}" plugin get wp-ai-bridge --field=version --allow-root | tail -n 1)"
