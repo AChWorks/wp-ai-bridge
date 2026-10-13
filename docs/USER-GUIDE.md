@@ -10,7 +10,7 @@ Use it to confirm that the plugin is active and to orient a connected client bef
 
 **WP AI Bridge → Documents** stores durable project documents inside private WordPress-native storage.
 
-The read-only **Project ID** column and document inspector display the exact stored `project_ref` beside its title. Records without a project binding show **Unbound**; the admin does not infer, assign, or create projects. In WordPress's RTL admin, stored artifact titles are left-aligned with per-title automatic text direction, while technical keys and raw Markdown are isolated as LTR and left-aligned. This affects display only; it does not translate, rewrite, or render Markdown as trusted HTML.
+The read-only **Project ID** column and document inspector display the exact stored `project_ref` beside its title. Records without a project binding show **Unbound**; the admin does not infer, assign, or create projects. Document tables, mixed-language titles and the inspector heading inherit the active WordPress admin direction (RTL in Persian, LTR in English). Only the escaped raw Markdown document body is explicitly LTR/left-aligned; inline technical keys and hashes keep their readable character order without changing the surrounding cell alignment. This affects display only; it does not translate, rewrite, or render Markdown as trusted HTML.
 
 Documents support:
 
@@ -26,7 +26,7 @@ A client must refresh a document after another actor changes it before overwriti
 
 **WP AI Bridge → Tasks** stores durable work items. Each task keeps progress, review, and delivery as independent state dimensions so one status does not accidentally imply another.
 
-Task filters are available for progress, review, delivery, and archived state. The read-only **Project ID** column and task inspector show the same exact project reference or **Unbound** marker. Task titles, goals, and notes are displayed in isolated left-aligned reading areas, without changing Persian admin controls or any stored content. No separate project registry or Projects admin screen is required.
+Task filters are available for progress, review, delivery, and archived state. The read-only **Project ID** column and task inspector show the same exact project reference or **Unbound** marker. Task list titles, dashboard summaries, inspector titles, goals and notes inherit native WordPress admin direction and alignment, without changing Persian admin controls or stored content. No separate project registry or Projects admin screen is required.
 
 Tasks use the same `version` + `state_hash` stale-write protection as Workspace documents.
 

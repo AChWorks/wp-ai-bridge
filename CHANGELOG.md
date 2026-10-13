@@ -4,6 +4,12 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.6.2
+
+- Restore the native WordPress admin direction and alignment for Dashboard, Documents and Tasks tables, mixed Persian/English titles, document/task inspector headings, and task goal/notes. Remove excessive per-cell LTR/left overrides introduced in PR #152, while retaining precise inline technical identifier ordering (#157).
+- Keep the sole explicitly LTR/left-aligned area as the escaped raw Markdown body of an inspected Workspace document. This is display-only: no changes to stored records, project bindings, capabilities, Bridge grants, OAuth, database layout or public Abilities.
+- Extend isolated WordPress regression coverage for mixed-language Workspace titles and default-inherited layout; upgrade testing now replaces the exact published v0.6.1 ZIP with the new candidate and checks preservation of Workspace, OAuth and permission state.
+
 ## 0.6.1
 
 - Scale persistent per-site Workspace document/task capacity beyond the former fixed 200-item ceiling: independent finite administrator count policies, bounded/lazy projected page reads and conservative capacity/concurrency handling, while retaining canonical-key identity, legacy records, private authorization and exact complete-or-error export semantics (#153, PR #154).
