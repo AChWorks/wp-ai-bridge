@@ -22,6 +22,12 @@ function wpai126_memory_clamped() {
 	$bytes = wp_convert_hr_to_bytes( (string) ini_get( 'memory_limit' ) );
 	return $bytes > 0 && $bytes <= 96 * 1048576;
 }
+
+/** Large-collection export must be complete or reject with an explicit safe error. */
+function wpai126_safe_large_export_error( $snapshot ) {
+	return is_wp_error( $snapshot ) &&
+		in_array( $snapshot->get_error_code(), array( 'workspace_incomplete', 'workspace_collection_too_large' ), true );
+}
 // #153 R2: started by the integration runner with php -d memory_limit=96M.
 // A missing/ineffective clamp is a FAIL, never an optional skipped check.
 $required_memory = getenv( 'WPAI153_MEMORY_CEILING' );
@@ -110,6 +116,18 @@ try {
 		'A small 200-document Workspace must export completely within the memory budget.'
 	);
 	unset( $small_export );
+	// With a collection below the memory budget, malformed stored JSON must
+	// specifically cause workspace_incomplete (not silently omit one row).
+	$small_original = (string) get_post_meta( $created[0], Store::META_STATE, true );
+	update_post_meta( $created[0], Store::META_STATE, '{broken JSON' );
+	$small_corrupt_export = $store->export_snapshot();
+	wpai126_quota_assert(
+		is_wp_error( $small_corrupt_export ) &&
+		'workspace_incomplete' === $small_corrupt_export->get_error_code(),
+		'Small corrupted Workspace collection was mislabeled complete.'
+	);
+	update_post_meta( $created[0], Store::META_STATE, wp_slash( $small_original ) );
+	unset( $small_corrupt_export, $small_original );
 	$resume = $store->resume();
 	wpai126_quota_assert(
 		! is_wp_error( $resume ) && 200 === $resume['counts']['documents_total'] &&
@@ -294,7 +312,7 @@ try {
 	$damaged_export = $store->export_snapshot();
 	wpai126_quota_assert(
 		is_wp_error( $damaged ) && 'workspace_incomplete' === $damaged->get_error_code() &&
-		is_wp_error( $damaged_export ) && 'workspace_incomplete' === $damaged_export->get_error_code(),
+		wpai126_safe_large_export_error( $damaged_export ),
 		'Corrupt Workspace backing state was silently omitted or exported as complete.'
 	);
 
@@ -328,7 +346,7 @@ try {
 			is_wp_error( $bad_get ) && 'workspace_state_invalid' === $bad_get->get_error_code() &&
 			is_wp_error( $bad_page ) && 'workspace_incomplete' === $bad_page->get_error_code() &&
 			is_wp_error( $bad_resume ) && 'workspace_incomplete' === $bad_resume->get_error_code() &&
-			is_wp_error( $bad_export ) && 'workspace_incomplete' === $bad_export->get_error_code(),
+			wpai126_safe_large_export_error( $bad_export ),
 			'Semantic document corruption was normalized into an apparently complete project.'
 		);
 	}
@@ -366,7 +384,7 @@ try {
 			is_wp_error( $bad_get ) && 'workspace_state_invalid' === $bad_get->get_error_code() &&
 			is_wp_error( $bad_page ) && 'workspace_incomplete' === $bad_page->get_error_code() &&
 			is_wp_error( $bad_resume ) && 'workspace_incomplete' === $bad_resume->get_error_code() &&
-			is_wp_error( $bad_export ) && 'workspace_incomplete' === $bad_export->get_error_code(),
+			wpai126_safe_large_export_error( $bad_export ),
 			'Semantic task corruption was normalized into valid state.'
 		);
 	}
