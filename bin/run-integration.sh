@@ -163,7 +163,9 @@ if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION
             $_SERVER["SERVER_NAME"] = "localhost";
             require "/var/www/html/wp-load.php";
             // WP-CLI normally preloads admin helpers; a direct, memory-bound
-            // bootstrap must supply only the actual native Settings UI helpers.
+            // bootstrap must supply both Core settings_fields() (plugin.php)
+            // and submit_button() (template.php) without the full admin stack.
+            require_once ABSPATH . "wp-admin/includes/plugin.php";
             require_once ABSPATH . "wp-admin/includes/template.php";
             if (!function_exists("submit_button") || !function_exists("settings_fields")) {
                 fwrite(STDERR, "WPAI153_MEMORY_ERROR: native Settings UI helpers unavailable.\n");
