@@ -4,6 +4,8 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+- Allow a WordPress administrator to configure finite, per-site public HTTPS plugin/theme package download capacity separately from WordPress host upload limits and the protected Code & Extensions / External Packages grants, retaining the historical 100 MiB default and strict bounded streaming/cleanup behavior (#147).
+
 ## 0.6.2
 
 - Restore the native WordPress admin direction and alignment for Dashboard, Documents and Tasks tables, mixed Persian/English titles, document/task inspector headings, and task goal/notes. Remove excessive per-cell LTR/left overrides introduced in PR #152, while retaining precise inline technical identifier ordering (#157).

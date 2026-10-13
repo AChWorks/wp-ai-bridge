@@ -14,6 +14,7 @@ use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Transfer_Settings;
 use WP_AI_Bridge\Support\Create_Claim;
 use WP_AI_Bridge\Support\Create_Claim_Store;
+use WP_AI_Bridge\Support\External_Package_Limits;
 use WP_AI_Bridge\Support\Operation_Receipt_Limits;
 use WP_AI_Bridge\Support\Workspace_Limits;
 use WP_AI_Bridge\Support\Settings;
@@ -520,6 +521,41 @@ final class Settings_Page {
 				</tr></tbody></table>
 				<?php submit_button( __( 'Save keyed create recovery capacity', 'wp-ai-bridge' ) ); ?>
 			</form>
+
+
+			<?php
+			// Private external package download capacity is distinct from
+			// Bridge authority grants, WordPress host upload policy and
+			// the raw authenticated private transfer budget.
+			$external_packages  = new External_Package_Limits();
+			$host_package_bytes = function_exists( 'wp_max_upload_size' ) ? wp_max_upload_size() : 0;
+			?>
+			<h2><?php echo esc_html__( 'External HTTPS extension package capacity', 'wp-ai-bridge' ); ?></h2>
+			<p><?php echo esc_html__( 'The configured MiB budget limits streamed HTTPS plugin/theme package downloads made by this Bridge, not ordinary WordPress.org installs. WordPress host upload limits can reduce the effective allowance. Native install permissions and Code & Extensions plus External Packages grants remain mandatory; this setting never enables them.', 'wp-ai-bridge' ); ?></p>
+			<form action="options.php" method="post">
+				<?php settings_fields( External_Package_Limits::OPTION_GROUP ); ?>
+				<table class="form-table" role="presentation"><tbody><tr>
+					<th scope="row"><label for="wpai-external-package-capacity"><?php echo esc_html__( 'Maximum external extension package (MiB)', 'wp-ai-bridge' ); ?></label></th>
+					<td>
+						<input type="number" class="regular-text" id="wpai-external-package-capacity" name="<?php echo esc_attr( External_Package_Limits::OPTION_NAME ); ?>" value="<?php echo esc_attr( (string) $external_packages->requested_mib() ); ?>" min="<?php echo esc_attr( (string) External_Package_Limits::MIN_MIB ); ?>" max="<?php echo esc_attr( (string) External_Package_Limits::max_mib() ); ?>" step="1" required>
+						<p class="description">
+							<?php
+							echo esc_html(
+								sprintf(
+									/* translators: 1: configured budget, 2: WordPress host upload bytes or unavailable, 3: effective permitted bytes. */
+									__( 'Default 100 MiB; configured: %1$s MiB; WordPress upload allowance: %2$s bytes; effective package budget: %3$s bytes. Increase host/PHP upload, temporary disk and execution resources separately where supported. Larger packages may still fail in Core/hosting or time out.', 'wp-ai-bridge' ),
+									(string) $external_packages->requested_mib(),
+									is_int( $host_package_bytes ) && $host_package_bytes > 0 ? (string) $host_package_bytes : __( 'Unavailable', 'wp-ai-bridge' ),
+									(string) $external_packages->effective_bytes()
+								)
+							);
+							?>
+						</p>
+					</td>
+				</tr></tbody></table>
+				<?php submit_button( __( 'Save external package capacity', 'wp-ai-bridge' ) ); ?>
+			</form>
+
 
 			<?php
 			// Separate native Settings API option: transfer capacity must not
