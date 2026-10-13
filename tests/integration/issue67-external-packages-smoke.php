@@ -54,6 +54,7 @@ $calls              = 0;
 $unexpected_calls   = 0;
 $staging            = array();
 $observed_download_limit = 0;
+$raised_native_host_limit = static function () { return 256 * External_Package_Limits::MIB; };
 $mode               = 'success';
 $redirect_target    = null;
 $redirect_forwarded = 0;
@@ -148,6 +149,9 @@ try {
 	}
 	wpnb67_integration_assert( $unsafe_calls === $calls && 0 === $unexpected_calls, 'Unsafe package URL reached fixture HTTP.' );
 
+	// Model a WordPress installation whose native upload allowance was
+	// independently raised above the old Bridge-only 100 MiB ceiling.
+	add_filter( 'upload_size_limit', $raised_native_host_limit );
 	$result = $ability->execute( $plugin_input );
 	$failure_code = is_wp_error( $result ) ? $result->get_error_code() : 'unexpected_result';
 	$failure_detail = '';
@@ -166,9 +170,10 @@ try {
 	wpnb67_integration_assert( isset( get_plugins()[ $installed_plugin ] ), 'Installed plugin target is not present in Core plugin inventory.' );
 	wpnb67_integration_assert( ! is_plugin_active( $installed_plugin ), 'External plugin install activated code implicitly.' );
 	wpnb67_integration_assert(
-		min( wp_max_upload_size(), 192 * External_Package_Limits::MIB ) + 1 === $observed_download_limit,
-		'Real native WordPress package stream ignored effective operator/host finite limits.'
+		192 * External_Package_Limits::MIB + 1 === $observed_download_limit,
+		'Registered raised WordPress host allowance did not admit operator-configured 192 MiB download above prior 100 MiB cap.'
 	);
+	remove_filter( 'upload_size_limit', $raised_native_host_limit );
 	foreach ( $staging as $file ) {
 		wpnb67_integration_assert( ! is_file( $file ), 'Successful plugin install retained staging package.' );
 	}
@@ -242,6 +247,7 @@ try {
 	}
 } finally {
 	restore_error_handler();
+	remove_filter( 'upload_size_limit', $raised_native_host_limit );
 	remove_filter( 'pre_http_request', $mock, 10 );
 	update_option( Settings::OPTION_NAME, $enabled, false );
 	if ( '' !== $installed_plugin && isset( get_plugins()[ $installed_plugin ] ) ) {
