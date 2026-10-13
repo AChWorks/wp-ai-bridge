@@ -142,7 +142,46 @@ fi
 # Exercise the Workspace 200-item ceiling and unexpected corruption in one
 # representative lane, instead of repeating 200 writes in all four lanes.
 if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
-    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-quotas-corruption-smoke.php --user=1 --allow-root
+    # #153 R2: enforce 96MiB from the CLI process entrypoint.
+    # The fixture verifies effective limit and logs workload/peak memory.
+    echo '== #153 deterministic external PHP 96MiB Workspace integration =='
+    # WP-CLI's Runner unconditionally sets memory_limit=-1 AFTER WordPress
+    # bootstrap, defeating even php -d and WP_MAX_MEMORY_LIMIT=96M.
+    # Execute only this test fixture with actual wp-load.php in a fresh PHP
+    # process. Do not run the fixture through WP-CLI or relax its 96MiB gate.
+    # Both WordPress ceilings are bounded for the disposable test installation.
+    "${wp[@]}" config set WP_MEMORY_LIMIT 96M --allow-root
+    "${wp[@]}" config set WP_MAX_MEMORY_LIMIT 96M --allow-root
+    "${compose[@]}" run --rm --entrypoint php -e WPAI153_MEMORY_CEILING=96M cli \
+        -d memory_limit=96M -r '
+            if (ini_get("memory_limit") !== "96M") {
+                fwrite(STDERR, "WPAI153_MEMORY_ERROR: entrypoint PHP limit is not 96M.\n");
+                exit(1);
+            }
+            echo "WPAI153_MEMORY_ENTRY effective=" . ini_get("memory_limit") . "\n";
+            $_SERVER["HTTP_HOST"] = "localhost";
+            $_SERVER["SERVER_NAME"] = "localhost";
+            require "/var/www/html/wp-load.php";
+            // WP-CLI normally preloads admin helpers; a direct, memory-bound
+            // bootstrap must supply both Core settings_fields() (plugin.php)
+            // and submit_button() (template.php) without the full admin stack.
+            require_once ABSPATH . "wp-admin/includes/plugin.php";
+            require_once ABSPATH . "wp-admin/includes/template.php";
+            if (!function_exists("submit_button") || !function_exists("settings_fields")) {
+                fwrite(STDERR, "WPAI153_MEMORY_ERROR: native Settings UI helpers unavailable.\n");
+                exit(1);
+            }
+            if (!function_exists("wp_set_current_user") || !get_user_by("id", 1)) {
+                fwrite(STDERR, "WPAI153_MEMORY_ERROR: isolated WordPress admin identity is missing.\n");
+                exit(1);
+            }
+            wp_set_current_user(1);
+            require "/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue126-quotas-corruption-smoke.php";
+        '
+    "${wp[@]}" config delete WP_MAX_MEMORY_LIMIT --allow-root
+    "${wp[@]}" config delete WP_MEMORY_LIMIT --allow-root
+    echo '== #153 typed receipt isolation against real MariaDB and native creates =='
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue153-mixed-receipts-smoke.php --user=1 --allow-root
     # Distinct-identity 2047/2048 and 199/200 cross-process capacities plus
     # true PHP process death, once on a representative native MariaDB lane.
     # The broader four-lane suite still covers ordinary Core/Adapter behavior.

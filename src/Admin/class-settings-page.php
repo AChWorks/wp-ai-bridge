@@ -12,6 +12,7 @@ use WP_AI_Bridge\Support\Environment;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Transfer_Settings;
+use WP_AI_Bridge\Support\Workspace_Limits;
 use WP_AI_Bridge\Support\Settings;
 use WP_AI_Bridge\Workspace\Store;
 
@@ -170,23 +171,22 @@ final class Settings_Page {
 		$this->require_admin();
 		$status           = isset( $_GET['workspace_status'] ) ? sanitize_key( wp_unslash( $_GET['workspace_status'] ) ) : 'active'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only list filter.
 		$include_archived = in_array( $status, array( 'all', 'archived' ), true );
-		$documents        = $this->workspace->list_documents( $include_archived );
-		if ( is_wp_error( $documents ) ) {
-			echo '<div class="notice notice-error"><p>' . esc_html( $documents->get_error_message() ) . '</p></div>';
+		$cursor           = isset( $_GET['workspace_cursor'] ) ? absint( $_GET['workspace_cursor'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only pagination.
+		$page             = $this->workspace->page_documents(
+			array(
+				'limit'            => 25,
+				'before_id'        => $cursor,
+				'include_archived' => $include_archived,
+				'archived_only'    => 'archived' === $status,
+			)
+		);
+		if ( is_wp_error( $page ) ) {
+			echo '<div class="notice notice-error"><p>' . esc_html( $page->get_error_message() ) . '</p></div>';
 			return;
 		}
-		if ( 'archived' === $status ) {
-			$documents = array_values(
-				array_filter(
-					$documents,
-					static function ( $item ) {
-						return ! empty( $item['archived'] );
-					}
-				)
-			);
-		}
-		$view_id = isset( $_GET['document'] ) ? absint( $_GET['document'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only record selection.
-		$view    = $view_id ? $this->workspace->get_document( $view_id ) : null;
+		$documents = $page['items'];
+		$view_id   = isset( $_GET['document'] ) ? absint( $_GET['document'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only record selection.
+		$view      = $view_id ? $this->workspace->get_document( $view_id ) : null;
 		?>
 		<div class="wrap">
 			<h1><?php echo esc_html__( 'Documents', 'wp-ai-bridge' ); ?></h1>
@@ -214,6 +214,15 @@ final class Settings_Page {
 				<?php endforeach; ?>
 				</tbody>
 			</table>
+			<p class="description">
+				<?php
+				/* translators: 1: documents returned on this page, 2: total matching documents. */
+				echo esc_html( sprintf( __( 'Showing %1$d of %2$d matching Workspace documents.', 'wp-ai-bridge' ), $page['returned'], $page['total'] ) );
+				?>
+			</p>
+			<?php if ( $page['has_more'] ) : ?>
+				<p><a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::DOCUMENTS_SLUG . '&workspace_status=' . rawurlencode( $status ) . '&workspace_cursor=' . (int) $page['next_cursor'] ) ); ?>"><?php echo esc_html__( 'Older Workspace documents', 'wp-ai-bridge' ); ?> &rarr;</a></p>
+			<?php endif; ?>
 
 			<?php if ( is_array( $view ) ) : ?>
 				<h2 dir="auto" style="text-align: left; overflow-wrap: anywhere;"><?php echo esc_html( $view['title'] ); ?></h2>
@@ -238,11 +247,21 @@ final class Settings_Page {
 			'review'           => isset( $_GET['review'] ) ? sanitize_key( wp_unslash( $_GET['review'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only list filter.
 			'delivery'         => isset( $_GET['delivery'] ) ? sanitize_key( wp_unslash( $_GET['delivery'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only list filter.
 		);
-		$tasks   = $this->workspace->list_tasks( $filters );
-		if ( is_wp_error( $tasks ) ) {
-			echo '<div class="notice notice-error"><p>' . esc_html( $tasks->get_error_message() ) . '</p></div>';
+		$cursor  = isset( $_GET['workspace_cursor'] ) ? absint( $_GET['workspace_cursor'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only pagination.
+		$page    = $this->workspace->page_tasks(
+			array_merge(
+				$filters,
+				array(
+					'limit'     => 25,
+					'before_id' => $cursor,
+				)
+			)
+		);
+		if ( is_wp_error( $page ) ) {
+			echo '<div class="notice notice-error"><p>' . esc_html( $page->get_error_message() ) . '</p></div>';
 			return;
 		}
+		$tasks   = $page['items'];
 		$view_id = isset( $_GET['task'] ) ? absint( $_GET['task'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only record selection.
 		$view    = $view_id ? $this->workspace->get_task( $view_id ) : null;
 		?>
@@ -269,6 +288,26 @@ final class Settings_Page {
 				<?php endforeach; ?>
 				</tbody>
 			</table>
+			<p class="description">
+				<?php
+				/* translators: 1: tasks returned on this page, 2: total matching tasks. */
+				echo esc_html( sprintf( __( 'Showing %1$d of %2$d matching Workspace tasks.', 'wp-ai-bridge' ), $page['returned'], $page['total'] ) );
+				?>
+			</p>
+			<?php if ( $page['has_more'] ) : ?>
+				<?php
+				$next_query = array(
+					'page'             => self::TASKS_SLUG,
+					'workspace_cursor' => (int) $page['next_cursor'],
+				);
+				foreach ( $filters as $filter => $value ) {
+					if ( $value ) {
+						$next_query[ $filter ] = true === $value ? '1' : $value;
+					}
+				}
+				?>
+				<p><a href="<?php echo esc_url( add_query_arg( $next_query, admin_url( 'admin.php' ) ) ); ?>"><?php echo esc_html__( 'Older Workspace tasks', 'wp-ai-bridge' ); ?> &rarr;</a></p>
+			<?php endif; ?>
 
 			<?php if ( is_array( $view ) ) : ?>
 				<h2 dir="auto" style="text-align: left; overflow-wrap: anywhere;"><?php echo esc_html( $view['title'] ); ?></h2>
@@ -411,6 +450,41 @@ final class Settings_Page {
 				<?php submit_button( __( 'Save response and text budgets', 'wp-ai-bridge' ) ); ?>
 			</form>
 
+
+			<?php
+			// Workspace record-count policy is separate from MIME/byte budgets,
+			// WordPress permissions and irreversible cleanup.
+			$workspace_limits = new Workspace_Limits();
+			$workspace_values = $workspace_limits->all();
+			$workspace_usage  = $this->workspace->capacity_counts();
+			?>
+			<h2><?php echo esc_html__( 'Workspace document and task capacity', 'wp-ai-bridge' ); ?></h2>
+			<p><?php echo esc_html__( 'Record counts are independent of per-document KiB size and MCP JSON budgets. Archived records remain preserved and count toward each per-site limit. Lowering a limit never removes existing records; it only blocks new creates once usage meets the limit.', 'wp-ai-bridge' ); ?></p>
+			<form action="options.php" method="post">
+				<?php settings_fields( Workspace_Limits::OPTION_GROUP ); ?>
+				<table class="form-table" role="presentation"><tbody>
+					<?php
+					foreach ( array(
+						Workspace_Limits::DOCUMENTS_KEY => array( __( 'Maximum Workspace documents', 'wp-ai-bridge' ), Workspace_Limits::MIN_DOCUMENTS, Workspace_Limits::MAX_DOCUMENTS ),
+						Workspace_Limits::TASKS_KEY     => array( __( 'Maximum Workspace tasks', 'wp-ai-bridge' ), Workspace_Limits::MIN_TASKS, Workspace_Limits::MAX_TASKS ),
+					) as $key => $field ) :
+						?>
+						<tr>
+							<th scope="row"><label for="<?php echo esc_attr( 'wpai-workspace-count-' . $key ); ?>"><?php echo esc_html( $field[0] ); ?></label></th>
+							<td>
+								<input type="number" class="small-text" id="<?php echo esc_attr( 'wpai-workspace-count-' . $key ); ?>" name="<?php echo esc_attr( Workspace_Limits::OPTION_NAME . '[' . $key . ']' ); ?>" value="<?php echo esc_attr( (string) $workspace_values[ $key ] ); ?>" min="<?php echo esc_attr( (string) $field[1] ); ?>" max="<?php echo esc_attr( (string) $field[2] ); ?>" step="1" required>
+								<p class="description">
+									<?php
+									/* translators: 1: current Workspace records, 2: minimum count setting, 3: maximum count setting. */
+									echo esc_html( sprintf( __( 'Current record usage: %1$s; allowed range: %2$s to %3$s. Increases need real WordPress database capacity.', 'wp-ai-bridge' ), is_wp_error( $workspace_usage ) ? __( 'Unavailable', 'wp-ai-bridge' ) : (string) $workspace_usage[ $key ], (string) $field[1], (string) $field[2] ) );
+									?>
+								</p>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody></table>
+				<?php submit_button( __( 'Save Workspace record capacity', 'wp-ai-bridge' ) ); ?>
+			</form>
 
 			<?php
 			// Separate native Settings API option: transfer capacity must not
