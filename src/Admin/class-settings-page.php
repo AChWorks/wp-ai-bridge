@@ -12,6 +12,9 @@ use WP_AI_Bridge\Support\Environment;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Transfer_Settings;
+use WP_AI_Bridge\Support\Create_Claim;
+use WP_AI_Bridge\Support\Create_Claim_Store;
+use WP_AI_Bridge\Support\Operation_Receipt_Limits;
 use WP_AI_Bridge\Support\Workspace_Limits;
 use WP_AI_Bridge\Support\Settings;
 use WP_AI_Bridge\Workspace\Store;
@@ -484,6 +487,38 @@ final class Settings_Page {
 					<?php endforeach; ?>
 				</tbody></table>
 				<?php submit_button( __( 'Save Workspace record capacity', 'wp-ai-bridge' ) ); ?>
+			</form>
+
+			<?php
+			// Generic keyed create receipts have a separate admission domain from
+			// canonical Workspace keys and are never removed by capacity changes.
+			$operation_limits = new Operation_Receipt_Limits();
+			$operation_usage  = Create_Claim_Store::count_domain( Create_Claim::DOMAIN_OPERATION );
+			?>
+			<h2><?php echo esc_html__( 'Keyed create recovery capacity', 'wp-ai-bridge' ); ?></h2>
+			<p><?php echo esc_html__( 'This setting limits the number of new durable generic operation_id receipts on this WordPress site. It does not change Workspace document-key reservations or access permissions. Old receipts stay reserved, including after expiry; lowering the setting never deletes receipts or prevents authorized retry readback.', 'wp-ai-bridge' ); ?></p>
+			<form action="options.php" method="post">
+				<?php settings_fields( Operation_Receipt_Limits::OPTION_GROUP ); ?>
+				<table class="form-table" role="presentation"><tbody><tr>
+					<th scope="row"><label for="wpai-operation-receipt-capacity"><?php echo esc_html__( 'Maximum generic create receipts per site', 'wp-ai-bridge' ); ?></label></th>
+					<td>
+						<input type="number" class="regular-text" id="wpai-operation-receipt-capacity" name="<?php echo esc_attr( Operation_Receipt_Limits::OPTION_NAME ); ?>" value="<?php echo esc_attr( (string) $operation_limits->limit() ); ?>" min="<?php echo esc_attr( (string) Operation_Receipt_Limits::MIN_RECEIPTS ); ?>" max="<?php echo esc_attr( (string) Operation_Receipt_Limits::MAX_RECEIPTS ); ?>" step="1" required>
+						<p class="description">
+							<?php
+							echo esc_html(
+								sprintf(
+									/* translators: 1: current typed receipts or unavailable, 2: minimum allowed, 3: maximum allowed. */
+									__( 'Current typed receipts: %1$s; allowed range: %2$s to %3$s. Default: 2048. Larger settings need sufficient database capacity and may increase count-query time.', 'wp-ai-bridge' ),
+									PHP_INT_MAX === $operation_usage ? __( 'Unavailable', 'wp-ai-bridge' ) : (string) $operation_usage,
+									(string) Operation_Receipt_Limits::MIN_RECEIPTS,
+									(string) Operation_Receipt_Limits::MAX_RECEIPTS
+								)
+							);
+							?>
+						</p>
+					</td>
+				</tr></tbody></table>
+				<?php submit_button( __( 'Save keyed create recovery capacity', 'wp-ai-bridge' ) ); ?>
 			</form>
 
 			<?php

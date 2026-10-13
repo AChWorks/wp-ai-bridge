@@ -34,7 +34,7 @@ final class Create_Claim {
 	 */
 	public static function receipt_limit( $domain = self::DOMAIN_OPERATION ) {
 		if ( self::DOMAIN_CANONICAL !== $domain ) {
-			return self::MAX_CLAIMS;
+			return ( new Operation_Receipt_Limits() )->limit();
 		}
 		$limits = ( new Workspace_Limits() )->all();
 		return max(
@@ -107,7 +107,7 @@ final class Create_Claim {
 		}
 		$reserved = Create_Claim_Store::try_claim_bounded( $name, $initial, self::DOMAIN_OPERATION );
 		if ( 'capacity' === $reserved ) {
-			return new WP_Error( 'create_claim_capacity', __( 'Create recovery capacity is full. No new create was attempted; administrative reconciliation is required.', 'wp-ai-bridge' ) );
+			return new WP_Error( 'create_claim_capacity', __( 'Generic keyed-create recovery receipts are full. No create was attempted; an administrator may raise the independent site receipt limit or reconcile safely.', 'wp-ai-bridge' ) );
 		}
 		if ( 'acquired' !== $reserved ) {
 			if ( 'existing' === $reserved ) {
@@ -187,7 +187,7 @@ final class Create_Claim {
 		}
 		$reserved = Create_Claim_Store::try_claim_bounded( $name, $initial, self::DOMAIN_CANONICAL );
 		if ( 'capacity' === $reserved ) {
-			return new WP_Error( 'create_claim_capacity', __( 'Create recovery capacity is full. No new create was attempted; administrative reconciliation is required.', 'wp-ai-bridge' ) );
+			return new WP_Error( 'create_claim_capacity', __( 'Canonical document-key receipts are full. No document was created; review the Workspace quotas and reconcile safely.', 'wp-ai-bridge' ) );
 		}
 		if ( 'acquired' !== $reserved ) {
 			return new WP_Error( 'error' === $reserved ? 'workspace_key_outcome_unknown' : 'workspace_key_reserved', __( 'Another create may own this project document key; do not retry blindly.', 'wp-ai-bridge' ) );
