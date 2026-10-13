@@ -206,9 +206,9 @@ final class Settings_Page {
 					<tr><td colspan="7"><?php echo esc_html__( 'No Workspace documents found.', 'wp-ai-bridge' ); ?></td></tr><?php endif; ?>
 				<?php foreach ( $documents as $document ) : ?>
 					<tr>
-						<td dir="auto" style="text-align: left;"><?php echo esc_html( $document['title'] ); ?></td>
-						<td style="text-align: left;"><?php $this->render_project_id( $document['project_ref'] ?? '' ); ?></td>
-						<td style="text-align: left;"><code dir="ltr"><?php echo esc_html( $document['key'] ); ?></code></td>
+						<td><?php echo esc_html( $document['title'] ); ?></td>
+						<td><?php $this->render_project_id( $document['project_ref'] ?? '' ); ?></td>
+						<td><code dir="ltr"><?php echo esc_html( $document['key'] ); ?></code></td>
 						<td><?php echo esc_html( $document['archived'] ? __( 'Archived', 'wp-ai-bridge' ) : __( 'Active', 'wp-ai-bridge' ) ); ?></td>
 						<td><?php echo esc_html( (string) $document['version'] ); ?></td>
 						<td><?php echo esc_html( $document['modified_gmt'] ); ?></td>
@@ -228,7 +228,7 @@ final class Settings_Page {
 			<?php endif; ?>
 
 			<?php if ( is_array( $view ) ) : ?>
-				<h2 dir="auto" style="text-align: left; overflow-wrap: anywhere;"><?php echo esc_html( $view['title'] ); ?></h2>
+				<h2><?php echo esc_html( $view['title'] ); ?></h2>
 				<p><strong><?php echo esc_html__( 'Project ID', 'wp-ai-bridge' ); ?></strong> <?php $this->render_project_id( $view['project_ref'] ?? '' ); ?></p>
 				<p><strong><?php echo esc_html__( 'State hash:', 'wp-ai-bridge' ); ?></strong> <code dir="ltr"><?php echo esc_html( $view['state_hash'] ); ?></code></p>
 				<pre dir="ltr" style="direction: ltr; text-align: left; unicode-bidi: isolate; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 1100px"><?php echo esc_html( $view['content'] ); ?></pre>
@@ -287,7 +287,7 @@ final class Settings_Page {
 					?>
 					<tr><td colspan="8"><?php echo esc_html__( 'No Workspace tasks found.', 'wp-ai-bridge' ); ?></td></tr><?php endif; ?>
 				<?php foreach ( $tasks as $task ) : ?>
-					<tr><td dir="auto" style="text-align: left;"><?php echo esc_html( $task['title'] ); ?></td><td style="text-align: left;"><?php $this->render_project_id( $task['project_ref'] ?? '' ); ?></td><td><?php echo esc_html( $this->enum_label( $task['progress'] ) ); ?></td><td><?php echo esc_html( $this->enum_label( $task['review'] ) ); ?></td><td><?php echo esc_html( $this->enum_label( $task['delivery'] ) ); ?></td><td><?php echo esc_html( (string) $task['version'] ); ?></td><td><?php echo esc_html( $task['modified_gmt'] ); ?></td><td><a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::TASKS_SLUG . '&task=' . (int) $task['id'] ) ); ?>"><?php echo esc_html__( 'Inspect', 'wp-ai-bridge' ); ?></a></td></tr>
+					<tr><td><?php echo esc_html( $task['title'] ); ?></td><td><?php $this->render_project_id( $task['project_ref'] ?? '' ); ?></td><td><?php echo esc_html( $this->enum_label( $task['progress'] ) ); ?></td><td><?php echo esc_html( $this->enum_label( $task['review'] ) ); ?></td><td><?php echo esc_html( $this->enum_label( $task['delivery'] ) ); ?></td><td><?php echo esc_html( (string) $task['version'] ); ?></td><td><?php echo esc_html( $task['modified_gmt'] ); ?></td><td><a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::TASKS_SLUG . '&task=' . (int) $task['id'] ) ); ?>"><?php echo esc_html__( 'Inspect', 'wp-ai-bridge' ); ?></a></td></tr>
 				<?php endforeach; ?>
 				</tbody>
 			</table>
@@ -313,10 +313,10 @@ final class Settings_Page {
 			<?php endif; ?>
 
 			<?php if ( is_array( $view ) ) : ?>
-				<h2 dir="auto" style="text-align: left; overflow-wrap: anywhere;"><?php echo esc_html( $view['title'] ); ?></h2>
+				<h2><?php echo esc_html( $view['title'] ); ?></h2>
 				<p><strong><?php echo esc_html__( 'Project ID', 'wp-ai-bridge' ); ?></strong> <?php $this->render_project_id( $view['project_ref'] ?? '' ); ?></p>
-				<p><strong><?php echo esc_html__( 'Goal:', 'wp-ai-bridge' ); ?></strong> <span dir="ltr" style="display: block; direction: ltr; text-align: left; overflow-wrap: anywhere; white-space: pre-wrap;"><?php echo esc_html( $view['goal'] ); ?></span></p>
-				<p><strong><?php echo esc_html__( 'Notes:', 'wp-ai-bridge' ); ?></strong></p><pre dir="ltr" style="direction: ltr; text-align: left; unicode-bidi: isolate; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 1100px"><?php echo esc_html( $view['notes'] ); ?></pre>
+				<p><strong><?php echo esc_html__( 'Goal:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html( $view['goal'] ); ?></p>
+				<p><strong><?php echo esc_html__( 'Notes:', 'wp-ai-bridge' ); ?></strong></p><pre style="white-space: pre-wrap; overflow-wrap: anywhere; max-width: 1100px"><?php echo esc_html( $view['notes'] ); ?></pre>
 				<p><strong><?php echo esc_html__( 'State hash:', 'wp-ai-bridge' ); ?></strong> <code dir="ltr"><?php echo esc_html( $view['state_hash'] ); ?></code></p>
 			<?php endif; ?>
 		</div>
@@ -735,7 +735,7 @@ final class Settings_Page {
 		<?php
 		foreach ( $tasks as $task ) :
 			?>
-			<tr><td dir="auto" style="text-align: left;"><?php echo esc_html( $task['title'] ); ?></td><td><?php echo esc_html( $this->enum_label( $task['progress'] ) ); ?></td><td><?php echo esc_html( $this->enum_label( $task['review'] ) ); ?></td><td><?php echo esc_html( $this->enum_label( $task['delivery'] ) ); ?></td></tr><?php endforeach; ?>
+			<tr><td><?php echo esc_html( $task['title'] ); ?></td><td><?php echo esc_html( $this->enum_label( $task['progress'] ) ); ?></td><td><?php echo esc_html( $this->enum_label( $task['review'] ) ); ?></td><td><?php echo esc_html( $this->enum_label( $task['delivery'] ) ); ?></td></tr><?php endforeach; ?>
 		</tbody></table>
 		<?php
 	}
