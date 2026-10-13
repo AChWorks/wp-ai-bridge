@@ -154,6 +154,12 @@ final class Create_Claim_Store {
 			return PHP_INT_MAX;
 		}
 		global $wpdb;
+		// WordPress bootstrap failures must never guess available receipt
+		// capacity. The Settings screen reports usage as unavailable.
+		if ( ! is_object( $wpdb ) || ! method_exists( $wpdb, 'get_var' ) ||
+			! method_exists( $wpdb, 'prepare' ) || ! method_exists( $wpdb, 'esc_like' ) ) {
+			return PHP_INT_MAX;
+		}
 		$count = $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s AND option_value LIKE %s",

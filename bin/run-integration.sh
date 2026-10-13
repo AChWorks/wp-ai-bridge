@@ -108,6 +108,7 @@ for test in \
     issue134-private-staging-smoke.php \
     issue126-128-workspace-smoke.php \
     issue128-native-creates-smoke.php \
+    issue147-operation-capacity-smoke.php \
     issue8-workspace-smoke.php
 do
     echo "== ${test} =="

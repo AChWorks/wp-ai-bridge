@@ -418,4 +418,46 @@ wpai128_assert(
 	'Unexpected DB router schema admitted an unsafe create.'
 );
 $GLOBALS['wpdb']->dbname = DB_NAME;
+
+// #147: Raising the independent operation receipt quota must admit a new
+// unique create beyond the old 2048 threshold. Lowering must preserve every
+// existing receipt for safe authorized readback and deny only NEW creates.
+$operation_policy_key = \WP_AI_Bridge\Support\Operation_Receipt_Limits::OPTION_NAME;
+$baseline_receipts    = \WP_AI_Bridge\Support\Create_Claim_Store::count_domain( Create_Claim::DOMAIN_OPERATION );
+$seeded_receipts      = array();
+for ( $i = $baseline_receipts; $i < 2050; ++$i ) {
+	$seed_key                                          = Create_Claim::PREFIX . hash( 'sha256', 'issue147-operation-' . $i );
+	$seeded_receipts[]                                = $seed_key;
+	$GLOBALS['wpai_test']['options'][ $seed_key ] = wp_json_encode(
+		array(
+			'fingerprint'      => str_repeat( 'b', 64 ),
+			'admission_domain' => Create_Claim::DOMAIN_OPERATION,
+			'state'            => 'expired',
+			'created_at'       => 1,
+			'id'               => 0,
+		)
+	);
+}
+wpai128_assert( 2050 === \WP_AI_Bridge\Support\Create_Claim_Store::count_domain( Create_Claim::DOMAIN_OPERATION ), 'Typed operation receipts did not cross the historical default quota.' );
+$GLOBALS['wpai_test']['options'][ $operation_policy_key ] = 4096;
+wpai128_assert( 4096 === Create_Claim::receipt_limit( Create_Claim::DOMAIN_OPERATION ), 'Raised operation quota is not applied.' );
+$before_tuned_writes = $writes;
+$tuned_create        = Create_Claim::run( 'content-create', wpai128_create_input( 'over-2048-capacity-147' ), $permission, $perform, $recover );
+wpai128_assert( is_array( $tuned_create ) && $writes === $before_tuned_writes + 1, 'Administrator-raised quota still rejects new distinct create.' );
+$GLOBALS['wpai_test']['options'][ $operation_policy_key ] = 128;
+$before_lower_writes = $writes;
+$known_after_lower   = Create_Claim::run( 'content-create', wpai128_create_input( 'over-2048-capacity-147' ), $permission, $perform, $recover );
+$blocked_after_lower = Create_Claim::run( 'content-create', wpai128_create_input( 'new-while-lowered-147' ), $permission, $perform, $recover );
+wpai128_assert(
+	is_array( $known_after_lower ) && $known_after_lower['id'] === $tuned_create['id'] &&
+	is_wp_error( $blocked_after_lower ) && 'create_claim_capacity' === $blocked_after_lower->get_error_code() &&
+	$writes === $before_lower_writes,
+	'Lowered capacity must block new creates but preserve authorized existing-identity readback.'
+);
+wpai128_assert( 2048 === Create_Claim::receipt_limit( Create_Claim::DOMAIN_CANONICAL ), 'Generic receipt tuning altered Workspace canonical admission.' );
+unset( $objects[ $tuned_create['id'] ], $GLOBALS['wpai_test']['options'][ $operation_policy_key ] );
+foreach ( $seeded_receipts as $seed_key ) {
+	unset( $GLOBALS['wpai_test']['options'][ $seed_key ] );
+}
+
 echo "PASS: #128 durable keyed-create safety ({$assertions} assertions).\n";
