@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Release-bound compatibility proof: install the actual immutable v0.5.1 ZIP,
+# Release-bound compatibility proof: install the actual immutable v0.6.0 ZIP,
 # seed canonical/WP Workspace and authenticated OAuth state, then exercise
 # WordPress Core's normal ZIP replacement with the current candidate artifact.
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 wordpress_tag="${1:-6.9-php8.4-apache}"
 compose_file="$root/tests/integration/compose.yml"
-baseline_url="https://github.com/AChWorks/wp-ai-bridge/releases/download/v0.5.1/wp-ai-bridge.zip"
-baseline_sha256="6a0d696b5fc2fdd553801ddec22c46672ccc491d6e181fcf55e371c8f724bd16"
+baseline_url="https://github.com/AChWorks/wp-ai-bridge/releases/download/v0.6.0/wp-ai-bridge.zip"
+baseline_sha256="c5d0bdcbcde9be3c702e8c41acc02fda81cd559adc8f86ecb9986b2cb057afbd"
 safe_tag="$(printf '%s' "$wordpress_tag" | tr -c 'A-Za-z0-9' '-')"
 export WORDPRESS_TAG="$wordpress_tag"
 export COMPOSE_PROJECT_NAME="wpai124-${safe_tag}-${GITHUB_RUN_ID:-local}-$$"
@@ -25,29 +25,34 @@ cleanup() {
 }
 trap cleanup EXIT
 
-baseline_zip="$private_dir/published-v0.5.1.zip"
+baseline_zip="$private_dir/published-v0.6.0.zip"
 candidate_zip="$root/build/wp-ai-bridge.zip"
 fixture="$root/tests/integration/issue124-published-upgrade-smoke.php"
 test -f "$fixture"
 
 curl -fL --retry 2 --connect-timeout 15 --max-time 120 -sS "$baseline_url" -o "$baseline_zip"
 printf '%s  %s\n' "$baseline_sha256" "$baseline_zip" | sha256sum --check --status || {
-    echo "ERROR: published v0.5.1 artifact checksum mismatch." >&2
+    echo "ERROR: published v0.6.0 artifact checksum mismatch." >&2
     exit 1
 }
 old_version="$(unzip -p "$baseline_zip" wp-ai-bridge/wp-ai-bridge.php | sed -nE 's/^[[:space:]]*\*[[:space:]]Version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$/\1/p')"
-test "$old_version" = "0.5.1" || {
+test "$old_version" = "0.6.0" || {
     echo "ERROR: published ZIP did not contain the expected canonical baseline version." >&2
     exit 1
 }
-echo "PASS: downloaded and verified original published v0.5.1 release ZIP (pinned SHA-256)."
+echo "PASS: downloaded and verified original published v0.6.0 release ZIP (pinned SHA-256)."
 
 bash "$root/bin/build-zip.sh"
 expected_version="$(sed -nE 's/^[[:space:]]*\*[[:space:]]Version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$/\1/p' "$root/wp-ai-bridge.php")"
-test "$expected_version" = "0.6.0" || {
-    echo "ERROR: this release-upgrade acceptance runner is scoped to the v0.6.0 candidate." >&2
+if ! [[ "$expected_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || ! php -r 'exit(version_compare($argv[1], $argv[2], ">") ? 0 : 1);' "$expected_version" "$old_version"; then
+    echo "ERROR: expected a valid release candidate newer than the pinned published baseline." >&2
     exit 1
-}
+fi
+archive_version="$(unzip -p "$candidate_zip" wp-ai-bridge/wp-ai-bridge.php | sed -nE 's/^[[:space:]]*\*[[:space:]]Version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$/\1/p')"
+if [[ "$archive_version" != "$expected_version" ]]; then
+    echo "ERROR: the installable candidate archive version differs from the checked-out source." >&2
+    exit 1
+fi
 
 "${compose[@]}" up -d db wordpress
 for attempt in $(seq 1 30); do
@@ -60,8 +65,8 @@ for attempt in $(seq 1 30); do
     fi
     sleep 2
 done
-"${compose[@]}" cp "$baseline_zip" wordpress:/var/www/html/wpai124-published-v0.5.1.zip
-"${compose[@]}" cp "$candidate_zip" wordpress:/var/www/html/wpai124-candidate-v0.6.0.zip
+"${compose[@]}" cp "$baseline_zip" wordpress:/var/www/html/wpai124-published-v0.6.0.zip
+"${compose[@]}" cp "$candidate_zip" wordpress:/var/www/html/wpai124-candidate.zip
 "${compose[@]}" cp "$fixture" wordpress:/var/www/html/wpai124-upgrade-smoke.php
 wp=("${compose[@]}" run --rm cli)
 
@@ -76,9 +81,9 @@ wp=("${compose[@]}" run --rm cli)
 
 adapter_url="${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.6.1/mcp-adapter.zip}"
 "${wp[@]}" plugin install "$adapter_url" --activate --allow-root
-"${wp[@]}" plugin install /var/www/html/wpai124-published-v0.5.1.zip --activate --allow-root
+"${wp[@]}" plugin install /var/www/html/wpai124-published-v0.6.0.zip --activate --allow-root
 baseline_installed="$("${wp[@]}" plugin get wp-ai-bridge --field=version --allow-root | tail -n 1)"
-test "$baseline_installed" = "0.5.1" || {
+test "$baseline_installed" = "0.6.0" || {
     echo "ERROR: exact published baseline was not installed." >&2
     exit 1
 }
@@ -86,7 +91,7 @@ test "$baseline_installed" = "0.5.1" || {
 
 # --force invokes the normal WordPress Core upgrader for an already installed
 # canonical plugin, instead of deleting/reinstalling or creating a second root.
-"${wp[@]}" plugin install /var/www/html/wpai124-candidate-v0.6.0.zip --force --allow-root
+"${wp[@]}" plugin install /var/www/html/wpai124-candidate.zip --force --allow-root
 "${wp[@]}" plugin is-active wp-ai-bridge --allow-root
 installed="$("${wp[@]}" plugin get wp-ai-bridge --field=version --allow-root | tail -n 1)"
 test "$installed" = "$expected_version" || {
@@ -98,8 +103,8 @@ test "$plugin_dir" = "wp-ai-bridge/wp-ai-bridge.php" || {
     echo "ERROR: canonical installed plugin identity changed during the upgrade." >&2
     exit 1
 }
-"${compose[@]}" run --rm -e WPAI_UPGRADE_PHASE=after cli eval-file /var/www/html/wpai124-upgrade-smoke.php --user=1 --allow-root
+"${compose[@]}" run --rm -e WPAI_UPGRADE_PHASE=after -e WPAI_UPGRADE_CANDIDATE_VERSION="$expected_version" cli eval-file /var/www/html/wpai124-upgrade-smoke.php --user=1 --allow-root
 actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
 actual_adapter="$("${wp[@]}" plugin get mcp-adapter --field=version --allow-root | tail -n 1)"
-echo "PASS: published 0.5.1 -> candidate ${expected_version} on WordPress ${actual_wp}, official MCP Adapter ${actual_adapter}; canonical OAuth/Workspace and safe grants preserved."
+echo "PASS: published 0.6.0 -> candidate ${expected_version} on WordPress ${actual_wp}, official MCP Adapter ${actual_adapter}; canonical OAuth/Workspace and safe grants preserved."
 
