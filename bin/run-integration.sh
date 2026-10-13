@@ -162,6 +162,13 @@ if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION
             $_SERVER["HTTP_HOST"] = "localhost";
             $_SERVER["SERVER_NAME"] = "localhost";
             require "/var/www/html/wp-load.php";
+            // WP-CLI normally preloads admin helpers; a direct, memory-bound
+            // bootstrap must supply only the actual native Settings UI helpers.
+            require_once ABSPATH . "wp-admin/includes/template.php";
+            if (!function_exists("submit_button") || !function_exists("settings_fields")) {
+                fwrite(STDERR, "WPAI153_MEMORY_ERROR: native Settings UI helpers unavailable.\n");
+                exit(1);
+            }
             if (!function_exists("wp_set_current_user") || !get_user_by("id", 1)) {
                 fwrite(STDERR, "WPAI153_MEMORY_ERROR: isolated WordPress admin identity is missing.\n");
                 exit(1);
