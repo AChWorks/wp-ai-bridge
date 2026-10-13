@@ -387,6 +387,12 @@ $wide_success = $provider->invoke( $wide_request );
 wpai119invoke_assert( ! is_wp_error( $wide_success ) && 'reported_success' === $wide_success['outcome'], 'A 22KiB authorized registered REST body should work after operator sets 48KiB.' );
 $last_wide = end( $GLOBALS['wpai119invoke_calls'] );
 wpai119invoke_assert( 22 * 1024 === strlen( json_decode( $last_wide->body, true )['title'] ), 'Raised input budget silently shortened real WordPress request body.' );
+
+$GLOBALS['wpai119invoke_response'] = new WP_REST_Response( array( 'oversized' => str_repeat( 'z', 20 * 1024 ) ), 200 );
+$output_guard = $provider->invoke( $wide_request );
+wpai119invoke_assert( ! is_wp_error( $output_guard ) && 'outcome_unknown' === $output_guard['outcome'], 'Raising high-trust REST input must never widen the independent 16KiB provider-output safety budget.' );
+$GLOBALS['wpai119invoke_response'] = new WP_REST_Response( array( 'ok' => true ), 200 );
+
 $GLOBALS['wpai_test']['options'][ Transfer_Settings::OPTION_NAME ] = array( Transfer_Settings::REQUEST_KIB => 16 );
 $before_transport = count( $GLOBALS['wpai119invoke_calls'] );
 wpai119invoke_assert( is_wp_error( $provider->invoke( $wide_request ) ) && $before_transport === count( $GLOBALS['wpai119invoke_calls'] ), 'Lowering shared incoming MCP budget must deny 22KiB regardless of REST policy.' );

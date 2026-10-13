@@ -20,10 +20,11 @@ use WP_Error;
  * MCP/Gateway authorization is evaluated per Ability, not per supplied REST method.
  */
 final class Registered_REST_Invocation_Abilities {
-	const MAX_ROUTE_BYTES = 512;
-	const MAX_REGISTRY    = 4096;
-	const MAX_NODES       = 1024;
-	const MAX_DEPTH       = 16;
+	const MAX_ROUTE_BYTES       = 512;
+	const MAX_SAFE_OUTPUT_BYTES = 16384;
+	const MAX_REGISTRY          = 4096;
+	const MAX_NODES             = 1024;
+	const MAX_DEPTH             = 16;
 
 	/** @var Permissions */
 	private $permissions;
@@ -134,7 +135,11 @@ final class Registered_REST_Invocation_Abilities {
 		if ( array_intersect_key( $query, $body ) ) {
 			return $this->invalid();
 		}
-		if ( ! $this->safe_tree( $query ) || ! $this->safe_tree( $body ) ) {
+		// Only INPUT is administrator-tunable. Preserve the historical
+		// independent 16KiB provider OUTPUT tree cap, even when a larger
+		// high-trust native REST request is explicitly admitted.
+		$input_budget = ( new \WP_AI_Bridge\Support\REST_Invocation_Input_Limits() )->effective_bytes();
+		if ( ! $this->safe_tree( $query, 0, $input_budget ) || ! $this->safe_tree( $body, 0, $input_budget ) ) {
 			return $this->invalid();
 		}
 		$input_json = wp_json_encode(
@@ -404,7 +409,7 @@ final class Registered_REST_Invocation_Abilities {
 	 */
 	private function safe_tree( $value, $depth = 0, &$budget = null ) {
 		if ( null === $budget ) {
-			$budget = ( new \WP_AI_Bridge\Support\REST_Invocation_Input_Limits() )->effective_bytes();
+			$budget = self::MAX_SAFE_OUTPUT_BYTES;
 		}
 		if ( $depth > self::MAX_DEPTH || is_resource( $value ) || ( is_object( $value ) && ! ( $value instanceof \stdClass ) ) ) {
 			return false;
