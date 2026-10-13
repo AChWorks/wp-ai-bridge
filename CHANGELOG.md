@@ -4,6 +4,8 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+- Allow separate administrator tuning of the finite high-trust registered REST JSON input budget, retaining its original 16 KiB default, independently clamped to existing incoming MCP request capacity and native Core/provider authorization, with real Adapter/WordPress tests (#147).
+
 ## 0.6.2
 
 - Restore the native WordPress admin direction and alignment for Dashboard, Documents and Tasks tables, mixed Persian/English titles, document/task inspector headings, and task goal/notes. Remove excessive per-cell LTR/left overrides introduced in PR #152, while retaining precise inline technical identifier ordering (#157).

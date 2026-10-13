@@ -14,6 +14,7 @@ use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Transfer_Settings;
 use WP_AI_Bridge\Support\Create_Claim;
 use WP_AI_Bridge\Support\Create_Claim_Store;
+use WP_AI_Bridge\Support\REST_Invocation_Input_Limits;
 use WP_AI_Bridge\Support\Operation_Receipt_Limits;
 use WP_AI_Bridge\Support\Workspace_Limits;
 use WP_AI_Bridge\Support\Settings;
@@ -519,6 +520,39 @@ final class Settings_Page {
 					</td>
 				</tr></tbody></table>
 				<?php submit_button( __( 'Save keyed create recovery capacity', 'wp-ai-bridge' ) ); ?>
+			</form>
+
+
+			<?php
+			// Generic REST calls carry unclassified high-trust native effects:
+			// keep their request pacing independent of authorization and
+			// bounded by the existing incoming MCP message policy.
+			$rest_input = new REST_Invocation_Input_Limits();
+			?>
+			<h2><?php echo esc_html__( 'Registered REST request input capacity', 'wp-ai-bridge' ); ?></h2>
+			<p><?php echo esc_html__( 'This is one high-trust local registered REST invocation JSON input, not the total transferable file capacity. It does not enable REST invocation, change sensitive route and parameter exclusions, or bypass native WordPress permissions. Its effective budget cannot exceed the separately configured incoming MCP request budget.', 'wp-ai-bridge' ); ?></p>
+			<form action="options.php" method="post">
+				<?php settings_fields( REST_Invocation_Input_Limits::OPTION_GROUP ); ?>
+				<table class="form-table" role="presentation"><tbody><tr>
+					<th scope="row"><label for="wpai-rest-invocation-input-kib"><?php echo esc_html__( 'Maximum registered REST JSON input (KiB)', 'wp-ai-bridge' ); ?></label></th>
+					<td>
+						<input type="number" class="regular-text" id="wpai-rest-invocation-input-kib" name="<?php echo esc_attr( REST_Invocation_Input_Limits::OPTION_NAME ); ?>" value="<?php echo esc_attr( (string) $rest_input->requested_kib() ); ?>" min="<?php echo esc_attr( (string) REST_Invocation_Input_Limits::MIN_KIB ); ?>" max="<?php echo esc_attr( (string) REST_Invocation_Input_Limits::max_kib() ); ?>" step="1" required>
+						<p class="description">
+							<?php
+							echo esc_html(
+								sprintf(
+									/* translators: 1: requested KiB, 2: effective bytes, 3: current shared inbound MCP request bytes. */
+									__( 'Default 16 KiB. Requested: %1$s KiB; effective input allowance: %2$s bytes; current incoming MCP request allowance: %3$s bytes. Host, client, PHP memory and provider JSON validation remain independently binding. Raise the incoming MCP limit separately when needed.', 'wp-ai-bridge' ),
+									(string) $rest_input->requested_kib(),
+									(string) $rest_input->effective_bytes(),
+									(string) ( new Transfer_Settings() )->bytes()['request']
+								)
+							);
+							?>
+						</p>
+					</td>
+				</tr></tbody></table>
+				<?php submit_button( __( 'Save registered REST input capacity', 'wp-ai-bridge' ) ); ?>
 			</form>
 
 			<?php

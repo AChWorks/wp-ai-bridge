@@ -8,6 +8,8 @@
 require __DIR__ . '/bootstrap.php';
 
 use WP_AI_Bridge\Abilities\Registered_REST_Invocation_Abilities;
+use WP_AI_Bridge\Support\REST_Invocation_Input_Limits;
+use WP_AI_Bridge\Support\Transfer_Settings;
 use WP_AI_Bridge\Support\Settings;
 use WP_AI_Bridge\Support\Permissions;
 
@@ -366,6 +368,29 @@ wpai119invoke_assert( $before === count( $GLOBALS['wpai119invoke_calls'] ), 'One
 $GLOBALS['wpai_test']['capabilities']['install_plugins'] = false;
 wpai119invoke_assert( is_wp_error( $provider->invoke( $req ) ), 'A WordPress native package capability denial must remain effective despite all Bridge groups.' );
 $GLOBALS['wpai_test']['capabilities']['install_plugins'] = true;
+
+
+// #147: a separately authorized native REST body larger than historical
+// 16KiB must remain denied until the administrator raises the *type-specific*
+// per-blog policy. A lowered incoming-MCP budget independently clamps it.
+$wide_request = array(
+	'route'  => '/acme/v1/data',
+	'path'   => '/acme/v1/data',
+	'method' => 'POST',
+	'body'   => array( 'title' => str_repeat( 'T', 22 * 1024 ) ),
+);
+$before_wide = count( $GLOBALS['wpai119invoke_calls'] );
+wpai119invoke_assert( is_wp_error( $provider->invoke( $wide_request ) ) && $before_wide === count( $GLOBALS['wpai119invoke_calls'] ), 'The old default 16KiB input cap must remain until independently configured.' );
+$GLOBALS['wpai_test']['options'][ REST_Invocation_Input_Limits::OPTION_NAME ] = 48;
+$GLOBALS['wpai119invoke_response'] = new WP_REST_Response( array( 'ok' => true ), 200 );
+$wide_success = $provider->invoke( $wide_request );
+wpai119invoke_assert( ! is_wp_error( $wide_success ) && 'reported_success' === $wide_success['outcome'], 'A 22KiB authorized registered REST body should work after operator sets 48KiB.' );
+$last_wide = end( $GLOBALS['wpai119invoke_calls'] );
+wpai119invoke_assert( 22 * 1024 === strlen( json_decode( $last_wide->body, true )['title'] ), 'Raised input budget silently shortened real WordPress request body.' );
+$GLOBALS['wpai_test']['options'][ Transfer_Settings::OPTION_NAME ] = array( Transfer_Settings::REQUEST_KIB => 16 );
+$before_transport = count( $GLOBALS['wpai119invoke_calls'] );
+wpai119invoke_assert( is_wp_error( $provider->invoke( $wide_request ) ) && $before_transport === count( $GLOBALS['wpai119invoke_calls'] ), 'Lowering shared incoming MCP budget must deny 22KiB regardless of REST policy.' );
+unset( $GLOBALS['wpai_test']['options'][ Transfer_Settings::OPTION_NAME ], $GLOBALS['wpai_test']['options'][ REST_Invocation_Input_Limits::OPTION_NAME ] );
 
 $defaults[ Settings::GROUP_REST_INVOCATION ] = 0;
 update_option( Settings::OPTION_NAME, $defaults, false );
