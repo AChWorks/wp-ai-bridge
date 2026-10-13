@@ -5,13 +5,74 @@ cd "$(dirname "$0")/.."
 
 forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir)[[:space:]]*\('
 
-unexpected_primitives="$(grep -R -nE "$forbidden" src --include='*.php' --exclude='class-media-abilities.php' --exclude='class-source-editing-abilities.php' |
+unexpected_primitives="$(grep -R -nE "$forbidden" src --include='*.php' --exclude='class-media-abilities.php' --exclude='class-source-editing-abilities.php' --exclude='class-private-artifact-writer.php' --exclude='class-private-transfer-session.php' |
     grep -vE "^src/Support/class-extension-install-lock.php:[0-9]+:[[:space:]]+[$]handle = @fopen[(] [$]path, '[xr]' [)];" || true)"
 if [[ -n "$unexpected_primitives" ||
       "$(grep -cF "@fopen( \$path, 'x' );" src/Support/class-extension-install-lock.php || true)" != "1" ||
       "$(grep -cF "@fopen( \$path, 'r' );" src/Support/class-extension-install-lock.php || true)" != "1" ]]; then
     printf '%s\n' "$unexpected_primitives"
     echo "ERROR: forbidden direct execution/filesystem primitive found in production source." >&2
+    exit 1
+fi
+
+# One narrowly auditable internal-only opaque byte writer is used by native
+# producers (#134/#139). Keep the blanket command/filesystem guard intact
+# elsewhere. The exception is exactly a WordPress-created private temp inode
+# with exactly one append writer; no supplied path, shell, arbitrary copy or
+# extension/Source Editor write entrypoint is permitted.
+private_writer=src/Support/class-private-artifact-writer.php
+private_forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|unlink|rename|copy|mkdir|rmdir)[[:space:]]*\('
+if grep -nE "$private_forbidden" "$private_writer" ||
+   [[ "$(grep -cF "wp_tempnam( 'wpai-private-artifact.bin' )" "$private_writer" || true)" != "1" ]] ||
+   [[ "$(grep -cF "fopen( \$real, 'wb' )" "$private_writer" || true)" != "1" ]] ||
+   [[ "$(grep -cF 'fwrite( $this->handle, substr( $bytes, $offset ) )' "$private_writer" || true)" != "1" ]] ||
+   [[ "$(grep -Ec '(^|[^[:alnum:]_])fopen[[:space:]]*\(' "$private_writer" || true)" != "1" ]] ||
+   [[ "$(grep -Ec '(^|[^[:alnum:]_])fwrite[[:space:]]*\(' "$private_writer" || true)" != "1" ]]; then
+    echo "ERROR: private artifact writer exceeded its single guarded temp-file stream exception." >&2
+    exit 1
+fi
+
+
+# One audited internal-only private byte ingress/egress seam. Keep its exact
+# resource/persistence primitive inventory explicit rather than globally
+# allowing a new generic filesystem adapter across Bridge Abilities.
+private_stage='src/Support/class-private-transfer-session.php'
+if [[ ! -f "$private_stage" ||
+      "$(grep -cF '@fopen(' "$private_stage" || true)" != "16" ||
+      "$(grep -cF 'fwrite(' "$private_stage" || true)" != "4" ||
+      "$(grep -cF 'stream_copy_to_stream(' "$private_stage" || true)" != "1" ||
+      "$(grep -cF '@mkdir(' "$private_stage" || true)" != "1" ||
+      "$(grep -cF 'flock(' "$private_stage" || true)" != "6" ||
+      "$(grep -cF 'ftruncate(' "$private_stage" || true)" != "1" ||
+      "$(grep -cF 'rename(' "$private_stage" || true)" != "2" ]]; then
+    echo "ERROR: internal-only private transfer filesystem/lock surface changed." >&2
+    exit 1
+fi
+if grep -nE '(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|unlink|copy|rmdir|curl_exec|curl_init|wp_remote_get|wp_remote_post|wp_remote_request)[[:space:]]*\(' "$private_stage"; then
+    echo "ERROR: private transfer staging grew forbidden execution/network/filesystem primitives." >&2
+    exit 1
+fi
+# Exactly two audited same-directory atomic publications (checkpoint and claim);
+# never admit caller-named rename, generic filesystem endpoints or shell IO.
+if [[ "$(grep -cF 'rename( $temp, $dest )' "$private_stage" || true)" != "1" ||
+      "$(grep -cF 'rename( $temporary, $path )' "$private_stage" || true)" != "1" ||
+      "$(grep -cF 'durably_sync_claim_directory( $root )' "$private_stage" || true)" != "2" ||
+      "$(grep -cF '@fsync( $directory )' "$private_stage" || true)" != "1" ||
+      "$(grep -cF 'fence_native_effect(' "$private_stage" || true)" != "5" ||
+      "$(grep -cF 'recover_scratch(' "$private_stage" || true)" != "4" ]]; then
+    echo "ERROR: transfer checkpoint or coordinated scratch recovery changed." >&2
+    exit 1
+fi
+# The only new content-file reader must use the already authenticated,
+# exact private lease descriptor. No arbitrary-path WordPress file reader.
+if [[ "$(grep -cF "file_get_contents( \$lease['path'] )" src/Abilities/class-transfer-content-abilities.php || true)" != "1" ||
+      "$(grep -cF 'file_get_contents(' src/Abilities/class-transfer-content-abilities.php || true)" != "1" ||
+      "$(grep -cF '@fopen(' src/Abilities/class-transfer-media-export-abilities.php || true)" != "0" ]]; then
+    echo "ERROR: transfer consumer private file read surface changed." >&2
+    exit 1
+fi
+if grep -nE "'(client_path|filesystem_path|target_path|public_url|download_url|ftp_password|ssh_password)'[[:space:]]*=>" "$private_stage"; then
+    echo "ERROR: private transfer accepted a caller path or leaked a public file URL." >&2
     exit 1
 fi
 
@@ -409,20 +470,76 @@ if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comme
 fi
 admission_lock='src/Support/class-admission-lock.php'
 create_claim_store='src/Support/class-create-claim-store.php'
-if [[ ! -f "$create_claim_store" ||
-      "$(grep -cF '$wpdb->update(' "$create_claim_store" || true)" != "1" ||
-      "$(grep -cF '$wpdb->get_var(' "$create_claim_store" || true)" != "1" ||
-      "$(grep -cF '$wpdb->prepare(' "$create_claim_store" || true)" != "2" ||
-      "$(grep -cF '$wpdb->query(' "$create_claim_store" || true)" != "1" ||
-      "$(grep -cF 'INSERT IGNORE INTO ' "$create_claim_store" || true)" != "1" ||
-      "$(grep -cF "Admission_Lock::acquire( 'claims' )" "$create_claim_store" || true)" != "1" ]]; then
-    echo "ERROR: create receipt store must retain one conditional update, one exclusive insert, and one prepared capacity query." >&2
+native_content_cas='src/Support/class-native-content-cas.php'
+workspace_scan='src/Workspace/class-record-scan-store.php'
+# #153 permits one read-only, per-blog, private-post-type Workspace
+# enumeration store. It is not a general-purpose SQL or record editor.
+# Freeze the exact four read queries (including a size-only preflight) and forbid all mutation primitives.
+if [[ ! -f "$workspace_scan" ||
+      "$(grep -cF '$wpdb->get_var(' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF '$wpdb->get_col(' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF '$wpdb->get_results(' "$workspace_scan" || true)" != "2" ||
+      "$(grep -cF '$wpdb->prepare(' "$workspace_scan" || true)" != "4" ||
+      "$(grep -cF 'SELECT COUNT(*) FROM ' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'SELECT ID FROM ' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'SELECT post_id, OCTET_LENGTH(meta_value) AS payload_bytes FROM ' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'SELECT post_id, meta_value FROM ' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'Store::META_STATE' "$workspace_scan" || true)" != "2" ||
+      "$(grep -cF 'Store::DOCUMENT_POST_TYPE' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'Store::TASK_POST_TYPE' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'const SCAN_BATCH = 16;' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'const MAX_STATE_BYTES = 8388608;' "$workspace_scan" || true)" != "1" ||
+      "$(grep -cF 'OCTET_LENGTH(meta_value) <= 8388608' "$workspace_scan" || true)" != "1" ]]; then
+    echo "ERROR: Workspace bounded database reader exceeded its audited read-only query inventory." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$admission_lock" || true)"
+if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$workspace_scan" |
+    grep -vE '\$wpdb->(posts|postmeta|get_var|get_col|get_results|prepare|last_error)([^A-Za-z0-9_]|$)'; then
+    echo "ERROR: Workspace scanner grew unapproved database primitives." >&2
+    exit 1
+fi
+if grep -nE '(^|[^A-Za-z_])(INSERT|UPDATE|DELETE|REPLACE|ALTER|DROP|CREATE|FOR UPDATE)([^A-Za-z_]|$)' "$workspace_scan" |
+    grep -vE '^[0-9]+:[[:space:]]*(//|\*|#)'; then
+    echo "ERROR: Workspace scanner must remain read-only." >&2
+    exit 1
+fi
+if [[ ! -f "$create_claim_store" ||
+      "$(grep -cF '$wpdb->update(' "$create_claim_store" || true)" != "1" ||
+      "$(grep -cF '$wpdb->get_var(' "$create_claim_store" || true)" != "2" ||
+      "$(grep -cF '$wpdb->prepare(' "$create_claim_store" || true)" != "3" ||
+      "$(grep -cF '$wpdb->query(' "$create_claim_store" || true)" != "1" ||
+      "$(grep -cF 'WHERE option_name LIKE %s AND option_value LIKE %s' "$create_claim_store" || true)" != "1" ||
+      "$(grep -cF 'INSERT IGNORE INTO ' "$create_claim_store" || true)" != "1" ||
+      "$(grep -cF "Admission_Lock::acquire( 'claims' )" "$create_claim_store" || true)" != "1" ]]; then
+    echo "ERROR: create receipt store must retain one conditional update, one exclusive insert, and two exact prepared capacity queries." >&2
+    exit 1
+fi
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2
+    exit 1
+fi
+
+# A single purpose-built native content CAS coordinator is permitted to use
+# physical InnoDB row locks. This is not a generic SQL executor. Keep the
+# fixed SELECT/FOR UPDATE shapes and transaction-only query surface pinned.
+if [[ ! -f "$native_content_cas" ||
+      "$(grep -cF '$wpdb->get_var(' "$native_content_cas" || true)" != "2" ||
+      "$(grep -cF '$wpdb->prepare(' "$native_content_cas" || true)" != "3" ||
+      "$(grep -cF '$wpdb->get_row(' "$native_content_cas" || true)" != "1" ||
+      "$(grep -cF '$wpdb->get_results(' "$native_content_cas" || true)" != "1" ||
+      "$(grep -cF '$wpdb->query(' "$native_content_cas" || true)" != "7" ||
+      "$(grep -cF 'START TRANSACTION' "$native_content_cas" || true)" != "1" ||
+      "$(grep -cF 'FOR UPDATE' "$native_content_cas" || true)" != "2" ||
+      "$(grep -cF 'COMMIT' "$native_content_cas" || true)" != "1" ||
+      "$(grep -cF 'ROLLBACK' "$native_content_cas" || true)" != "5" ]]; then
+    echo "ERROR: narrowly scoped native content row-CAS database primitives changed." >&2
+    exit 1
+fi
+if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$native_content_cas" |
+    grep -vE '\$wpdb->(posts|postmeta|get_var|prepare|get_row|get_results|query|last_error)([^A-Za-z0-9_]|$)'; then
+    echo "ERROR: native content-CAS added an unauthorized DB API." >&2
     exit 1
 fi
 

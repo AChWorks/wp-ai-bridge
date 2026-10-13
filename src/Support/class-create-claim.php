@@ -17,8 +17,32 @@ use WP_Error;
 final class Create_Claim {
 	const PREFIX           = 'wpai_create_claim_';
 	const MAX_CLAIMS       = 2048;
+	const DOMAIN_OPERATION = 'operation';
+	const DOMAIN_CANONICAL = 'canonical';
 	const RECOVERY_SECONDS = 2592000; // 30 days; retired fingerprints remain reserved.
 	const MAX_ID_BYTES     = 128;
+
+	/**
+	 * Legacy options retain their exact SHA-256 identity and recovery semantics.
+	 * New receipts carry an immutable admission domain in their persisted value.
+	 * Count only new receipts for this domain; older untagged tombstones remain
+	 * reserved and recoverable but do not consume either new domain's budget.
+	 * Lowering Workspace limits can NEVER shrink generic operation capacity.
+	 *
+	 * @param string $domain One of the two fixed receipt admission domains.
+	 * @return int
+	 */
+	public static function receipt_limit( $domain = self::DOMAIN_OPERATION ) {
+		if ( self::DOMAIN_CANONICAL !== $domain ) {
+			return self::MAX_CLAIMS;
+		}
+		$limits = ( new Workspace_Limits() )->all();
+		return max(
+			self::MAX_CLAIMS,
+			2 * $limits[ Workspace_Limits::DOCUMENTS_KEY ] + $limits[ Workspace_Limits::TASKS_KEY ]
+		);
+	}
+
 
 	/**
 	 * Executes the legacy effect only once per stable, authorized identity.
@@ -64,10 +88,11 @@ final class Create_Claim {
 		$fingerprint = hash( 'sha256', $request );
 		$initial     = wp_json_encode(
 			array(
-				'fingerprint' => $fingerprint,
-				'state'       => 'in_progress',
-				'created_at'  => time(),
-				'id'          => 0,
+				'fingerprint'      => $fingerprint,
+				'admission_domain' => self::DOMAIN_OPERATION,
+				'state'            => 'in_progress',
+				'created_at'       => time(),
+				'id'               => 0,
 			)
 		);
 		if ( ! is_string( $initial ) ) {
@@ -80,7 +105,7 @@ final class Create_Claim {
 		if ( false !== $existing ) {
 			return self::adopt( $name, $existing, $fingerprint, $allowed, $clean, $recover );
 		}
-		$reserved = Create_Claim_Store::try_claim_bounded( $name, $initial );
+		$reserved = Create_Claim_Store::try_claim_bounded( $name, $initial, self::DOMAIN_OPERATION );
 		if ( 'capacity' === $reserved ) {
 			return new WP_Error( 'create_claim_capacity', __( 'Create recovery capacity is full. No new create was attempted; administrative reconciliation is required.', 'wp-ai-bridge' ) );
 		}
@@ -118,10 +143,11 @@ final class Create_Claim {
 		}
 		$next = wp_json_encode(
 			array(
-				'fingerprint' => $fingerprint,
-				'state'       => $partial ? 'partial' : 'committed',
-				'created_at'  => time(),
-				'id'          => $id,
+				'fingerprint'      => $fingerprint,
+				'admission_domain' => self::DOMAIN_OPERATION,
+				'state'            => $partial ? 'partial' : 'committed',
+				'created_at'       => time(),
+				'id'               => $id,
 			)
 		);
 		if ( ! is_string( $next ) || ! self::compare_swap( $name, $initial, $next ) ) {
@@ -149,16 +175,17 @@ final class Create_Claim {
 		}
 		$initial = wp_json_encode(
 			array(
-				'fingerprint' => hash( 'sha256', $identity ),
-				'state'       => 'in_progress',
-				'created_at'  => time(),
-				'id'          => 0,
+				'fingerprint'      => hash( 'sha256', $identity ),
+				'admission_domain' => self::DOMAIN_CANONICAL,
+				'state'            => 'in_progress',
+				'created_at'       => time(),
+				'id'               => 0,
 			)
 		);
 		if ( ! is_string( $initial ) ) {
 			return new WP_Error( 'workspace_key_invalid', __( 'Document key cannot be represented.', 'wp-ai-bridge' ) );
 		}
-		$reserved = Create_Claim_Store::try_claim_bounded( $name, $initial );
+		$reserved = Create_Claim_Store::try_claim_bounded( $name, $initial, self::DOMAIN_CANONICAL );
 		if ( 'capacity' === $reserved ) {
 			return new WP_Error( 'create_claim_capacity', __( 'Create recovery capacity is full. No new create was attempted; administrative reconciliation is required.', 'wp-ai-bridge' ) );
 		}
@@ -223,6 +250,18 @@ final class Create_Claim {
 						'id'          => 0,
 					)
 				);
+				// Preserve the admission domain of new claims after expiry so
+				// old committed/uncertain receipts keep occupying their own quota.
+				if ( isset( $state['admission_domain'] ) && is_string( $compact ) &&
+					in_array(
+						$state['admission_domain'],
+						array( self::DOMAIN_OPERATION, self::DOMAIN_CANONICAL ),
+						true
+					) ) {
+					$compacted                     = json_decode( $compact, true );
+					$compacted['admission_domain'] = $state['admission_domain'];
+					$compact                       = wp_json_encode( $compacted );
+				}
 				if ( is_string( $compact ) ) {
 					self::compare_swap( $name, $raw, $compact );
 				}

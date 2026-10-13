@@ -17,12 +17,21 @@ trap cleanup EXIT
 
 "${compose[@]}" up -d db wordpress
 
-for attempt in $(seq 1 30); do
-    if "${compose[@]}" exec -T wordpress test -f /var/www/html/wp-load.php; then
+# The official image copies WordPress into the named volume on first boot.
+# wp-load.php alone may exist before the Core tree finishes extracting.
+# Require bootstrap, Core upgrade API and generated config before WP-CLI.
+for attempt in $(seq 1 45); do
+    if "${compose[@]}" exec -T wordpress sh -c '
+        test -s /var/www/html/wp-load.php &&
+        test -s /var/www/html/wp-settings.php &&
+        test -s /var/www/html/wp-includes/version.php &&
+        test -s /var/www/html/wp-admin/includes/upgrade.php &&
+        test -s /var/www/html/wp-config.php
+    '; then
         break
     fi
-    if [[ "$attempt" == "30" ]]; then
-        echo "ERROR: WordPress files were not initialized." >&2
+    if [[ "$attempt" == "45" ]]; then
+        echo "ERROR: WordPress Core files and configuration were not initialized." >&2
         exit 1
     fi
     sleep 2
@@ -71,6 +80,12 @@ for test in \
     issue140-site-health-smoke.php \
     issue138-native-cron-smoke.php \
     issue138-native-cron-mutation-smoke.php \
+    issue139-wxr-discovery-smoke.php \
+    issue139-native-wxr-export-smoke.php \
+    issue139-wxr-staged-stream-smoke.php \
+    issue139-wxr-budget-rejection-smoke.php \
+    issue139-wxr-import-preflight-smoke.php \
+    issue139-private-mcp-wxr-smoke.php \
     issue119-registered-rest-smoke.php \
     issue119-native-execution-smoke.php \
     issue44-native-ability-delegation-smoke.php \
@@ -87,6 +102,10 @@ for test in \
     issue6-direct-oauth-negative-smoke.php \
     issue6-direct-mcp-tools-smoke.php \
     issue6-i18n-smoke.php \
+    issue134-payload-settings-smoke.php \
+    issue134-direct-mcp-bytes-smoke.php \
+    issue134-public-session-smoke.php \
+    issue134-private-staging-smoke.php \
     issue126-128-workspace-smoke.php \
     issue128-native-creates-smoke.php \
     issue8-workspace-smoke.php
@@ -109,10 +128,62 @@ do
     fi
 done
 
+# Run the official WordPress Importer semantic roundtrip in one representative
+# isolated lane. The importer is a separate native plugin, not a Bridge-owned
+# PHP/XML import engine, and is intentionally excluded from the shipped ZIP.
+if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
+    echo '== Issue #139 native WXR/official WordPress Importer roundtrip =='
+    "${wp[@]}" plugin install wordpress-importer --version="${WPAI_IMPORTER_VERSION:-0.9.6}" --activate --allow-root
+    "${wp[@]}" config set WP_LOAD_IMPORTERS true --raw --allow-root >/dev/null
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue139-native-import-roundtrip-smoke.php --user=1 --allow-root
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue139-wxr-native-plan-smoke.php --user=1 --allow-root
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue139-native-mcp-import-execute-smoke.php --user=1 --allow-root
+    "${wp[@]}" config delete WP_LOAD_IMPORTERS --allow-root >/dev/null
+fi
+
 # Exercise the Workspace 200-item ceiling and unexpected corruption in one
 # representative lane, instead of repeating 200 writes in all four lanes.
 if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
-    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-quotas-corruption-smoke.php --user=1 --allow-root
+    # #153 R2: enforce 96MiB from the CLI process entrypoint.
+    # The fixture verifies effective limit and logs workload/peak memory.
+    echo '== #153 deterministic external PHP 96MiB Workspace integration =='
+    # WP-CLI's Runner unconditionally sets memory_limit=-1 AFTER WordPress
+    # bootstrap, defeating even php -d and WP_MAX_MEMORY_LIMIT=96M.
+    # Execute only this test fixture with actual wp-load.php in a fresh PHP
+    # process. Do not run the fixture through WP-CLI or relax its 96MiB gate.
+    # Both WordPress ceilings are bounded for the disposable test installation.
+    "${wp[@]}" config set WP_MEMORY_LIMIT 96M --allow-root
+    "${wp[@]}" config set WP_MAX_MEMORY_LIMIT 96M --allow-root
+    "${compose[@]}" run --rm --entrypoint php -e WPAI153_MEMORY_CEILING=96M cli \
+        -d memory_limit=96M -r '
+            if (ini_get("memory_limit") !== "96M") {
+                fwrite(STDERR, "WPAI153_MEMORY_ERROR: entrypoint PHP limit is not 96M.\n");
+                exit(1);
+            }
+            echo "WPAI153_MEMORY_ENTRY effective=" . ini_get("memory_limit") . "\n";
+            $_SERVER["HTTP_HOST"] = "localhost";
+            $_SERVER["SERVER_NAME"] = "localhost";
+            require "/var/www/html/wp-load.php";
+            // WP-CLI normally preloads admin helpers; a direct, memory-bound
+            // bootstrap must supply both Core settings_fields() (plugin.php)
+            // and submit_button() (template.php) without the full admin stack.
+            require_once ABSPATH . "wp-admin/includes/plugin.php";
+            require_once ABSPATH . "wp-admin/includes/template.php";
+            if (!function_exists("submit_button") || !function_exists("settings_fields")) {
+                fwrite(STDERR, "WPAI153_MEMORY_ERROR: native Settings UI helpers unavailable.\n");
+                exit(1);
+            }
+            if (!function_exists("wp_set_current_user") || !get_user_by("id", 1)) {
+                fwrite(STDERR, "WPAI153_MEMORY_ERROR: isolated WordPress admin identity is missing.\n");
+                exit(1);
+            }
+            wp_set_current_user(1);
+            require "/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue126-quotas-corruption-smoke.php";
+        '
+    "${wp[@]}" config delete WP_MAX_MEMORY_LIMIT --allow-root
+    "${wp[@]}" config delete WP_MEMORY_LIMIT --allow-root
+    echo '== #153 typed receipt isolation against real MariaDB and native creates =='
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue153-mixed-receipts-smoke.php --user=1 --allow-root
     # Distinct-identity 2047/2048 and 199/200 cross-process capacities plus
     # true PHP process death, once on a representative native MariaDB lane.
     # The broader four-lane suite still covers ordinary Core/Adapter behavior.

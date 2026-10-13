@@ -229,9 +229,48 @@ try {
 		$page->{$method}();
 		$screen_html = ob_get_clean();
 		wpai_issue8_assert( false !== strpos( $screen_html, $needle ), 'Admin screen did not render expected content: ' . $method );
+		if ( 'render_dashboard' === $method ) {
+			wpai_issue8_assert( false !== strpos( $screen_html, '<td dir="auto" style="text-align: left;">Build navigation</td>' ), 'AI task title in Dashboard should be left aligned without changing global RTL admin labels.' );
+		}
+		if ( 'render_documents' === $method ) {
+			wpai_issue8_assert( false !== strpos( $screen_html, '<td dir="auto" style="text-align: left;">Project Brief</td>' ), 'AI document title in list should be left aligned.' );
+			wpai_issue8_assert( false !== strpos( $screen_html, '<code dir="ltr">project-brief</code>' ), 'Technical document key should have isolated LTR direction.' );
+		}
+		if ( 'render_tasks' === $method ) {
+			wpai_issue8_assert( false !== strpos( $screen_html, '<td dir="auto" style="text-align: left;">Build navigation</td>' ), 'AI task title in list should be left aligned.' );
+		}
+		if ( in_array( $method, array( 'render_documents', 'render_tasks' ), true ) ) {
+			wpai_issue8_assert( false !== strpos( $screen_html, '<th>' . esc_html__( 'Project ID', 'wp-ai-bridge' ) . '</th>' ), 'Workspace table is missing the project ID column.' );
+			wpai_issue8_assert( false !== strpos( $screen_html, '<span class="description">' . esc_html__( 'Unbound', 'wp-ai-bridge' ) . '</span>' ), 'Legacy unbound Workspace record is not clearly labelled.' );
+		}
 		if ( 'render_tasks' === $method ) {
 			wpai_issue8_assert( false !== strpos( $screen_html, 'style="margin: 16px 0 18px;"' ), 'Task filters should retain vertical spacing from the description and results table.' );
 		}
+	}
+
+	// Inspector values are AI-owned English/Markdown; WordPress admin labels remain localized RTL.
+	$previous_query = $_GET;
+	try {
+		$_GET = array( 'document' => $updated_document['id'] );
+		ob_start();
+		$page->render_documents();
+		$doc_html = ob_get_clean();
+		wpai_issue8_assert( false !== strpos( $doc_html, '<h2 dir="auto" style="text-align: left; overflow-wrap: anywhere;">Project Brief</h2>' ), 'AI document detail title should be left aligned.' );
+		wpai_issue8_assert( false !== strpos( $doc_html, '<pre dir="ltr" style="direction: ltr; text-align: left; unicode-bidi: isolate; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 1100px"># Project Brief' ), 'Markdown source must render in LTR, not inherit RTL WordPress text direction.' );
+		wpai_issue8_assert( false !== strpos( $doc_html, esc_html__( 'State hash:', 'wp-ai-bridge' ) ), 'Localized inspector labels must remain intact.' );
+		wpai_issue8_assert( false !== strpos( $doc_html, '<code dir="ltr">' . esc_html( $updated_document['state_hash'] ) . '</code>' ), 'Document state hash must keep LTR character order.' );
+
+		$_GET = array( 'task' => $task_progress['id'] );
+		ob_start();
+		$page->render_tasks();
+		$task_html = ob_get_clean();
+		wpai_issue8_assert( false !== strpos( $task_html, '<h2 dir="auto" style="text-align: left; overflow-wrap: anywhere;">Build navigation</h2>' ), 'AI task detail title should be left aligned.' );
+		wpai_issue8_assert( false !== strpos( $task_html, '<span dir="ltr" style="display: block; direction: ltr; text-align: left; overflow-wrap: anywhere; white-space: pre-wrap;">Finish the primary site navigation.</span>' ), 'AI task goal must be left aligned independently of the translated label.' );
+		wpai_issue8_assert( false !== strpos( $task_html, '<pre dir="ltr" style="direction: ltr; text-align: left; unicode-bidi: isolate; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 1100px">Keep this concise.</pre>' ), 'AI task notes must be rendered as LTR text.' );
+		wpai_issue8_assert( false !== strpos( $task_html, esc_html__( 'Goal:', 'wp-ai-bridge' ) ), 'Translated task labels must remain intact.' );
+		wpai_issue8_assert( false !== strpos( $task_html, '<code dir="ltr">' . esc_html( $task_progress['state_hash'] ) . '</code>' ), 'Task state hash must keep LTR character order.' );
+	} finally {
+		$_GET = $previous_query;
 	}
 
 	ob_start();
@@ -244,6 +283,14 @@ try {
 	wpai_issue8_assert( ! is_wp_error( $cleared ) && 1 === $cleared['documents'] && 1 === $cleared['tasks'], 'Explicit Workspace clear did not remove both fixture records.' );
 	$empty_resume = $store->resume();
 	wpai_issue8_assert( 0 === $empty_resume['counts']['documents'] && 0 === $empty_resume['counts']['tasks'], 'Workspace was not empty after explicit clear.' );
+	ob_start();
+	$page->render_documents();
+	$empty_documents_html = ob_get_clean();
+	wpai_issue8_assert( false !== strpos( $empty_documents_html, 'colspan="7"' ), 'Empty Documents table colspan does not match the project ID column.' );
+	ob_start();
+	$page->render_tasks();
+	$empty_tasks_html = ob_get_clean();
+	wpai_issue8_assert( false !== strpos( $empty_tasks_html, 'colspan="8"' ), 'Empty Tasks table colspan does not match the project ID column.' );
 
 	echo "PASS: Issue #8 Persistent Workspace storage, isolation, concurrency, permissions, admin UX, export, and clear.\n";
 } finally {

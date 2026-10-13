@@ -44,8 +44,11 @@ try {
 	wpai105_live_assert( ! is_wp_error( $post_id ) && $post_id > 0, 'Could not create the isolated revision parent.' );
 
 	$large_body    = str_repeat( 'سلام 🌍 نسخه آزمایشی ', 3800 );
-	$large_title   = str_repeat( 'Revision title 🌍 ', 2350 );
-	$large_excerpt = str_repeat( 'Revision excerpt 🌍 ', 2250 );
+	// An individual WordPress title is a finite native TEXT field. Use
+	// Unicode-rich content below its storage cap that still overflows the
+	// effective duplicated MCP JSON text+structured response budget.
+	$large_title   = str_repeat( 'عنوان بازبینی 🌍 ', 1200 );
+	$large_excerpt = str_repeat( 'خلاصه بازبینی 🌍 ', 1200 );
 	for ( $i = 0; $i < 6; ++$i ) {
 		$updated = wp_update_post(
 			array(
@@ -62,9 +65,9 @@ try {
 	wpai105_live_assert( count( $revisions ) >= 3, 'Core did not persist the expected revision history.' );
 	$selected = null;
 	foreach ( $revisions as $revision ) {
-		if ( strlen( (string) $revision->post_content ) > Bounded_Payload::RESPONSE_BYTES &&
-			strlen( (string) $revision->post_title ) > Bounded_Payload::RESPONSE_BYTES &&
-			strlen( (string) $revision->post_excerpt ) > Bounded_Payload::RESPONSE_BYTES ) {
+		if ( ! Bounded_Payload::fits( array( 'content' => (string) $revision->post_content ) ) &&
+			! Bounded_Payload::fits( array( 'title' => (string) $revision->post_title ) ) &&
+			! Bounded_Payload::fits( array( 'excerpt' => (string) $revision->post_excerpt ) ) ) {
 			$selected = $revision;
 			break;
 		}

@@ -7,6 +7,8 @@
 use WP_AI_Bridge\Support\Settings;
 use WP_AI_Bridge\Workspace\Store;
 use WP_AI_Bridge\Support\Bounded_Payload;
+use WP_AI_Bridge\Support\Environment;
+use WP_AI_Bridge\Admin\Settings_Page;
 
 function wpai126_assert( $condition, $message ) {
 	if ( ! $condition ) { throw new RuntimeException( $message ); }
@@ -69,6 +71,33 @@ try {
 	wpai126_assert( ! is_wp_error( $task_b ), 'Project B task failed.' );
 	$created_ids[] = $task_b['items'][0]['id'];
 
+	// A real WordPress admin must see the exact bound project in both lists and inspections.
+	$admin_page = new Settings_Page( new Environment(), $settings, null, $store );
+	$prior_query = $_GET;
+	try {
+		$_GET = array( 'document' => (int) $a['items'][0]['id'] );
+		ob_start();
+		$admin_page->render_documents();
+		$documents_html = ob_get_clean();
+		wpai126_assert( 2 <= substr_count( $documents_html, '<code dir="ltr">' . esc_html( $project_a ) . '</code>' ), 'Document list/inspection omitted the exact selected project.' );
+		wpai126_assert( false !== strpos( $documents_html, '<code dir="ltr">' . esc_html( $project_b ) . '</code>' ), 'Second project ID missing from documents list.' );
+
+		$_GET = array( 'task' => (int) $task_a['items'][0]['id'] );
+		ob_start();
+		$admin_page->render_tasks();
+		$tasks_html = ob_get_clean();
+		wpai126_assert( 2 <= substr_count( $tasks_html, '<code dir="ltr">' . esc_html( $project_a ) . '</code>' ), 'Task list/inspection omitted the exact selected project.' );
+		wpai126_assert( false !== strpos( $tasks_html, '<code dir="ltr">' . esc_html( $project_b ) . '</code>' ), 'Second project ID missing from tasks list.' );
+
+		$_GET = array();
+		ob_start();
+		$admin_page->render_dashboard();
+		$dashboard_html = ob_get_clean();
+		wpai126_assert( false !== strpos( $dashboard_html, esc_html__( 'Mixed Workspace; no single site-wide focus.', 'wp-ai-bridge' ) ), 'Mixed-project Dashboard incorrectly claimed there was no in-progress task.' );
+	} finally {
+		$_GET = $prior_query;
+	}
+
 	$resume_a = wpai126_execute( 'workspace-resume', array( 'project_ref' => $project_a ) );
 	$resume_b = wpai126_execute( 'workspace-resume', array( 'project_ref' => $project_b ) );
 	wpai126_assert( ! is_wp_error( $resume_a ) && ! is_wp_error( $resume_b ), 'Project-scoped resume failed.' );
@@ -112,7 +141,7 @@ try {
 
 	$invalid = $store->create_document( array( 'title' => 'Invalid', 'content' => "\xC3\x28", 'project_ref' => $project_a ) );
 	wpai126_assert( is_wp_error( $invalid ) && 'workspace_lossy_input' === $invalid->get_error_code(), 'Invalid UTF-8 was silently persisted.' );
-	$oversize = $store->create_document( array( 'title' => 'Oversize', 'content' => str_repeat( 'x', 100001 ) ) );
+	$oversize = $store->create_document( array( 'title' => 'Oversize', 'content' => str_repeat( 'x', Store::document_limit() + 1 ) ) );
 	wpai126_assert( is_wp_error( $oversize ), 'Oversized document was silently truncated.' );
 	$unsafe = $store->create_document( array( 'title' => 'Sanitize', 'content' => '<script>side effect</script>' ) );
 	wpai126_assert( is_wp_error( $unsafe ), 'Material HTML filtering happened silently.' );

@@ -9,6 +9,8 @@ namespace WP_AI_Bridge\Workspace;
 
 use WP_Error;
 use WP_AI_Bridge\Support\Bounded_Payload;
+use WP_AI_Bridge\Support\Payload_Settings;
+use WP_AI_Bridge\Support\Workspace_Limits;
 use WP_AI_Bridge\Support\Create_Claim;
 use WP_AI_Bridge\Support\Admission_Lock;
 
@@ -16,14 +18,37 @@ use WP_AI_Bridge\Support\Admission_Lock;
  * Stores compact Workspace documents and tasks in private WordPress objects.
  */
 final class Store {
-	const DOCUMENT_POST_TYPE = 'wpai_doc';
-	const TASK_POST_TYPE     = 'wpai_task';
-	const META_STATE         = '_wpai_workspace_state';
-	const MAX_RECORDS        = 200;
-	const MAX_DOCUMENT_BYTES = 100000;
-	const MAX_NOTES_BYTES    = 20000;
-	const MAX_LIST_ITEMS     = 25;
-	const MAX_ITEM_BYTES     = 1000;
+	const DOCUMENT_POST_TYPE   = 'wpai_doc';
+	const TASK_POST_TYPE       = 'wpai_task';
+	const META_STATE           = '_wpai_workspace_state';
+	const MAX_RECORDS          = Workspace_Limits::DEFAULT_DOCUMENTS; // Legacy default/fixture compatibility.
+	const MAX_COLLECTION_BYTES = 16777216; // Avoid full in-memory snapshots beyond bounded PHP resources.
+	const MAX_DOCUMENT_BYTES   = Payload_Settings::DEFAULT_DOCUMENT_KIB * 1024;
+	const MAX_NOTES_BYTES      = Payload_Settings::DEFAULT_NOTES_KIB * 1024;
+	const MAX_LIST_ITEMS       = 25;
+	const MAX_ITEM_BYTES       = 1000;
+
+	/**
+	 * Per-site Workspace record limits, independent of MCP response budgets.
+	 *
+	 * @return int
+	 */
+	public static function document_limit() {
+		$settings = new Payload_Settings();
+		return $settings->all()[ Payload_Settings::DOCUMENT_KEY ] * 1024;
+	}
+
+	/** @return int */
+	private function record_limit( $post_type ) {
+		$limits = ( new Workspace_Limits() )->all();
+		return self::DOCUMENT_POST_TYPE === $post_type ? $limits[ Workspace_Limits::DOCUMENTS_KEY ] : $limits[ Workspace_Limits::TASKS_KEY ];
+	}
+
+	/** @return int */
+	public static function notes_limit() {
+		$settings = new Payload_Settings();
+		return $settings->all()[ Payload_Settings::NOTES_KEY ] * 1024;
+	}
 
 	/**
 	 * Registers private/internal Workspace object types.
@@ -141,8 +166,12 @@ final class Store {
 		if ( ! $lock->is_owned() ) {
 			return new WP_Error( 'workspace_admission_unavailable', __( 'Workspace capacity admission is unavailable; no create was attempted.', 'wp-ai-bridge' ) );
 		}
-		if ( $this->record_count( self::DOCUMENT_POST_TYPE ) >= self::MAX_RECORDS ) {
-			return new WP_Error( 'workspace_document_limit', __( 'The Workspace document limit has been reached.', 'wp-ai-bridge' ) );
+		$count = $this->record_count( self::DOCUMENT_POST_TYPE );
+		if ( is_wp_error( $count ) ) {
+			return $count;
+		}
+		if ( $count >= $this->record_limit( self::DOCUMENT_POST_TYPE ) ) {
+			return new WP_Error( 'workspace_document_limit', __( 'The Workspace document record-count policy has been reached; an administrator can adjust the per-site limit.', 'wp-ai-bridge' ) );
 		}
 
 		$title = $this->bounded_text( $input['title'] ?? '', 500, false );
@@ -158,21 +187,19 @@ final class Store {
 		$claim       = null;
 		$project_ref = isset( $input['project_ref'] ) ? (string) $input['project_ref'] : '';
 		if ( '' !== $project_ref && '' !== $key ) {
-			$records = $this->checked_records( self::DOCUMENT_POST_TYPE );
-			if ( is_wp_error( $records ) ) {
-				return $records;
+			$existing = $this->find_project_key( $project_ref, $key, 0 );
+			if ( is_wp_error( $existing ) ) {
+				return $existing;
 			}
-			foreach ( $records as $record ) {
-				if ( $record['project_ref'] === $project_ref && $record['key'] === $key ) {
-					return new WP_Error( 'workspace_key_exists', __( 'This project already has a document with the same canonical key, possibly archived. Inspect or unarchive that record.', 'wp-ai-bridge' ), array( 'id' => (int) $record['id'] ) );
-				}
+			if ( $existing > 0 ) {
+				return new WP_Error( 'workspace_key_exists', __( 'This project already has a document with the same canonical key, possibly archived. Inspect or unarchive that record.', 'wp-ai-bridge' ), array( 'id' => $existing ) );
 			}
 			$claim = Create_Claim::reserve_document_key( $project_ref, $key );
 			if ( is_wp_error( $claim ) ) {
 				return $claim;
 			}
 		}
-		$content = $this->bounded_markdown( $input['content'] ?? '', self::MAX_DOCUMENT_BYTES );
+		$content = $this->bounded_markdown( $input['content'] ?? '', self::document_limit() );
 		$now     = gmdate( 'c' );
 		if ( ! $lock->is_owned() ) {
 			return new WP_Error( 'workspace_admission_unavailable', __( 'Workspace capacity admission is unavailable; no create was attempted.', 'wp-ai-bridge' ) );
@@ -253,14 +280,12 @@ final class Store {
 				! hash_equals( $current['state_hash'], $input['expected_state_hash'] ) ) {
 				return new WP_Error( 'workspace_stale', __( 'The Workspace record changed after inspection.', 'wp-ai-bridge' ) );
 			}
-			$records = $this->checked_records( self::DOCUMENT_POST_TYPE );
-			if ( is_wp_error( $records ) ) {
-				return $records;
+			$existing = $this->find_project_key( $next_project, $next_key, (int) $id );
+			if ( is_wp_error( $existing ) ) {
+				return $existing;
 			}
-			foreach ( $records as $record ) {
-				if ( $record['id'] !== (int) $id && $record['project_ref'] === $next_project && $record['key'] === $next_key ) {
-					return new WP_Error( 'workspace_key_exists', __( 'A document with this canonical key already exists for the project.', 'wp-ai-bridge' ) );
-				}
+			if ( $existing > 0 ) {
+				return new WP_Error( 'workspace_key_exists', __( 'A document with this canonical key already exists for the project.', 'wp-ai-bridge' ) );
 			}
 			$claim = Create_Claim::reserve_document_key( $next_project, $next_key );
 			if ( is_wp_error( $claim ) ) {
@@ -294,7 +319,7 @@ final class Store {
 				}
 
 				if ( array_key_exists( 'content', $input ) ) {
-					$state['content'] = $this->bounded_markdown( $input['content'], self::MAX_DOCUMENT_BYTES );
+					$state['content'] = $this->bounded_markdown( $input['content'], self::document_limit() );
 				}
 
 				return $state;
@@ -383,35 +408,90 @@ final class Store {
 	}
 
 	/**
-	 * Returns a complete, integrity-checked internal record set. Exceeding quota
-	 * or encountering damaged state is an explicit failure, not silent omission.
+	 * Decode each authoritative JSON record from a bounded read-only DB scan.
+	 *
+	 * @param string $post_type Exact private type.
+	 * @param callable $consumer Receives decoded record.
+	 * @return int|WP_Error
+	 */
+	private function walk_records( $post_type, $consumer ) {
+		$kind = self::DOCUMENT_POST_TYPE === $post_type ? 'document' : 'task';
+		return ( new Record_Scan_Store() )->walk(
+			$post_type,
+			function ( $id, $json ) use ( $kind, $consumer ) {
+				$state = $this->decode_state( $json );
+				if ( null === $state || $kind !== $state['kind'] ) {
+					return new WP_Error( 'workspace_incomplete', __( 'One or more Workspace records could not be decoded; results cannot be claimed complete.', 'wp-ai-bridge' ), array( 'id' => (int) $id ) );
+				}
+				return call_user_func( $consumer, $this->decorate_state( (int) $id, $state, $json ) );
+			}
+		);
+	}
+
+	/**
+	 * Bound complete JSON collections to a fraction of current PHP memory:
+	 * both record categories and a final encoded JSON export may coexist.
+	 *
+	 * @return int
+	 */
+	private function collection_budget() {
+		$memory = function_exists( 'wp_convert_hr_to_bytes' ) ? wp_convert_hr_to_bytes( ini_get( 'memory_limit' ) ) : -1;
+		return is_int( $memory ) && $memory > 0
+			? min( self::MAX_COLLECTION_BYTES, max( 1048576, intdiv( $memory, 16 ) ) )
+			: self::MAX_COLLECTION_BYTES;
+	}
+
+	/**
+	 * Complete in-memory collection only for small compatibility/export callers.
+	 * Large workspaces require the bounded project-aware page/read APIs and
+	 * native WordPress database backup, never a silently truncated JSON export.
 	 *
 	 * @param string $post_type Exact private type.
 	 * @return array<int,array<string,mixed>>|WP_Error
 	 */
 	private function checked_records( $post_type ) {
-		$ids = get_posts(
-			array(
-				'post_type'      => $post_type,
-				'post_status'    => array_keys( get_post_stati( array(), 'names' ) ),
-				'posts_per_page' => self::MAX_RECORDS + 1,
-				'fields'         => 'ids',
-				'orderby'        => 'ID',
-				'order'          => 'DESC',
-			)
-		);
-		if ( ! is_array( $ids ) || count( $ids ) > self::MAX_RECORDS ) {
-			return new WP_Error( 'workspace_overflow', __( 'Workspace has more records than its supported quota; full enumeration is unavailable.', 'wp-ai-bridge' ) );
-		}
 		$items = array();
-		foreach ( $ids as $id ) {
-			$item = $this->read_record( (int) $id, $post_type, 'workspace_not_found' );
-			if ( is_wp_error( $item ) ) {
-				return new WP_Error( 'workspace_incomplete', __( 'One or more Workspace records could not be decoded; results cannot be claimed complete.', 'wp-ai-bridge' ), array( 'id' => (int) $id ) );
+		$bytes = 0;
+		$scan  = $this->walk_records(
+			$post_type,
+			function ( $item ) use ( &$items, &$bytes ) {
+				$json = wp_json_encode( $item );
+				if ( ! is_string( $json ) ) {
+					return new WP_Error( 'workspace_incomplete', __( 'A Workspace record cannot be serialized without losing data.', 'wp-ai-bridge' ) );
+				}
+				$bytes += strlen( $json );
+				if ( $bytes > $this->collection_budget() ) {
+					return new WP_Error( 'workspace_collection_too_large', __( 'Workspace data exceeds the safe one-request export/list budget. Use bounded pages for AI and a verified WordPress database backup for full restoration.', 'wp-ai-bridge' ) );
+				}
+				$items[] = $item;
+				return true;
 			}
-			$items[] = $item;
-		}
-		return $items;
+		);
+		return is_wp_error( $scan ) ? $scan : $items;
+	}
+
+
+	/**
+	 * Looks for any old or claimed same-project document key without loading
+	 * the whole document collection. Includes archived records deliberately.
+	 *
+	 * @param string $project_ref Project reference.
+	 * @param string $key Canonical key.
+	 * @param int    $except_id Legacy record being bound.
+	 * @return int|WP_Error
+	 */
+	private function find_project_key( $project_ref, $key, $except_id ) {
+		$found = 0;
+		$scan  = $this->walk_records(
+			self::DOCUMENT_POST_TYPE,
+			static function ( $record ) use ( $project_ref, $key, $except_id, &$found ) {
+				if ( (int) $record['id'] !== $except_id && $record['project_ref'] === $project_ref && $record['key'] === $key ) {
+					$found = (int) $record['id'];
+				}
+				return true;
+			}
+		);
+		return is_wp_error( $scan ) ? $scan : $found;
 	}
 
 	/**
@@ -423,61 +503,60 @@ final class Store {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private function page_records( $type, $filters ) {
-		$items = $this->checked_records( $type );
-		if ( is_wp_error( $items ) ) {
-			return $items;
-		}
 		$limit     = isset( $filters['limit'] ) ? $filters['limit'] : 10;
 		$before_id = isset( $filters['before_id'] ) ? $filters['before_id'] : 0;
 		if ( ! is_int( $limit ) || $limit < 1 || $limit > 25 || ! is_int( $before_id ) || $before_id < 0 ||
 			( isset( $filters['project_ref'] ) && ! $this->valid_project_filter( $filters['project_ref'] ) ) ) {
 			return new WP_Error( 'workspace_invalid_page', __( 'Workspace page selector or project reference is invalid.', 'wp-ai-bridge' ) );
 		}
-		$all        = array_values(
-			array_filter(
-				$items,
-				static function ( $item ) use ( $filters, $type ) {
-					if ( empty( $filters['include_archived'] ) && ! empty( $item['archived'] ) ) {
-						return false;
-					}
-					if ( array_key_exists( 'project_ref', $filters ) && (string) $item['project_ref'] !== $filters['project_ref'] ) {
-						return false;
-					}
-					if ( self::TASK_POST_TYPE === $type ) {
-						foreach ( array( 'progress', 'review', 'delivery' ) as $field ) {
-							if ( isset( $filters[ $field ] ) && '' !== $filters[ $field ] && $item[ $field ] !== $filters[ $field ] ) {
-								return false;
-							}
-						}
-					}
+		$page       = array();
+		$total      = 0;
+		$candidates = 0;
+		$summary    = self::TASK_POST_TYPE === $type ? 'task_summary' : 'document_summary';
+		$scan       = $this->walk_records(
+			$type,
+			function ( $item ) use ( $filters, $type, $before_id, $limit, $summary, &$page, &$total, &$candidates ) {
+				if ( ! empty( $filters['archived_only'] ) && empty( $item['archived'] ) ) {
 					return true;
 				}
-			)
-		);
-		$candidates = array_values(
-			array_filter(
-				$all,
-				static function ( $item ) use ( $before_id ) {
-					return 0 === $before_id || (int) $item['id'] < $before_id;
+				if ( empty( $filters['include_archived'] ) && ! empty( $item['archived'] ) ) {
+					return true;
 				}
-			)
+				if ( array_key_exists( 'project_ref', $filters ) && $item['project_ref'] !== $filters['project_ref'] ) {
+					return true;
+				}
+				if ( self::TASK_POST_TYPE === $type ) {
+					foreach ( array( 'progress', 'review', 'delivery' ) as $field ) {
+						if ( isset( $filters[ $field ] ) && '' !== $filters[ $field ] && $item[ $field ] !== $filters[ $field ] ) {
+							return true;
+						}
+					}
+				}
+				++$total;
+				if ( 0 === $before_id || (int) $item['id'] < $before_id ) {
+					++$candidates;
+					if ( count( $page ) < $limit ) {
+						$page[] = $this->{$summary}( $item );
+					}
+				}
+				return true;
+			}
 		);
-		$page       = array_slice( $candidates, 0, $limit );
-		$summary    = self::TASK_POST_TYPE === $type ? 'task_summary' : 'document_summary';
-		$page       = array_map( array( $this, $summary ), $page );
-		$more       = count( $candidates ) > count( $page );
-		$result     = array(
+		if ( is_wp_error( $scan ) ) {
+			return $scan;
+		}
+		$more   = $candidates > count( $page );
+		$result = array(
 			'items'       => $page,
-			'total'       => count( $all ),
+			'total'       => $total,
 			'returned'    => count( $page ),
 			'has_more'    => $more,
 			'next_cursor' => $more && $page ? (int) $page[ count( $page ) - 1 ]['id'] : 0,
 			'complete'    => ! $more,
 		);
-		if ( ! Bounded_Payload::fits( $result ) ) {
-			return new WP_Error( 'workspace_page_too_large', __( 'Workspace summary page exceeds the response budget; request a smaller limit.', 'wp-ai-bridge' ) );
-		}
-		return $result;
+		return Bounded_Payload::fits( $result )
+			? $result
+			: new WP_Error( 'workspace_page_too_large', __( 'Workspace summary page exceeds the response budget; request a smaller limit.', 'wp-ai-bridge' ) );
 	}
 
 	/** @param array<string,mixed> $filters Page filters. @return array<string,mixed>|WP_Error */
@@ -568,22 +647,34 @@ final class Store {
 			return new WP_Error( 'workspace_stale', __( 'Guarded Workspace field reads require the current record version and hash.', 'wp-ai-bridge' ) );
 		}
 		$offset = isset( $input['offset'] ) ? $input['offset'] : 0;
-		$limit  = isset( $input['max_bytes'] ) ? $input['max_bytes'] : 8192;
-		$window = Bounded_Payload::text_window( (string) $record[ $field ], $offset, $limit );
-		if ( is_wp_error( $window ) ) {
-			return $window;
+		$limit  = isset( $input['max_bytes'] ) ? $input['max_bytes'] : Bounded_Payload::window_limit();
+		if ( ! is_int( $limit ) || $limit < 1 || $limit > Bounded_Payload::window_limit() ) {
+			return new WP_Error( 'invalid_content_window', __( 'The requested content window is outside the supported bounds.', 'wp-ai-bridge' ) );
 		}
-		$summary                 = 'document' === $kind ? $this->document_summary( $record ) : $this->task_summary( $record );
-		$summary['field_window'] = array(
-			'field'       => $field,
-			'text'        => $window['content'],
-			'total_bytes' => $window['total_bytes'],
-			'next_offset' => $window['next_offset'],
-			'complete'    => $window['complete'],
-		);
-		$result                  = array( 'items' => array( $summary ) );
-		return Bounded_Payload::fits( $result ) ? $result :
-			new WP_Error( 'workspace_window_too_large', __( 'Workspace window exceeds the serialized response budget; reduce max_bytes.', 'wp-ai-bridge' ) );
+		$summary = 'document' === $kind ? $this->document_summary( $record ) : $this->task_summary( $record );
+		// The administrator's maximum is not a promise that Unicode-escaped
+		// JSON can carry that many source bytes in one response. Shrink a
+		// single response automatically while preserving exact byte offsets.
+		for ( $size = $limit; $size >= 1; $size = 1 === $size ? 0 : max( 1, (int) floor( $size / 2 ) ) ) {
+			$window = Bounded_Payload::text_window( (string) $record[ $field ], $offset, $size );
+			if ( is_wp_error( $window ) ) {
+				// An invalid UTF-8 offset or encoding must not be
+				// disguised as a response-size failure.
+				return $window;
+			}
+			$summary['field_window'] = array(
+				'field'       => $field,
+				'text'        => $window['content'],
+				'total_bytes' => $window['total_bytes'],
+				'next_offset' => $window['next_offset'],
+				'complete'    => $window['complete'],
+			);
+			$result                  = array( 'items' => array( $summary ) );
+			if ( Bounded_Payload::fits( $result ) ) {
+				return $result;
+			}
+		}
+		return new WP_Error( 'workspace_window_too_large', __( 'Workspace window exceeds the serialized response budget; reduce max_bytes.', 'wp-ai-bridge' ) );
 	}
 
 	/**
@@ -623,8 +714,12 @@ final class Store {
 		if ( ! $lock->is_owned() ) {
 			return new WP_Error( 'workspace_admission_unavailable', __( 'Workspace capacity admission is unavailable; no create was attempted.', 'wp-ai-bridge' ) );
 		}
-		if ( $this->record_count( self::TASK_POST_TYPE ) >= self::MAX_RECORDS ) {
-			return new WP_Error( 'workspace_task_limit', __( 'The Workspace task limit has been reached.', 'wp-ai-bridge' ) );
+		$count = $this->record_count( self::TASK_POST_TYPE );
+		if ( is_wp_error( $count ) ) {
+			return $count;
+		}
+		if ( $count >= $this->record_limit( self::TASK_POST_TYPE ) ) {
+			return new WP_Error( 'workspace_task_limit', __( 'The Workspace task record-count policy has been reached; an administrator can adjust the per-site limit.', 'wp-ai-bridge' ) );
 		}
 
 		$title = $this->bounded_text( $input['title'] ?? '', 500, false );
@@ -666,7 +761,7 @@ final class Store {
 			'acceptance'   => $this->bounded_string_list( $input['acceptance'] ?? array() ),
 			'dependencies' => $this->bounded_string_list( $input['dependencies'] ?? array() ),
 			'target_refs'  => $this->bounded_string_list( $input['target_refs'] ?? array() ),
-			'notes'        => $this->bounded_text( $input['notes'] ?? '', self::MAX_NOTES_BYTES, true ),
+			'notes'        => $this->bounded_text( $input['notes'] ?? '', self::notes_limit(), true ),
 			'progress'     => $progress,
 			'review'       => $review,
 			'delivery'     => $delivery,
@@ -737,7 +832,7 @@ final class Store {
 					$state['target_refs'] = $this->bounded_string_list( $input['target_refs'] );
 				}
 				if ( array_key_exists( 'notes', $input ) ) {
-					$state['notes'] = $this->bounded_text( $input['notes'], self::MAX_NOTES_BYTES, true );
+					$state['notes'] = $this->bounded_text( $input['notes'], self::notes_limit(), true );
 				}
 
 				return $state;
@@ -816,83 +911,136 @@ final class Store {
 		if ( null !== $project_ref && ! $this->valid_project_filter( $project_ref ) ) {
 			return new WP_Error( 'workspace_invalid_project', __( 'Requested Workspace project reference is invalid.', 'wp-ai-bridge' ) );
 		}
-		$all_tasks     = $this->checked_records( self::TASK_POST_TYPE );
-		$all_documents = $this->checked_records( self::DOCUMENT_POST_TYPE );
-		if ( is_wp_error( $all_tasks ) ) {
-			return $all_tasks;
-		}
-		if ( is_wp_error( $all_documents ) ) {
-			return $all_documents;
-		}
-		$projects = array();
-		$unbound  = false;
-		foreach ( array_merge( $all_tasks, $all_documents ) as $item ) {
-			$project = (string) $item['project_ref'];
-			if ( '' === $project ) {
+		$projects           = array();
+		$projects_truncated = false;
+		$unbound            = false;
+		$counts             = array(
+			'documents'          => 0,
+			'tasks'              => 0,
+			'active_tasks'       => 0,
+			'blocked'            => 0,
+			'review_needed'      => 0,
+			'done_tasks'         => 0,
+			'documents_total'    => 0,
+			'tasks_total'        => 0,
+			'documents_archived' => 0,
+			'tasks_archived'     => 0,
+		);
+		$sections           = array(
+			'active_tasks'  => array(),
+			'blocked_tasks' => array(),
+			'review_needed' => array(),
+			'documents'     => array(),
+		);
+		$section_totals     = array_fill_keys( array_keys( $sections ), 0 );
+		$focus              = '';
+		$last_modified      = '';
+		$track_project      = static function ( $item ) use ( &$projects, &$projects_truncated, &$unbound ) {
+			$reference = (string) $item['project_ref'];
+			if ( '' === $reference ) {
 				$unbound = true;
-			} else {
-				$projects[ $project ] = true;
+				return;
 			}
+			if ( isset( $projects[ $reference ] ) ) {
+				return;
+			}
+			// Retain only the lexicographically first 25 distinct project
+			// references. This preserves deterministic discovery without a
+			// 50k-item per-request PHP set for a very large Workspace.
+			if ( 25 === count( $projects ) ) {
+				$projects_truncated = true;
+				ksort( $projects, SORT_STRING );
+				$largest = array_key_last( $projects );
+				if ( strcmp( $reference, $largest ) >= 0 ) {
+					return;
+				}
+				unset( $projects[ $largest ] );
+			}
+			$projects[ $reference ] = true;
+		};
+		$track_modified     = static function ( $item ) use ( &$last_modified ) {
+			if ( '' === $last_modified || strcmp( $item['modified_gmt'], $last_modified ) > 0 ) {
+				$last_modified = $item['modified_gmt'];
+			}
+		};
+
+		$task_scan = $this->walk_records(
+			self::TASK_POST_TYPE,
+			function ( $task ) use ( $project_ref, &$counts, &$sections, &$section_totals, &$focus, $track_project, $track_modified ) {
+				$track_project( $task );
+				++$counts['tasks_total'];
+				if ( $task['archived'] ) {
+					++$counts['tasks_archived'];
+					return true;
+				}
+				if ( null !== $project_ref && $task['project_ref'] !== $project_ref ) {
+					return true;
+				}
+				++$counts['tasks'];
+				$track_modified( $task );
+				$members = array();
+				if ( 'done' === $task['progress'] ) {
+					++$counts['done_tasks'];
+				} else {
+					++$counts['active_tasks'];
+					$members[] = 'active_tasks';
+					if ( '' === $focus && 'in_progress' === $task['progress'] ) {
+						$focus = $task['title'];
+					}
+				}
+				if ( 'blocked' === $task['progress'] ) {
+					++$counts['blocked'];
+					$members[] = 'blocked_tasks';
+				}
+				if ( in_array( $task['review'], array( 'pending', 'changes_requested' ), true ) ) {
+					++$counts['review_needed'];
+					$members[] = 'review_needed';
+				}
+				foreach ( $members as $section ) {
+					++$section_totals[ $section ];
+					if ( count( $sections[ $section ] ) < 10 ) {
+						$sections[ $section ][] = $this->task_summary( $task );
+					}
+				}
+				return true;
+			}
+		);
+		if ( is_wp_error( $task_scan ) ) {
+			return $task_scan;
+		}
+		$document_scan = $this->walk_records(
+			self::DOCUMENT_POST_TYPE,
+			function ( $document ) use ( $project_ref, &$counts, &$sections, &$section_totals, $track_project, $track_modified ) {
+				$track_project( $document );
+				++$counts['documents_total'];
+				if ( $document['archived'] ) {
+					++$counts['documents_archived'];
+					return true;
+				}
+				if ( null !== $project_ref && $document['project_ref'] !== $project_ref ) {
+					return true;
+				}
+				++$counts['documents'];
+				++$section_totals['documents'];
+				$track_modified( $document );
+				if ( count( $sections['documents'] ) < 25 ) {
+					$sections['documents'][] = $this->document_summary( $document );
+				}
+				return true;
+			}
+		);
+		if ( is_wp_error( $document_scan ) ) {
+			return $document_scan;
 		}
 		$project_refs = array_keys( $projects );
 		sort( $project_refs, SORT_STRING );
 		$scope = null !== $project_ref ? 'project' :
 			( count( $projects ) + ( $unbound ? 1 : 0 ) > 1 ? 'mixed' :
 				( count( $projects ) > 0 ? 'single_project' : 'legacy_site' ) );
-
-		$tasks     = array_values(
-			array_filter(
-				$all_tasks,
-				static function ( $item ) use ( $project_ref ) {
-					return empty( $item['archived'] ) && ( null === $project_ref || $item['project_ref'] === $project_ref );
-				}
-			)
-		);
-		$documents = array_values(
-			array_filter(
-				$all_documents,
-				static function ( $item ) use ( $project_ref ) {
-					return empty( $item['archived'] ) && ( null === $project_ref || $item['project_ref'] === $project_ref );
-				}
-			)
-		);
-		$active    = array();
-		$blocked   = array();
-		$review    = array();
-		$done      = 0;
-		$focus     = '';
-		foreach ( $tasks as $task ) {
-			if ( 'done' === $task['progress'] ) {
-				++$done;
-			} else {
-				$active[] = $this->task_summary( $task );
-				if ( '' === $focus && 'in_progress' === $task['progress'] ) {
-					$focus = $task['title'];
-				}
-			}
-			if ( 'blocked' === $task['progress'] ) {
-				$blocked[] = $this->task_summary( $task );
-			}
-			if ( in_array( $task['review'], array( 'pending', 'changes_requested' ), true ) ) {
-				$review[] = $this->task_summary( $task );
-			}
-		}
 		if ( 'mixed' === $scope ) {
 			$focus = '';
 		}
-		$last_modified = '';
-		foreach ( array_merge( $tasks, $documents ) as $item ) {
-			if ( '' === $last_modified || strcmp( $item['modified_gmt'], $last_modified ) > 0 ) {
-				$last_modified = $item['modified_gmt'];
-			}
-		}
-		$sections = array(
-			'active_tasks'  => $active,
-			'blocked_tasks' => $blocked,
-			'review_needed' => $review,
-			'documents'     => array_map( array( $this, 'document_summary' ), $documents ),
-		);
-		$result   = array(
+		$result = array(
 			'site'                    => array(
 				'name' => (string) get_bloginfo( 'name' ),
 				'url'  => (string) home_url( '/' ),
@@ -900,47 +1048,23 @@ final class Store {
 			'project_ref'             => null !== $project_ref ? $project_ref : '',
 			'scope'                   => $scope,
 			'project_refs'            => array_slice( $project_refs, 0, 25 ),
-			'projects_truncated'      => count( $project_refs ) > 25,
+			'projects_truncated'      => $projects_truncated,
 			'current_focus'           => $this->summary_prefix( $focus, 160 ),
 			'current_focus_truncated' => strlen( $focus ) > strlen( $this->summary_prefix( $focus, 160 ) ),
-			'counts'                  => array(
-				'documents'          => count( $documents ),
-				'tasks'              => count( $tasks ),
-				'active_tasks'       => count( $active ),
-				'blocked'            => count( $blocked ),
-				'review_needed'      => count( $review ),
-				'done_tasks'         => $done,
-				'documents_total'    => count( $all_documents ),
-				'tasks_total'        => count( $all_tasks ),
-				'documents_archived' => count(
-					array_filter(
-						$all_documents,
-						static function ( $item ) {
-							return $item['archived']; }
-					)
-				),
-				'tasks_archived'     => count(
-					array_filter(
-						$all_tasks,
-						static function ( $item ) {
-							return $item['archived']; }
-					)
-				),
-			),
+			'counts'                  => $counts,
 			'last_modified_gmt'       => $last_modified,
 			'sections'                => array(),
 		);
 		foreach ( $sections as $name => $items ) {
-			$limit                       = 'documents' === $name ? 25 : 10;
-			$result[ $name ]             = array_slice( $items, 0, $limit );
+			$result[ $name ]             = $items;
 			$result['sections'][ $name ] = array(
-				'total'       => count( $items ),
-				'returned'    => count( $result[ $name ] ),
-				'has_more'    => count( $items ) > count( $result[ $name ] ),
-				'next_cursor' => count( $items ) > count( $result[ $name ] ) && $result[ $name ] ? (int) end( $result[ $name ] )['id'] : 0,
+				'total'       => $section_totals[ $name ],
+				'returned'    => count( $items ),
+				'has_more'    => $section_totals[ $name ] > count( $items ),
+				'next_cursor' => $section_totals[ $name ] > count( $items ) && $items ? (int) end( $items )['id'] : 0,
 			);
 		}
-		// Serialize first. Shrink only visibly marked projection pages if needed.
+		// Shrink only visibly marked projections if necessary to fit the wire.
 		for ( $attempt = 0; $attempt < 75 && ! Bounded_Payload::fits( $result ); ++$attempt ) {
 			$largest = '';
 			$size    = 0;
@@ -1042,6 +1166,29 @@ final class Store {
 		return is_wp_error( $resume ) ? $resume : $resume['counts'];
 	}
 
+
+	/**
+	 * Exact raw record usage, scoped to this WordPress blog. Includes archived
+	 * records because retention is explicit and no data is auto-purged.
+	 *
+	 * @return array<string,int>|WP_Error
+	 */
+	public function capacity_counts() {
+		$documents = $this->record_count( self::DOCUMENT_POST_TYPE );
+		if ( is_wp_error( $documents ) ) {
+			return $documents;
+		}
+		$tasks = $this->record_count( self::TASK_POST_TYPE );
+		if ( is_wp_error( $tasks ) ) {
+			return $tasks;
+		}
+		return array(
+			'documents' => $documents,
+			'tasks'     => $tasks,
+		);
+	}
+
+
 	/**
 	 * Reads all valid records for one internal type.
 	 *
@@ -1056,15 +1203,7 @@ final class Store {
 	 * @return int
 	 */
 	private function record_count( $post_type ) {
-		$ids = get_posts(
-			array(
-				'post_type'      => $post_type,
-				'post_status'    => array_keys( get_post_stati( array(), 'names' ) ),
-				'posts_per_page' => self::MAX_RECORDS + 1,
-				'fields'         => 'ids',
-			)
-		);
-		return count( $ids );
+		return ( new Record_Scan_Store() )->count( $post_type );
 	}
 
 	/**
@@ -1365,12 +1504,12 @@ final class Store {
 		$limits = 'document' === $kind
 			? array(
 				'title'   => 500,
-				'content' => self::MAX_DOCUMENT_BYTES,
+				'content' => self::document_limit(),
 			)
 			: array(
 				'title'       => 500,
 				'goal'        => 5000,
-				'notes'       => self::MAX_NOTES_BYTES,
+				'notes'       => self::notes_limit(),
 				'next_action' => 1000,
 				'blocker'     => 1000,
 			);

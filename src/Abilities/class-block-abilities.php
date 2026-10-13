@@ -168,7 +168,7 @@ final class Block_Abilities {
 			$identity['blocks'] = array( $this->format_block( $target, (string) $input['path'], 0, $depth, $include_attrs ) );
 		} else {
 			// Preserve small-page legacy reads, but diagnose oversized reads locally.
-			if ( strlen( (string) $post->post_content ) > Bounded_Payload::RESPONSE_BYTES ) {
+			if ( strlen( (string) $post->post_content ) > Bounded_Payload::response_limit() ) {
 				return $this->oversized_read_error();
 			}
 			$identity = $this->format_tree( $post );
@@ -468,7 +468,7 @@ final class Block_Abilities {
 		$compact              = $this->tree_identity( $updated );
 		$compact['blocks']    = array();
 		$compact['truncated'] = true;
-		if ( 'summary' === ( $input['response_mode'] ?? 'auto' ) || strlen( (string) $updated->post_content ) > Bounded_Payload::RESPONSE_BYTES ) {
+		if ( 'summary' === ( $input['response_mode'] ?? 'auto' ) || strlen( (string) $updated->post_content ) > Bounded_Payload::response_limit() ) {
 			return $compact;
 		}
 		$tree = $this->format_tree( $updated );
