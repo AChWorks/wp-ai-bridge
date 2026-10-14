@@ -6,6 +6,7 @@
  */
 return array(
 	'Manage exact authorized WordPress Cron events; targeted run-now requires a separately approved installed-provider runner, durable replay fence and verified effect.' => 'مدیریت دقیق رویدادهای مجاز وردپرس؛ اجرای فوری فقط با اجراکننده تأییدشده ارائه\u200cدهنده، جلوگیری پایدار از اجرای دوباره و اثر تأییدشده مجاز است.',
+	'Multiple targeted-run providers resolve to the same native Cron event; disable conflicting aliases before execution.' => 'چند پروفایل اجرای فوری به یک رویداد بومی Cron اشاره دارند؛ پیش از اجرا پروفایل‌های تکراری و ناسازگار را غیرفعال کنید.',
 	'This installed provider has not enabled a verified targeted Cron runner.' => 'ارائه\u200cدهنده نصب\u200cشده اجراکننده تأییدشده برای اجرای فوری این رویداد را فعال نکرده است.',
 	'Immediate Cron execution also requires Code & Extensions and the provider-specific administrator consent.' => 'اجرای فوری Cron علاوه بر مجوز افزونه\u200cها و کد، به تأیید ویژه مدیر برای این ارائه\u200cدهنده نیاز دارد.',
 	'The installed Cron provider or current execution permission changed; no targeted run was admitted.' => 'پروفایل ارائه\u200cدهنده Cron یا دسترسی اجرا تغییر کرده است؛ اجرای فوری مجاز نشد.',

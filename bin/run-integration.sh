@@ -82,6 +82,7 @@ for test in \
     issue138-native-cron-mutation-smoke.php \
     issue138-cron-native-writer-race-smoke.php \
     issue138-targeted-run-now-smoke.php \
+    issue138-targeted-alias-idempotency-smoke.php \
     issue139-wxr-discovery-smoke.php \
     issue139-native-wxr-export-smoke.php \
     issue139-wxr-staged-stream-smoke.php \

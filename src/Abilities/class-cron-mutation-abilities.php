@@ -196,7 +196,24 @@ final class Cron_Mutation_Abilities {
 				'runner_revision'    => $runner_revision,
 				'run_budget_seconds' => null !== $runner ? $profile['run_budget_seconds'] : 0,
 				'run_destructive'    => null !== $runner ? $profile['run_destructive'] : false,
+				'run_ambiguous'      => false,
 			);
+		}
+		// Multiple run-now profiles with the same immutable native target
+		// cannot independently select a runner or a destructive policy.
+		// Refuse all aliases, regardless of registration order.
+		$targets = array();
+		foreach ( $profiles as $id => $known ) {
+			if ( ! in_array( 'run_now', $known['actions'], true ) ) {
+				continue;
+			}
+			$target = hash( 'sha256', serialize( array( $known['hook'], $known['args'] ) ) );
+			if ( isset( $targets[ $target ] ) ) {
+				$profiles[ $id ]['run_ambiguous']                 = true;
+				$profiles[ $targets[ $target ] ]['run_ambiguous'] = true;
+			} else {
+				$targets[ $target ] = $id;
+			}
 		}
 		return $profiles;
 	}
@@ -426,6 +443,9 @@ final class Cron_Mutation_Abilities {
 		if ( ! $this->can_run_now( $profile ) ) {
 			return new WP_Error( 'cron_run_now_denied', __( 'Immediate Cron execution also requires Code & Extensions and the provider-specific administrator consent.', 'wp-ai-bridge' ) );
 		}
+		if ( ! empty( $profile['run_ambiguous'] ) ) {
+			return $this->ambiguous_run_provider();
+		}
 		$allowed      = array( 'action', 'profile_id', 'event_id', 'expected_snapshot', 'operation_id', 'confirm' );
 		$event_id     = $input['event_id'] ?? '';
 		$expected     = $input['expected_snapshot'] ?? '';
@@ -452,6 +472,7 @@ final class Cron_Mutation_Abilities {
 				$fresh[ $id ]['run_budget_seconds'] !== $profile['run_budget_seconds'] ||
 				$fresh[ $id ]['run_destructive'] !== $profile['run_destructive'] ||
 				! in_array( 'run_now', $fresh[ $id ]['actions'], true ) ||
+				! empty( $fresh[ $id ]['run_ambiguous'] ) ||
 				! $fresh[ $id ]['runner'] instanceof Cron_Targeted_Runner ||
 				! $this->can_run_now( $fresh[ $id ] ) || false === has_action( $profile['hook'] ) ||
 				! $this->lock_owned( $lock ) ) {
@@ -481,7 +502,7 @@ final class Cron_Mutation_Abilities {
 			}
 			$client_id   = (string) OAuth_Server::authenticated_mcp_client_id();
 			$fingerprint = hash( 'sha256', wp_json_encode( array( get_current_blog_id(), $principal, $client_id, $id, $event_id, $operation_id, $profile['runner_revision'] ) ) );
-			$name        = Cron_Run_Claim::name( $id, $event_id );
+			$name        = Cron_Run_Claim::name( $event_id );
 			$initial     = wp_json_encode(
 				array(
 					'state'       => 'in_progress',
@@ -598,6 +619,11 @@ final class Cron_Mutation_Abilities {
 			return $this->run_now_unknown();
 		}
 		return $this->receipt( 'run_now', 'already_verified', $context['event_id'], $event['timestamp'], $snapshot );
+	}
+
+	/** @return WP_Error */
+	private function ambiguous_run_provider() {
+		return new WP_Error( 'cron_run_now_ambiguous_provider', __( 'Multiple targeted-run providers resolve to the same native Cron event; disable conflicting aliases before execution.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return WP_Error */

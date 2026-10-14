@@ -29,6 +29,9 @@ wp rewrite structure '/%postname%/' --hard --allow-root
 wp rewrite flush --hard --allow-root
 wp plugin install https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip --activate --allow-root
 wp plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
+# Test installed native-callback and aliased-runner safety before external MCP.
+dc cp tests/integration/issue138-targeted-alias-idempotency-smoke.php wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue138-targeted-alias-idempotency-smoke.php
+wp eval-file /var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue138-targeted-alias-idempotency-smoke.php --user=1 --allow-root
 dc exec -T wordpress mkdir -p /var/www/html/wp-content/mu-plugins
 dc cp tests/fixtures/issue138-cron-external-provider.php wordpress:/var/www/html/wp-content/mu-plugins/wpai138-cron-external-provider.php
 # Docker cp preserves source 0640 on some runner checkouts. WordPress HTTP

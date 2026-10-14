@@ -8,7 +8,7 @@
 namespace WP_AI_Bridge\Support;
 
 /**
- * One unique option per site/provider/native event, never one per request key.
+ * One unique option per site/native event, never per profile or request key.
  *
  * The caller holds Admission_Lock('cron') for both the bounded count and
  * this table's unique-key insertion. Another PHP writer cannot be assumed to
@@ -20,9 +20,9 @@ final class Cron_Run_Claim {
 	const PREFIX       = 'wpai_cron_run_';
 	const MAX_RECEIPTS = 2048;
 
-	/** @param string $profile ID. @param string $event_id HMAC event. @return string */
-	public static function name( $profile, $event_id ) {
-		return self::PREFIX . hash( 'sha256', wp_json_encode( array( get_current_blog_id(), $profile, $event_id ) ) );
+	/** @param string $event_id HMAC native event identity. @return string */
+	public static function name( $event_id ) {
+		return self::PREFIX . hash( 'sha256', wp_json_encode( array( get_current_blog_id(), $event_id ) ) );
 	}
 
 	/** @param string $name Derived option key. @return array<string,mixed>|false */
