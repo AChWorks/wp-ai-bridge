@@ -8,6 +8,7 @@
 namespace WP_AI_Bridge\Abilities;
 
 use WP_AI_Bridge\Auth\OAuth_Server;
+use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Private_Transfer_Session;
 use WP_AI_Bridge\Support\Settings;
@@ -26,10 +27,14 @@ final class Transfer_Session_Abilities {
 	/** @var Private_Transfer_Session */
 	private $store;
 
-	/** @param Permissions $permissions Bridge delegation. */
-	public function __construct( Permissions $permissions ) {
+	/** @var Mutation_Log */
+	private $log;
+
+	/** @param Permissions $permissions Bridge delegation. @param Mutation_Log|null $log Shared Activity log. */
+	public function __construct( Permissions $permissions, ?Mutation_Log $log = null ) {
 		$this->permissions = $permissions;
 		$this->store       = new Private_Transfer_Session( $permissions );
+		$this->log         = $log ? $log : new Mutation_Log();
 	}
 
 	/** @return array<int,object> */
@@ -241,10 +246,10 @@ final class Transfer_Session_Abilities {
 				! $this->can_purpose( $input['purpose'] ) ||
 				! is_int( $input['total_bytes'] ) || $input['total_bytes'] < 0 ||
 				! is_string( $input['sha256'] ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $input['sha256'] ) ) {
-				return $this->invalid();
+				return $this->diagnose( 'begin', $this->invalid(), 'validation' );
 			}
 			if ( $input['total_bytes'] > $policy['file'] ) {
-				return new WP_Error( 'transfer_size_setting', __( 'The file exceeds the current administrator-configured transfer size. Increase the transfer file and reservation budgets in WP AI Bridge Settings.', 'wp-ai-bridge' ) );
+				return $this->diagnose( 'begin', new WP_Error( 'transfer_size_setting', __( 'The file exceeds the current administrator-configured transfer size. Increase the transfer file and reservation budgets in WP AI Bridge Settings.', 'wp-ai-bridge' ) ), 'validation' );
 			}
 			$receipt = $this->store->begin(
 				$input['purpose'],
@@ -256,6 +261,7 @@ final class Transfer_Session_Abilities {
 				$policy['ttl'],
 				$policy['active']
 			);
+			$this->diagnose( 'begin', $receipt );
 			return is_wp_error( $receipt ) ? $receipt : $this->result( $action, $receipt, $policy, $chunk );
 		}
 		$id = $input['transfer_id'] ?? '';
@@ -267,6 +273,7 @@ final class Transfer_Session_Abilities {
 				return $this->invalid();
 			}
 			$released = $this->store->admin_release_unknown( $id );
+			$this->diagnose( $action, $released );
 			return is_wp_error( $released ) ? $released : $this->result( $action, $released, $policy, $chunk );
 		}
 		if ( 'append' === $action ) {
@@ -351,7 +358,22 @@ final class Transfer_Session_Abilities {
 				);
 			}
 		}
+		$this->diagnose( $action, $receipt );
 		return is_wp_error( $receipt ) ? $receipt : $this->result( $action, $receipt, $policy, $chunk );
+	}
+
+	/**
+	 * Record a provider result after authenticated callback entry, never
+	 * interrupting the actual transfer outcome if log storage fails.
+	 *
+	 * @param string $action Safe fixed operation.
+	 * @param mixed $result Original provider result.
+	 * @param string $phase Provider or validation.
+	 * @return mixed Unaltered provider result.
+	 */
+	private function diagnose( $action, $result, $phase = 'provider' ) {
+		$this->log->record_transfer( $action, $result, $phase );
+		return $result;
 	}
 
 	/** @return WP_Error */

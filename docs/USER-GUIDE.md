@@ -44,6 +44,10 @@ Legacy full-list and **Export Workspace** are allowed only if the complete encod
 
 **WP AI Bridge → Activity** shows the bounded Bridge mutation log. The log records operation metadata needed for administration and troubleshooting; it is not intended to store submitted content, credentials, OAuth secrets, or arbitrary payloads.
 
+Private transfer `begin` results and selected authenticated transfer failures are also recorded here, using fixed error codes, UTC time, operation/phase, and opaque per-event references. At most 50 entries are stored; entries older than 30 days are hidden and discarded on the next recorded event; busy or concurrent writes mean the list is useful for diagnosis, not a guaranteed exhaustive audit trail. Never infer that a request reached WordPress solely from a Gateway error: Gateway-side rejection, OAuth denial before the callback, transport faults and missing permissions may leave **no Bridge Activity entry**. Do not disable security or broaden OAuth rights to force a passing transfer.
+
+An authenticated WordPress site administrator with delegated **Site Read** may query the bounded, read-only `wp-ai-bridge/diagnostics-read` Ability. This returns only sanitized provider event metadata—no user IDs, Workspace content, paths, tokens or raw traces. It cannot read or diagnose Gateway logs, and it does not authorize any transfer operation. For a rejected file upload, first inspect Activity and correlate the UTC time; if no event was recorded, investigate the Gateway and WordPress callback/authentication boundary separately. Existing Activity records are not rewritten on upgrade.
+
 ## Settings
 
 **WP AI Bridge → Settings** contains:
