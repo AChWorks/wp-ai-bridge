@@ -8,6 +8,10 @@
 namespace WP_AI_Bridge\Abilities;
 
 use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Operation_Content_Limits;
+use WP_AI_Bridge\Support\Private_Transfer_Session;
+use WP_AI_Bridge\Support\Transfer_Settings;
+use WP_AI_Bridge\Support\Source_PHP_Syntax_Validator;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Settings;
 use WP_Error;
@@ -99,6 +103,46 @@ final class Source_Editing_Abilities {
 				'output_schema'       => $this->apply_output_schema(),
 				'permission_callback' => array( $this, 'can_source_action' ),
 				'execute_callback'    => array( $this, 'apply' ),
+				'meta'                => $this->meta( false, true, false ),
+			)
+		);
+
+		$registered[] = wp_register_ability(
+			'wp-ai-bridge/source-file-snapshot',
+			array(
+				'label'               => __( 'Snapshot Installed Source to Private Transfer', 'wp-ai-bridge' ),
+				'description'         => __( 'Freeze one authorized source file for digest-checked private byte windows.', 'wp-ai-bridge' ),
+				'category'            => Registrar::CATEGORY,
+				'input_schema'        => $this->source_transfer_input_schema( false ),
+				'output_schema'       => $this->source_snapshot_output_schema(),
+				'permission_callback' => array( $this, 'can_source_action' ),
+				'execute_callback'    => array( $this, 'snapshot' ),
+				'meta'                => $this->meta( false, false, false ),
+			)
+		);
+		$registered[] = wp_register_ability(
+			'wp-ai-bridge/source-file-preview-transfer',
+			array(
+				'label'               => __( 'Preview Verified Private Source Candidate', 'wp-ai-bridge' ),
+				'description'         => __( 'Validate a verified private source lease against one installed target without editing.', 'wp-ai-bridge' ),
+				'category'            => Registrar::CATEGORY,
+				'input_schema'        => $this->source_transfer_input_schema( true ),
+				'output_schema'       => $this->preview_output_schema(),
+				'permission_callback' => array( $this, 'can_source_action' ),
+				'execute_callback'    => array( $this, 'preview_transfer' ),
+				'meta'                => $this->meta( true, false, true ),
+			)
+		);
+		$registered[] = wp_register_ability(
+			'wp-ai-bridge/source-file-apply-transfer',
+			array(
+				'label'               => __( 'Apply Verified Private Source Candidate', 'wp-ai-bridge' ),
+				'description'         => __( 'Apply a preview-bound source lease with existing atomic CAS and recovery.', 'wp-ai-bridge' ),
+				'category'            => Registrar::CATEGORY,
+				'input_schema'        => $this->source_transfer_apply_schema(),
+				'output_schema'       => $this->apply_output_schema(),
+				'permission_callback' => array( $this, 'can_source_action' ),
+				'execute_callback'    => array( $this, 'apply_transfer' ),
 				'meta'                => $this->meta( false, true, false ),
 			)
 		);
@@ -230,7 +274,7 @@ final class Source_Editing_Abilities {
 	 * @param array<string,mixed> $input Ability input.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public function preview( $input ) {
+	public function preview( $input, $private_path = '' ) {
 		if ( ! $this->can_source_action( $input ) ) {
 			return $this->permission_denied();
 		}
@@ -246,7 +290,7 @@ final class Source_Editing_Abilities {
 			return $preimage;
 		}
 		$candidate = $input['candidate'];
-		$syntax    = $this->validate_candidate( $target, $candidate );
+		$syntax    = $this->validate_candidate( $target, $candidate, $private_path );
 		if ( is_wp_error( $syntax ) ) {
 			return $syntax;
 		}
@@ -273,7 +317,7 @@ final class Source_Editing_Abilities {
 	 * @param array<string,mixed> $input Ability input.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public function apply( $input ) {
+	public function apply( $input, $transfer_id = '', $private_path = '' ) {
 		if ( ! $this->can_source_action( $input ) ) {
 			return $this->permission_denied();
 		}
@@ -287,7 +331,7 @@ final class Source_Editing_Abilities {
 			return $target;
 		}
 		$candidate = $input['candidate'];
-		$syntax    = $this->validate_candidate( $target, $candidate );
+		$syntax    = $this->validate_candidate( $target, $candidate, $private_path );
 		if ( is_wp_error( $syntax ) ) {
 			return $syntax;
 		}
@@ -341,6 +385,7 @@ final class Source_Editing_Abilities {
 				'canonical_path'   => $target['canonical_path'],
 				'preimage_sha256'  => $preimage_hash,
 				'candidate_sha256' => $candidate_hash,
+				'candidate_bytes'  => strlen( $candidate ),
 				'preimage'         => $preimage,
 				'created_gmt'      => gmdate( 'c' ),
 			);
@@ -348,6 +393,22 @@ final class Source_Editing_Abilities {
 				return new WP_Error( 'source_recovery_required', __( 'Recovery material already exists for another source edit.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
 			register_shutdown_function( array( $this, 'shutdown_recover' ), $token );
+
+			// The private lease's irreversible claim is fenced *after* source
+			// recovery material is saved and *before* the first native write.
+			if ( '' !== $transfer_id ) {
+				$claim = ( new Private_Transfer_Session( $this->permissions ) )->claim_source(
+					$transfer_id,
+					$this->source_transfer_purpose( $target ),
+					$this->source_target_hash( $target ),
+					$preimage_hash,
+					$candidate_hash,
+					$expected_id
+				);
+				if ( is_wp_error( $claim ) ) {
+					return $claim;
+				}
+			}
 
 			if ( function_exists( 'ignore_user_abort' ) ) {
 				ignore_user_abort( true );
@@ -379,6 +440,17 @@ final class Source_Editing_Abilities {
 				return new WP_Error( 'source_recovery_cleanup_failed', __( 'The source candidate was verified, but Bridge could not clear its private recovery record.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
 
+			if ( '' !== $transfer_id ) {
+				$finished = ( new Private_Transfer_Session( $this->permissions ) )->finish_source(
+					$transfer_id,
+					$this->source_transfer_purpose( $target ),
+					$this->source_target_hash( $target ),
+					$candidate_hash
+				);
+				if ( is_wp_error( $finished ) ) {
+					return new WP_Error( 'source_transfer_outcome_unknown', __( 'Source was saved but the private transfer claim is uncertain; inspect the exact file, never retry blindly.', 'wp-ai-bridge' ), array( 'outcome' => 'uncertain_partial_state' ) );
+				}
+			}
 			$this->log->record( 'wp-ai-bridge/source-file-apply', $target['kind'], 0, true, '' );
 			return array(
 				'kind'               => $target['kind'],
@@ -391,6 +463,179 @@ final class Source_Editing_Abilities {
 		} finally {
 			$this->release_file_lock();
 		}
+	}
+
+	/**
+	 * Freeze a resolved, permission-checked installed source into the existing
+	 * private byte plane. Clients retrieve bounded windows via private-transfer.
+	 * No complete PHP source is sent in this Ability's MCP response.
+	 *
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function snapshot( $input ) {
+		if ( ! $this->can_source_action( $input ) ) {
+			return $this->permission_denied();
+		}
+		if ( ! is_array( $input ) || 3 !== count( $input ) ||
+			array_diff( array_keys( $input ), array( 'kind', 'extension', 'file' ) ) ) {
+			return $this->invalid_input();
+		}
+		$target = $this->resolve_target_from_input( $input );
+		if ( is_wp_error( $target ) ) {
+			return $target;
+		}
+		clearstatcache( true, $target['canonical_path'] );
+		$size = filesize( $target['canonical_path'] );
+		if ( ! is_int( $size ) || $size < 0 ||
+			$size > ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SOURCE_MIB ) ) {
+			return new WP_Error( 'source_file_too_large', __( 'The installed source file exceeds the Bridge source-editing safety bound.', 'wp-ai-bridge' ) );
+		}
+		$policy  = ( new Transfer_Settings() )->bytes();
+		$receipt = ( new Private_Transfer_Session( $this->permissions ) )->stage_source_export(
+			$target['canonical_path'],
+			$policy,
+			$target['kind']
+		);
+		if ( is_wp_error( $receipt ) ) {
+			return $receipt;
+		}
+		return array(
+			'kind'            => $target['kind'],
+			'extension'       => $target['extension'],
+			'file'            => $target['file'],
+			'transfer_id'     => $receipt['id'],
+			'total_bytes'     => $receipt['total'],
+			'sha256'          => $receipt['sha256'],
+			'max_chunk_bytes' => $receipt['chunk'],
+		);
+	}
+
+	/** @return string Private transfer purpose for an authorized resolved target. */
+	private function source_transfer_purpose( $target ) {
+		return 'plugin' === $target['kind'] ? 'source_plugin' : 'source_theme';
+	}
+
+	/** @return string Source identity includes exact install path and site. */
+	private function source_target_hash( $target ) {
+		return hash(
+			'sha256',
+			(int) get_current_blog_id() . "\0" . $target['kind'] . "\0" .
+			$target['extension'] . "\0" . $target['file'] . "\0" . $target['canonical_path']
+		);
+	}
+
+	/**
+	 * Materialize one explicitly verified owner/client/site-bound source lease.
+	 * The complete source still fits the native WordPress atomic writer, not
+	 * the MCP message envelope, with current effective PHP memory checked.
+	 *
+	 * @return array{candidate:string,path:string}|WP_Error
+	 */
+	private function transfer_candidate( $input, $target ) {
+		$id = $input['transfer_id'] ?? '';
+		if ( ! is_string( $id ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $id ) ) {
+			return $this->invalid_input();
+		}
+		$lease = ( new Private_Transfer_Session( $this->permissions ) )->verified_private_source(
+			$id,
+			$this->source_transfer_purpose( $target )
+		);
+		if ( is_wp_error( $lease ) ) {
+			return $lease;
+		}
+		if ( $lease['bytes'] > ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SOURCE_MIB ) ) {
+			return new WP_Error( 'source_candidate_too_large', __( 'The source candidate exceeds the Bridge source-editing safety bound.', 'wp-ai-bridge' ) );
+		}
+		$memory = $this->check_source_memory( $lease['bytes'] );
+		if ( is_wp_error( $memory ) ) {
+			return $memory;
+		}
+		$bytes = file_get_contents( $lease['path'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Owner-only exact verified private transfer path; no user path accepted.
+		if ( ! is_string( $bytes ) || strlen( $bytes ) !== $lease['bytes'] ||
+			! hash_equals( $lease['sha256'], hash( 'sha256', $bytes ) ) ) {
+			return new WP_Error( 'transfer_source_changed', __( 'Verified private source bytes changed before consumption.', 'wp-ai-bridge' ) );
+		}
+		return array(
+			'candidate' => $bytes,
+			'path'      => $lease['path'],
+		);
+	}
+
+	/**
+	 * Preview a staged file without removing its claim-free verified status.
+	 * All existing syntax/preimage/native policy checks are shared with inline.
+	 *
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function preview_transfer( $input ) {
+		if ( ! $this->can_source_action( $input ) ) {
+			return $this->permission_denied();
+		}
+		if ( ! is_array( $input ) || 4 !== count( $input ) ||
+			array_diff( array_keys( $input ), array( 'kind', 'extension', 'file', 'transfer_id' ) ) ) {
+			return $this->invalid_input();
+		}
+		$target = $this->resolve_target_from_input( $input );
+		if ( is_wp_error( $target ) ) {
+			return $target;
+		}
+		$source = $this->transfer_candidate( $input, $target );
+		if ( is_wp_error( $source ) ) {
+			return $source;
+		}
+		$preview = $this->preview(
+			array_merge( $input, array( 'candidate' => $source['candidate'] ) ),
+			$source['path']
+		);
+		if ( is_wp_error( $preview ) ) {
+			return $preview;
+		}
+		$bound = ( new Private_Transfer_Session( $this->permissions ) )->bind_source_preview(
+			$input['transfer_id'],
+			$this->source_transfer_purpose( $target ),
+			$this->source_target_hash( $target ),
+			$preview['preimage_sha256'],
+			$preview['candidate_sha256'],
+			$preview['candidate_id']
+		);
+		return is_wp_error( $bound ) ? $bound : $preview;
+	}
+
+	/**
+	 * Apply an exact preview-bound verified lease via the single existing
+	 * atomic Source Editing writer, with a durable one-way transfer claim.
+	 *
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function apply_transfer( $input ) {
+		if ( ! $this->can_source_action( $input ) ) {
+			return $this->permission_denied();
+		}
+		if ( ! is_array( $input ) || 7 !== count( $input ) ||
+			array_diff( array_keys( $input ), array( 'kind', 'extension', 'file', 'transfer_id', 'preimage_sha256', 'candidate_sha256', 'candidate_id' ) ) ) {
+			return $this->invalid_input();
+		}
+		foreach ( array( 'preimage_sha256', 'candidate_sha256', 'candidate_id' ) as $key ) {
+			if ( ! is_string( $input[ $key ] ?? null ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $input[ $key ] ) ) {
+				return $this->invalid_input();
+			}
+		}
+		$target = $this->resolve_target_from_input( $input );
+		if ( is_wp_error( $target ) ) {
+			return $target;
+		}
+		$source = $this->transfer_candidate( $input, $target );
+		if ( is_wp_error( $source ) ) {
+			return $source;
+		}
+		if ( ! hash_equals( $input['candidate_sha256'], hash( 'sha256', $source['candidate'] ) ) ) {
+			return new WP_Error( 'source_candidate_changed', __( 'The submitted source candidate no longer matches the previewed candidate hash.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
+		}
+		return $this->apply(
+			array_merge( $input, array( 'candidate' => $source['candidate'] ) ),
+			$input['transfer_id'],
+			$source['path']
+		);
 	}
 
 	/**
@@ -710,13 +955,13 @@ final class Source_Editing_Abilities {
 	 * @param array<string,mixed> $target Resolved target.
 	 * @return string|WP_Error
 	 */
-	private function read_target_bytes( $target ) {
+	private function read_target_bytes( $target, $recovery_limit = 0 ) {
 		$filesystem = $this->filesystem();
 		$size       = $filesystem->size( $target['canonical_path'] );
 		if ( false === $size || $size < 0 ) {
 			return new WP_Error( 'source_read_failed', __( 'The installed source file could not be read.', 'wp-ai-bridge' ) );
 		}
-		if ( $size > self::MAX_SOURCE_BYTES ) {
+		if ( $size > max( ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SOURCE_MIB ), $recovery_limit ) ) {
 			return new WP_Error( 'source_file_too_large', __( 'The installed source file exceeds the Bridge source-editing safety bound.', 'wp-ai-bridge' ) );
 		}
 		$bytes = $filesystem->get_contents( $target['canonical_path'] );
@@ -733,17 +978,36 @@ final class Source_Editing_Abilities {
 	 * @param string              $candidate Candidate bytes.
 	 * @return true|WP_Error
 	 */
-	private function validate_candidate( $target, $candidate ) {
-		if ( strlen( $candidate ) > self::MAX_SOURCE_BYTES ) {
+	private function validate_candidate( $target, $candidate, $private_path = '' ) {
+		$size = strlen( $candidate );
+		if ( $size > ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SOURCE_MIB ) ) {
 			return new WP_Error( 'source_candidate_too_large', __( 'The source candidate exceeds the Bridge source-editing safety bound.', 'wp-ai-bridge' ) );
+		}
+		$memory = $this->check_source_memory( $size );
+		if ( is_wp_error( $memory ) ) {
+			return $memory;
 		}
 		if ( ! $target['php'] ) {
 			return true;
 		}
-		try {
-			token_get_all( $candidate, TOKEN_PARSE );
-		} catch ( \ParseError $error ) {
-			return new WP_Error( 'source_php_syntax_invalid', __( 'The PHP source candidate has invalid syntax and was not written.', 'wp-ai-bridge' ) );
+		return ( new Source_PHP_Syntax_Validator() )->validate( $candidate, $private_path );
+	}
+
+	/**
+	 * Native replacement/recovery materializes multiple full source copies;
+	 * protect the parent PHP process *before* reading/decoding a new candidate.
+	 * Unlimited memory_limit provides no defensible safety envelope.
+	 *
+	 * @return true|WP_Error
+	 */
+	private function check_source_memory( $bytes ) {
+		$limit = Operation_Content_Limits::effective_memory_bytes();
+		if ( ! is_int( $limit ) || $limit < 1 ) {
+			return new WP_Error( 'source_host_memory_unknown', __( 'Source editing needs a finite PHP memory limit to guarantee bounded recovery copies.', 'wp-ai-bridge' ) );
+		}
+		$headroom = $limit - memory_get_usage( true ) - ( 8 * Operation_Content_Limits::MIB );
+		if ( $headroom < 0 || $bytes > intdiv( $headroom, 8 ) ) {
+			return new WP_Error( 'source_host_memory', __( 'Current PHP memory cannot safely retain the exact source, candidate, syntax and recovery copies.', 'wp-ai-bridge' ) );
 		}
 		return true;
 	}
@@ -849,7 +1113,7 @@ final class Source_Editing_Abilities {
 	 * @param string              $phase         apply|recovery|handoff.
 	 * @return true|WP_Error
 	 */
-	private function replace_exact_bytes( $target, $expected_hash, $bytes, $token, $phase ) {
+	private function replace_exact_bytes( $target, $expected_hash, $bytes, $token, $phase, $recovery_limit = 0 ) {
 		$path  = $target['canonical_path'];
 		$paths = $this->replacement_paths( $path, $token, $phase );
 		if ( is_wp_error( $paths ) ) {
@@ -882,7 +1146,7 @@ final class Source_Editing_Abilities {
 			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_target_changed', __( 'The installed source target changed before the guarded replacement boundary.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 		}
 
-		$held = $this->read_regular_path( $paths['hold'] );
+		$held = $this->read_regular_path( $paths['hold'], $recovery_limit );
 		if ( is_wp_error( $held ) ) {
 			$restored = $this->restore_quarantined_path( $paths['hold'], $path );
 			$cleanup  = $this->remove_replacement_artifact( $paths['stage'] );
@@ -926,7 +1190,7 @@ final class Source_Editing_Abilities {
 		if ( ! @link( $paths['stage'], $path ) ) {
 			$competing_path = $this->path_exists( $path );
 			if ( $competing_path ) {
-				$held_after = $this->read_regular_path( $paths['hold'] );
+				$held_after = $this->read_regular_path( $paths['hold'], $recovery_limit );
 				$cleanup    = $this->remove_replacement_artifact( $paths['stage'] );
 				if ( is_wp_error( $cleanup ) ) {
 					return $cleanup;
@@ -959,14 +1223,14 @@ final class Source_Editing_Abilities {
 		if ( is_wp_error( $stage_cleanup ) ) {
 			return $stage_cleanup;
 		}
-		$published = $this->read_regular_path( $path );
+		$published = $this->read_regular_path( $path, $recovery_limit );
 		$wanted    = hash( 'sha256', $bytes );
 		if ( is_wp_error( $published ) || ! hash_equals( $wanted, hash( 'sha256', (string) $published ) ) ) {
 			return new WP_Error( 'source_write_state_uncertain', __( 'Bridge published the replacement boundary but could not verify the exact current source bytes. Recovery material was retained.', 'wp-ai-bridge' ), array( 'outcome' => 'uncertain_partial_state' ) );
 		}
 
 		// Detect a writer that retained the pre-replacement inode and changed it before cleanup.
-		$held_after = $this->read_regular_path( $paths['hold'] );
+		$held_after = $this->read_regular_path( $paths['hold'], $recovery_limit );
 		if ( is_wp_error( $held_after ) ) {
 			return new WP_Error( 'source_recovery_required', __( 'Bridge could not verify the quarantined pre-replacement source before cleanup.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
@@ -1088,13 +1352,13 @@ final class Source_Editing_Abilities {
 	 * @param string $path Exact internal path.
 	 * @return string|WP_Error
 	 */
-	private function read_regular_path( $path ) {
+	private function read_regular_path( $path, $recovery_limit = 0 ) {
 		if ( is_link( $path ) || ! is_file( $path ) ) {
 			return new WP_Error( 'source_read_failed' );
 		}
 		$filesystem = $this->filesystem();
 		$size       = $filesystem->size( $path );
-		if ( false === $size || $size < 0 || $size > self::MAX_SOURCE_BYTES ) {
+		if ( false === $size || $size < 0 || $size > max( ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SOURCE_MIB ), $recovery_limit ) ) {
 			return new WP_Error( 'source_read_failed' );
 		}
 		$bytes = $filesystem->get_contents( $path );
@@ -1229,6 +1493,29 @@ final class Source_Editing_Abilities {
 		return ! empty( $target['php'] ) && ( ! empty( $target['active'] ) || ! empty( $target['network_active'] ) );
 	}
 
+
+	/**
+	 * A lowered site budget must never strand a previously accepted durable
+	 * source recovery receipt. This is used ONLY on the owner-bound recovery
+	 * path, never to admit a new preview/read/apply above the new policy.
+	 *
+	 * The existing record carries the exact preimage bytes and candidate
+	 * digest; newer records also carry candidate length. Older records predate
+	 * operator overrides and could have held at most the legacy 2 MiB bound.
+	 *
+	 * @param array<string,mixed> $record Existing private recovery receipt.
+	 * @return int Recovery read cap, no greater than the current PHP memory envelope.
+	 */
+	private function recovery_read_limit( $record ) {
+		$policy    = new Operation_Content_Limits();
+		$maxima    = $policy->upper_bounds();
+		$host_max  = $maxima[ Operation_Content_Limits::SOURCE_MIB ] * Operation_Content_Limits::MIB;
+		$requested = $policy->bytes( Operation_Content_Limits::SOURCE_MIB );
+		$old_bytes = isset( $record['preimage'] ) && is_string( $record['preimage'] ) ? strlen( $record['preimage'] ) : 0;
+		$candidate = isset( $record['candidate_bytes'] ) && is_int( $record['candidate_bytes'] ) ? $record['candidate_bytes'] : self::MAX_SOURCE_BYTES;
+		return min( $host_max, max( $requested, $old_bytes, $candidate ) );
+	}
+
 	/**
 	 * Attempts safe compensation after a write/persistence failure.
 	 *
@@ -1240,7 +1527,7 @@ final class Source_Editing_Abilities {
 		if ( is_wp_error( $target ) ) {
 			return new WP_Error( 'source_write_state_uncertain', __( 'The source write outcome is uncertain and its recovery target can no longer be resolved safely.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
-		$current = $this->read_target_bytes( $target );
+		$current = $this->read_target_bytes( $target, $this->recovery_read_limit( $record ) );
 		if ( is_wp_error( $current ) ) {
 			return new WP_Error( 'source_write_state_uncertain', __( 'The source write outcome is uncertain and Bridge could not verify current persisted bytes.', 'wp-ai-bridge' ), array( 'outcome' => 'uncertain_partial_state' ) );
 		}
@@ -1267,10 +1554,11 @@ final class Source_Editing_Abilities {
 	 */
 	private function restore_record( $record ) {
 		$target = $this->resolve_record_target( $record );
+		$limit  = $this->recovery_read_limit( $record );
 		if ( is_wp_error( $target ) ) {
 			return new WP_Error( 'source_recovery_target_changed', __( 'The pending source recovery target changed and cannot be restored automatically.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
-		$current = $this->read_target_bytes( $target );
+		$current = $this->read_target_bytes( $target, $limit );
 		if ( is_wp_error( $current ) ) {
 			return new WP_Error( 'source_recovery_read_failed', __( 'Bridge could not read the pending recovery target safely.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
@@ -1285,11 +1573,11 @@ final class Source_Editing_Abilities {
 		if ( ! hash_equals( (string) $record['candidate_sha256'], $current_hash ) ) {
 			return new WP_Error( 'source_recovery_conflict', __( 'The source file changed after the Bridge candidate. Recovery will not overwrite newer bytes.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 		}
-		$write = $this->replace_exact_bytes( $target, (string) $record['candidate_sha256'], (string) $record['preimage'], (string) $record['token'], 'recovery' );
+		$write = $this->replace_exact_bytes( $target, (string) $record['candidate_sha256'], (string) $record['preimage'], (string) $record['token'], 'recovery', $limit );
 		if ( is_wp_error( $write ) ) {
 			return $write;
 		}
-		$verified = $this->read_target_bytes( $target );
+		$verified = $this->read_target_bytes( $target, $limit );
 		if ( is_wp_error( $verified ) || ! hash_equals( (string) $record['preimage_sha256'], hash( 'sha256', (string) $verified ) ) ) {
 			return new WP_Error( 'source_recovery_verification_failed', __( 'Bridge attempted recovery but could not verify the exact previous source bytes. Recovery material was retained.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
@@ -1323,7 +1611,7 @@ final class Source_Editing_Abilities {
 			if ( ! $this->path_exists( $paths['hold'] ) ) {
 				continue;
 			}
-			$held = $this->read_regular_path( $paths['hold'] );
+			$held = $this->read_regular_path( $paths['hold'], $this->recovery_read_limit( $record ) );
 			if ( is_wp_error( $held ) || ! in_array( hash( 'sha256', (string) $held ), $known, true ) ) {
 				return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
@@ -1362,7 +1650,7 @@ final class Source_Editing_Abilities {
 				return $paths;
 			}
 			if ( $this->path_exists( $paths['hold'] ) ) {
-				$held = $this->read_regular_path( $paths['hold'] );
+				$held = $this->read_regular_path( $paths['hold'], $this->recovery_read_limit( $record ) );
 				if ( is_wp_error( $held ) ) {
 					return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
@@ -1382,7 +1670,7 @@ final class Source_Editing_Abilities {
 				if ( ! $this->path_exists( $artifact ) ) {
 					continue;
 				}
-				$artifact_bytes = $this->read_regular_path( $artifact );
+				$artifact_bytes = $this->read_regular_path( $artifact, $this->recovery_read_limit( $record ) );
 				if ( is_wp_error( $artifact_bytes ) || ! in_array( hash( 'sha256', (string) $artifact_bytes ), $known, true ) ) {
 					return new WP_Error( 'source_recovery_artifact_pending', __( 'A private source replacement artifact has unexpected bytes and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
@@ -1671,7 +1959,7 @@ final class Source_Editing_Abilities {
 		$properties              = $this->target_properties();
 		$properties['candidate'] = array(
 			'type'      => 'string',
-			'maxLength' => self::MAX_SOURCE_BYTES,
+			'maxLength' => ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SOURCE_MIB ),
 		);
 		$required                = array( 'kind', 'extension', 'file', 'candidate' );
 		if ( $apply ) {
@@ -1693,6 +1981,56 @@ final class Source_Editing_Abilities {
 			'type'                 => 'object',
 			'properties'           => $properties,
 			'required'             => $required,
+			'additionalProperties' => false,
+		);
+	}
+
+	/** @param bool $with_lease True for preview, false for source snapshot. @return array<string,mixed> */
+	private function source_transfer_input_schema( $with_lease ) {
+		$properties = $this->target_properties();
+		$required   = array( 'kind', 'extension', 'file' );
+		if ( $with_lease ) {
+			$properties['transfer_id'] = array(
+				'type'    => 'string',
+				'pattern' => '^[a-f0-9]{64}$',
+			);
+			$required[]                = 'transfer_id';
+		}
+		return array(
+			'type'                 => 'object',
+			'properties'           => $properties,
+			'required'             => $required,
+			'additionalProperties' => false,
+		);
+	}
+
+	/** @return array<string,mixed> */
+	private function source_transfer_apply_schema() {
+		$schema = $this->source_transfer_input_schema( true );
+		foreach ( array( 'preimage_sha256', 'candidate_sha256', 'candidate_id' ) as $key ) {
+			$schema['properties'][ $key ] = array(
+				'type'    => 'string',
+				'pattern' => '^[a-f0-9]{64}$',
+			);
+			$schema['required'][]         = $key;
+		}
+		return $schema;
+	}
+
+	/** @return array<string,mixed> */
+	private function source_snapshot_output_schema() {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'kind'            => array( 'type' => 'string' ),
+				'extension'       => array( 'type' => 'string' ),
+				'file'            => array( 'type' => 'string' ),
+				'transfer_id'     => array( 'type' => 'string' ),
+				'total_bytes'     => array( 'type' => 'integer' ),
+				'sha256'          => array( 'type' => 'string' ),
+				'max_chunk_bytes' => array( 'type' => 'integer' ),
+			),
+			'required'             => array( 'kind', 'extension', 'file', 'transfer_id', 'total_bytes', 'sha256', 'max_chunk_bytes' ),
 			'additionalProperties' => false,
 		);
 	}

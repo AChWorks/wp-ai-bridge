@@ -10,6 +10,7 @@ $messages = array_merge(
 	require __DIR__ . '/fa_IR-parts/rest-discovery.php',
 	require __DIR__ . '/fa_IR-parts/rest-invocation.php',
 	require __DIR__ . '/fa_IR-parts/rest-invocation-capacity.php',
+	require __DIR__ . '/fa_IR-parts/operation-content-capacity.php',
 	require __DIR__ . '/fa_IR-parts/extension-authorization.php',
 	require __DIR__ . '/fa_IR-parts/ai-clients.php',
 	require __DIR__ . '/fa_IR-parts/large-payloads.php',

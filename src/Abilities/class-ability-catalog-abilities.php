@@ -8,6 +8,7 @@
 namespace WP_AI_Bridge\Abilities;
 
 use WP_AI_Bridge\Support\Native_Ability_Delegation;
+use WP_AI_Bridge\Support\Operation_Content_Limits;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Settings;
 use WP_Error;
@@ -228,7 +229,7 @@ final class Ability_Catalog_Abilities {
 			'total_pages'          => (int) ceil( $total / $per_page ),
 			'execution_permission' => 'not_evaluated',
 		);
-		$remaining = self::MAX_RESPONSE_BYTES;
+		$remaining = ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::CATALOG_KIB );
 		if ( ! $this->is_json_data( $result, $remaining ) ) {
 			return $remaining < 0 ? $this->response_too_large() : $this->invalid_contract();
 		}
@@ -237,7 +238,7 @@ final class Ability_Catalog_Abilities {
 		} catch ( \JsonException $exception ) {
 			return $this->invalid_contract();
 		}
-		if ( strlen( $json ) > self::MAX_RESPONSE_BYTES ) {
+		if ( strlen( $json ) > ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::CATALOG_KIB ) ) {
 			return $this->response_too_large();
 		}
 		return $result;

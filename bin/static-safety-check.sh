@@ -52,13 +52,15 @@ if grep -nE '(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|e
     echo "ERROR: private transfer staging grew forbidden execution/network/filesystem primitives." >&2
     exit 1
 fi
+# Issue #147 adds exactly one Source Editing lease consumer using the same
+# already durable one-way claim, without an additional publication primitive.
 # Exactly two audited same-directory atomic publications (checkpoint and claim);
 # never admit caller-named rename, generic filesystem endpoints or shell IO.
 if [[ "$(grep -cF 'rename( $temp, $dest )' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'rename( $temporary, $path )' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'durably_sync_claim_directory( $root )' "$private_stage" || true)" != "2" ||
       "$(grep -cF '@fsync( $directory )' "$private_stage" || true)" != "1" ||
-      "$(grep -cF 'fence_native_effect(' "$private_stage" || true)" != "5" ||
+      "$(grep -cF 'fence_native_effect(' "$private_stage" || true)" != "6" ||
       "$(grep -cF 'recover_scratch(' "$private_stage" || true)" != "4" ]]; then
     echo "ERROR: transfer checkpoint or coordinated scratch recovery changed." >&2
     exit 1

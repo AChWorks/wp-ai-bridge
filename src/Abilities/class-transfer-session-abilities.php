@@ -50,7 +50,7 @@ final class Transfer_Session_Abilities {
 						),
 						'purpose'             => array(
 							'type' => 'string',
-							'enum' => array( 'media', 'text', 'wxr' ),
+							'enum' => array( 'media', 'text', 'wxr', 'source_plugin', 'source_theme' ),
 						),
 						'total_bytes'         => array(
 							'type'    => 'integer',
@@ -163,7 +163,9 @@ final class Transfer_Session_Abilities {
 			$this->can_purpose( 'media_read' ) ||
 			$this->can_purpose( 'wxr_read' ) ||
 			$this->can_purpose( 'text' ) ||
-			$this->can_purpose( 'wxr' );
+			$this->can_purpose( 'wxr' ) ||
+			$this->can_purpose( 'source_plugin' ) ||
+			$this->can_purpose( 'source_theme' );
 	}
 
 	/** @param string $purpose Authorized purpose. @return bool */
@@ -180,6 +182,13 @@ final class Transfer_Session_Abilities {
 		}
 		if ( 'text' === $purpose ) {
 			return $this->permissions->allowed( Settings::GROUP_BUILDER_WRITE, 'edit_posts' );
+		}
+		if ( in_array( $purpose, array( 'source_plugin', 'source_theme', 'source_plugin_read', 'source_theme_read' ), true ) ) {
+			$capability = str_starts_with( $purpose, 'source_plugin' ) ? 'edit_plugins' : 'edit_themes';
+			return wp_is_file_mod_allowed( 'wp_ai_bridge_source_editing' ) &&
+				$this->permissions->allowed( Settings::GROUP_CODE_EXTENSIONS, 'read' ) &&
+				$this->permissions->allowed( Settings::GROUP_SOURCE_EDITING, 'read' ) &&
+				current_user_can( $capability );
 		}
 		if ( 'wxr' === $purpose ) {
 			return $this->permissions->allowed_all(
@@ -228,7 +237,7 @@ final class Transfer_Session_Abilities {
 		}
 		if ( 'begin' === $action ) {
 			if ( count( $input ) !== 4 || ! isset( $input['purpose'], $input['total_bytes'], $input['sha256'] ) ||
-				! in_array( $input['purpose'], array( 'media', 'text', 'wxr' ), true ) ||
+				! in_array( $input['purpose'], array( 'media', 'text', 'wxr', 'source_plugin', 'source_theme' ), true ) ||
 				! $this->can_purpose( $input['purpose'] ) ||
 				! is_int( $input['total_bytes'] ) || $input['total_bytes'] < 0 ||
 				! is_string( $input['sha256'] ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $input['sha256'] ) ) {
