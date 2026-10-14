@@ -4,6 +4,25 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.6.3
+
+- Display the Task inspector's **raw Notes body** as an escaped, whitespace-preserving LTR/left-aligned text region, consistent with the inspected Document Markdown body. The Task heading, Project ID, Goal, Notes label, Dashboard and mixed-language tables continue to inherit the localized WordPress admin direction (#157).
+- Extend real WordPress administrator regressions with multiline English/Persian Notes and escaped HTML; preserve stored Workspace data, grants, OAuth, and original plugin identity. Upgrade smoke now starts from the actual SHA-256-pinned published v0.6.2 ZIP.
+
+## 0.6.2
+
+- Restore the native WordPress admin direction and alignment for Dashboard, Documents and Tasks tables, mixed Persian/English titles, document/task inspector headings, and task goal/notes. Remove excessive per-cell LTR/left overrides introduced in PR #152, while retaining precise inline technical identifier ordering (#157).
+- Keep the sole explicitly LTR/left-aligned area as the escaped raw Markdown body of an inspected Workspace document. This is display-only: no changes to stored records, project bindings, capabilities, Bridge grants, OAuth, database layout or public Abilities.
+- Extend isolated WordPress regression coverage for mixed-language Workspace titles and default-inherited layout; upgrade testing now replaces the exact published v0.6.1 ZIP with the new candidate and checks preservation of Workspace, OAuth and permission state.
+
+## 0.6.1
+
+- Scale persistent per-site Workspace document/task capacity beyond the former fixed 200-item ceiling: independent finite administrator count policies, bounded/lazy projected page reads and conservative capacity/concurrency handling, while retaining canonical-key identity, legacy records, private authorization and exact complete-or-error export semantics (#153, PR #154).
+- Add a separate administrator-controlled finite capacity for durable generic `operation_id` create receipts (128–100000, default 2048). An existing authorized receipt remains recoverable when the configured capacity is lowered; canonical Workspace document-key claims stay on their separate quota. No receipt purge or access-grant change (#147, PR #155).
+- Improve existing WordPress administrator Workspace views: show exact per-record Project IDs without inventing a Project manager, distinguish mixed-project Dashboard focus, display AI-authored English Markdown/task content legibly within RTL pages, and clarify Persian binary-capacity KiB/MiB labels (#150, #151, #152).
+- Retain the existing canonical plugin identity, WordPress Settings/OAuth credentials, Bridge grants and durable WordPress Workspace records. The proposed Cron scheduling/management abilities in PR #144 are **not included** in this release, pending separate security/public-API acceptance.
+- Source acceptance includes real isolated WordPress 6.9/current with official MCP Adapter 0.6.1/0.7.0, multisite, concurrency, ZIP upgrade and exact candidate CI; hosted-client attachment handling, deployment and installed fresh-chat project recovery remain separate real-site acceptance activities (#126, #134).
+
 ## 0.6.0
 
 - Introduce explicit, authenticated native WordPress WXR content portability: Core XML export in bounded private byte windows, verified private import staging, read-only structural inspection, exact-source/destination-bound importer plan, and explicit consent before official WordPress Importer 0.9.6 effects (#139, PR #146). The importer denies remote media fetching and new user creation, rejects unsafe PHP object/reference metadata, preserves approved exact-string bytes, and records non-atomic/unknown results durably with no blind replay. This is content portability, NOT a complete database/media site backup.

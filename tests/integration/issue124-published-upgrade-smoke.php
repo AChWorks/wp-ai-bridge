@@ -1,6 +1,6 @@
 <?php
 /**
- * Published v0.5.1 -> v0.6.0 release-candidate upgrade acceptance.
+ * Published v0.6.2 -> current release-candidate upgrade acceptance.
  *
  * Runs ONLY in an isolated disposable WordPress/official Adapter test lane.
  * Test credentials live only in one non-autoloading test-option row shared by
@@ -15,6 +15,8 @@ use WP_AI_Bridge\Auth\Client_Assertion_Validator;
 use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Auth\OAuth_Store;
 use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Workspace_Limits;
+use WP_AI_Bridge\Support\Operation_Receipt_Limits;
 use WP_AI_Bridge\Workspace\Store;
 
 function wpai124_assert( $condition, $message ) {
@@ -134,7 +136,7 @@ $oauth = new OAuth_Server( $oauth_store, $registry );
 $workspace = new Store();
 
 if ( 'before' === $phase ) {
-	wpai124_assert( '0.5.1' === WP_AI_BRIDGE_VERSION, 'Published baseline plugin version was not 0.5.1.' );
+	wpai124_assert( '0.6.2' === WP_AI_BRIDGE_VERSION, 'Published baseline plugin version was not 0.6.2.' );
 	wpai124_assert( false === get_option( $state_option, false ), 'Published-upgrade test state unexpectedly exists.' );
 	$old_settings = $settings->defaults();
 	$old_settings[ Settings::GROUP_BUILDER_WRITE ] = 1;
@@ -148,7 +150,7 @@ if ( 'before' === $phase ) {
 	$revision = $registry->revision();
 	wpai124_assert( $registry->is_approved( $client_id ), 'Published baseline did not retain the approved OAuth client.' );
 
-	$doc = $workspace->create_document( array( 'key' => 'published-upgrade', 'title' => 'Published upgrade document', 'content' => 'Persisted across v0.5.1 to candidate.' ) );
+	$doc = $workspace->create_document( array( 'key' => 'published-upgrade', 'title' => 'Published upgrade document', 'content' => 'Persisted across v0.6.2 to candidate.' ) );
 	$task = $workspace->create_task( array( 'title' => 'Published upgrade task', 'progress' => 'in_progress', 'review' => 'not_required', 'delivery' => 'not_applicable' ) );
 	wpai124_assert( ! is_wp_error( $doc ) && ! is_wp_error( $task ), 'Published baseline Workspace seed failed.' );
 
@@ -185,14 +187,14 @@ if ( 'before' === $phase ) {
 		)
 	);
 	$remove_mock();
-	wpai124_assert( 200 === $response->get_status(), 'Published 0.5.1 signed-client PKCE token exchange did not succeed.' );
+	wpai124_assert( 200 === $response->get_status(), 'Published 0.6.2 signed-client PKCE token exchange did not succeed.' );
 	$data = wpai124_response_data( $response );
-	wpai124_assert( ! empty( $data['access_token'] ) && ! empty( $data['refresh_token'] ), 'Published 0.5.1 did not mint access and refresh credentials.' );
-	wpai124_assert( false !== $oauth_store->read( OAuth_Store::TYPE_ACCESS, $data['access_token'], false, $client_id ), 'Published 0.5.1 access token is unusable.' );
-	wpai124_assert( false !== $oauth_store->read( OAuth_Store::TYPE_REFRESH, $data['refresh_token'], false, $client_id ), 'Published 0.5.1 refresh token is unusable.' );
+	wpai124_assert( ! empty( $data['access_token'] ) && ! empty( $data['refresh_token'] ), 'Published 0.6.2 did not mint access and refresh credentials.' );
+	wpai124_assert( false !== $oauth_store->read( OAuth_Store::TYPE_ACCESS, $data['access_token'], false, $client_id ), 'Published 0.6.2 access token is unusable.' );
+	wpai124_assert( false !== $oauth_store->read( OAuth_Store::TYPE_REFRESH, $data['refresh_token'], false, $client_id ), 'Published 0.6.2 refresh token is unusable.' );
 
 	$fixture = array(
-		'baseline'            => '0.5.1',
+		'baseline'            => '0.6.2',
 		'wordpress_user'      => get_current_user_id(),
 		'settings'            => $old_settings,
 		'client_id'           => $client_id,
@@ -209,17 +211,23 @@ if ( 'before' === $phase ) {
 	);
 	wpai124_assert( add_option( $state_option, $fixture, '', false ), 'Could not persist isolated test-only continuity state.' );
 	wpai124_assert( $fixture === get_option( $state_option, false ), 'Test-only upgrade state was not stored byte-exactly.' );
-	echo "PASS: published v0.5.1 seeded canonical settings, Workspace and signed-client OAuth/PKCE credentials.\n";
+	echo "PASS: published v0.6.2 seeded canonical settings, Workspace and signed-client OAuth/PKCE credentials.\n";
 	return;
 }
 
 wpai124_assert( 'after' === $phase, 'Unsupported published-upgrade fixture phase.' );
-wpai124_assert( '0.6.0' === WP_AI_BRIDGE_VERSION, 'Upgraded source did not report v0.6.0.' );
+$candidate_version = (string) getenv( 'WPAI_UPGRADE_CANDIDATE_VERSION' );
+wpai124_assert( preg_match( '/^[0-9]+\.[0-9]+\.[0-9]+$/', $candidate_version ) && version_compare( $candidate_version, '0.6.2', '>' ), 'Expected candidate version is missing or not newer than the pinned baseline.' );
+wpai124_assert( $candidate_version === WP_AI_BRIDGE_VERSION, 'Upgraded source did not report the exact expected candidate version.' );
 $fixture = get_option( $state_option, false );
-wpai124_assert( false !== $fixture, 'Published v0.5.1 continuity evidence is absent.' );
-wpai124_assert( is_array( $fixture ) && '0.5.1' === ( $fixture['baseline'] ?? '' ), 'Published baseline continuity data is invalid.' );
+wpai124_assert( false !== $fixture, 'Published v0.6.2 continuity evidence is absent.' );
+wpai124_assert( is_array( $fixture ) && '0.6.2' === ( $fixture['baseline'] ?? '' ), 'Published baseline continuity data is invalid.' );
 wpai124_assert( (int) $fixture['wordpress_user'] === get_current_user_id(), 'Upgraded WordPress principal changed.' );
 wpai124_assert( $fixture['settings'] === get_option( Settings::OPTION_NAME ), 'Stored canonical Bridge delegation settings were changed on upgrade.' );
+$workspace_limits = ( new Workspace_Limits() )->all();
+wpai124_assert( Workspace_Limits::DEFAULT_DOCUMENTS === $workspace_limits[ Workspace_Limits::DOCUMENTS_KEY ], 'Candidate upgrade changed the default document admission limit.' );
+wpai124_assert( Workspace_Limits::DEFAULT_TASKS === $workspace_limits[ Workspace_Limits::TASKS_KEY ], 'Candidate upgrade changed the default task admission limit.' );
+wpai124_assert( Operation_Receipt_Limits::DEFAULT_RECEIPTS === ( new Operation_Receipt_Limits() )->limit(), 'Candidate upgrade changed the default generic create-receipt admission limit.' );
 wpai124_assert( false === $settings->is_enabled( Settings::GROUP_REST_DISCOVERY ), 'REST Discovery was silently enabled after upgrade.' );
 wpai124_assert( false === $settings->is_enabled( Settings::GROUP_REST_INVOCATION ), 'REST Invocation was silently enabled after upgrade.' );
 wpai124_assert( 1 === (int) $settings->all()[ Settings::GROUP_BUILDER_WRITE ], 'Previously enabled Builder Write was lost.' );
@@ -262,15 +270,15 @@ foreach (
 		'wp-ai-bridge/core-update-status',
 	) as $ability_name
 ) {
-	wpai124_assert( wp_get_ability( $ability_name ) instanceof WP_Ability, 'v0.6.0 upgrade omitted installed native Ability ' . $ability_name . '.' );
+	wpai124_assert( wp_get_ability( $ability_name ) instanceof WP_Ability, 'Candidate upgrade omitted installed native Ability ' . $ability_name . '.' );
 }
-wpai124_assert( ! $settings->is_enabled( Settings::GROUP_SITE_CONFIG ), 'v0.6.0 enabled Site Configuration without administrator consent.' );
-wpai124_assert( ! $settings->is_enabled( Settings::GROUP_LIVE_CONTENT ), 'v0.6.0 enabled Live Content without administrator consent.' );
+wpai124_assert( ! $settings->is_enabled( Settings::GROUP_SITE_CONFIG ), 'Candidate enabled Site Configuration without administrator consent.' );
+wpai124_assert( ! $settings->is_enabled( Settings::GROUP_LIVE_CONTENT ), 'Candidate enabled Live Content without administrator consent.' );
 wpai124_assert( ! wp_get_ability( 'wp-ai-bridge/private-packages-read' ), 'Removed ZIP staging Ability survived upgrade.' );
 wpai124_assert( ! wp_get_ability( 'wp-ai-bridge/private-package-install' ), 'Removed ZIP installer Ability survived upgrade.' );
 wpai124_assert( false === has_action( 'admin_post_wpai_private_zip_upload' ), 'Removed admin ZIP staging route survived upgrade.' );
 
-// Exercise the real official Adapter transport with the v0.5.1 access token,
+// Exercise the real official Adapter transport with the v0.6.2 access token,
 // not a newly minted candidate-only token or a mocked MCP tool response.
 $before_sessions = class_exists( '\WP\MCP\Transport\Infrastructure\SessionManager' )
 	? \WP\MCP\Transport\Infrastructure\SessionManager::get_all_user_sessions( get_current_user_id() )
@@ -321,9 +329,9 @@ if ( ! is_array( $structured ) ) {
 	$structured = json_decode( (string) ( $mcp_data['result']['content'][0]['text'] ?? '' ), true );
 }
 wpai124_assert( is_array( $structured ) && true === ( $structured['success'] ?? false ), 'Official Adapter returned unsuccessful bridge-info result after upgrade.' );
-wpai124_assert( '0.6.0' === ( $structured['data']['plugin_version'] ?? '' ), 'Official Adapter reported the wrong upgraded plugin version.' );
+wpai124_assert( $candidate_version === ( $structured['data']['plugin_version'] ?? '' ), 'Official Adapter reported the wrong upgraded plugin version.' );
 
-// Finish the existing v0.5.1 authorization lifecycle through v0.6.0's real
+// Finish the existing v0.6.2 authorization lifecycle through the candidate's real
 // signed-client OAuth token endpoint and bounded refresh-token rotation.
 $key = openssl_pkey_get_private( (string) $fixture['private_key_pem'] );
 wpai124_assert( false !== $key, 'Could not restore the isolated test client key.' );
@@ -336,7 +344,7 @@ $response = wpai124_token_request(
 	array( 'refresh_token' => $old_refresh, 'resource' => $fixture['resource'] )
 );
 $remove_mock();
-wpai124_assert( 200 === $response->get_status(), 'Published v0.5.1 refresh token failed signed-client renewal after upgrade.' );
+wpai124_assert( 200 === $response->get_status(), 'Published v0.6.2 refresh token failed signed-client renewal after upgrade.' );
 $data = wpai124_response_data( $response );
 wpai124_assert( ! empty( $data['access_token'] ) && ! empty( $data['refresh_token'] ), 'Upgraded OAuth endpoint did not produce a successor token pair.' );
 wpai124_assert( ! hash_equals( $old_refresh, (string) $data['refresh_token'] ), 'Upgraded OAuth endpoint reused the old refresh token.' );
@@ -348,5 +356,5 @@ $oauth_store->revoke( $old_access, $client_id );
 $oauth_store->revoke( $data['access_token'], $client_id );
 $oauth_store->revoke( $data['refresh_token'], $client_id );
 wpai124_assert( delete_option( $state_option ), 'Test-only bearer and private key continuity state could not be retired.' );
-echo "PASS: published v0.5.1 -> v0.6.0 canonical state, Workspace, OAuth rotation, default-off REST, and official authenticated MCP Adapter.\n";
+echo "PASS: published v0.6.2 -> candidate {$candidate_version} canonical state, Workspace, OAuth rotation, default-off REST, and official authenticated MCP Adapter.\n";
 

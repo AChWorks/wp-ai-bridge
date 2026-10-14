@@ -198,7 +198,7 @@ try {
 		$admin_page->render_documents();
 		$admin_html = ob_get_clean();
 		wpai126_quota_assert(
-			25 === substr_count( $admin_html, '<td dir="auto"' ) &&
+			25 === substr_count( $admin_html, '<td>WPAI153 large-count ' ) &&
 			false !== strpos( $admin_html, 'workspace_cursor=' ) &&
 			false !== strpos( $admin_html, '250' ),
 			'Administrator Documents page is not bounded to 25 records or hides continuation.'
@@ -207,7 +207,7 @@ try {
 		ob_start();
 		$admin_page->render_documents();
 		$older_html = ob_get_clean();
-		wpai126_quota_assert( 25 === substr_count( $older_html, '<td dir="auto"' ), 'Admin Documents cursor was not preserved.' );
+		wpai126_quota_assert( 25 === substr_count( $older_html, '<td>WPAI153 large-count ' ), 'Admin Documents cursor was not preserved.' );
 	} finally {
 		$_GET = $saved_query;
 	}

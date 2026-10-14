@@ -60,7 +60,7 @@ try {
 		array(
 			'action'  => 'create',
 			'key'     => 'project-brief',
-			'title'   => 'Project Brief',
+			'title'   => 'پروژه — Project Brief',
 			'content' => "# Project Brief\n\nDurable orientation, not chat history.",
 		)
 	);
@@ -116,11 +116,12 @@ try {
 	);
 	wpai_issue8_assert( is_wp_error( $stale_document ) && 'workspace_stale' === $stale_document->get_error_code(), 'Stale Workspace document write was not rejected deterministically.' );
 
+	$task_notes  = "Owner text: first line\nیادداشت فارسی & \"quoted\" &lt;script&gt; literal text";
 	$task_create = wpai_issue8_execute(
 		'wp-ai-bridge/workspace-task',
 		array(
 			'action'       => 'create',
-			'title'        => 'Build navigation',
+			'title'        => 'وظیفه — Build navigation',
 			'goal'         => 'Finish the primary site navigation.',
 			'acceptance'   => array( 'Desktop and mobile navigation is present.', 'Existing unrelated menu items are preserved.' ),
 			'dependencies' => array( 'Project Brief' ),
@@ -128,7 +129,7 @@ try {
 			'progress'     => 'todo',
 			'review'       => 'pending',
 			'delivery'     => 'draft_preview',
-			'notes'        => 'Keep this concise.',
+			'notes'        => $task_notes,
 		)
 	);
 	wpai_issue8_assert( ! is_wp_error( $task_create ), 'Workspace task create failed.' );
@@ -165,7 +166,7 @@ try {
 
 	$resume = wpai_issue8_execute( 'wp-ai-bridge/workspace-resume' );
 	wpai_issue8_assert( ! is_wp_error( $resume ), 'Workspace resume failed.' );
-	wpai_issue8_assert( 'Build navigation' === $resume['current_focus'], 'Workspace resume did not surface the current in-progress task.' );
+	wpai_issue8_assert( 'وظیفه — Build navigation' === $resume['current_focus'], 'Workspace resume did not surface the current in-progress task.' );
 	wpai_issue8_assert( 1 === $resume['counts']['documents'] && 1 === $resume['counts']['tasks'], 'Workspace resume counts are incorrect.' );
 	wpai_issue8_assert( ! array_key_exists( 'notes', $resume['active_tasks'][0] ), 'Workspace resume leaked full task notes instead of compact orientation.' );
 	wpai_issue8_assert( ! array_key_exists( 'content', $resume['documents'][0] ), 'Workspace resume dumped document content instead of an index.' );
@@ -230,15 +231,17 @@ try {
 		$screen_html = ob_get_clean();
 		wpai_issue8_assert( false !== strpos( $screen_html, $needle ), 'Admin screen did not render expected content: ' . $method );
 		if ( 'render_dashboard' === $method ) {
-			wpai_issue8_assert( false !== strpos( $screen_html, '<td dir="auto" style="text-align: left;">Build navigation</td>' ), 'AI task title in Dashboard should be left aligned without changing global RTL admin labels.' );
+			wpai_issue8_assert( false !== strpos( $screen_html, '<td>وظیفه — Build navigation</td>' ), 'Mixed-language Dashboard title must inherit default WordPress admin cell direction.' );
 		}
 		if ( 'render_documents' === $method ) {
-			wpai_issue8_assert( false !== strpos( $screen_html, '<td dir="auto" style="text-align: left;">Project Brief</td>' ), 'AI document title in list should be left aligned.' );
-			wpai_issue8_assert( false !== strpos( $screen_html, '<code dir="ltr">project-brief</code>' ), 'Technical document key should have isolated LTR direction.' );
+			wpai_issue8_assert( false !== strpos( $screen_html, '<td>پروژه — Project Brief</td>' ), 'Mixed-language document title must inherit default WordPress admin table direction.' );
+			wpai_issue8_assert( false !== strpos( $screen_html, '<td><code dir="ltr">project-brief</code></td>' ), 'Technical document key must remain LTR only inside the naturally aligned cell.' );
 		}
 		if ( 'render_tasks' === $method ) {
-			wpai_issue8_assert( false !== strpos( $screen_html, '<td dir="auto" style="text-align: left;">Build navigation</td>' ), 'AI task title in list should be left aligned.' );
+			wpai_issue8_assert( false !== strpos( $screen_html, '<td>وظیفه — Build navigation</td>' ), 'Mixed-language task title must inherit default WordPress admin table direction.' );
 		}
+		// No admin screen, table cell or mixed-language title may force LTR/left alignment.
+		wpai_issue8_assert( false === strpos( $screen_html, 'dir="auto"' ) && false === strpos( $screen_html, 'text-align: left;' ), 'Workspace admin tables must inherit native WordPress RTL/LTR rather than forcing English alignment.' );
 		if ( in_array( $method, array( 'render_documents', 'render_tasks' ), true ) ) {
 			wpai_issue8_assert( false !== strpos( $screen_html, '<th>' . esc_html__( 'Project ID', 'wp-ai-bridge' ) . '</th>' ), 'Workspace table is missing the project ID column.' );
 			wpai_issue8_assert( false !== strpos( $screen_html, '<span class="description">' . esc_html__( 'Unbound', 'wp-ai-bridge' ) . '</span>' ), 'Legacy unbound Workspace record is not clearly labelled.' );
@@ -255,8 +258,10 @@ try {
 		ob_start();
 		$page->render_documents();
 		$doc_html = ob_get_clean();
-		wpai_issue8_assert( false !== strpos( $doc_html, '<h2 dir="auto" style="text-align: left; overflow-wrap: anywhere;">Project Brief</h2>' ), 'AI document detail title should be left aligned.' );
+		wpai_issue8_assert( false !== strpos( $doc_html, '<h2>پروژه — Project Brief</h2>' ), 'Document inspector title must inherit native WordPress admin direction.' );
 		wpai_issue8_assert( false !== strpos( $doc_html, '<pre dir="ltr" style="direction: ltr; text-align: left; unicode-bidi: isolate; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 1100px"># Project Brief' ), 'Markdown source must render in LTR, not inherit RTL WordPress text direction.' );
+		wpai_issue8_assert( 1 === substr_count( $doc_html, 'direction: ltr; text-align: left; unicode-bidi: isolate;' ), 'Only the document Markdown body may override the WordPress admin text direction.' );
+		wpai_issue8_assert( false === strpos( $doc_html, 'dir="auto"' ), 'Document title and table must not force automatic text direction.' );
 		wpai_issue8_assert( false !== strpos( $doc_html, esc_html__( 'State hash:', 'wp-ai-bridge' ) ), 'Localized inspector labels must remain intact.' );
 		wpai_issue8_assert( false !== strpos( $doc_html, '<code dir="ltr">' . esc_html( $updated_document['state_hash'] ) . '</code>' ), 'Document state hash must keep LTR character order.' );
 
@@ -264,11 +269,21 @@ try {
 		ob_start();
 		$page->render_tasks();
 		$task_html = ob_get_clean();
-		wpai_issue8_assert( false !== strpos( $task_html, '<h2 dir="auto" style="text-align: left; overflow-wrap: anywhere;">Build navigation</h2>' ), 'AI task detail title should be left aligned.' );
-		wpai_issue8_assert( false !== strpos( $task_html, '<span dir="ltr" style="display: block; direction: ltr; text-align: left; overflow-wrap: anywhere; white-space: pre-wrap;">Finish the primary site navigation.</span>' ), 'AI task goal must be left aligned independently of the translated label.' );
-		wpai_issue8_assert( false !== strpos( $task_html, '<pre dir="ltr" style="direction: ltr; text-align: left; unicode-bidi: isolate; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 1100px">Keep this concise.</pre>' ), 'AI task notes must be rendered as LTR text.' );
+		wpai_issue8_assert( false !== strpos( $task_html, '<h2>وظیفه — Build navigation</h2>' ), 'Task inspector title must inherit native WordPress admin direction.' );
+		wpai_issue8_assert( false !== strpos( $task_html, esc_html__( 'Goal:', 'wp-ai-bridge' ) . '</strong> Finish the primary site navigation.</p>' ), 'Task goal must inherit the WordPress admin direction while keeping translated labels.' );
+		wpai_issue8_assert(
+			false !== strpos(
+				$task_html,
+				'<pre dir="ltr" style="direction: ltr; text-align: left; unicode-bidi: isolate; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 1100px">' . esc_html( $task_notes ) . '</pre>'
+			),
+			'Mixed English/Persian task notes must be LTR/left-aligned as an isolated escaped content block with preserved newlines.'
+		);
 		wpai_issue8_assert( false !== strpos( $task_html, esc_html__( 'Goal:', 'wp-ai-bridge' ) ), 'Translated task labels must remain intact.' );
 		wpai_issue8_assert( false !== strpos( $task_html, '<code dir="ltr">' . esc_html( $task_progress['state_hash'] ) . '</code>' ), 'Task state hash must keep LTR character order.' );
+		wpai_issue8_assert( 1 === substr_count( $task_html, 'direction: ltr; text-align: left; unicode-bidi: isolate;' ), 'Only the escaped task Notes body may force LTR/left alignment on the task inspector.' );
+		wpai_issue8_assert( false === strpos( $task_html, 'dir="auto"' ) && false === strpos( $task_html, '<h2 dir=' ) && false === strpos( $task_html, '<span dir="ltr"' ), 'Task table, title and goal must inherit native WordPress direction and alignment.' );
+		wpai_issue8_assert( false !== strpos( $task_html, '&lt;script&gt;' ) && false !== strpos( $task_html, '&quot;quoted&quot;' ), 'Mixed task text ampersands and quotes must remain visibly escaped in the bounded Notes block.' );
+		wpai_issue8_assert( false === strpos( $task_html, '<script>' ), 'Task Notes must never turn escaped literal markers into executable HTML.' );
 	} finally {
 		$_GET = $previous_query;
 	}
