@@ -121,6 +121,12 @@ try {
 
 	$call = static function ( $name, $args ) use ( $token, $session, &$sequence ) {
 		list( $wire ) = wpai147_source_mcp( $token, $session, ++$sequence, $name, $args );
+		// Official MCP Adapter uses result.isError=true for denied/invalid
+		// native Abilities, frequently without structuredContent at all.
+		// Never interpret an absent success key as a successful denial.
+		if ( true === ( $wire['result']['isError'] ?? false ) ) {
+			return array( 'success' => false, 'isError' => true );
+		}
 		return $wire['result']['structuredContent'] ?? array();
 	};
 
@@ -189,15 +195,15 @@ try {
 		)
 	);
 	$wrong = $call( 'wp-ai-bridge/source-file-preview-transfer', array_merge( $target, array( 'transfer_id' => $id, 'file' => 'wpai147-source-mcp-fixture.php' ) ) );
-	wpai147_source_assert( false === ( $wrong['success'] ?? true ), 'Verified source transfer was rebound to a different file.' );
+	wpai147_source_assert( true === ( $wrong['isError'] ?? false ), 'Verified source transfer was rebound to a different file.' );
 	$bad_digest = $call( 'wp-ai-bridge/source-file-apply-transfer', array_merge( $apply, array( 'candidate_sha256' => str_repeat( '0', 64 ) ) ) );
-	wpai147_source_assert( false === ( $bad_digest['success'] ?? true ), 'Incorrect source digest passed CAS.' );
+	wpai147_source_assert( true === ( $bad_digest['isError'] ?? false ), 'Incorrect source digest passed CAS.' );
 	wp_set_current_user( $actor );
 	$grant[ Settings::GROUP_SOURCE_EDITING ] = 0;
 	update_option( Settings::OPTION_NAME, $grant, false );
 	wp_set_current_user( 0 );
 	$revoked = $call( 'wp-ai-bridge/source-file-apply-transfer', $apply );
-	wpai147_source_assert( false === ( $revoked['success'] ?? true ), 'Revoked Source Editing grant allowed transfer apply.' );
+	wpai147_source_assert( true === ( $revoked['isError'] ?? false ), 'Revoked Source Editing grant allowed transfer apply.' );
 	wp_set_current_user( $actor );
 	$grant[ Settings::GROUP_SOURCE_EDITING ] = 1;
 	update_option( Settings::OPTION_NAME, $grant, false );
@@ -206,7 +212,7 @@ try {
 	wpai147_source_assert( true === ( $committed['success'] ?? false ) && 'success' === $committed['data']['outcome'], 'Authenticated source transfer CAS/apply failed.' );
 	wpai147_source_assert( $candidate === file_get_contents( $helper ), 'Source transfer persisted different native file bytes.' );
 	$again = $call( 'wp-ai-bridge/source-file-apply-transfer', $apply );
-	wpai147_source_assert( false === ( $again['success'] ?? true ), 'Previously claimed private source was replayed.' );
+	wpai147_source_assert( true === ( $again['isError'] ?? false ), 'Previously claimed private source was replayed.' );
 	$receipt = $call( 'wp-ai-bridge/private-transfer', array( 'action' => 'status', 'transfer_id' => $id ) );
 	wpai147_source_assert( 'committed' === ( $receipt['data']['state'] ?? '' ), 'Durable source transfer receipt was not committed.' );
 	$released = $call( 'wp-ai-bridge/private-transfer', array( 'action' => 'release', 'transfer_id' => $id ) );
