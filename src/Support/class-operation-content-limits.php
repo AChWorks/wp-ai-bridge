@@ -38,6 +38,61 @@ final class Operation_Content_Limits {
 	}
 
 	/**
+	 * Effective bounded WordPress PHP memory policy. An unlimited PHP ini
+	 * value is not itself evidence of safe available RAM; use WordPress's
+	 * configured administrator memory budget or refuse unsafe large edits.
+	 *
+	 * @return int Positive finite bytes, or zero if no limit is known.
+	 */
+	public static function effective_memory_bytes() {
+		$ini = self::parse_memory_size( ini_get( 'memory_limit' ) );
+		if ( is_int( $ini ) && $ini > 0 ) {
+			return $ini;
+		}
+		foreach ( array( 'WP_MAX_MEMORY_LIMIT', 'WP_MEMORY_LIMIT' ) as $name ) {
+			if ( defined( $name ) ) {
+				$size = self::parse_memory_size( constant( $name ) );
+				if ( is_int( $size ) && $size > 0 ) {
+					return $size;
+				}
+			}
+		}
+		return 0;
+	}
+
+	/**
+	 * Parse PHP/WordPress memory quantities even in dependency-free tests.
+	 * WordPress helper takes precedence when available. Never overflow ints.
+	 *
+	 * @return int Positive bytes or zero when unknown/unlimited.
+	 */
+	private static function parse_memory_size( $value ) {
+		if ( function_exists( 'wp_convert_hr_to_bytes' ) ) {
+			$bytes = wp_convert_hr_to_bytes( $value );
+			return is_int( $bytes ) && $bytes > 0 ? $bytes : 0;
+		}
+		if ( ! is_string( $value ) && ! is_int( $value ) ) {
+			return 0;
+		}
+		$text = trim( (string) $value );
+		if ( ! preg_match( '/^([0-9]+)([KMG]?)$/iD', $text, $match ) ) {
+			return 0;
+		}
+		$factor = array(
+			''  => 1,
+			'K' => 1024,
+			'M' => 1048576,
+			'G' => 1073741824,
+		)[ strtoupper( $match[2] ) ];
+		if ( strlen( $match[1] ) > strlen( (string) intdiv( PHP_INT_MAX, $factor ) ) ||
+			( strlen( $match[1] ) === strlen( (string) intdiv( PHP_INT_MAX, $factor ) ) &&
+			strcmp( $match[1], (string) intdiv( PHP_INT_MAX, $factor ) ) > 0 ) ) {
+			return 0;
+		}
+		return (int) $match[1] * $factor;
+	}
+
+	/**
 	 * No product-defined upper source/value caps: the largest operator value
 	 * depends on the current PHP process memory and integer representation.
 	 * Other host, transport, native/provider and DB bounds still apply.
@@ -45,9 +100,10 @@ final class Operation_Content_Limits {
 	 * @return array<string,int>
 	 */
 	public function upper_bounds() {
-		$memory = function_exists( 'wp_convert_hr_to_bytes' ) ? wp_convert_hr_to_bytes( ini_get( 'memory_limit' ) ) : -1;
-		$memory = is_int( $memory ) && $memory > 0 ? $memory : 0;
-		$source = intdiv( PHP_INT_MAX, self::MIB );
+		$memory = self::effective_memory_bytes();
+		// If neither PHP nor WordPress advertises finite memory, preserve
+		// only the historical 2-MiB source policy; no unsafe widening.
+		$source = $memory > 0 ? intdiv( PHP_INT_MAX, self::MIB ) : 2;
 		$body   = intdiv( PHP_INT_MAX, self::KIB );
 		if ( $memory > 0 ) {
 			// Source edits hold preimage, candidate, recovery and validation

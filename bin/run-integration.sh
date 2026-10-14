@@ -95,6 +95,7 @@ for test in \
     issue44-native-ability-delegation-smoke.php \
     issue46-source-editing-smoke.php \
     issue147-operation-content-smoke.php \
+    issue147-source-transfer-mcp-smoke.php \
     issue3-content-block-smoke.php \
     issue100-bounded-content-smoke.php \
     issue105-bounded-revisions-smoke.php \

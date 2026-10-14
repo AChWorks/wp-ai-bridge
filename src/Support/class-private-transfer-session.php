@@ -327,6 +327,127 @@ final class Private_Transfer_Session {
 	}
 
 	/**
+	 * A verified source candidate may be previewed repeatedly only against the
+	 * same exact installed target and preimage; no effect has been claimed.
+	 *
+	 * @return true|WP_Error
+	 */
+	public function bind_source_preview( $id, $purpose, $target_hash, $preimage, $candidate_hash, $candidate_id ) {
+		if ( ! in_array( $purpose, array( 'source_plugin', 'source_theme' ), true ) ||
+			! $this->valid_source_bindings( $target_hash, $preimage, $candidate_hash, $candidate_id ) ) {
+			return $this->invalid();
+		}
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		try {
+			if ( 'verified' !== $meta['state'] || $purpose !== $meta['purpose'] ||
+				! $this->allowed( $purpose ) || ! hash_equals( $meta['sha256'], $candidate_hash ) ) {
+				return $this->denied();
+			}
+			$binding = array(
+				'source_target'    => $target_hash,
+				'source_preimage'  => $preimage,
+				'source_candidate' => $candidate_hash,
+				'source_preview'   => $candidate_id,
+			);
+			foreach ( $binding as $key => $value ) {
+				if ( isset( $meta[ $key ] ) && ! hash_equals( (string) $meta[ $key ], $value ) ) {
+					return new WP_Error( 'source_transfer_target_changed', 'A source lease cannot be rebound to another file or revision.' );
+				}
+			}
+			$path = $this->check_file( $root, $id, $meta );
+			if ( is_wp_error( $path ) || ! hash_equals( $candidate_hash, (string) hash_file( 'sha256', $path ) ) ) {
+				return new WP_Error( 'transfer_source_changed', 'Source lease bytes changed before preview.' );
+			}
+			$meta = array_merge( $meta, $binding );
+			return $this->save_meta( $handle, $meta ) ? true :
+				new WP_Error( 'transfer_outcome_unknown', 'Source binding persistence is uncertain.' );
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
+	/** @return bool */
+	private function valid_source_bindings( $target_hash, $preimage, $candidate_hash, $candidate_id ) {
+		foreach ( array( $target_hash, $preimage, $candidate_hash, $candidate_id ) as $hash ) {
+			if ( ! is_string( $hash ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $hash ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * One-way durable source effect fence; never replay a lost acknowledgement.
+	 * The caller preserves the existing WordPress source CAS/recovery writer.
+	 * @return true|WP_Error
+	 */
+	public function claim_source( $id, $purpose, $target_hash, $preimage, $candidate_hash, $candidate_id ) {
+		if ( ! in_array( $purpose, array( 'source_plugin', 'source_theme' ), true ) ||
+			! $this->valid_source_bindings( $target_hash, $preimage, $candidate_hash, $candidate_id ) ) {
+			return $this->invalid();
+		}
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		try {
+			if ( 'verified' !== $meta['state'] || $purpose !== $meta['purpose'] ||
+				! $this->allowed( $purpose ) || ! hash_equals( $meta['sha256'], $candidate_hash ) ||
+				! hash_equals( (string) ( $meta['source_target'] ?? '' ), $target_hash ) ||
+				! hash_equals( (string) ( $meta['source_preimage'] ?? '' ), $preimage ) ||
+				! hash_equals( (string) ( $meta['source_candidate'] ?? '' ), $candidate_hash ) ||
+				! hash_equals( (string) ( $meta['source_preview'] ?? '' ), $candidate_id ) ) {
+				return new WP_Error( 'source_transfer_target_changed', 'Source lease must match the exact previewed file and revision.' );
+			}
+			$path = $this->check_file( $root, $id, $meta );
+			if ( is_wp_error( $path ) || ! hash_equals( $candidate_hash, (string) hash_file( 'sha256', $path ) ) ) {
+				return new WP_Error( 'transfer_source_changed', 'Source bytes changed before the source effect.' );
+			}
+			if ( ! $this->fence_native_effect( $root, $id, 'source', 'apply', 0 ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'Source effect fence is uncertain; never retry.' );
+			}
+			$meta['state']          = 'committing';
+			$meta['consumer']       = 'source';
+			$meta['intent']         = 'apply';
+			$meta['target_id']      = 0;
+			$meta['destination_id'] = 0;
+			$meta['outcome']        = 'unknown';
+			return $this->save_meta( $handle, $meta ) ? true :
+				new WP_Error( 'transfer_outcome_unknown', 'Source apply was fenced but its receipt is uncertain.' );
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
+	/** @return true|WP_Error */
+	public function finish_source( $id, $purpose, $target_hash, $candidate_hash ) {
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		try {
+			if ( 'committing' !== $meta['state'] || 'source' !== ( $meta['consumer'] ?? '' ) ||
+				$purpose !== $meta['purpose'] || ! $this->allowed( $purpose ) ||
+				! hash_equals( (string) ( $meta['source_target'] ?? '' ), $target_hash ) ||
+				! hash_equals( (string) ( $meta['source_candidate'] ?? '' ), $candidate_hash ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'Source effect identity is uncertain; do not retry.' );
+			}
+			$meta['state']   = 'committed';
+			$meta['outcome'] = 'verified';
+			return $this->save_meta( $handle, $meta ) ? true :
+				new WP_Error( 'transfer_outcome_unknown', 'Source edit finished but private claim persistence is uncertain.' );
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
+	/**
 	 * Snapshot one WordPress-validated source into the same private, digest-bound
 	 * transport. Caller must first authorize and confine the source to its native
 	 * provider root. No path may be returned through an MCP response.
@@ -347,6 +468,21 @@ final class Private_Transfer_Session {
 			return $this->denied();
 		}
 		return $this->stage_native_export( $path, $policy, 'media_read', $attachment_id );
+	}
+
+	/**
+	 * Freeze a provider-resolved installed source in the existing transfer plane.
+	 * Never accept a client-supplied path; the source provider checks confinement.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function stage_source_export( $path, $policy, $kind ) {
+		$purpose = 'plugin' === $kind ? 'source_plugin_read' : ( 'theme' === $kind ? 'source_theme_read' : '' );
+		if ( '' === $purpose || ! $this->allowed( $purpose ) || ! is_array( $policy ) ||
+			! is_string( $path ) || is_link( $path ) || ! is_file( $path ) ||
+			! is_readable( $path ) || wp_normalize_path( (string) realpath( $path ) ) !== wp_normalize_path( $path ) ) {
+			return $this->denied();
+		}
+		return $this->stage_native_export( $path, $policy, $purpose, (int) get_current_blog_id() );
 	}
 
 	/**
@@ -447,7 +583,9 @@ final class Private_Transfer_Session {
 				if ( 'verified' !== $meta['state'] || $purpose !== $meta['purpose'] || ! $this->allowed( $purpose ) ||
 					( 'media_read' === $purpose && ( ! current_user_can( 'read_post', $source_id ) ||
 						'attachment' !== get_post_type( $source_id ) ) ) ||
-					( 'wxr_read' === $purpose && (int) get_current_blog_id() !== $source_id ) ) {
+					( 'wxr_read' === $purpose && (int) get_current_blog_id() !== $source_id ) ||
+					( in_array( $purpose, array( 'source_plugin_read', 'source_theme_read' ), true ) &&
+						(int) get_current_blog_id() !== $source_id ) ) {
 					return $this->denied();
 				}
 				$meta['source_id'] = $source_id;
@@ -487,13 +625,15 @@ final class Private_Transfer_Session {
 		}
 		list( $root, $handle, $meta ) = $loaded;
 		try {
-			if ( ! in_array( $meta['purpose'], array( 'media_read', 'wxr_read' ), true ) ||
+			if ( ! in_array( $meta['purpose'], array( 'media_read', 'wxr_read', 'source_plugin_read', 'source_theme_read' ), true ) ||
 				'verified' !== $meta['state'] || ! $this->allowed( $meta['purpose'] ) ||
 				! is_int( $meta['source_id'] ?? null ) ||
 				( 'media_read' === $meta['purpose'] && (
 					'attachment' !== get_post_type( $meta['source_id'] ) ||
 					! current_user_can( 'read_post', $meta['source_id'] ) ) ) ||
 				( 'wxr_read' === $meta['purpose'] && (int) get_current_blog_id() !== $meta['source_id'] ) ||
+				( in_array( $meta['purpose'], array( 'source_plugin_read', 'source_theme_read' ), true ) &&
+					(int) get_current_blog_id() !== $meta['source_id'] ) ||
 				! is_int( $offset ) || $offset < 0 || $offset > $meta['total'] ||
 				! is_int( $max_bytes ) || $max_bytes < 1 || $max_bytes > $meta['chunk'] ) {
 				return $this->invalid();
@@ -778,6 +918,18 @@ final class Private_Transfer_Session {
 				return $this->permissions->allowed( Settings::GROUP_BUILDER_WRITE, 'edit_posts' );
 			case 'wxr':
 				return $this->permissions->allowed_all( array( array( Settings::GROUP_SITE_CONFIG, 'import' ), array( Settings::GROUP_BUILDER_WRITE, 'edit_posts' ) ) );
+			case 'source_plugin':
+			case 'source_plugin_read':
+			case 'source_theme':
+			case 'source_theme_read':
+				if ( '' === OAuth_Server::authenticated_mcp_client_id() ) {
+					return false;
+				}
+				$capability = str_starts_with( $purpose, 'source_plugin' ) ? 'edit_plugins' : 'edit_themes';
+				return wp_is_file_mod_allowed( 'wp_ai_bridge_source_editing' ) &&
+					$this->permissions->allowed( Settings::GROUP_CODE_EXTENSIONS, 'read' ) &&
+					$this->permissions->allowed( Settings::GROUP_SOURCE_EDITING, 'read' ) &&
+					current_user_can( $capability );
 			default:
 				return false;
 		}
@@ -1018,11 +1170,11 @@ final class Private_Transfer_Session {
 			is_int( $meta['user'] ) && $meta['user'] >= 1 &&
 			is_int( $meta['expires'] ) && $meta['expires'] >= 1 &&
 			is_string( $meta['client'] ) && is_string( $meta['purpose'] ) &&
-			in_array( $meta['purpose'], array( 'media', 'media_read', 'wxr_read', 'text', 'wxr' ), true ) &&
+			in_array( $meta['purpose'], array( 'media', 'media_read', 'wxr_read', 'text', 'wxr', 'source_plugin', 'source_theme', 'source_plugin_read', 'source_theme_read' ), true ) &&
 			is_string( $meta['sha256'] ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $meta['sha256'] ) &&
 			in_array( $meta['state'], array( 'open', 'preparing', 'verified', 'committing', 'committed', 'rejected', 'observed' ), true ) &&
 			( ! in_array( $meta['state'], array( 'committing', 'committed', 'rejected', 'observed' ), true ) ||
-				( ( in_array( $meta['consumer'] ?? '', array( 'media', 'content', 'wxr' ), true ) ||
+				( ( in_array( $meta['consumer'] ?? '', array( 'media', 'content', 'wxr', 'source' ), true ) ||
 				( 'committing' === $meta['state'] && 'unknown' === ( $meta['consumer'] ?? '' ) &&
 					'unknown' === ( $meta['outcome'] ?? '' ) ) ) &&
 				is_int( $meta['destination_id'] ?? null ) && $meta['destination_id'] >= 0 ) );

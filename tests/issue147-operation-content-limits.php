@@ -6,6 +6,10 @@
  * @package WP_AI_Bridge
  */
 
+// Source capacity tests require a known finite PHP host-memory envelope.
+// This test process is isolated from every other composer test invocation.
+ini_set( 'memory_limit', '256M' );
+
 require __DIR__ . '/bootstrap.php';
 
 use WP_AI_Bridge\Abilities\Ability_Catalog_Abilities;

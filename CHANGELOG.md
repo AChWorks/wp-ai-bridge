@@ -4,6 +4,8 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+- Add purpose-bound authenticated Source Editing snapshots and verified private transfer preview/apply for multi-MiB source files across bounded MCP windows; preserve atomic source CAS/recovery and apply a conservative PHP token/parser memory preflight before syntax validation (#147).
+
 - Introduce independent native WordPress administrator controls for bounded installed extension source editing, registered setting values and public schemas, and read-only Ability catalog JSON responses, preserving existing defaults, grants, authorization, source CAS and durable recovery when a limit is lowered (#147).
 
 - Allow separate administrator tuning of the finite high-trust registered REST JSON input budget, retaining its original 16 KiB default, independently clamped to existing incoming MCP request capacity and native Core/provider authorization, with real Adapter/WordPress tests (#147).
