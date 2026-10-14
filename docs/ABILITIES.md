@@ -77,7 +77,13 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `workspace-resume` | Site Read | Return project-specific or truthful mixed-site orientation with bounded section continuations. |
 | `workspace-document` | Site Read / Builder Write | Project-bound canonical documents, small summary pages, guarded UTF-8 field windows and archive/unarchive. |
 | `workspace-task` | Site Read / Builder Write | Project-bound tasks, next_action/blocker, small summary pages, guarded notes, version/hash CAS. |
+| `workspace-delete` | Builder Write + Users & Destructive, authenticated MCP admin and WordPress `delete_post` | Permanently delete one exact project-bound private document or task only after blog/record identity, CAS, confirmation, and readback; never a bulk delete. |
+| `diagnostics-read` | Site Read + authenticated MCP WordPress admin | Read up to 50 allowlisted, metadata-only private-transfer events from existing Activity; cannot see pre-WordPress Gateway failures. |
 
+
+### Exact private Workspace deletion and safe recovery (#126)
+
+`wp-ai-bridge/workspace-delete` accepts **exactly** `kind` (`document` or `task`), positive `id`, current `blog_id`, nonempty exact `project_ref`, `expected_version`, `expected_state_hash`, and the literal confirmation `PERMANENTLY DELETE DOCUMENT <id>` or `PERMANENTLY DELETE TASK <id>`. It requires an OAuth-authenticated MCP client, the current site administrator, WordPress `delete_post`, enabled Builder Write and Users & Destructive groups. It cannot delete unbound/legacy records, general posts, foreign blog records, or any unspecified collection. It first establishes a site-local admission lock and a metadata-CAS deletion fence, then force-deletes the one private CPT post. Success is returned **only after verifying the record and its private state metadata no longer exist**. A stale state fails without deletion; an uncertain effect returns `workspace_delete_outcome_unknown`, blocks subsequent store edits, and requires operator reconciliation rather than blind retries. The canonical document-key claim is **intentionally retained** after deletion; a deleted project's `key` cannot be silently reused. Do not use `Store::clear()` for fixture cleanup. Public destructive API adoption, live-site use, and release require owner approval and separate high-assurance security review.
 
 ### WP-Cron inventory and provider-owned lifecycle (Issue #138; unmerged PR)
 

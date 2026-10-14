@@ -112,7 +112,9 @@ for test in \
     issue134-direct-mcp-bytes-smoke.php \
     issue134-public-session-smoke.php \
     issue134-private-staging-smoke.php \
+    issue165-diagnostics-smoke.php \
     issue126-128-workspace-smoke.php \
+    issue126-exact-delete-smoke.php \
     issue128-native-creates-smoke.php \
     issue147-operation-capacity-smoke.php \
     issue8-workspace-smoke.php
@@ -362,96 +364,4 @@ if "${wp[@]}" option get wp_ai_bridge_recent_actions --allow-root >/dev/null 2>&
 fi
 if ! "${wp[@]}" eval '
 $record = get_option("wp_ai_bridge_source_recovery", false);
-$fixture = get_option("wpai_integration_source_recovery_fixture", array());
-if (!is_array($record) || !is_array($fixture) || empty($record["token"]) || !hash_equals((string) $fixture["token"], (string) $record["token"]) || !hash_equals((string) $fixture["candidate_sha256"], (string) $record["candidate_sha256"]) || (string) $fixture["candidate"] !== file_get_contents((string) $fixture["path"])) { exit(1); }
-' --allow-root >/dev/null; then
-    echo "ERROR: unresolved source recovery ownership did not survive plugin uninstall." >&2
-    exit 1
-fi
-if "${wp[@]}" option get wp_ai_bridge_source_lock --allow-root >/dev/null 2>&1; then
-    echo "ERROR: source editing lock survived plugin uninstall." >&2
-    exit 1
-fi
-if "${wp[@]}" option get wp_ai_bridge_oauth_instance --allow-root >/dev/null 2>&1; then
-    echo "ERROR: OAuth installation identity survived plugin uninstall." >&2
-    exit 1
-fi
-if ! "${wp[@]}" eval 'if ( false !== get_transient("wpai_oauth_chatgpt_cimd_ok") ) { exit(1); }' --allow-root >/dev/null; then
-    echo "ERROR: OAuth client-metadata cache survived plugin uninstall." >&2
-    exit 1
-fi
-if ! "${wp[@]}" eval 'if ( false !== get_transient("wpai_oauth_chatgpt_jwks") ) { exit(1); }' --allow-root >/dev/null; then
-    echo "ERROR: OAuth JWKS cache survived plugin uninstall." >&2
-    exit 1
-fi
-if ! "${wp[@]}" eval 'if ( false !== get_transient("wpai_oauth_chatgpt_jwks_refresh") ) { exit(1); }' --allow-root >/dev/null; then
-    echo "ERROR: OAuth JWKS refresh cooldown survived plugin uninstall." >&2
-    exit 1
-fi
-if "${wp[@]}" option get wpai_oauth_assertion_0123456789abcdef0123456789abcdef01234567 --allow-root >/dev/null 2>&1; then
-    echo "ERROR: OAuth client-assertion replay claim survived plugin uninstall." >&2
-    exit 1
-fi
-if "${wp[@]}" cron event list --hook=wpai_oauth_cleanup_client_assertion --field=hook --allow-root 2>/dev/null | grep -Fxq wpai_oauth_cleanup_client_assertion; then
-    echo "ERROR: OAuth client-assertion cleanup event survived plugin uninstall." >&2
-    exit 1
-fi
-if "${wp[@]}" plugin is-installed wp-ai-bridge --allow-root >/dev/null 2>&1; then
-    echo "ERROR: plugin files survived WP-CLI uninstall." >&2
-    exit 1
-fi
-if ! "${wp[@]}" eval '
-$fixture = get_option("wpai_integration_workspace_preserve_ids", array());
-$pairs = array("document_id" => "document_hash", "task_id" => "task_hash");
-foreach ($pairs as $id_key => $hash_key) {
-    $id = isset($fixture[$id_key]) ? (int) $fixture[$id_key] : 0;
-    $json = $id > 0 ? (string) get_post_meta($id, "_wpai_workspace_state", true) : "";
-    if ($id < 1 || ! get_post($id) || "" === $json || ! hash_equals((string) ($fixture[$hash_key] ?? ""), hash("sha256", $json))) { exit(1); }
-}
-' --allow-root >/dev/null; then
-    echo "ERROR: Workspace data did not survive plugin uninstall." >&2
-    exit 1
-fi
-
-# Reinstall the exact validated package and prove the preserved pending recovery record remains usable.
-"${compose[@]}" cp "$root/build/wp-ai-bridge.zip" wordpress:/var/www/html/wp-ai-bridge.zip
-"${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root >/dev/null
-"${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge.zip
-if ! "${wp[@]}" eval '
-$settings = new WP_AI_Bridge\Support\Settings();
-$enabled = $settings->defaults();
-$enabled[WP_AI_Bridge\Support\Settings::GROUP_CODE_EXTENSIONS] = 1;
-$enabled[WP_AI_Bridge\Support\Settings::GROUP_SOURCE_EDITING] = 1;
-update_option(WP_AI_Bridge\Support\Settings::OPTION_NAME, $enabled, false);
-$fixture = get_option("wpai_integration_source_recovery_fixture", array());
-$recover = wp_get_ability("wp-ai-bridge/source-file-recover");
-$result = $recover instanceof WP_Ability ? $recover->execute(array("candidate_sha256" => (string) ($fixture["candidate_sha256"] ?? ""))) : new WP_Error("missing_recovery_ability");
-if (is_wp_error($result) || empty($result["recovered"]) || (string) ($fixture["preimage"] ?? "") !== file_get_contents((string) ($fixture["path"] ?? "")) || false !== get_option(WP_AI_Bridge\Abilities\Source_Editing_Abilities::RECOVERY_OPTION, false)) { exit(1); }
-' --user=1 --allow-root >/dev/null; then
-    echo "ERROR: preserved source recovery ownership was not usable after reinstall." >&2
-    exit 1
-fi
-"${wp[@]}" eval '
-$fixture = get_option("wpai_integration_source_recovery_fixture", array());
-$path = (string) ($fixture["path"] ?? "");
-if ("" !== $path) { @unlink($path); @rmdir(dirname($path)); }
-delete_option("wpai_integration_source_recovery_fixture");
-' --allow-root >/dev/null
-"${wp[@]}" plugin uninstall wp-ai-bridge --deactivate --allow-root >/dev/null
-if "${wp[@]}" plugin is-installed wp-ai-bridge --allow-root >/dev/null 2>&1; then
-    echo "ERROR: plugin files survived final post-recovery uninstall." >&2
-    exit 1
-fi
-echo "Source recovery uninstall/reinstall preservation: PASS"
-"${wp[@]}" eval '
-$fixture = get_option("wpai_integration_workspace_preserve_ids", array());
-foreach (array("document_id", "task_id") as $key) {
-    $id = isset($fixture[$key]) ? (int) $fixture[$key] : 0;
-    if ($id > 0) { wp_delete_post($id, true); }
-}
-delete_option("wpai_integration_workspace_preserve_ids");
-' --allow-root >/dev/null
-echo "Workspace uninstall preservation: PASS"
-echo "Release uninstall cleanup: PASS"
-
-echo "PASS: Docker integration suite for ${wordpress_tag}."
+$fixture = get_option("wpai_integration_so

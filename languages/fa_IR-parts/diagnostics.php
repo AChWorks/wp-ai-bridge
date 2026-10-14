@@ -30,7 +30,7 @@ return array(
 	'Read WordPress Core Update Status' => 'خواندن وضعیت به‌روزرسانی هستهٔ وردپرس',
 	'Reads cached WordPress Core update offers and check freshness; never checks for or installs an update.' => 'پیشنهادهای ذخیره‌شدهٔ به‌روزرسانی هستهٔ وردپرس و تازگی بررسی را می‌خواند؛ هیچ به‌روزرسانی‌ای را بررسی مجدد یا نصب نمی‌کند.',
 	'Site Configuration and native WordPress administration permission are required.' => 'گروه پیکربندی سایت و مجوز مدیریت بومی وردپرس لازم است.',
-	'Recent metadata-only Bridge activity; at most 50 entries retained for 30 days. This screen excludes content, secrets and request bodies. Failures before the request reaches WordPress are not captured here.' => 'فعالیت اخیر Bridge تنها شامل فراداده است؛ حداکثر ۵۰ رویداد ذخیره می‌شود و فقط رویدادهای ۳۰ روز اخیر نمایش داده می‌شوند. محتوا، اسرار و بدنهٔ درخواست‌ها در این صفحه ثبت نمی‌شوند. خطاهای پیش از رسیدن درخواست به وردپرس در اینجا دیده نمی‌شوند.',
+	'Recent metadata-only Bridge activity; at most 50 entries are stored with a 30-day display window. This screen excludes content, secrets and request bodies. Failures before the request reaches WordPress are not captured here.' => 'فعالیت اخیر Bridge تنها شامل فراداده است؛ حداکثر ۵۰ رویداد ذخیره می‌شود و فقط رویدادهای ۳۰ روز اخیر نمایش داده می‌شوند. محتوا، اسرار و بدنهٔ درخواست‌ها در این صفحه ثبت نمی‌شوند. خطاهای پیش از رسیدن درخواست به وردپرس در اینجا دیده نمی‌شوند.',
 	'Operation' => 'عملیات',
 	'Reference' => 'شناسهٔ ارجاع',
 	'Read Bridge Diagnostics' => 'خواندن عیب‌یابی Bridge',

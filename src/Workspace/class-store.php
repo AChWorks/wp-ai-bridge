@@ -1246,7 +1246,118 @@ final class Store {
 			return new WP_Error( 'workspace_state_invalid', __( 'The Workspace record state is invalid.', 'wp-ai-bridge' ) );
 		}
 
+		if ( ! empty( $state['delete_pending'] ) ) {
+			return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Workspace record is pending permanent deletion.', 'wp-ai-bridge' ) );
+		}
 		return $this->decorate_state( $id, $state, $json );
+	}
+
+
+	/**
+	 * Permanently delete ONLY the exact project-bound private record after a
+	 * strong identity check and an atomic deletion fence. No bulk or legacy
+	 * Workspace records can be deleted through this surface.
+	 *
+	 * The claim/key reservation ledger is intentionally untouched: a
+	 * previously committed canonical project/key remains reserved, preserving
+	 * the durable no-duplicate contract even after explicit deletion.
+	 *
+	 * @param array<string,mixed> $input Exact WordPress site and record identity.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function delete_exact( $input ) {
+		if ( ! is_array( $input ) || 7 !== count( $input ) ||
+			! isset( $input['kind'], $input['id'], $input['blog_id'], $input['project_ref'], $input['expected_version'], $input['expected_state_hash'], $input['confirmation'] ) ||
+			! in_array( $input['kind'], array( 'document', 'task' ), true ) ||
+			! is_int( $input['id'] ) || $input['id'] < 1 ||
+			! is_int( $input['blog_id'] ) || $input['blog_id'] !== (int) get_current_blog_id() ||
+			! is_string( $input['project_ref'] ) || '' === $input['project_ref'] || ! $this->valid_project_filter( $input['project_ref'] ) ||
+			! is_int( $input['expected_version'] ) || $input['expected_version'] < 1 ||
+			! is_string( $input['expected_state_hash'] ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $input['expected_state_hash'] ) ||
+			! is_string( $input['confirmation'] ) ||
+			sprintf( 'PERMANENTLY DELETE %s %d', strtoupper( $input['kind'] ), $input['id'] ) !== $input['confirmation'] ) {
+			return new WP_Error( 'workspace_delete_invalid', __( 'Exact site, bound record identity, version/hash and explicit record-specific confirmation are required.', 'wp-ai-bridge' ) );
+		}
+
+		$kind     = $input['kind'];
+		$id       = $input['id'];
+		$type     = 'document' === $kind ? self::DOCUMENT_POST_TYPE : self::TASK_POST_TYPE;
+		$scope    = 'document' === $kind ? 'documents' : 'tasks';
+		$lock     = Admission_Lock::acquire( $scope );
+		if ( ! $lock ) {
+			return new WP_Error( 'workspace_delete_busy', __( 'Exclusive Workspace deletion admission is unavailable; no deletion was attempted.', 'wp-ai-bridge' ) );
+		}
+		try {
+			if ( ! $lock->is_owned() ) {
+				return new WP_Error( 'workspace_delete_busy', __( 'Workspace deletion admission was lost; no deletion was attempted.', 'wp-ai-bridge' ) );
+			}
+			$post = get_post( $id );
+			if ( ! $post || $type !== $post->post_type ) {
+				return new WP_Error( 'workspace_delete_not_found', __( 'The exact private Workspace record was not found.', 'wp-ai-bridge' ) );
+			}
+			if ( ! current_user_can( 'delete_post', $id ) ) {
+				return new WP_Error( 'workspace_delete_denied', __( 'Current WordPress principal cannot permanently delete this private record.', 'wp-ai-bridge' ) );
+			}
+			$rows = get_post_meta( $id, self::META_STATE, false );
+			if ( ! is_array( $rows ) || 1 !== count( $rows ) || ! is_string( $rows[0] ) ) {
+				return new WP_Error( 'workspace_state_invalid', __( 'Workspace state has missing or multiple authoritative rows; no deletion was attempted.', 'wp-ai-bridge' ) );
+			}
+			$original_json = $rows[0];
+			$state         = $this->decode_state( $original_json );
+			if ( null === $state || $kind !== $state['kind'] ||
+				! isset( $state['project_ref'] ) || $state['project_ref'] !== $input['project_ref'] ) {
+				return new WP_Error( 'workspace_delete_not_found', __( 'The exact bound private Workspace record was not found.', 'wp-ai-bridge' ) );
+			}
+			if ( ! empty( $state['delete_pending'] ) ) {
+				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'A previous exact-record deletion may be incomplete. Reconcile the record before retrying.', 'wp-ai-bridge' ) );
+			}
+			if ( $state['version'] !== $input['expected_version'] ||
+				! hash_equals( $this->state_hash( $original_json ), $input['expected_state_hash'] ) ) {
+				return new WP_Error( 'workspace_stale', __( 'Workspace state changed since the exact deletion was approved; refresh before retrying.', 'wp-ai-bridge' ) );
+			}
+
+			// Atomic metadata CAS fences every subsequent Store mutation. If
+			// another writer won the race, do not attempt a destructive effect.
+			$state['delete_pending'] = true;
+			$state['version']        = $state['version'] + 1;
+			$state['modified_gmt']   = gmdate( 'c' );
+			$fenced_json            = $this->encode_state( $state );
+			if ( ! is_string( $fenced_json ) ||
+				false === update_post_meta( $id, self::META_STATE, wp_slash( $fenced_json ), $original_json ) ) {
+				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Deletion admission was not verified. Check the exact record before retrying.', 'wp-ai-bridge' ) );
+			}
+			if ( ! $lock->is_owned() ||
+				(string) get_post_meta( $id, self::META_STATE, true ) !== $fenced_json ||
+				! current_user_can( 'delete_post', $id ) ) {
+				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Deletion is fenced but could not be safely completed. Administrator reconciliation is required.', 'wp-ai-bridge' ) );
+			}
+			// Hooks may change the active WordPress site. Never delete on a
+			// switched blog, even after successful identity/CAS admission.
+			if ( (int) get_current_blog_id() !== $input['blog_id'] ) {
+				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Deletion is fenced but could not be safely completed. Administrator reconciliation is required.', 'wp-ai-bridge' ) );
+			}
+			// Force-delete one known private CPT only; no generic posts, no
+			// trash/archival semantic confusion, no whole-Workspace clearing.
+			// Provider hooks can throw after the irreversible effect; treat this
+			// as unknown rather than leaking a raw exception or retrying.
+			try {
+				wp_delete_post( $id, true );
+			} catch ( \Throwable $exception ) {
+				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Exact deletion could not be confirmed from WordPress readback. Do not recreate the record.', 'wp-ai-bridge' ) );
+			}
+			if ( (int) get_current_blog_id() !== $input['blog_id'] ||
+				get_post( $id ) || get_post_meta( $id, self::META_STATE, false ) ) {
+				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Exact deletion could not be confirmed from WordPress readback. Do not recreate the record.', 'wp-ai-bridge' ) );
+			}
+			return array(
+				'deleted' => true,
+				'id'      => $id,
+				'kind'    => $kind,
+				'blog_id' => (int) get_current_blog_id(),
+			);
+		} finally {
+			$lock->release();
+		}
 	}
 
 	/**
@@ -1271,6 +1382,10 @@ final class Store {
 		$kind          = self::DOCUMENT_POST_TYPE === $expected_type ? 'document' : 'task';
 		if ( null === $current_state || $kind !== $current_state['kind'] ) {
 			return new WP_Error( 'workspace_state_invalid', __( 'The Workspace record state is invalid.', 'wp-ai-bridge' ) );
+		}
+
+		if ( ! empty( $current_state['delete_pending'] ) ) {
+			return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Workspace record is pending permanent deletion and cannot be modified.', 'wp-ai-bridge' ) );
 		}
 
 		$expected_version = isset( $input['expected_version'] ) ? (int) $input['expected_version'] : 0;
