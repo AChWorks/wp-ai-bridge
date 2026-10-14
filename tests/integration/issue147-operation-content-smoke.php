@@ -44,7 +44,6 @@ try {
 	wpai147_content_assert( $preview->get_input_schema()['properties']['candidate']['maxLength'] >= strlen( $candidate ), 'Fresh WordPress registry did not bind the new operator policy to native JSON schema.' );
 	$raised = $read->execute( array_merge( $target, array( 'action' => 'read' ) ) );
 	wpai147_content_assert( ! is_wp_error( $raised ) && $raised['content'] === $original, 'Real installed source larger than 2 MiB was not readable under operator policy.' );
-	++$read_count;
 	$plan = $preview->execute( array_merge( $target, array( 'candidate' => $candidate ) ) );
 	wpai147_content_assert( ! is_wp_error( $plan ) && $plan['candidate_bytes'] > 2097152, 'Native preview could not validate above-default exact source candidate.' );
 	$binding = array(
