@@ -26,7 +26,7 @@ A client must refresh a document after another actor changes it before overwriti
 
 **WP AI Bridge → Tasks** stores durable work items. Each task keeps progress, review, and delivery as independent state dimensions so one status does not accidentally imply another.
 
-Task filters are available for progress, review, delivery, and archived state. The read-only **Project ID** column and task inspector show the same exact project reference or **Unbound** marker. Task list titles, dashboard summaries, inspector titles, goals and notes inherit native WordPress admin direction and alignment, without changing Persian admin controls or stored content. No separate project registry or Projects admin screen is required.
+Task filters are available for progress, review, delivery, and archived state. The read-only **Project ID** column and task inspector show the same exact project reference or **Unbound** marker. Task list titles, dashboard summaries, inspector titles and goals inherit native WordPress admin direction and alignment. Only the escaped raw Notes text block in the task inspector is isolated LTR/left-aligned like the document Markdown body, while the translated Notes label and surrounding controls retain their normal direction; no stored content is changed. No separate project registry or Projects admin screen is required.
 
 Tasks use the same `version` + `state_hash` stale-write protection as Workspace documents.
 

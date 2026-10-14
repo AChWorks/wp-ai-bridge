@@ -4,6 +4,11 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.6.3
+
+- Display the Task inspector's **raw Notes body** as an escaped, whitespace-preserving LTR/left-aligned text region, consistent with the inspected Document Markdown body. The Task heading, Project ID, Goal, Notes label, Dashboard and mixed-language tables continue to inherit the localized WordPress admin direction (#157).
+- Extend real WordPress administrator regressions with multiline English/Persian Notes and escaped HTML; preserve stored Workspace data, grants, OAuth, and original plugin identity. Upgrade smoke now starts from the actual SHA-256-pinned published v0.6.2 ZIP.
+
 ## 0.6.2
 
 - Restore the native WordPress admin direction and alignment for Dashboard, Documents and Tasks tables, mixed Persian/English titles, document/task inspector headings, and task goal/notes. Remove excessive per-cell LTR/left overrides introduced in PR #152, while retaining precise inline technical identifier ordering (#157).
