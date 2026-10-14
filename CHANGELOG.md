@@ -4,6 +4,8 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+- Allow separate administrator tuning of the finite high-trust registered REST JSON input budget, retaining its original 16 KiB default, independently clamped to existing incoming MCP request capacity and native Core/provider authorization, with real Adapter/WordPress tests (#147).
+
 - Allow a WordPress administrator to configure finite, per-site public HTTPS plugin/theme package download capacity separately from WordPress host upload limits and the protected Code & Extensions / External Packages grants, retaining the historical 100 MiB default and strict bounded streaming/cleanup behavior (#147).
 
 ## 0.6.3
