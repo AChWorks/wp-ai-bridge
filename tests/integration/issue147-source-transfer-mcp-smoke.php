@@ -111,6 +111,13 @@ try {
 		$session = (string) array_key_first( array_diff_key( $after, $before ) );
 	}
 	wpai147_source_assert( '' !== $session, 'MCP session missing.' );
+	$notice = new WP_REST_Request( 'POST', OAuth_Server::MCP_REQUEST_ROUTE );
+	$notice->set_header( 'Authorization', 'Bearer ' . $token );
+	$notice->set_header( 'Mcp-Session-Id', $session );
+	$notice->set_header( 'MCP-Protocol-Version', '2025-11-25' );
+	$notice->set_header( 'Content-Type', 'application/json' );
+	$notice->set_body( '{"jsonrpc":"2.0","method":"notifications/initialized"}' );
+	wpai147_source_assert( 202 === rest_do_request( $notice )->get_status(), 'MCP initialization notification failed.' );
 
 	$call = static function ( $name, $args ) use ( $token, $session, &$sequence ) {
 		list( $wire ) = wpai147_source_mcp( $token, $session, ++$sequence, $name, $args );
