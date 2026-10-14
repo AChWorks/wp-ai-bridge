@@ -1225,7 +1225,7 @@ final class Private_Transfer_Session {
 			}
 			$wire = json_decode( (string) stream_get_contents( $h, 2048 ), true );
 			if ( ! is_array( $wire ) ||
-				! in_array( $wire['consumer'] ?? '', array( 'media', 'content', 'wxr' ), true ) ||
+				! in_array( $wire['consumer'] ?? '', array( 'media', 'content', 'wxr', 'source' ), true ) ||
 				! is_string( $wire['intent'] ?? null ) ||
 				! is_int( $wire['target_id'] ?? null ) ) {
 				return new WP_Error( 'transfer_outcome_unknown', 'Claim fence is incomplete; no native retry is safe.' );
