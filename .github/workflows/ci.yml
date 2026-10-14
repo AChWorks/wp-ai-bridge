@@ -11,9 +11,11 @@ permissions:
   contents: read
 
 env:
-  # CI-only: Docker-published Official Images on the verified ECR Public namespace.
-  # Local compose keeps the original Docker Hub references unless explicitly overridden.
-  WPAI_CI_IMAGE_REGISTRY: public.ecr.aws/docker/library/
+  # CI-only: canonical Docker Hub Official Images. Every amd64 manifest and
+  # digest is verified before sharing a single same-run archive with test jobs.
+  # GitHub-hosted runners are exempt from public Docker Hub pull-rate limits.
+  # Local compose keeps its normal references unless explicitly overridden.
+  WPAI_CI_IMAGE_REGISTRY: docker.io/library/
   WPAI_CI_PULL_POLICY: never
 
 concurrency:
@@ -44,8 +46,8 @@ jobs:
               exit 1
             fi
             echo "Verified ${ref}@${digest} for linux/amd64"
-            # ECR Public limits unauthenticated pulls to 1/s. The manifest
-            # inspection can consume a request immediately before docker pull.
+            # Bound registry request bursts even for supported public images.
+            # Missing digests/platforms still fail the supply gate closed.
             sleep 2
             for attempt in 1 2 3; do
               if docker pull "${ref}@${digest}"; then
