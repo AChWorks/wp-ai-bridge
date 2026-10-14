@@ -58,6 +58,9 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `source-files-read` | Code & Extensions + Source Editing | List or read exact installed plugin/theme editable source targets; source payloads require the elevated boundary. |
 | `source-file-preview` | Code & Extensions + Source Editing | Validate and bind an exact candidate to the current target/preimage without writing. |
 | `source-file-apply` | Code & Extensions + Source Editing | Apply one preview-bound candidate with exact persistence verification and recovery ownership. |
+| `source-file-snapshot` | Code & Extensions + Source Editing + native editor authority; authenticated MCP client | Freeze the exact installed source into a private byte-window read lease; no entire source body in the response. |
+| `source-file-preview-transfer` | Code & Extensions + Source Editing + native editor authority; authenticated MCP client | Validate and bind a verified source ingress lease to the exact installed target and preimage without writing. |
+| `source-file-apply-transfer` | Code & Extensions + Source Editing + native editor authority; authenticated MCP client | Apply only the verified, preview-bound private source lease through existing atomic CAS/recovery with a once-only durable effect claim. |
 | `source-file-recover` | Code & Extensions + Source Editing | Restore the Bridge-owned exact preimage only while current bytes still match the owned candidate. |
 | `users-read` | Site Read | Read bounded user/role information without credential material. |
 | `user-upsert` | Users & Destructive | Create/update a user and assign an editable role. |

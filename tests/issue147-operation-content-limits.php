@@ -20,6 +20,7 @@ use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Operation_Content_Limits;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Source_PHP_Syntax_Validator;
 
 $tests = 0;
 $assert = static function ( $passed, $reason ) use ( &$tests ) {
@@ -71,6 +72,11 @@ $source      = new Source_Editing_Abilities( $permissions, new Mutation_Log() );
 $schema      = new ReflectionMethod( Source_Editing_Abilities::class, 'candidate_input_schema' );
 $assert( 4 * 1048576 === $schema->invoke( $source, false )['properties']['candidate']['maxLength'], 'Native source schema ignores configured capacity.' );
 $validate = new ReflectionMethod( Source_Editing_Abilities::class, 'validate_candidate' );
+$parser   = new Source_PHP_Syntax_Validator();
+$assert( true === $parser->validate( '' ), 'An empty PHP file regressed in bounded syntax checking.' );
+$assert( true === $validate->invoke( $source, array( 'php' => true ), '' ), 'The inline PHP Source Editing validator rejected exact empty candidate bytes.' );
+$invalid_php = $parser->validate( "<?php\nfunction broken( {\n" );
+$assert( is_wp_error( $invalid_php ) && 'source_php_syntax_invalid' === $invalid_php->get_error_code(), 'Allowing zero-length PHP weakened malformed PHP syntax rejection.' );
 $piece    = str_repeat( 'a', 3 * 1048576 );
 $assert( true === $validate->invoke( $source, array( 'php' => false ), $piece ), 'Safe above-default source candidate was refused.' );
 $GLOBALS['wpai_test']['options'][ Operation_Content_Limits::OPTION_NAME ] = $defaults;

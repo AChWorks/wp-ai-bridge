@@ -22,8 +22,17 @@ final class Source_PHP_Syntax_Validator {
 	 * @return true|WP_Error
 	 */
 	public function validate( $bytes, $verified_path = '' ) {
+		if ( ! is_string( $bytes ) ) {
+			return new WP_Error( 'source_php_validation_capacity', __( 'PHP source cannot be validated inside the available bounded memory budget.', 'wp-ai-bridge' ) );
+		}
+		// An empty PHP file contains no tokens, is valid PHP syntax and was
+		// accepted by the original Source Editing API. It requires no parser
+		// allocation, including when the host memory limit is unknown.
+		if ( '' === $bytes ) {
+			return true;
+		}
 		$limit = Operation_Content_Limits::effective_memory_bytes();
-		if ( ! is_string( $bytes ) || 0 === strlen( $bytes ) || $limit < 1 ) {
+		if ( $limit < 1 ) {
 			return new WP_Error( 'source_php_validation_capacity', __( 'PHP source cannot be validated inside the available bounded memory budget.', 'wp-ai-bridge' ) );
 		}
 		// An initial, syntactically unambiguous block comment is one lexical

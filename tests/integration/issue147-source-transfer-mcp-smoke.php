@@ -62,6 +62,7 @@ $old_capacity  = get_option( Operation_Content_Limits::OPTION_NAME, null );
 $fixture       = WP_PLUGIN_DIR . '/wpai147-source-mcp-fixture';
 $entry         = $fixture . '/wpai147-source-mcp-fixture.php';
 $helper        = $fixture . '/large-helper.php';
+$inline_helper = $fixture . '/inline-empty-helper.php';
 $plugin        = 'wpai147-source-mcp-fixture/wpai147-source-mcp-fixture.php';
 $original      = "<?php\n/*\n" . str_repeat( 'q', 2320000 ) . "\n*/\n";
 $candidate     = $original . "// source transfer complete\n";
@@ -83,11 +84,49 @@ wpai147_source_assert( ! is_dir( $fixture ), 'Source fixture directory already e
 wpai147_source_assert( wp_mkdir_p( $fixture ), 'Source fixture directory could not be created.' );
 file_put_contents( $entry, "<?php\n/* Plugin Name: Source Transfer Acceptance */\n" );
 file_put_contents( $helper, $original );
+file_put_contents( $inline_helper, "<?php\n// Inactive PHP helper that must remain editable to exact zero bytes.\n" );
 wp_clean_plugins_cache( true );
 
 try {
 	update_option( Settings::OPTION_NAME, $grant, false );
 	update_option( Operation_Content_Limits::OPTION_NAME, array( Operation_Content_Limits::SOURCE_MIB => 4 ), false );
+
+	// R2 backward compatibility: an inactive installed PHP helper may still
+	// be previewed and atomically replaced by EXACT ZERO BYTES over the
+	// original inline Ability contract. Do not loosen any source grants,
+	// preimage CAS, or recovery rules just to permit the empty token stream.
+	$inline_target = array(
+		'kind'      => 'plugin',
+		'extension' => $plugin,
+		'file'      => 'inline-empty-helper.php',
+	);
+	$inline_preview = wp_get_ability( 'wp-ai-bridge/source-file-preview' )->execute(
+		array_merge( $inline_target, array( 'candidate' => '' ) )
+	);
+	wpai147_source_assert(
+		is_array( $inline_preview ) && 0 === $inline_preview['candidate_bytes'] &&
+		hash( 'sha256', '' ) === $inline_preview['candidate_sha256'],
+		'Inline preview no longer accepts a zero-byte PHP candidate.'
+	);
+	$inline_applied = wp_get_ability( 'wp-ai-bridge/source-file-apply' )->execute(
+		array_merge(
+			$inline_target,
+			array(
+				'candidate'        => '',
+				'preimage_sha256'  => $inline_preview['preimage_sha256'],
+				'candidate_sha256' => $inline_preview['candidate_sha256'],
+				'candidate_id'     => $inline_preview['candidate_id'],
+			)
+		)
+	);
+	clearstatcache( true, $inline_helper );
+	wpai147_source_assert(
+		is_array( $inline_applied ) && 'success' === $inline_applied['outcome'] &&
+		hash( 'sha256', '' ) === $inline_applied['persisted_sha256'] &&
+		0 === filesize( $inline_helper ) && '' === file_get_contents( $inline_helper ),
+		'Inline Source Editing failed to persist an exact zero-byte PHP file.'
+	);
+
 	$oauth = new OAuth_Server( new OAuth_Store() );
 	$token = ( new OAuth_Store() )->issue(
 		OAuth_Store::TYPE_ACCESS,
@@ -236,6 +275,65 @@ try {
 	wpai147_source_assert( memory_get_peak_usage( true ) - $peak_before < 32 * 1048576, 'Parent PHP parser memory grew like an unbounded token array.' );
 	wpai147_source_assert( $candidate === file_get_contents( $helper ), 'Rejected high-token-density candidate affected installed source.' );
 
+	// R2 transfer-backed compatibility: a complete verified private lease
+	// may declare exactly zero bytes, with no append calls required.
+	// The preimage is now the >2MiB candidate persisted above; only its
+	// exact SHA-256, target and consumed-once receipt authorize the edit.
+	wp_set_current_user( 0 );
+	$empty_digest = hash( 'sha256', '' );
+	$empty_begin = $call(
+		'wp-ai-bridge/private-transfer',
+		array(
+			'action'      => 'begin',
+			'purpose'     => 'source_plugin',
+			'total_bytes' => 0,
+			'sha256'      => $empty_digest,
+		)
+	);
+	wpai147_source_assert( true === ( $empty_begin['success'] ?? false ), 'Zero-byte private source begin was rejected.' );
+	$empty_id = $empty_begin['data']['transfer_id'];
+	$ids[] = $empty_id;
+	$empty_verified = $call( 'wp-ai-bridge/private-transfer', array( 'action' => 'verify', 'transfer_id' => $empty_id ) );
+	wpai147_source_assert( true === ( $empty_verified['success'] ?? false ), 'Zero-byte source verification required an unnecessary append.' );
+	$empty_preview = $call(
+		'wp-ai-bridge/source-file-preview-transfer',
+		array_merge( $target, array( 'transfer_id' => $empty_id ) )
+	);
+	wpai147_source_assert(
+		true === ( $empty_preview['success'] ?? false ) &&
+		0 === $empty_preview['data']['candidate_bytes'] &&
+		$empty_digest === $empty_preview['data']['candidate_sha256'],
+		'Zero-byte PHP source lease did not produce an exact bounded preview.'
+	);
+	$empty_plan = $empty_preview['data'];
+	$empty_apply_input = array_merge(
+		$target,
+		array(
+			'transfer_id'      => $empty_id,
+			'preimage_sha256'  => $empty_plan['preimage_sha256'],
+			'candidate_sha256' => $empty_plan['candidate_sha256'],
+			'candidate_id'     => $empty_plan['candidate_id'],
+		)
+	);
+	$empty_applied = $call( 'wp-ai-bridge/source-file-apply-transfer', $empty_apply_input );
+	clearstatcache( true, $helper );
+	wpai147_source_assert(
+		true === ( $empty_applied['success'] ?? false ) &&
+		'success' === ( $empty_applied['data']['outcome'] ?? '' ) &&
+		$empty_digest === ( $empty_applied['data']['persisted_sha256'] ?? '' ) &&
+		0 === filesize( $helper ) && '' === file_get_contents( $helper ),
+		'Zero-byte transfer-backed Source Editing did not persist exact empty source.'
+	);
+	$empty_replay = $call( 'wp-ai-bridge/source-file-apply-transfer', $empty_apply_input );
+	wpai147_source_assert( true === ( $empty_replay['isError'] ?? false ), 'A committed zero-byte source lease could be replayed.' );
+	$empty_status = $call( 'wp-ai-bridge/private-transfer', array( 'action' => 'status', 'transfer_id' => $empty_id ) );
+	wpai147_source_assert( 'committed' === ( $empty_status['data']['state'] ?? '' ), 'Zero-byte Source Editing claim was not durably committed.' );
+	$empty_release = $call( 'wp-ai-bridge/private-transfer', array( 'action' => 'release', 'transfer_id' => $empty_id ) );
+	wpai147_source_assert(
+		true === ( $empty_release['success'] ?? false ) && true === ( $empty_release['data']['payload_released'] ?? false ),
+		'Zero-byte source lease bytes were not released after commitment.'
+	);
+	echo "PASS: #147 R2 exact-zero PHP inline and authenticated private-transfer preview/apply/replay and memory guards.\n";
 	echo 'PASS: #147 real OAuth/MCP source egress >2MiB in ' . $windows . ' bounded windows, staged ingress/CAS, wrong target/digest, revocation, replay, bounded PHP lexer; peak=' . memory_get_peak_usage( true ) . "\n";
 } finally {
 	wp_set_current_user( $actor );
@@ -252,7 +350,7 @@ try {
 	foreach ( $ids as $transfer_id ) {
 		( new \WP_AI_Bridge\Support\Private_Transfer_Session( new \WP_AI_Bridge\Support\Permissions( new Settings() ) ) )->cancel( $transfer_id );
 	}
-	foreach ( array( $helper, $entry ) as $file ) {
+	foreach ( array( $inline_helper, $helper, $entry ) as $file ) {
 		if ( is_file( $file ) ) {
 			unlink( $file );
 		}
