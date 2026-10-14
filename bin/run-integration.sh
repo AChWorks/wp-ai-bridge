@@ -80,6 +80,7 @@ for test in \
     issue140-site-health-smoke.php \
     issue138-native-cron-smoke.php \
     issue138-native-cron-mutation-smoke.php \
+    issue138-cron-native-writer-race-smoke.php \
     issue139-wxr-discovery-smoke.php \
     issue139-native-wxr-export-smoke.php \
     issue139-wxr-staged-stream-smoke.php \

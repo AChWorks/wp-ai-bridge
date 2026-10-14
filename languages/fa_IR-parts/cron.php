@@ -27,6 +27,7 @@ return array(
 	'An event for this exact provider-managed Cron profile already exists.' => 'برای این پروفایل مدیریت‌شده Cron رویداد دیگری وجود دارد.',
 	'WordPress did not verify cancellation of the exact selected Cron event. Inspect current schedules before any retry.' => 'وردپرس لغو رویداد دقیق را تأیید نکرده است؛ پیش از تلاش دوباره رویدادهای فعلی را بررسی کنید.',
 	'Rescheduling may have partially changed WordPress Cron. Inspect exact current events before any retry.' => 'ممکن است تغییر زمان Cron فقط بخشی از تغییرات را اعمال کرده باشد؛ پیش از تلاش دوباره وضعیت رویدادها را بررسی کنید.',
+	'The exact provider-managed Cron state changed or could not be verified. Inspect current events before any retry.' => 'وضعیت دقیق رویداد Cron مدیریت‌شده تغییر کرده یا تأییدشدنی نیست؛ پیش از هر تلاش دوباره، رویدادهای فعلی را بررسی کنید.',
 	'Invalid or incomplete authorized Cron mutation request.' => 'درخواست تغییر Cron ناقص یا نامعتبر است.',
 	'WordPress did not verify the requested scheduled event. Inspect current schedules before retrying.' => 'وردپرس زمان‌بندی درخواست‌شده را تأیید نکرده است؛ پیش از تکرار، رویدادها را بررسی کنید.',
 	'The native Cron mutation coordinator is unavailable.' => 'هماهنگ‌کننده تغییرات Cron در دسترس نیست.',

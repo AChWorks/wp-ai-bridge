@@ -322,7 +322,11 @@ final class Cron_Mutation_Abilities {
 				if ( ! $this->lock_owned( $lock ) ) {
 					return $this->lock_lost();
 				}
-				return $this->schedule( $action, $profile, $timestamp, $recurrence );
+				$created = $this->schedule( $profile, $timestamp, $recurrence );
+				if ( is_wp_error( $created ) ) {
+					return $created;
+				}
+				return $this->confirmed_receipt( $action, 'scheduled', $profile, $created['event_id'], $timestamp, $recurrence, $lock );
 			}
 			$event_id = $input['event_id'];
 			if ( ! isset( $events[ $event_id ] ) ) {
@@ -334,22 +338,21 @@ final class Cron_Mutation_Abilities {
 					return $this->lock_lost();
 				}
 				$result = wp_unschedule_event( $prior['timestamp'], $profile['hook'], $profile['args'], true );
-				$exists = wp_get_scheduled_event( $profile['hook'], $profile['args'], $prior['timestamp'] );
-				if ( true !== $result || false !== $exists ) {
+				if ( true !== $result ) {
 					return new WP_Error( 'cron_outcome_unknown', __( 'WordPress did not verify cancellation of the exact selected Cron event. Inspect current schedules before any retry.', 'wp-ai-bridge' ) );
 				}
-				return $this->receipt( $action, 'unscheduled', $event_id, $prior['timestamp'], $this->snapshot() );
+				return $this->confirmed_receipt( $action, 'unscheduled', $profile, $event_id, $prior['timestamp'], '', $lock );
 			}
 			if ( 1 !== count( $events ) ) {
 				return new WP_Error( 'cron_duplicate_profile', __( 'An event for this exact provider-managed Cron profile already exists.', 'wp-ai-bridge' ) );
 			}
 			if ( $timestamp === $prior['timestamp'] && $recurrence === $prior['recurrence'] ) {
-				return $this->receipt( $action, 'unchanged', $event_id, $timestamp, $inventory['snapshot'] );
+				return $this->confirmed_receipt( $action, 'unchanged', $profile, $event_id, $timestamp, $recurrence, $lock );
 			}
 			if ( ! $this->lock_owned( $lock ) ) {
 				return $this->lock_lost();
 			}
-			$created = $this->schedule( $action, $profile, $timestamp, $recurrence );
+			$created = $this->schedule( $profile, $timestamp, $recurrence );
 			if ( is_wp_error( $created ) ) {
 				return $created;
 			}
@@ -362,7 +365,7 @@ final class Cron_Mutation_Abilities {
 			if ( true !== $removed || false !== $old || ! is_object( $new ) ) {
 				return new WP_Error( 'cron_outcome_unknown', __( 'Rescheduling may have partially changed WordPress Cron. Inspect exact current events before any retry.', 'wp-ai-bridge' ) );
 			}
-			return $this->receipt( $action, 'rescheduled', $created['event_id'], $timestamp, $this->snapshot() );
+			return $this->confirmed_receipt( $action, 'rescheduled', $profile, $created['event_id'], $timestamp, $recurrence, $lock );
 		} finally {
 			$lock->release();
 		}
@@ -441,8 +444,8 @@ final class Cron_Mutation_Abilities {
 		return $events;
 	}
 
-	/** @param string $action Operation. @param array<string,mixed> $profile Provider profile. @param int $when Future UTC. @param string $recurrence Exact registered cadence. @return array<string,mixed>|WP_Error */
-	private function schedule( $action, $profile, $when, $recurrence ) {
+	/** @param array<string,mixed> $profile Provider profile. @param int $when Future UTC. @param string $recurrence Exact registered cadence. @return array<string,mixed>|WP_Error */
+	private function schedule( $profile, $when, $recurrence ) {
 		$ok     = '' === $recurrence
 			? wp_schedule_single_event( $when, $profile['hook'], $profile['args'], true )
 			: wp_schedule_event( $when, $recurrence, $profile['hook'], $profile['args'], true );
@@ -453,7 +456,61 @@ final class Cron_Mutation_Abilities {
 		}
 		$key      = md5( serialize( $profile['args'] ) );
 		$identity = hash_hmac( 'sha256', get_current_blog_id() . '|' . $when . '|' . $profile['hook'] . '|' . $key, wp_salt( 'auth' ) );
-		return $this->receipt( $action, 'scheduled', $identity, $when, $this->snapshot() );
+		// A new event existing at its timestamp is not yet a success receipt:
+		// a native/provider writer outside Admission_Lock may have scheduled
+		// another event for this exact profile in the same mutation window.
+		return array( 'event_id' => $identity );
+	}
+
+	/**
+	 * Re-read native Cron while the Bridge lock is held before reporting success.
+	 *
+	 * The Bridge lock serializes Bridge writers only. Ordinary WP-Cron writers
+	 * do not participate, so an immediately observed competing event must be
+	 * reported as an unknown outcome rather than a misleading clean success.
+	 * WordPress event keys carry no writer provenance: deleting the new event
+	 * automatically could also remove a competing writer's event at that key.
+	 * Do not claim rollback or blindly retry an ambiguous native write.
+	 *
+	 * Two full inventory digests bracket the exact-profile read so a visible
+	 * uncoordinated change during verification cannot yield a stale receipt.
+	 *
+	 * @param string                      $action     Requested action.
+	 * @param string                      $status     Proposed verified status.
+	 * @param array<string,mixed>         $profile    Fixed provider hook/args.
+	 * @param string                      $event_id   Exact HMAC event identity.
+	 * @param int                         $when       Expected event timestamp.
+	 * @param string                      $recurrence Expected native schedule.
+	 * @param Admission_Lock              $lock       Bridge-owned lock.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private function confirmed_receipt( $action, $status, $profile, $event_id, $when, $recurrence, $lock ) {
+		if ( ! $this->lock_owned( $lock ) ) {
+			return $this->unverified_outcome();
+		}
+		$before = $this->snapshot();
+		$events = $this->matching( $profile );
+		$after  = $this->snapshot();
+		if ( ! is_string( $before ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $before ) ||
+			! is_string( $after ) || ! hash_equals( $before, $after ) ||
+			is_wp_error( $events ) || ! $this->lock_owned( $lock ) ) {
+			return $this->unverified_outcome();
+		}
+		if ( 'unscheduled' === $status ) {
+			if ( $events ) {
+				return $this->unverified_outcome();
+			}
+		} elseif ( 1 !== count( $events ) || ! isset( $events[ $event_id ] ) ||
+			$when !== $events[ $event_id ]['timestamp'] ||
+			$recurrence !== $events[ $event_id ]['recurrence'] ) {
+			return $this->unverified_outcome();
+		}
+		return $this->receipt( $action, $status, $event_id, $when, $after );
+	}
+
+	/** @return WP_Error */
+	private function unverified_outcome() {
+		return new WP_Error( 'cron_outcome_unknown', __( 'The exact provider-managed Cron state changed or could not be verified. Inspect current events before any retry.', 'wp-ai-bridge' ) );
 	}
 
 	/** @return array<string,mixed> */
