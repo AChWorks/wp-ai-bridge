@@ -17,42 +17,31 @@ function wpai147_content_assert( $ok, $message ) {
 	}
 }
 
-$settings       = new Settings();
-$policy         = new Operation_Content_Limits();
-$original_grant = get_option( Settings::OPTION_NAME, array() );
-$original_limit = get_option( Operation_Content_Limits::OPTION_NAME, null );
+$settings        = new Settings();
+$policy          = new Operation_Content_Limits();
+$state_name      = 'wpai147_operation_content_fixture_state';
+$state           = get_option( $state_name, false );
+wpai147_content_assert( is_array( $state ) && array_key_exists( 'original_grant', $state ) && array_key_exists( 'original_limit', $state ), 'Cross-request fixture preparation is missing.' );
+$original_grant = $state['original_grant'];
+$original_limit = $state['original_limit'];
 $plugin_id      = 'wpai147-content-capacity-fixture/wpai147-content-capacity-fixture.php';
 $directory      = WP_PLUGIN_DIR . '/wpai147-content-capacity-fixture';
 $entry          = $directory . '/wpai147-content-capacity-fixture.php';
 $helper         = $directory . '/large-helper.php';
 $receipt_name   = Source_Editing_Abilities::RECOVERY_OPTION;
-
-wpai147_content_assert( ! file_exists( $directory ) && false === get_option( $receipt_name, false ), 'Fixture namespace or recovery receipt is already owned by another source operation.' );
-$read_count = 0;
+$original       = "<?php\n/*\n" . str_repeat( 'x', 2320000 ) . "\n*/\n";
+$candidate      = $original . "\n// applied by isolated #147 acceptance\n";
+$grants         = get_option( Settings::OPTION_NAME, array() );
+$target         = array( 'kind' => 'plugin', 'extension' => $plugin_id, 'file' => 'large-helper.php' );
 
 try {
-	wpai147_content_assert( wp_mkdir_p( $directory ), 'Could not create isolated inactive plugin fixture.' );
-	file_put_contents( $entry, "<?php\n/*\nPlugin Name: WPAI 147 Content Capacity Fixture\n*/\n" );
-	$original = "<?php\n/*\n" . str_repeat( 'x', 2320000 ) . "\n*/\n";
-	$candidate = $original . "\n// applied by isolated #147 acceptance\n";
-	file_put_contents( $helper, $original );
-	wp_clean_plugins_cache( true );
-
-	$grants                                 = $settings->defaults();
-	$grants[ Settings::GROUP_CODE_EXTENSIONS ] = 1;
-	$grants[ Settings::GROUP_SOURCE_EDITING ]  = 1;
-	update_option( Settings::OPTION_NAME, $grants, false );
+	wpai147_content_assert( is_file( $entry ) && is_file( $helper ), 'Staged fixture from previous WordPress request was not preserved.' );
 	$read    = wp_get_ability( 'wp-ai-bridge/source-files-read' );
 	$preview = wp_get_ability( 'wp-ai-bridge/source-file-preview' );
 	$apply   = wp_get_ability( 'wp-ai-bridge/source-file-apply' );
 	$recover = wp_get_ability( 'wp-ai-bridge/source-file-recover' );
-	wpai147_content_assert( $read && $preview && $apply && $recover, 'Bounded native source editing abilities are unavailable.' );
-	$target = array( 'kind' => 'plugin', 'extension' => $plugin_id, 'file' => 'large-helper.php' );
-
-	$default_read = $read->execute( array_merge( $target, array( 'action' => 'read' ) ) );
-	wpai147_content_assert( is_wp_error( $default_read ) && 'source_file_too_large' === $default_read->get_error_code(), 'Original 2 MiB fail-closed source guard not enforced.' );
-
-	update_option( Operation_Content_Limits::OPTION_NAME, $policy->sanitize( array( Operation_Content_Limits::SOURCE_MIB => 4 ) ), false );
+	wpai147_content_assert( $read instanceof WP_Ability && $preview instanceof WP_Ability && $apply instanceof WP_Ability && $recover instanceof WP_Ability, 'Native WordPress source editing abilities are unavailable.' );
+	wpai147_content_assert( $preview->get_input_schema()['properties']['candidate']['maxLength'] >= strlen( $candidate ), 'Fresh WordPress registry did not bind the new operator policy to native JSON schema.' );
 	$raised = $read->execute( array_merge( $target, array( 'action' => 'read' ) ) );
 	wpai147_content_assert( ! is_wp_error( $raised ) && $raised['content'] === $original, 'Real installed source larger than 2 MiB was not readable under operator policy.' );
 	++$read_count;
@@ -100,7 +89,11 @@ try {
 
 	echo "PASS: #147 real WordPress source >2MiB read/preview/apply, lower-cap new admission and exact recovery, revocation.\n";
 } finally {
-	update_option( Settings::OPTION_NAME, $original_grant, false );
+	if ( null === $original_grant ) {
+		delete_option( Settings::OPTION_NAME );
+	} else {
+		update_option( Settings::OPTION_NAME, $original_grant, false );
+	}
 	if ( null === $original_limit ) {
 		delete_option( Operation_Content_Limits::OPTION_NAME );
 	} else {
@@ -122,4 +115,5 @@ try {
 		rmdir( $directory );
 	}
 	wp_clean_plugins_cache( true );
+	delete_option( $state_name );
 }

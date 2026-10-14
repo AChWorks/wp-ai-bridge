@@ -125,6 +125,11 @@ do
         "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/mu-plugins
         "${compose[@]}" cp "$root/tests/fixtures/issue44-native-provider.php" wordpress:/var/www/html/wp-content/mu-plugins/wpai-issue44-native-provider.php
     fi
+    if [[ "$test" == "issue147-operation-content-smoke.php" ]]; then
+        # A real subsequent request must bootstrap the native WP Ability
+        # registry after saving the administrator's new size policy.
+        "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue147-operation-content-setup.php --user=1 --allow-root
+    fi
     "${wp[@]}" eval-file "wp-content/plugins/wp-ai-bridge/tests/integration/${test}" --user=1 --allow-root
     if [[ "$test" == "issue110-site-context-smoke.php" ]]; then
         "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-content/mu-plugins/wpai-catalog-contract.php
