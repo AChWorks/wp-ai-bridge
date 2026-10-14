@@ -1,5 +1,6 @@
 <?php
 /** Real WordPress external plugin/theme package installation boundary tests. */
+use WP_AI_Bridge\Support\External_Package_Limits;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Settings;
 
@@ -36,6 +37,11 @@ function wpnb67_fixture_zip( $kind ) {
 
 $settings      = new Settings();
 $original      = get_option( Settings::OPTION_NAME, $settings->defaults() );
+$old_capacity  = get_option( External_Package_Limits::OPTION_NAME, false );
+$package_limit = new External_Package_Limits();
+$package_limit->register();
+update_option( External_Package_Limits::OPTION_NAME, 192, false );
+wpnb67_integration_assert( 192 === $package_limit->requested_mib(), 'Native per-blog extension package setting could not be raised above old 100 MiB ceiling.' );
 $original_log  = get_option( Mutation_Log::OPTION_NAME, array() );
 $plugin_source = 'https://s.w.org/wpai-external-plugin.zip?signature=SENSITIVE_PACKAGE_MARKER';
 $theme_source  = 'https://s.w.org/wpai-external-theme.zip?signature=SENSITIVE_PACKAGE_MARKER';
@@ -47,11 +53,13 @@ $enabled[ Settings::GROUP_EXTERNAL_PACKAGES ] = 1;
 $calls              = 0;
 $unexpected_calls   = 0;
 $staging            = array();
+$observed_download_limit = 0;
+$raised_native_host_limit = static function () { return 256 * External_Package_Limits::MIB; };
 $mode               = 'success';
 $redirect_target    = null;
 $redirect_forwarded = 0;
 
-$mock = static function ( $pre, $args, $url ) use ( &$calls, &$unexpected_calls, &$staging, &$mode, &$redirect_target, &$redirect_forwarded, $plugin_source, $theme_source, $plugin_bytes, $theme_bytes ) {
+$mock = static function ( $pre, $args, $url ) use ( &$calls, &$unexpected_calls, &$staging, &$mode, &$redirect_target, &$redirect_forwarded, &$observed_download_limit, $plugin_source, $theme_source, $plugin_bytes, $theme_bytes ) {
 	++$calls;
 	if ( ! in_array( $url, array( $plugin_source, $theme_source, 'https://wordpress.org/wpai-external-redirect.zip' ), true ) ) {
 		++$unexpected_calls;
@@ -62,6 +70,7 @@ $mock = static function ( $pre, $args, $url ) use ( &$calls, &$unexpected_calls,
 	wpnb67_integration_assert( array() === $args['cookies'] && array( 'Accept-Encoding' => 'identity' ) === $args['headers'], 'External package download forwarded credentials or arbitrary headers.' );
 	wpnb67_integration_assert( 30 === $args['timeout'] && 5 === $args['redirection'], 'External package network budgets changed.' );
 	wpnb67_integration_assert( wp_max_upload_size() >= $args['limit_response_size'] - 1, 'External package limit exceeded the hosting upload limit.' );
+	$observed_download_limit = $args['limit_response_size'];
 	$staging[] = $args['filename'];
 
 	if ( null !== $redirect_target ) {
@@ -140,6 +149,9 @@ try {
 	}
 	wpnb67_integration_assert( $unsafe_calls === $calls && 0 === $unexpected_calls, 'Unsafe package URL reached fixture HTTP.' );
 
+	// Model a WordPress installation whose native upload allowance was
+	// independently raised above the old Bridge-only 100 MiB ceiling.
+	add_filter( 'upload_size_limit', $raised_native_host_limit );
 	$result = $ability->execute( $plugin_input );
 	$failure_code = is_wp_error( $result ) ? $result->get_error_code() : 'unexpected_result';
 	$failure_detail = '';
@@ -157,17 +169,28 @@ try {
 	$installed_plugin = (string) $result['target'];
 	wpnb67_integration_assert( isset( get_plugins()[ $installed_plugin ] ), 'Installed plugin target is not present in Core plugin inventory.' );
 	wpnb67_integration_assert( ! is_plugin_active( $installed_plugin ), 'External plugin install activated code implicitly.' );
+	wpnb67_integration_assert(
+		192 * External_Package_Limits::MIB + 1 === $observed_download_limit,
+		'Registered raised WordPress host allowance did not admit operator-configured 192 MiB download above prior 100 MiB cap.'
+	);
+	remove_filter( 'upload_size_limit', $raised_native_host_limit );
 	foreach ( $staging as $file ) {
 		wpnb67_integration_assert( ! is_file( $file ), 'Successful plugin install retained staging package.' );
 	}
 	wpnb67_integration_assert( false === strpos( json_encode( get_option( Mutation_Log::OPTION_NAME, array() ) ), 'SENSITIVE_PACKAGE_MARKER' ), 'Successful plugin audit leaked package URL secret.' );
 
+	update_option( External_Package_Limits::OPTION_NAME, 1, false );
 	$result = $ability->execute( $theme_input );
 	$theme_failure_code = is_wp_error( $result ) ? $result->get_error_code() : 'unexpected_result';
 	wpnb67_integration_assert( ! is_wp_error( $result ) && true === $result['success'], 'External theme package install failed (' . sanitize_key( $theme_failure_code ) . ').' );
 	$installed_theme = (string) $result['target'];
 	wpnb67_integration_assert( wp_get_theme( $installed_theme )->exists(), 'Installed theme target is not present in Core theme inventory.' );
 	wpnb67_integration_assert( get_stylesheet() !== $installed_theme, 'External theme install activated the theme implicitly.' );
+	wpnb67_integration_assert(
+		min( wp_max_upload_size(), External_Package_Limits::MIB ) + 1 === $observed_download_limit,
+		'Lowering per-site package policy failed to restrict the next native WordPress download.'
+	);
+	update_option( External_Package_Limits::OPTION_NAME, 192, false );
 	foreach ( $staging as $file ) {
 		wpnb67_integration_assert( ! is_file( $file ), 'Successful theme install retained staging package.' );
 	}
@@ -224,6 +247,7 @@ try {
 	}
 } finally {
 	restore_error_handler();
+	remove_filter( 'upload_size_limit', $raised_native_host_limit );
 	remove_filter( 'pre_http_request', $mock, 10 );
 	update_option( Settings::OPTION_NAME, $enabled, false );
 	if ( '' !== $installed_plugin && isset( get_plugins()[ $installed_plugin ] ) ) {
@@ -242,6 +266,11 @@ try {
 	}
 	update_option( Mutation_Log::OPTION_NAME, $original_log, false );
 	update_option( Settings::OPTION_NAME, $original, false );
+	if ( false === $old_capacity ) {
+		delete_option( External_Package_Limits::OPTION_NAME );
+	} else {
+		update_option( External_Package_Limits::OPTION_NAME, $old_capacity, false );
+	}
 }
 
 echo 'PASS: Issue #67 external package integration (' . $GLOBALS['wpnb67_integration_checks'] . " assertions).\n";

@@ -86,6 +86,7 @@ for test in \
     issue139-private-mcp-wxr-smoke.php \
     issue119-registered-rest-smoke.php \
     issue119-native-execution-smoke.php \
+    issue147-rest-input-smoke.php \
     issue44-native-ability-delegation-smoke.php \
     issue46-source-editing-smoke.php \
     issue3-content-block-smoke.php \
