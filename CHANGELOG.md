@@ -4,6 +4,13 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.6.3
+
+- Display the Task inspector's **raw Notes body** as an escaped, whitespace-preserving LTR/left-aligned text region, consistent with the inspected Document Markdown body. The Task heading, Project ID, Goal, Notes label, Dashboard and mixed-language tables continue to inherit the localized WordPress admin direction (#157).
+- Extend real WordPress administrator regressions with multiline English/Persian Notes and escaped HTML; preserve stored Workspace data, grants, OAuth, and original plugin identity. Upgrade smoke now starts from the actual SHA-256-pinned published v0.6.2 ZIP.
+
+- Provide administrator-delegated, bounded native WP-Cron event inspection and trusted installed-provider profile schedule/reschedule/unschedule operations, with exact event identity, stale-state/concurrency protection, and protected grants; targeted `run_now` is available only for explicitly opted-in installed-provider runners with durable once-only business-effect claims and truthful uncertain outcomes. No generic callback executor or uncontrolled run-all action (#138, PR #144).
+
 - Add purpose-bound authenticated Source Editing snapshots and verified private transfer preview/apply for multi-MiB source files across bounded MCP windows; preserve atomic source CAS/recovery and apply a conservative PHP token/parser memory preflight before syntax validation (#147).
 
 - Introduce independent native WordPress administrator controls for bounded installed extension source editing, registered setting values and public schemas, and read-only Ability catalog JSON responses, preserving existing defaults, grants, authorization, source CAS and durable recovery when a limit is lowered (#147).
@@ -12,10 +19,9 @@ All notable public changes are documented here.
 
 - Allow a WordPress administrator to configure finite, per-site public HTTPS plugin/theme package download capacity separately from WordPress host upload limits and the protected Code & Extensions / External Packages grants, retaining the historical 100 MiB default and strict bounded streaming/cleanup behavior (#147).
 
-## 0.6.3
+- Preserve empty-string PHP source-edit preview/apply semantics for both inline and verified private transfer (including zero-byte leases), without allocating parser tokens or weakening the existing memory, authorization, CAS/recovery and no-replay protections (#147, PR #163).
 
-- Display the Task inspector's **raw Notes body** as an escaped, whitespace-preserving LTR/left-aligned text region, consistent with the inspected Document Markdown body. The Task heading, Project ID, Goal, Notes label, Dashboard and mixed-language tables continue to inherit the localized WordPress admin direction (#157).
-- Extend real WordPress administrator regressions with multiline English/Persian Notes and escaped HTML; preserve stored Workspace data, grants, OAuth, and original plugin identity. Upgrade smoke now starts from the actual SHA-256-pinned published v0.6.2 ZIP.
+- Preserve the existing canonical WordPress plugin identity, Workspace data, OAuth clients and grants across an ordinary published v0.6.2 → v0.6.3 upgrade; new high-trust operations require deliberate administrator grants and native capabilities, and there is no automatic activation of Cron mutation or Source Editing. Installed-site/browser and hosted-client acceptance remain separate (#92, #126, #134, #138, #147, #157).
 
 ## 0.6.2
 
