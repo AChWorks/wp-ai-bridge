@@ -189,6 +189,8 @@ Use the correct owning API for the operation. Generic storage mutation is not a 
 
 An implementation increment may cover fewer families, but its scope cannot redefine the product ceiling. Track verified implementation gaps in downstream work derived from this specification. Do not mark overall administrator parity complete merely because the current tool list or one work item is complete.
 
+**WP-Cron source-only status (#138):** The unmerged Draft implements read-only native event inventory and a proposed separate, high-trust opt-in provider lifecycle for exact scheduling, rescheduling and unscheduling via Core APIs. Remote callers never control serialized arguments, hook/callback definitions or bulk-clear. Provider policy opts into exact trusted argument profiles; WordPress admin authority and Site Configuration must both hold, and stale event IDs/snapshots fail. This is not a second scheduler or a safe native targeted run-now API: WordPress's global Cron runner is not an isolated single-event execution contract. Immediate execution remains explicitly unsupported until an independently approved provider-specific idempotent runner exists. A native Core mutation whose outcome cannot be verified must report uncertainty rather than falsely claiming atomic rollback. Keep Draft until public API/security and installed-client review gates.
+
 ## 9. Content, metadata, and concurrency
 
 Generic authoring uses an eligibility predicate suitable for the action, not a permanent ban on administrating other legitimate WordPress objects. Objects needing a different lifecycle must use the corresponding operation. Private Bridge Workspace/authentication storage stays behind its own contracts, not ordinary content or metadata routes.

@@ -78,6 +78,11 @@ for test in \
     issue99-extension-authorization-smoke.php \
     issue130-141-diagnostics-smoke.php \
     issue140-site-health-smoke.php \
+    issue138-native-cron-smoke.php \
+    issue138-native-cron-mutation-smoke.php \
+    issue138-cron-native-writer-race-smoke.php \
+    issue138-targeted-run-now-smoke.php \
+    issue138-targeted-alias-idempotency-smoke.php \
     issue139-wxr-discovery-smoke.php \
     issue139-native-wxr-export-smoke.php \
     issue139-wxr-staged-stream-smoke.php \
