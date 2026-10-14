@@ -4,6 +4,8 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+- Allow a WordPress administrator to configure finite, per-site public HTTPS plugin/theme package download capacity separately from WordPress host upload limits and the protected Code & Extensions / External Packages grants, retaining the historical 100 MiB default and strict bounded streaming/cleanup behavior (#147).
+
 ## 0.6.3
 
 - Display the Task inspector's **raw Notes body** as an escaped, whitespace-preserving LTR/left-aligned text region, consistent with the inspected Document Markdown body. The Task heading, Project ID, Goal, Notes label, Dashboard and mixed-language tables continue to inherit the localized WordPress admin direction (#157).

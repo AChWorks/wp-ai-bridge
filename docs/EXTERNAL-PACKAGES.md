@@ -30,7 +30,7 @@ The download uses bounded WordPress HTTP transport:
 - the response is streamed directly to an invocation-owned WordPress temporary file;
 - decompression is disabled and `Accept-Encoding: identity` is fixed;
 - no caller cookies or arbitrary request headers are forwarded;
-- the byte limit is the smaller of the current WordPress upload limit and **100 MiB**, plus one overflow-sentinel byte for truncation detection.
+- the byte limit is the smaller of the native current **WordPress upload limit** and the independently configurable **per-site external package MiB policy** (default **100 MiB**), plus one overflow-sentinel byte for truncation detection. A WordPress administrator can change this policy under **WP AI Bridge → Settings → External HTTPS extension package capacity** without editing plugin PHP or enabling any permissions; the requested policy is strictly positive, finite, machine-integer-safe, and separately bounded by current WordPress/hosting limits.
 
 Resolver validation is a preflight/redirect safety layer, not transport DNS pinning. Hosting/network egress policy remains an additional independent defense.
 

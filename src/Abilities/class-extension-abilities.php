@@ -17,7 +17,6 @@ use WP_Error;
  * Uses supported WordPress administration APIs; never edits extension files directly.
  */
 final class Extension_Abilities {
-	const ABSOLUTE_MAX_PACKAGE_BYTES = 104857600;
 
 	/** @var Permissions */
 	private $permissions;
@@ -353,7 +352,7 @@ final class Extension_Abilities {
 			return $this->external_package_error( $kind, 'unsafe_external_package_url', __( 'WordPress did not accept the external package URL as a safe public HTTPS destination.', 'wp-ai-bridge' ) );
 		}
 
-		$max_bytes = min( (int) wp_max_upload_size(), self::ABSOLUTE_MAX_PACKAGE_BYTES );
+		$max_bytes = ( new \WP_AI_Bridge\Support\External_Package_Limits() )->effective_bytes();
 		if ( $max_bytes < 1 ) {
 			return $this->external_package_error( $kind, 'external_package_limit_unavailable', __( 'WordPress must provide a finite positive upload limit before an external package can be installed.', 'wp-ai-bridge' ) );
 		}
