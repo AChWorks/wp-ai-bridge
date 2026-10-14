@@ -19,6 +19,7 @@ use WP_AI_Bridge\Support\Transfer_Settings;
 use WP_AI_Bridge\Support\External_Package_Limits;
 use WP_AI_Bridge\Support\REST_Invocation_Input_Limits;
 use WP_AI_Bridge\Support\Operation_Receipt_Limits;
+use WP_AI_Bridge\Support\Operation_Content_Limits;
 use WP_AI_Bridge\Support\Workspace_Limits;
 use WP_AI_Bridge\Support\Settings;
 use WP_AI_Bridge\Workspace\Store;
@@ -89,6 +90,7 @@ final class Plugin {
 		add_action( 'admin_init', array( new Transfer_Settings(), 'register' ) );
 		add_action( 'admin_init', array( new Workspace_Limits(), 'register' ) );
 		add_action( 'admin_init', array( new Operation_Receipt_Limits(), 'register' ) );
+		add_action( 'admin_init', array( new Operation_Content_Limits(), 'register' ) );
 		add_action( 'admin_init', array( new External_Package_Limits(), 'register' ) );
 		add_action( 'admin_init', array( new REST_Invocation_Input_Limits(), 'register' ) );
 		add_action( 'admin_menu', array( $this->settings_page, 'register_menu' ) );

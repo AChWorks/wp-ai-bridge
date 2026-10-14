@@ -17,6 +17,7 @@ use WP_AI_Bridge\Support\Create_Claim_Store;
 use WP_AI_Bridge\Support\External_Package_Limits;
 use WP_AI_Bridge\Support\REST_Invocation_Input_Limits;
 use WP_AI_Bridge\Support\Operation_Receipt_Limits;
+use WP_AI_Bridge\Support\Operation_Content_Limits;
 use WP_AI_Bridge\Support\Workspace_Limits;
 use WP_AI_Bridge\Support\Settings;
 use WP_AI_Bridge\Workspace\Store;
@@ -521,6 +522,51 @@ final class Settings_Page {
 					</td>
 				</tr></tbody></table>
 				<?php submit_button( __( 'Save keyed create recovery capacity', 'wp-ai-bridge' ) ); ?>
+			</form>
+
+
+
+			<?php
+			// Independent native site-operator budgets for content that must be
+			// materialized in one protected PHP operation, not file transfer.
+			$content_limits = new Operation_Content_Limits();
+			$content_values = $content_limits->all();
+			$content_maxima = $content_limits->upper_bounds();
+			$content_fields = array(
+				Operation_Content_Limits::SOURCE_MIB  => array(
+					__( 'Installed plugin/theme source preimage and candidate (MiB)', 'wp-ai-bridge' ),
+					__( 'Default 2 MiB. One complete source file is held for preview, exact write and crash recovery. Increasing needs PHP memory, database and client request/response capacity; it does not bypass Source Editing consent.', 'wp-ai-bridge' ),
+				),
+				Operation_Content_Limits::SETTING_VALUE_KIB => array(
+					__( 'Registered REST setting JSON value (KiB)', 'wp-ai-bridge' ),
+					__( 'Default 1024 KiB. Native WordPress settings authority, provider schemas and incoming MCP message limits still apply.', 'wp-ai-bridge' ),
+				),
+				Operation_Content_Limits::SETTING_SCHEMA_KIB => array(
+					__( 'Registered REST setting public schema (KiB)', 'wp-ai-bridge' ),
+					__( 'Default 256 KiB. Oversized schemas remain unavailable rather than being silently truncated or leaking provider defaults.', 'wp-ai-bridge' ),
+				),
+				Operation_Content_Limits::CATALOG_KIB => array(
+					__( 'Public Ability catalog response (KiB)', 'wp-ai-bridge' ),
+					__( 'Default 1024 KiB. Contract inspection stays read-only; use pagination and check the configured MCP response limit when a larger catalog does not fit.', 'wp-ai-bridge' ),
+				),
+			);
+			?>
+			<h2><?php echo esc_html__( 'High-trust operation content capacity', 'wp-ai-bridge' ); ?></h2>
+			<p><?php echo esc_html__( 'These independent site budgets are finite and bounded by the effective PHP memory limit. They do not enable an Ability, alter user permissions, remove native provider constraints or turn one MCP message into a whole-file transfer.', 'wp-ai-bridge' ); ?></p>
+			<form action="options.php" method="post">
+				<?php settings_fields( Operation_Content_Limits::OPTION_GROUP ); ?>
+				<table class="form-table" role="presentation"><tbody>
+					<?php foreach ( $content_fields as $key => $field ) : ?>
+						<tr>
+							<th scope="row"><label for="<?php echo esc_attr( 'wpai-operation-content-' . $key ); ?>"><?php echo esc_html( $field[0] ); ?></label></th>
+							<td>
+								<input type="number" class="regular-text" id="<?php echo esc_attr( 'wpai-operation-content-' . $key ); ?>" name="<?php echo esc_attr( Operation_Content_Limits::OPTION_NAME . '[' . $key . ']' ); ?>" value="<?php echo esc_attr( (string) $content_values[ $key ] ); ?>" min="1" max="<?php echo esc_attr( (string) $content_maxima[ $key ] ); ?>" step="1" required>
+								<p class="description"><?php echo esc_html( $field[1] ); ?></p>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody></table>
+				<?php submit_button( __( 'Save operation content capacity', 'wp-ai-bridge' ) ); ?>
 			</form>
 
 

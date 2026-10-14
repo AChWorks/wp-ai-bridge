@@ -9,6 +9,7 @@ namespace WP_AI_Bridge\Abilities;
 
 use WP_AI_Bridge\Support\Metadata_Key_Policy;
 use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Operation_Content_Limits;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Settings;
 use WP_Error;
@@ -103,7 +104,7 @@ final class Registered_Settings_Abilities {
 						'value_json' => array(
 							'type'      => 'string',
 							'minLength' => 1,
-							'maxLength' => self::VALUE_MAX_BYTES,
+							'maxLength' => ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SETTING_VALUE_KIB ),
 						),
 					),
 					'required'             => array( 'name', 'value_json' ),
@@ -470,7 +471,7 @@ final class Registered_Settings_Abilities {
 	private function contract( array $entry ) {
 		$schema           = $this->public_schema( $entry['schema'] );
 		$json             = wp_json_encode( $schema, JSON_UNESCAPED_SLASHES );
-		$schema_available = is_string( $json ) && strlen( $json ) <= self::SCHEMA_MAX_BYTES;
+		$schema_available = is_string( $json ) && strlen( $json ) <= ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SETTING_SCHEMA_KIB );
 
 		return array(
 			'name'             => $entry['rest_name'],
@@ -542,7 +543,7 @@ final class Registered_Settings_Abilities {
 	 */
 	private function bounded_value( $value ) {
 		$json = wp_json_encode( $value, JSON_UNESCAPED_SLASHES );
-		if ( ! is_string( $json ) || strlen( $json ) > self::VALUE_MAX_BYTES ) {
+		if ( ! is_string( $json ) || strlen( $json ) > ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SETTING_VALUE_KIB ) ) {
 			return array(
 				'value_json'      => '',
 				'value_available' => false,
@@ -562,7 +563,7 @@ final class Registered_Settings_Abilities {
 	 * @return mixed|WP_Error
 	 */
 	private function decode_value( $json ) {
-		if ( '' === $json || strlen( $json ) > self::VALUE_MAX_BYTES ) {
+		if ( '' === $json || strlen( $json ) > ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SETTING_VALUE_KIB ) ) {
 			return new WP_Error( 'registered_setting_invalid_value', __( 'Registered setting value_json must contain one bounded JSON value.', 'wp-ai-bridge' ) );
 		}
 

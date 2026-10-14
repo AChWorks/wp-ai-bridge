@@ -8,6 +8,7 @@
 namespace WP_AI_Bridge\Abilities;
 
 use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Operation_Content_Limits;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Settings;
 use WP_Error;
@@ -341,6 +342,7 @@ final class Source_Editing_Abilities {
 				'canonical_path'   => $target['canonical_path'],
 				'preimage_sha256'  => $preimage_hash,
 				'candidate_sha256' => $candidate_hash,
+				'candidate_bytes'  => strlen( $candidate ),
 				'preimage'         => $preimage,
 				'created_gmt'      => gmdate( 'c' ),
 			);
@@ -710,13 +712,13 @@ final class Source_Editing_Abilities {
 	 * @param array<string,mixed> $target Resolved target.
 	 * @return string|WP_Error
 	 */
-	private function read_target_bytes( $target ) {
+	private function read_target_bytes( $target, $recovery_limit = 0 ) {
 		$filesystem = $this->filesystem();
 		$size       = $filesystem->size( $target['canonical_path'] );
 		if ( false === $size || $size < 0 ) {
 			return new WP_Error( 'source_read_failed', __( 'The installed source file could not be read.', 'wp-ai-bridge' ) );
 		}
-		if ( $size > self::MAX_SOURCE_BYTES ) {
+		if ( $size > max( ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SOURCE_MIB ), $recovery_limit ) ) {
 			return new WP_Error( 'source_file_too_large', __( 'The installed source file exceeds the Bridge source-editing safety bound.', 'wp-ai-bridge' ) );
 		}
 		$bytes = $filesystem->get_contents( $target['canonical_path'] );
@@ -734,7 +736,7 @@ final class Source_Editing_Abilities {
 	 * @return true|WP_Error
 	 */
 	private function validate_candidate( $target, $candidate ) {
-		if ( strlen( $candidate ) > self::MAX_SOURCE_BYTES ) {
+		if ( strlen( $candidate ) > ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SOURCE_MIB ) ) {
 			return new WP_Error( 'source_candidate_too_large', __( 'The source candidate exceeds the Bridge source-editing safety bound.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $target['php'] ) {
@@ -849,7 +851,7 @@ final class Source_Editing_Abilities {
 	 * @param string              $phase         apply|recovery|handoff.
 	 * @return true|WP_Error
 	 */
-	private function replace_exact_bytes( $target, $expected_hash, $bytes, $token, $phase ) {
+	private function replace_exact_bytes( $target, $expected_hash, $bytes, $token, $phase, $recovery_limit = 0 ) {
 		$path  = $target['canonical_path'];
 		$paths = $this->replacement_paths( $path, $token, $phase );
 		if ( is_wp_error( $paths ) ) {
@@ -882,7 +884,7 @@ final class Source_Editing_Abilities {
 			return is_wp_error( $cleanup ) ? $cleanup : new WP_Error( 'source_target_changed', __( 'The installed source target changed before the guarded replacement boundary.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 		}
 
-		$held = $this->read_regular_path( $paths['hold'] );
+		$held = $this->read_regular_path( $paths['hold'], $recovery_limit );
 		if ( is_wp_error( $held ) ) {
 			$restored = $this->restore_quarantined_path( $paths['hold'], $path );
 			$cleanup  = $this->remove_replacement_artifact( $paths['stage'] );
@@ -926,7 +928,7 @@ final class Source_Editing_Abilities {
 		if ( ! @link( $paths['stage'], $path ) ) {
 			$competing_path = $this->path_exists( $path );
 			if ( $competing_path ) {
-				$held_after = $this->read_regular_path( $paths['hold'] );
+				$held_after = $this->read_regular_path( $paths['hold'], $recovery_limit );
 				$cleanup    = $this->remove_replacement_artifact( $paths['stage'] );
 				if ( is_wp_error( $cleanup ) ) {
 					return $cleanup;
@@ -959,14 +961,14 @@ final class Source_Editing_Abilities {
 		if ( is_wp_error( $stage_cleanup ) ) {
 			return $stage_cleanup;
 		}
-		$published = $this->read_regular_path( $path );
+		$published = $this->read_regular_path( $path, $recovery_limit );
 		$wanted    = hash( 'sha256', $bytes );
 		if ( is_wp_error( $published ) || ! hash_equals( $wanted, hash( 'sha256', (string) $published ) ) ) {
 			return new WP_Error( 'source_write_state_uncertain', __( 'Bridge published the replacement boundary but could not verify the exact current source bytes. Recovery material was retained.', 'wp-ai-bridge' ), array( 'outcome' => 'uncertain_partial_state' ) );
 		}
 
 		// Detect a writer that retained the pre-replacement inode and changed it before cleanup.
-		$held_after = $this->read_regular_path( $paths['hold'] );
+		$held_after = $this->read_regular_path( $paths['hold'], $recovery_limit );
 		if ( is_wp_error( $held_after ) ) {
 			return new WP_Error( 'source_recovery_required', __( 'Bridge could not verify the quarantined pre-replacement source before cleanup.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
@@ -1088,13 +1090,13 @@ final class Source_Editing_Abilities {
 	 * @param string $path Exact internal path.
 	 * @return string|WP_Error
 	 */
-	private function read_regular_path( $path ) {
+	private function read_regular_path( $path, $recovery_limit = 0 ) {
 		if ( is_link( $path ) || ! is_file( $path ) ) {
 			return new WP_Error( 'source_read_failed' );
 		}
 		$filesystem = $this->filesystem();
 		$size       = $filesystem->size( $path );
-		if ( false === $size || $size < 0 || $size > self::MAX_SOURCE_BYTES ) {
+		if ( false === $size || $size < 0 || $size > max( ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SOURCE_MIB ), $recovery_limit ) ) {
 			return new WP_Error( 'source_read_failed' );
 		}
 		$bytes = $filesystem->get_contents( $path );
@@ -1229,6 +1231,29 @@ final class Source_Editing_Abilities {
 		return ! empty( $target['php'] ) && ( ! empty( $target['active'] ) || ! empty( $target['network_active'] ) );
 	}
 
+
+	/**
+	 * A lowered site budget must never strand a previously accepted durable
+	 * source recovery receipt. This is used ONLY on the owner-bound recovery
+	 * path, never to admit a new preview/read/apply above the new policy.
+	 *
+	 * The existing record carries the exact preimage bytes and candidate
+	 * digest; newer records also carry candidate length. Older records predate
+	 * operator overrides and could have held at most the legacy 2 MiB bound.
+	 *
+	 * @param array<string,mixed> $record Existing private recovery receipt.
+	 * @return int Recovery read cap, no greater than the current PHP memory envelope.
+	 */
+	private function recovery_read_limit( $record ) {
+		$policy    = new Operation_Content_Limits();
+		$maxima    = $policy->upper_bounds();
+		$host_max  = $maxima[ Operation_Content_Limits::SOURCE_MIB ] * Operation_Content_Limits::MIB;
+		$requested = $policy->bytes( Operation_Content_Limits::SOURCE_MIB );
+		$old_bytes = isset( $record['preimage'] ) && is_string( $record['preimage'] ) ? strlen( $record['preimage'] ) : 0;
+		$candidate = isset( $record['candidate_bytes'] ) && is_int( $record['candidate_bytes'] ) ? $record['candidate_bytes'] : self::MAX_SOURCE_BYTES;
+		return min( $host_max, max( $requested, $old_bytes, $candidate ) );
+	}
+
 	/**
 	 * Attempts safe compensation after a write/persistence failure.
 	 *
@@ -1240,7 +1265,7 @@ final class Source_Editing_Abilities {
 		if ( is_wp_error( $target ) ) {
 			return new WP_Error( 'source_write_state_uncertain', __( 'The source write outcome is uncertain and its recovery target can no longer be resolved safely.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
-		$current = $this->read_target_bytes( $target );
+		$current = $this->read_target_bytes( $target, $this->recovery_read_limit( $record ) );
 		if ( is_wp_error( $current ) ) {
 			return new WP_Error( 'source_write_state_uncertain', __( 'The source write outcome is uncertain and Bridge could not verify current persisted bytes.', 'wp-ai-bridge' ), array( 'outcome' => 'uncertain_partial_state' ) );
 		}
@@ -1267,10 +1292,11 @@ final class Source_Editing_Abilities {
 	 */
 	private function restore_record( $record ) {
 		$target = $this->resolve_record_target( $record );
+		$limit  = $this->recovery_read_limit( $record );
 		if ( is_wp_error( $target ) ) {
 			return new WP_Error( 'source_recovery_target_changed', __( 'The pending source recovery target changed and cannot be restored automatically.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
-		$current = $this->read_target_bytes( $target );
+		$current = $this->read_target_bytes( $target, $limit );
 		if ( is_wp_error( $current ) ) {
 			return new WP_Error( 'source_recovery_read_failed', __( 'Bridge could not read the pending recovery target safely.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
@@ -1285,11 +1311,11 @@ final class Source_Editing_Abilities {
 		if ( ! hash_equals( (string) $record['candidate_sha256'], $current_hash ) ) {
 			return new WP_Error( 'source_recovery_conflict', __( 'The source file changed after the Bridge candidate. Recovery will not overwrite newer bytes.', 'wp-ai-bridge' ), array( 'outcome' => 'conflict' ) );
 		}
-		$write = $this->replace_exact_bytes( $target, (string) $record['candidate_sha256'], (string) $record['preimage'], (string) $record['token'], 'recovery' );
+		$write = $this->replace_exact_bytes( $target, (string) $record['candidate_sha256'], (string) $record['preimage'], (string) $record['token'], 'recovery', $limit );
 		if ( is_wp_error( $write ) ) {
 			return $write;
 		}
-		$verified = $this->read_target_bytes( $target );
+		$verified = $this->read_target_bytes( $target, $limit );
 		if ( is_wp_error( $verified ) || ! hash_equals( (string) $record['preimage_sha256'], hash( 'sha256', (string) $verified ) ) ) {
 			return new WP_Error( 'source_recovery_verification_failed', __( 'Bridge attempted recovery but could not verify the exact previous source bytes. Recovery material was retained.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 		}
@@ -1323,7 +1349,7 @@ final class Source_Editing_Abilities {
 			if ( ! $this->path_exists( $paths['hold'] ) ) {
 				continue;
 			}
-			$held = $this->read_regular_path( $paths['hold'] );
+			$held = $this->read_regular_path( $paths['hold'], $this->recovery_read_limit( $record ) );
 			if ( is_wp_error( $held ) || ! in_array( hash( 'sha256', (string) $held ), $known, true ) ) {
 				return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 			}
@@ -1362,7 +1388,7 @@ final class Source_Editing_Abilities {
 				return $paths;
 			}
 			if ( $this->path_exists( $paths['hold'] ) ) {
-				$held = $this->read_regular_path( $paths['hold'] );
+				$held = $this->read_regular_path( $paths['hold'], $this->recovery_read_limit( $record ) );
 				if ( is_wp_error( $held ) ) {
 					return new WP_Error( 'source_recovery_artifact_pending', __( 'A source replacement artifact could not be verified safely and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
@@ -1382,7 +1408,7 @@ final class Source_Editing_Abilities {
 				if ( ! $this->path_exists( $artifact ) ) {
 					continue;
 				}
-				$artifact_bytes = $this->read_regular_path( $artifact );
+				$artifact_bytes = $this->read_regular_path( $artifact, $this->recovery_read_limit( $record ) );
 				if ( is_wp_error( $artifact_bytes ) || ! in_array( hash( 'sha256', (string) $artifact_bytes ), $known, true ) ) {
 					return new WP_Error( 'source_recovery_artifact_pending', __( 'A private source replacement artifact has unexpected bytes and requires administrator reconciliation.', 'wp-ai-bridge' ), array( 'outcome' => 'recovery_required' ) );
 				}
@@ -1671,7 +1697,7 @@ final class Source_Editing_Abilities {
 		$properties              = $this->target_properties();
 		$properties['candidate'] = array(
 			'type'      => 'string',
-			'maxLength' => self::MAX_SOURCE_BYTES,
+			'maxLength' => ( new Operation_Content_Limits() )->bytes( Operation_Content_Limits::SOURCE_MIB ),
 		);
 		$required                = array( 'kind', 'extension', 'file', 'candidate' );
 		if ( $apply ) {
