@@ -470,6 +470,7 @@ if [[ ! -f "$metadata_store" || ! -f "$term_metadata_store" || ! -f "$user_comme
 fi
 admission_lock='src/Support/class-admission-lock.php'
 create_claim_store='src/Support/class-create-claim-store.php'
+cron_run_store='src/Support/class-cron-run-claim.php'
 native_content_cas='src/Support/class-native-content-cas.php'
 workspace_scan='src/Workspace/class-record-scan-store.php'
 # #153 permits one read-only, per-blog, private-post-type Workspace
@@ -514,7 +515,27 @@ if [[ ! -f "$create_claim_store" ||
     echo "ERROR: create receipt store must retain one conditional update, one exclusive insert, and two exact prepared capacity queries." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" || true)"
+# Run-now is a separate, tightly audited bounded native-option replay store.
+# Exact fixed SQL shapes only: one receipt count, one INSERT IGNORE winner,
+# and one expected-value conditional UPDATE. Do not exempt generic SQL.
+if [[ ! -f "$cron_run_store" ||
+      "$(grep -cF '$wpdb->get_var(' "$cron_run_store" || true)" != "1" ||
+      "$(grep -cF '$wpdb->prepare(' "$cron_run_store" || true)" != "2" ||
+      "$(grep -cF '$wpdb->query(' "$cron_run_store" || true)" != "1" ||
+      "$(grep -cF '$wpdb->update(' "$cron_run_store" || true)" != "1" ||
+      "$(grep -cF 'SELECT COUNT(*) FROM ' "$cron_run_store" || true)" != "1" ||
+      "$(grep -cF 'INSERT IGNORE INTO ' "$cron_run_store" || true)" != "1" ||
+      "$(grep -cF 'WHERE option_name LIKE %s' "$cron_run_store" || true)" != "1" ||
+      "$(grep -cF 'const MAX_RECEIPTS = 2048;' "$cron_run_store" || true)" != "1" ]]; then
+    echo "ERROR: targeted Cron replay-fence store exceeded the fixed bounded SQL inventory." >&2
+    exit 1
+fi
+if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$cron_run_store" |
+   grep -vE '\$wpdb->(options|get_var|prepare|esc_like|last_error|query|update)([^A-Za-z0-9_]|$)'; then
+    echo "ERROR: targeted Cron claim store introduced an unreviewed database primitive." >&2
+    exit 1
+fi
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2

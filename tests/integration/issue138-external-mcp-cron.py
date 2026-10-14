@@ -141,3 +141,38 @@ assert cancelled["status"] == "unscheduled"
 empty, _ = ability("wp-ai-bridge/cron-events-read", {"action": "list", "hook": hook, "limit": 20})
 assert empty["total"] == 0, "Exact cancellation left the provider Cron event behind"
 print("PASS: external HTTPS MCP performs exact verified reschedule and unschedule, leaving no fixture event.")
+
+
+# A separately installed provider explicitly opts in to a targeted runner.
+# This calls the real Bridge Ability from a distinct authenticated HTTPS/MCP
+# client process, not from the WordPress PHP integration harness.
+targeted_profile = "fixture_external_targeted"
+targeted_hook = "wpai138_external_targeted_fixture"
+registered, _ = ability("wp-ai-bridge/cron-events-manage", {"action": "profiles"})
+matches = [p for p in registered["profiles"] if p["profile_id"] == targeted_profile]
+assert len(matches) == 1 and "run_now" in matches[0]["actions"]
+before, _ = ability("wp-ai-bridge/cron-events-read", {"action": "list", "hook": targeted_hook})
+assert before["total"] == 0
+targeted_when = int(time.time()) + 7200
+targeted_event, _ = ability("wp-ai-bridge/cron-events-manage", {
+    "action": "schedule", "profile_id": targeted_profile, "timestamp": targeted_when,
+    "recurrence": "hourly", "expected_snapshot": before["snapshot"]})
+assert targeted_event["status"] == "scheduled"
+run_input = {
+    "action": "run_now", "profile_id": targeted_profile,
+    "event_id": targeted_event["event_id"], "expected_snapshot": targeted_event["snapshot"],
+    "operation_id": "independent-https-mcp-runonce", "confirm": True,
+}
+expected_failure("wp-ai-bridge/cron-events-manage", dict(run_input, confirm=False))
+result, _ = ability("wp-ai-bridge/cron-events-manage", run_input)
+assert result["status"] == "provider_verified", "Provider effect was not authoritatively verified"
+again, _ = ability("wp-ai-bridge/cron-events-manage", run_input)
+assert again["status"] == "already_verified", "Identical retry failed to read back provider receipt"
+expected_failure("wp-ai-bridge/cron-events-manage", dict(run_input, operation_id="new-operation-cannot-reexecute"))
+still, _ = ability("wp-ai-bridge/cron-events-read", {"action": "get", "event_id": targeted_event["event_id"]})
+assert still["items"][0]["next_run_timestamp"] == targeted_when, "Manual execution modified native schedule"
+after, _ = ability("wp-ai-bridge/cron-events-manage", {
+    "action": "unschedule", "profile_id": targeted_profile,
+    "event_id": targeted_event["event_id"], "expected_snapshot": targeted_event["snapshot"]})
+assert after["status"] == "unscheduled"
+print("PASS: independent HTTPS/OAuth/MCP provider targeted run_now executes one verified effect, replays do not execute, native schedule unchanged.")

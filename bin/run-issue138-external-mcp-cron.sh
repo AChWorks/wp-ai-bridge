@@ -54,6 +54,7 @@ $settings = new \WP_AI_Bridge\Support\Settings();
 $grants = $settings->defaults();
 $grants[\WP_AI_Bridge\Support\Settings::GROUP_SITE_READ] = 1;
 $grants[\WP_AI_Bridge\Support\Settings::GROUP_SITE_CONFIG] = 1;
+$grants[\WP_AI_Bridge\Support\Settings::GROUP_CODE_EXTENSIONS] = 1;
 update_option(\WP_AI_Bridge\Support\Settings::OPTION_NAME, $grants, false);
 $store = new \WP_AI_Bridge\Auth\OAuth_Store();
 $server = new \WP_AI_Bridge\Auth\OAuth_Server($store);
@@ -70,6 +71,6 @@ PHP
 )" --user=1 --allow-root > "$token_file"
 if [ "$(wc -c < "$token_file")" -lt 20 ]; then echo "FAIL: test OAuth token not issued"; exit 1; fi
 python3 "$root/tests/integration/issue138-external-mcp-cron.py" "$host_port" "$token_file"
-wp eval 'if (get_option("wpai138_unexpected_callback_execution", false)) { exit(1); }' --user=1 --allow-root
+wp eval 'if (get_option("wpai138_unexpected_callback_execution", false)) { exit(1); } if ((int)get_option("wpai138_external_runnow_count", 0) !== 1) { exit(2); }' --user=1 --allow-root
 echo "PASS: #138 disposable external HTTPS standards client verified exact provider-managed WordPress Cron lifecycle."
 

@@ -5,6 +5,15 @@
  * @package WP_AI_Bridge
  */
 return array(
+	'Manage exact authorized WordPress Cron events; targeted run-now requires a separately approved installed-provider runner, durable replay fence and verified effect.' => 'مدیریت دقیق رویدادهای مجاز وردپرس؛ اجرای فوری فقط با اجراکننده تأییدشده ارائه\u200cدهنده، جلوگیری پایدار از اجرای دوباره و اثر تأییدشده مجاز است.',
+	'This installed provider has not enabled a verified targeted Cron runner.' => 'ارائه\u200cدهنده نصب\u200cشده اجراکننده تأییدشده برای اجرای فوری این رویداد را فعال نکرده است.',
+	'Immediate Cron execution also requires Code & Extensions and the provider-specific administrator consent.' => 'اجرای فوری Cron علاوه بر مجوز افزونه\u200cها و کد، به تأیید ویژه مدیر برای این ارائه\u200cدهنده نیاز دارد.',
+	'The installed Cron provider or current execution permission changed; no targeted run was admitted.' => 'پروفایل ارائه\u200cدهنده Cron یا دسترسی اجرا تغییر کرده است؛ اجرای فوری مجاز نشد.',
+	'The exact provider event is missing or no longer unique; inspect the native Cron list.' => 'رویداد دقیق ارائه\u200cدهنده وجود ندارد یا دیگر یکتا نیست؛ فهرست بومی Cron را بررسی کنید.',
+	'The selected event is due or too near its native run time for a safe targeted run.' => 'زمان اجرای بومی رویداد نزدیک است یا فرا رسیده است؛ اجرای فوری ایمن ممکن نیست.',
+	'Immediate Cron execution requires a current authenticated administrator.' => 'اجرای فوری Cron به مدیر احراز هویت\u200cشده فعلی نیاز دارد.',
+	'The finite Cron execution receipt capacity is exhausted; reconcile retained run receipts before enabling more executions.' => 'ظرفیت محدود رسیدهای اجرای Cron پر شده است؛ پیش از اجرای جدید رسیدهای ذخیره\u200cشده را بررسی و تعیین\u200cتکلیف کنید.',
+	'Targeted Cron execution may already have happened. Its event is reserved; inspect the provider receipt before retrying.' => 'ممکن است اجرای فوری Cron قبلاً رخ داده باشد. این رویداد رزرو شده است؛ پیش از تلاش دوباره رسید ارائه\u200cدهنده را بررسی کنید.',
 	'Inspect Scheduled WordPress Events'               => 'بررسی رویدادهای زمان‌بندی‌شدهٔ وردپرس',
 	'Reads bounded WP-Cron event metadata with opaque identities, verified inventory pagination and no callback arguments or execution.' => 'فرادادهٔ محدود رویدادهای WP-Cron را با شناسه‌های غیرقابل‌حدس و صفحه‌بندی قابل بررسی، بدون نمایش آرگومان‌ها یا اجرای رویدادها می‌خواند.',
 	'Site Configuration and WordPress administrator permissions are required.' => 'گروه دسترسی پیکربندی سایت و مجوز مدیریت وردپرس لازم است.',

@@ -7,7 +7,10 @@
 
 namespace WP_AI_Bridge\Abilities;
 
+use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Admission_Lock;
+use WP_AI_Bridge\Support\Cron_Run_Claim;
+use WP_AI_Bridge\Support\Cron_Targeted_Runner;
 use WP_AI_Bridge\Support\Bounded_Payload;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Settings;
@@ -35,7 +38,7 @@ final class Cron_Mutation_Abilities {
 			'wp-ai-bridge/cron-events-manage',
 			array(
 				'label'               => __( 'Manage Authorized WordPress Cron Events', 'wp-ai-bridge' ),
-				'description'         => __( 'Schedules, reschedules or cancels only provider-opted-in exact WordPress Cron events. Arguments are never supplied by a remote client. Targeted execution is not available without a safe provider runner.', 'wp-ai-bridge' ),
+				'description'         => __( 'Manage exact authorized WordPress Cron events; targeted run-now requires a separately approved installed-provider runner, durable replay fence and verified effect.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -76,6 +79,12 @@ final class Cron_Mutation_Abilities {
 							'type'      => 'string',
 							'maxLength' => 80,
 						),
+						'operation_id'      => array(
+							'type'      => 'string',
+							'minLength' => 8,
+							'maxLength' => 128,
+						),
+						'confirm'           => array( 'type' => 'boolean' ),
 					),
 					'required'             => array( 'action' ),
 					'additionalProperties' => false,
@@ -156,19 +165,37 @@ final class Cron_Mutation_Abilities {
 				continue;
 			}
 			$actions = array_values( array_unique( $profile['actions'] ) );
-			if ( array_diff( $actions, array( 'schedule', 'unschedule', 'reschedule' ) ) ||
+			if ( array_diff( $actions, array( 'schedule', 'unschedule', 'reschedule', 'run_now' ) ) ||
 				! count( $actions ) || count( $actions ) !== count( $profile['actions'] ) ) {
 				continue;
+			}
+			$runner          = null;
+			$runner_revision = '';
+			if ( in_array( 'run_now', $actions, true ) ) {
+				$runner          = $profile['targeted_runner'] ?? null;
+				$runner_revision = $profile['runner_revision'] ?? '';
+				if ( ! $runner instanceof Cron_Targeted_Runner ||
+					! is_string( $runner_revision ) ||
+					1 !== preg_match( '/^[a-zA-Z0-9_.:-]{1,64}$/D', $runner_revision ) ||
+					! isset( $profile['run_budget_seconds'], $profile['run_destructive'] ) ||
+					! is_int( $profile['run_budget_seconds'] ) || $profile['run_budget_seconds'] < 1 ||
+					$profile['run_budget_seconds'] > 10 || ! is_bool( $profile['run_destructive'] ) ) {
+					continue;
+				}
 			}
 			$min = $profile['min_interval_seconds'] ?? 60;
 			if ( ! is_int( $min ) || $min < 60 || $min > DAY_IN_SECONDS ) {
 				continue;
 			}
 			$profiles[ $id ] = array(
-				'hook'     => $profile['hook'],
-				'args'     => $profile['args'],
-				'actions'  => $actions,
-				'interval' => $min,
+				'hook'               => $profile['hook'],
+				'args'               => $profile['args'],
+				'actions'            => $actions,
+				'interval'           => $min,
+				'runner'             => $runner,
+				'runner_revision'    => $runner_revision,
+				'run_budget_seconds' => null !== $runner ? $profile['run_budget_seconds'] : 0,
+				'run_destructive'    => null !== $runner ? $profile['run_destructive'] : false,
 			);
 		}
 		return $profiles;
@@ -215,7 +242,14 @@ final class Cron_Mutation_Abilities {
 			// Stable provider-owned IDs form a source-bound paginated inventory;
 			// private fixed callback arguments influence the opaque digest only.
 			ksort( $profiles, SORT_STRING );
-			$snapshot = hash_hmac( 'sha256', serialize( array( get_current_blog_id(), $profiles ) ), wp_salt( 'auth' ) );
+			// The trusted Runner object must never be serialized (or exposed).
+			// Its installed-provider revision marks contract changes across requests.
+			$metadata = array();
+			foreach ( $profiles as $key => $known ) {
+				$metadata[ $key ] = $known;
+				unset( $metadata[ $key ]['runner'] );
+			}
+			$snapshot = hash_hmac( 'sha256', serialize( array( get_current_blog_id(), $metadata ) ), wp_salt( 'auth' ) );
 			if ( '' !== $expected && ! hash_equals( $expected, $snapshot ) ) {
 				return new WP_Error( 'cron_profiles_stale', __( 'The registered Cron profiles changed; restart at offset zero.', 'wp-ai-bridge' ) );
 			}
@@ -257,10 +291,7 @@ final class Cron_Mutation_Abilities {
 			return new WP_Error( 'cron_profile_unsupported', __( 'The provider has not authorized this Cron operation profile.', 'wp-ai-bridge' ) );
 		}
 		if ( 'run_now' === $action ) {
-			// Core wp-cron.php runs all due callbacks under a global lock,
-			// not one verified event. Running do_action() would bypass the
-			// registered provider's scheduling/locking/idempotency contract.
-			return new WP_Error( 'cron_run_now_unsupported', __( 'Targeted execution requires a provider-owned, idempotent runner and verified receipt. WordPress Core cannot safely run this selected event on demand.', 'wp-ai-bridge' ) );
+			return $this->run_now( $input, $id, $profiles[ $id ] );
 		}
 		$profile = $profiles[ $id ];
 		if ( ! in_array( $action, $profile['actions'], true ) ) {
@@ -369,6 +400,209 @@ final class Cron_Mutation_Abilities {
 		} finally {
 			$lock->release();
 		}
+	}
+
+	/**
+	 * Higher-trust event-specific execution is NEVER native Core wp_cron,
+	 * do_action, WP-CLI, a remote callback, or a general PHP callable.
+	 *
+	 * The installed provider explicitly implements Cron_Targeted_Runner.
+	 * Bridge fences one site/profile/event identity durably before the effect.
+	 * Provider code owns BOTH scheduled-path idempotency and its own effect
+	 * verification. No PHP synchronous request can hard-kill untrusted provider
+	 * code; registered 1-10 s budget is passed as a deadline and checked
+	 * afterward. Long/ambiguous execution retains its never-replayed fence.
+	 *
+	 * @param array<string,mixed> $input Validated raw request.
+	 * @param string              $id Registered provider profile.
+	 * @param array<string,mixed> $profile Trusted provider definition.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private function run_now( $input, $id, $profile ) {
+		if ( ! in_array( 'run_now', $profile['actions'], true ) ||
+			! $profile['runner'] instanceof Cron_Targeted_Runner ) {
+			return new WP_Error( 'cron_run_now_unsupported', __( 'This installed provider has not enabled a verified targeted Cron runner.', 'wp-ai-bridge' ) );
+		}
+		if ( ! $this->can_run_now( $profile ) ) {
+			return new WP_Error( 'cron_run_now_denied', __( 'Immediate Cron execution also requires Code & Extensions and the provider-specific administrator consent.', 'wp-ai-bridge' ) );
+		}
+		$allowed      = array( 'action', 'profile_id', 'event_id', 'expected_snapshot', 'operation_id', 'confirm' );
+		$event_id     = $input['event_id'] ?? '';
+		$expected     = $input['expected_snapshot'] ?? '';
+		$operation_id = $input['operation_id'] ?? '';
+		if ( array_diff( array_keys( $input ), $allowed ) ||
+			true !== ( $input['confirm'] ?? null ) ||
+			! is_string( $event_id ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $event_id ) ||
+			! is_string( $expected ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $expected ) ||
+			! is_string( $operation_id ) || strlen( $operation_id ) < 8 || strlen( $operation_id ) > 128 ||
+			1 !== preg_match( '/^[a-zA-Z0-9_.:-]+$/D', $operation_id ) ) {
+			return $this->invalid();
+		}
+		$lock = $this->acquire_lock();
+		if ( is_wp_error( $lock ) ) {
+			return $lock;
+		}
+		try {
+			// Provider registrations and every grant may change across the
+			// initial permission check and admission lock acquisition.
+			$fresh = $this->profiles();
+			if ( ! isset( $fresh[ $id ] ) || $fresh[ $id ]['runner_revision'] !== $profile['runner_revision'] ||
+				$fresh[ $id ]['hook'] !== $profile['hook'] || $fresh[ $id ]['args'] !== $profile['args'] ||
+				$fresh[ $id ]['actions'] !== $profile['actions'] ||
+				$fresh[ $id ]['run_budget_seconds'] !== $profile['run_budget_seconds'] ||
+				$fresh[ $id ]['run_destructive'] !== $profile['run_destructive'] ||
+				! in_array( 'run_now', $fresh[ $id ]['actions'], true ) ||
+				! $fresh[ $id ]['runner'] instanceof Cron_Targeted_Runner ||
+				! $this->can_run_now( $fresh[ $id ] ) || false === has_action( $profile['hook'] ) ||
+				! $this->lock_owned( $lock ) ) {
+				return new WP_Error( 'cron_run_now_denied', __( 'The installed Cron provider or current execution permission changed; no targeted run was admitted.', 'wp-ai-bridge' ) );
+			}
+			$profile   = $fresh[ $id ];
+			$inventory = $this->snapshot();
+			if ( ! is_string( $inventory ) || ! hash_equals( $expected, $inventory ) ) {
+				return new WP_Error( 'cron_stale_snapshot', __( 'The Cron inventory changed. Restart pagination from offset zero.', 'wp-ai-bridge' ) );
+			}
+			$events = $this->matching( $profile );
+			if ( is_wp_error( $events ) ) {
+				return $events;
+			}
+			if ( ! isset( $events[ $event_id ] ) || 1 !== count( $events ) ) {
+				return new WP_Error( 'cron_run_now_event_stale', __( 'The exact provider event is missing or no longer unique; inspect the native Cron list.', 'wp-ai-bridge' ) );
+			}
+			$event = $events[ $event_id ];
+			// An already-due event can be in WordPress's own uncoordinated
+			// due-event worker. Only a future event is eligible for manual run.
+			if ( $event['timestamp'] <= time() + 60 ) {
+				return new WP_Error( 'cron_run_now_due', __( 'The selected event is due or too near its native run time for a safe targeted run.', 'wp-ai-bridge' ) );
+			}
+			$principal = get_current_user_id();
+			if ( ! is_int( $principal ) || $principal <= 0 || ! $this->lock_owned( $lock ) ) {
+				return new WP_Error( 'cron_run_now_denied', __( 'Immediate Cron execution requires a current authenticated administrator.', 'wp-ai-bridge' ) );
+			}
+			$client_id   = (string) OAuth_Server::authenticated_mcp_client_id();
+			$fingerprint = hash( 'sha256', wp_json_encode( array( get_current_blog_id(), $principal, $client_id, $id, $event_id, $operation_id, $profile['runner_revision'] ) ) );
+			$name        = Cron_Run_Claim::name( $id, $event_id );
+			$initial     = wp_json_encode(
+				array(
+					'state'       => 'in_progress',
+					'fingerprint' => $fingerprint,
+					'created_at'  => time(),
+				)
+			);
+			if ( ! is_string( $initial ) ) {
+				return $this->invalid();
+			}
+			$context  = array(
+				'site_id'        => get_current_blog_id(),
+				'principal_id'   => $principal,
+				'client_id'      => $client_id,
+				'profile_id'     => $id,
+				'event_id'       => $event_id,
+				'operation_id'   => $operation_id,
+				'hook'           => $profile['hook'],
+				'args'           => $profile['args'],
+				'timestamp'      => $event['timestamp'],
+				'recurrence'     => $event['recurrence'],
+				'budget_seconds' => $profile['run_budget_seconds'],
+				'deadline'       => microtime( true ) + $profile['run_budget_seconds'],
+			);
+			$existing = Cron_Run_Claim::read( $name );
+			if ( false !== $existing ) {
+				return $this->run_now_replay( $existing, $fingerprint, $profile, $context, $event, $inventory, $lock );
+			}
+			$reserved = Cron_Run_Claim::reserve( $name, $initial );
+			if ( 'acquired' !== $reserved ) {
+				if ( 'existing' === $reserved ) {
+					$existing = Cron_Run_Claim::read( $name );
+					return is_array( $existing )
+						? $this->run_now_replay( $existing, $fingerprint, $profile, $context, $event, $inventory, $lock )
+						: $this->run_now_unknown();
+				}
+				return 'capacity' === $reserved
+					? new WP_Error( 'cron_run_now_capacity', __( 'The finite Cron execution receipt capacity is exhausted; reconcile retained run receipts before enabling more executions.', 'wp-ai-bridge' ) )
+					: $this->run_now_unknown();
+			}
+			// From here, even a provider error could follow a real effect.
+			// The durable event fence MUST NOT be released on failure/timeout.
+			$started = microtime( true );
+			try {
+				$result = $profile['runner']->run_once( $context );
+			} catch ( \Throwable $failure ) {
+				return $this->run_now_unknown();
+			}
+			$effect_ref = is_array( $result ) ? ( $result['effect_ref'] ?? '' ) : '';
+			if ( ! is_array( $result ) || 'completed' !== ( $result['status'] ?? '' ) ||
+				! is_string( $effect_ref ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $effect_ref ) ||
+				microtime( true ) - $started > $profile['run_budget_seconds'] ||
+				! $this->lock_owned( $lock ) ) {
+				return $this->run_now_unknown();
+			}
+			if ( ! $this->verify_run( $profile, $context, $effect_ref, $lock ) ) {
+				return $this->run_now_unknown();
+			}
+			// A provider must not silently alter the original scheduled event.
+			// An unrelated native Core writer can still race us; a receipt is
+			// certified only for the exact stable observed point in time.
+			$end       = $this->snapshot();
+			$matching  = $this->matching( $profile );
+			$end_again = $this->snapshot();
+			if ( ! is_string( $end ) || ! hash_equals( $inventory, $end ) ||
+				! is_string( $end_again ) || ! hash_equals( $end, $end_again ) ||
+				is_wp_error( $matching ) || 1 !== count( $matching ) ||
+				! isset( $matching[ $event_id ] ) ||
+				$matching[ $event_id ] !== $event || microtime( true ) - $started > $profile['run_budget_seconds'] ||
+				! $this->can_run_now( $profile ) || ! $this->lock_owned( $lock ) ||
+				! Cron_Run_Claim::finish( $name, $initial, $effect_ref ) ) {
+				return $this->run_now_unknown();
+			}
+			return $this->receipt( 'run_now', 'provider_verified', $event_id, $event['timestamp'], $end );
+		} finally {
+			$lock->release();
+		}
+	}
+
+	/** @param array<string,mixed> $profile Registered installed provider. @return bool */
+	private function can_run_now( $profile ) {
+		if ( ! $this->can_manage() || ! $this->permissions->allowed_all(
+			array(
+				array( Settings::GROUP_SITE_CONFIG, 'manage_options' ),
+				array( Settings::GROUP_CODE_EXTENSIONS, 'activate_plugins' ),
+			)
+		) ) {
+			return false;
+		}
+		return empty( $profile['run_destructive'] ) ||
+			$this->permissions->allowed( Settings::GROUP_USERS_DESTRUCTIVE, 'manage_options' );
+	}
+
+	/** @return bool */
+	private function verify_run( $profile, $context, $effect_ref, $lock ) {
+		if ( ! $this->lock_owned( $lock ) ) {
+			return false;
+		}
+		try {
+			$verified = $profile['runner']->verify( $context, $effect_ref );
+		} catch ( \Throwable $failure ) {
+			return false;
+		}
+		return true === $verified && microtime( true ) <= $context['deadline'] && $this->lock_owned( $lock );
+	}
+
+	/** @return array<string,mixed>|WP_Error */
+	private function run_now_replay( $stored, $fingerprint, $profile, $context, $event, $snapshot, $lock ) {
+		if ( ! hash_equals( $fingerprint, (string) ( $stored['fingerprint'] ?? '' ) ) ||
+			'verified' !== ( $stored['state'] ?? '' ) || ! is_string( $stored['effect_ref'] ?? null ) ||
+			1 !== preg_match( '/^[a-f0-9]{64}$/D', $stored['effect_ref'] ) ||
+			! $this->can_run_now( $profile ) ||
+			! $this->verify_run( $profile, $context, $stored['effect_ref'], $lock ) ) {
+			return $this->run_now_unknown();
+		}
+		return $this->receipt( 'run_now', 'already_verified', $context['event_id'], $event['timestamp'], $snapshot );
+	}
+
+	/** @return WP_Error */
+	private function run_now_unknown() {
+		return new WP_Error( 'cron_run_now_outcome_unknown', __( 'Targeted Cron execution may already have happened. Its event is reserved; inspect the provider receipt before retrying.', 'wp-ai-bridge' ) );
 	}
 
 	/**
