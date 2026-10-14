@@ -20,6 +20,7 @@ require __DIR__ . '/bootstrap.php';
 
 use WP_AI_Bridge\Abilities\Extension_Abilities;
 use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\External_Package_Limits;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Settings;
 
@@ -258,6 +259,38 @@ try {
 	wpnb67_assert( $GLOBALS['wpnb67']['max'] + 1 === $GLOBALS['wpnb67']['args']['limit_response_size'], 'Package download did not use an overflow sentinel.' );
 	wpnb67_no_files();
 	wpnb67_assert( false === strpos( json_encode( get_option( Mutation_Log::OPTION_NAME ) ), 'SENSITIVE_PACKAGE_MARKER' ), 'Successful audit leaked package URL secrets.' );
+
+	// #147: legitimate operator-owned packages above former fixed 100 MiB
+	// must be admitted when the native WordPress upload cap permits it.
+	wpnb67_reset();
+	$GLOBALS['wpai_test']['options'][ External_Package_Limits::OPTION_NAME ] = 192;
+	$GLOBALS['wpnb67']['max'] = 256 * External_Package_Limits::MIB;
+	$raised = $ability->mutate( $package );
+	wpnb67_assert( ! is_wp_error( $raised ) && 1 === $GLOBALS['wpnb67']['installs'], 'Raised package policy blocked a valid bounded Core installation.' );
+	wpnb67_assert( 192 * External_Package_Limits::MIB + 1 === $GLOBALS['wpnb67']['args']['limit_response_size'], 'Raised 192 MiB Bridge policy did not reach the bounded streaming overflow sentinel.' );
+	wpnb67_no_files();
+
+	wpnb67_reset();
+	$GLOBALS['wpai_test']['options'][ External_Package_Limits::OPTION_NAME ] = 192;
+	$GLOBALS['wpnb67']['max'] = 96 * External_Package_Limits::MIB;
+	$host_bound = $ability->mutate( $package );
+	wpnb67_assert( ! is_wp_error( $host_bound ) && 96 * External_Package_Limits::MIB + 1 === $GLOBALS['wpnb67']['args']['limit_response_size'], 'Raising Bridge policy bypassed lower native WordPress hosting upload budget.' );
+	wpnb67_no_files();
+
+	wpnb67_reset();
+	$GLOBALS['wpai_test']['options'][ External_Package_Limits::OPTION_NAME ] = 4;
+	$GLOBALS['wpnb67']['max'] = 256 * External_Package_Limits::MIB;
+	$lowered = $ability->mutate( $package );
+	wpnb67_assert( ! is_wp_error( $lowered ) && 4 * External_Package_Limits::MIB + 1 === $GLOBALS['wpnb67']['args']['limit_response_size'], 'Lowered Bridge policy failed to bound one subsequent download.' );
+	wpnb67_no_files();
+
+	wpnb67_reset();
+	$GLOBALS['wpai_test']['options'][ External_Package_Limits::OPTION_NAME ] = 192;
+	$GLOBALS['wpnb67']['max'] = 0;
+	wpnb67_error( $ability->mutate( $package ), 'external_package_limit_unavailable' );
+	wpnb67_assert( 0 === $GLOBALS['wpnb67']['http_calls'], 'Unavailable native WordPress upload limit initiated a download.' );
+	wpnb67_no_files();
+
 
 	wpnb67_reset();
 	$GLOBALS['wpnb67']['mode'] = 'lock_busy';
