@@ -37,4 +37,6 @@ return array(
 	'The exact installed theme does not exist.' => 'پوسته نصب‌شده با شناسه دقیق مشخص‌شده پیدا نشد.',
 	'The installed extension version changed; inspect it before replacing.' => 'نسخه افزونه یا پوسته نصب‌شده تغییر کرده است؛ پیش از جایگزینی دوباره بررسی کنید.',
 	'The replacement ZIP did not pass the required package identity and safety checks.' => 'فایل ZIP جایگزین بررسی‌های ضروری هویت و امنیت بسته را با موفقیت نگذراند.',
+	'The installed extension contains a symbolic link or an uninspectable filesystem tree; replace it manually after checking the deployment.' => 'افزونه یا پوسته نصب‌شده دارای پیوند نمادین یا ساختار فایل بررسی‌ناپذیر است؛ پس از بررسی محیط نصب، جایگزینی را به‌صورت دستی انجام دهید.',
+
 );

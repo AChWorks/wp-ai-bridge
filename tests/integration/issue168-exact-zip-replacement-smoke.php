@@ -142,6 +142,21 @@ try {
 	$assert_error( array_replace( $plugin_input, array( 'expected_package_version' => '0.9.0' ) ), 'external_package_downgrade_denied' );
 	$assert_error( array_replace( $plugin_input, array( 'target' => 'wpai-missing/wpai-missing.php' ) ), 'external_package_target_missing' );
 	wpai168_check( 0 === $calls, 'Preflight rejection performed an HTTP download.' );
+	// WordPress Core's direct recursive overwrite could follow a linked
+	// directory and erase data outside the installed extension root.
+	$outside = sys_get_temp_dir() . '/wpai168-outside-' . uniqid( '', true );
+	wpai168_check( wp_mkdir_p( $outside ), 'Disposable outside-root fixture is unavailable.' );
+	file_put_contents( $outside . '/untouched.txt', 'must-survive' );
+	$linked = $plugin_directory . '/linked-outside';
+	wpai168_check( symlink( $outside, $linked ), 'Cannot construct disposable nested-symlink regression.' );
+	$prior_calls = $calls;
+	$assert_error( $plugin_input, 'external_package_unsafe_installed_tree' );
+	wpai168_check( $calls === $prior_calls, 'Nested linked-directory rejection reached HTTP transport.' );
+	wpai168_check( 'must-survive' === file_get_contents( $outside . '/untouched.txt' ), 'A rejected Core overwrite escaped through a symlink.' );
+	unlink( $linked );
+	unlink( $outside . '/untouched.txt' );
+	rmdir( $outside );
+
 	$assert_error( array_replace( $plugin_input, array( 'expected_sha256' => str_repeat( 'a', 64 ) ) ), 'external_package_hash_mismatch' );
 	wpai168_check( is_plugin_active( $plugin_file ) && 'original-version' === file_get_contents( $plugin_directory . '/fixture-data.txt' ), 'Rejected SHA changed active plugin.' );
 

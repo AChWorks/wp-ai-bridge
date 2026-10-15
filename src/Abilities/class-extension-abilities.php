@@ -626,7 +626,48 @@ final class Extension_Abilities {
 		if ( ! hash_equals( $before, $version ) ) {
 			return $this->external_package_error( $kind, 'external_package_target_stale', __( 'The installed extension version changed; inspect it before replacing.', 'wp-ai-bridge' ) );
 		}
+		// Core's direct filesystem deletion can descend into installed
+		// symlinked directories. Never authorize overwrite of a linked tree.
+		if ( ! $this->safe_installed_extension_tree( $kind, $target ) ) {
+			return $this->external_package_error( $kind, 'external_package_unsafe_installed_tree', __( 'The installed extension contains a symbolic link or an uninspectable filesystem tree; replace it manually after checking the deployment.', 'wp-ai-bridge' ) );
+		}
 		return $state;
+	}
+
+	/**
+	 * Fail closed when the existing extension contains links or an unreadable tree.
+	 *
+	 * WordPress Core's direct filesystem upgrader recursively deletes an
+	 * overwritten directory. A preexisting directory symlink can make that
+	 * deletion cross the installed extension's trusted root. This is rechecked
+	 * with the Bridge lock immediately before Core starts the overwrite.
+	 *
+	 * @param string $kind Plugin or theme.
+	 * @param string $target Exact installed identifier.
+	 * @return bool
+	 */
+	private function safe_installed_extension_tree( $kind, $target ) {
+		$parent = 'plugin' === $kind ? WP_PLUGIN_DIR : get_theme_root( $target );
+		$folder = 'plugin' === $kind ? dirname( $target ) : $target;
+		$root   = rtrim( $parent, '/\\' ) . '/' . $folder;
+		if ( is_link( $root ) || ! is_dir( $root ) ) {
+			return false;
+		}
+		try {
+			$walk    = new \RecursiveIteratorIterator(
+				new \RecursiveDirectoryIterator( $root, \FilesystemIterator::SKIP_DOTS ),
+				\RecursiveIteratorIterator::SELF_FIRST
+			);
+			$entries = 0;
+			foreach ( $walk as $node ) {
+				if ( $node->isLink() || ++$entries > 50000 ) {
+					return false;
+				}
+			}
+		} catch ( \Throwable $error ) {
+			return false;
+		}
+		return true;
 	}
 
 	/**
