@@ -294,8 +294,8 @@ final class Media_Abilities {
 		}
 
 		$this->load_media_dependencies();
-		$tmp_name = wp_tempnam( $filename );
-		if ( ! $tmp_name ) {
+		$tmp_name = \WP_AI_Bridge\Support\Safe_Temporary_Staging::create( $filename );
+		if ( is_wp_error( $tmp_name ) ) {
 			return $this->logged_error( $ability, 'media_temp_failed', __( 'WordPress could not allocate a temporary upload file.', 'wp-ai-bridge' ) );
 		}
 
@@ -807,9 +807,9 @@ final class Media_Abilities {
 			return $this->logged_error( $ability, 'media_import_limit_unavailable', __( 'WordPress must provide a finite positive upload limit before remote media can be imported.', 'wp-ai-bridge' ) );
 		}
 		$this->load_media_dependencies();
-		$temp_file          = wp_tempnam( $filename );
-		$state['temp_file'] = $temp_file;
-		if ( ! $temp_file ) {
+		$temp_file          = \WP_AI_Bridge\Support\Safe_Temporary_Staging::create( $filename );
+		$state['temp_file'] = is_string( $temp_file ) ? $temp_file : '';
+		if ( is_wp_error( $temp_file ) ) {
 			return $this->logged_error( $ability, 'media_temp_failed', __( 'WordPress could not allocate a temporary upload file.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $this->can_import_url( $input ) ) {
