@@ -1467,7 +1467,7 @@ final class Store {
 			// WordPress WP_Hook does not use finally to unwind callback
 			// execution. Preserve the exact outer filter stack so a controlled
 			// abort can rebuild only the escaped hook frames.
-			$native_hook_baseline = Hook_Dispatch_Recovery::snapshot();
+			$native_hook_baseline = Hook_Dispatch_Recovery::begin_scope();
 			try {
 				try {
 					wp_delete_post( $id, true );
@@ -1494,9 +1494,13 @@ final class Store {
 					}
 				}
 			} finally {
-				remove_action( 'before_delete_post', $guard_native_start, PHP_INT_MAX );
-				remove_action( 'before_delete_post', $observe_delete_start, PHP_INT_MIN );
-				remove_filter( 'pre_delete_post', $guard_pre_delete, PHP_INT_MAX );
+				try {
+					remove_action( 'before_delete_post', $guard_native_start, PHP_INT_MAX );
+					remove_action( 'before_delete_post', $observe_delete_start, PHP_INT_MIN );
+					remove_filter( 'pre_delete_post', $guard_pre_delete, PHP_INT_MAX );
+				} finally {
+					Hook_Dispatch_Recovery::end_scope( $native_hook_baseline );
+				}
 			}
 			if ( ! $native_delete_started && ( $native_vetoed || $bridge_vetoed ) ) {
 				return $this->pre_native_delete_aborted(
@@ -1595,7 +1599,7 @@ final class Store {
 	 * delete_pending fence and require administrator reconciliation.
 	 */
 	private function restore_pre_native_delete( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock ) {
-		$hook_baseline = Hook_Dispatch_Recovery::snapshot();
+		$hook_baseline = Hook_Dispatch_Recovery::begin_scope();
 		$switched      = false;
 		$reacquired    = false;
 		try {
@@ -1633,11 +1637,15 @@ final class Store {
 			Hook_Dispatch_Recovery::restore_or_terminate( $hook_baseline );
 			return false;
 		} finally {
-			if ( $reacquired ) {
-				$reacquired->release();
-			}
-			if ( $switched ) {
-				restore_current_blog();
+			try {
+				if ( $reacquired ) {
+					$reacquired->release();
+				}
+				if ( $switched ) {
+					restore_current_blog();
+				}
+			} finally {
+				Hook_Dispatch_Recovery::end_scope( $hook_baseline );
 			}
 		}
 	}

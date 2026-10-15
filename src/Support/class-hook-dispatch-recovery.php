@@ -35,6 +35,35 @@ final class Hook_Dispatch_Recovery {
 	}
 
 	/**
+	 * Enter a tracked, synchronous recovery scope. Native deletion and
+	 * conditional compensation use the same tracked snapshots as run(), so
+	 * an inner verified 'all' dispatcher replacement rebases every live
+	 * enclosing snapshot, not only callable-wrapper snapshots.
+	 *
+	 * @return object Registered exact hook state baseline.
+	 */
+	public static function begin_scope() {
+		$baseline              = self::snapshot();
+		self::$active_scopes[] = $baseline;
+		return $baseline;
+	}
+
+	/**
+	 * Leave the matching innermost scope after normal or recovered execution.
+	 * A scope-order violation cannot safely resume the destructive request.
+	 *
+	 * @param object $baseline Previously registered scope.
+	 * @return void
+	 */
+	public static function end_scope( $baseline ) {
+		if ( ! self::$active_scopes ||
+			end( self::$active_scopes ) !== $baseline ) {
+			self::terminate_unsafe_request();
+		}
+		array_pop( self::$active_scopes );
+	}
+
+	/**
 	 * Wrap a hook-capable operation that may throw into WP_Ability or a
 	 * caller-owned catch-and-continue. Recovered provider exceptions retain
 	 * their original object and semantics.
@@ -43,15 +72,14 @@ final class Hook_Dispatch_Recovery {
 	 * @return mixed Operation result.
 	 */
 	public static function run( $operation ) {
-		$baseline              = self::snapshot();
-		self::$active_scopes[] = $baseline;
+		$baseline = self::begin_scope();
 		try {
 			return $operation();
 		} catch ( \Throwable $exception ) {
 			self::restore_or_terminate( $baseline );
 			throw $exception;
 		} finally {
-			array_pop( self::$active_scopes );
+			self::end_scope( $baseline );
 		}
 	}
 
@@ -179,13 +207,25 @@ final class Hook_Dispatch_Recovery {
 	 * on WordPress 7.1+ a Throwable is caught and turned into a normal
 	 * WP_Error, continuing the same poisoned PHP request.
 	 *
-	 * No WordPress functions, filters, error formatters or callback-capable
-	 * error handlers are invoked here. Exit status 70 also permits a real
-	 * isolated WP-CLI subprocess to prove that no continuation occurred.
+	 * PHP exit() still runs PHP shutdown functions, including WordPress's
+	 * shutdown_action_hook(). Quarantine the entire WordPress hook registry
+	 * and current stack FIRST, using direct PHP globals only, so shutdown
+	 * and universal all-hook callbacks registered before termination cannot
+	 * run on the poisoned dispatcher. Direct PHP shutdown handlers outside
+	 * WordPress's hook registry remain PHP's responsibility.
+	 *
+	 * Exit status 70 allows isolated WP-CLI tests to verify that no normal
+	 * Ability continuation or registered WordPress shutdown hook ran.
 	 *
 	 * @return never
 	 */
 	private static function terminate_unsafe_request() {
+		// Never invoke WordPress APIs after recovery became unprovable.
+		// In particular, PHP exit() DOES execute WordPress's registered
+		// shutdown_action_hook(), which dispatches 'shutdown' and 'all'.
+		// Discard the complete registry before any shutdown handler runs.
+		$GLOBALS['wp_filter']         = array();
+		$GLOBALS['wp_current_filter'] = array();
 		if ( ! headers_sent() ) {
 			http_response_code( 500 );
 			header( 'Content-Type: text/plain; charset=UTF-8' );

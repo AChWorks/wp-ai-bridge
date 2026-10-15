@@ -14,7 +14,7 @@ use WP_AI_Bridge\Support\Settings;
 use WP_AI_Bridge\Workspace\Store;
 
 $stage = getenv( 'WPAI_HOOK_BOUNDARY_STAGE' );
-if ( ! in_array( $stage, array( 'permission', 'post_cas', 'compensation', 'activity', 'unrecoverable' ), true ) ) {
+if ( ! in_array( $stage, array( 'permission', 'post_cas', 'compensation', 'activity', 'guard_pre', 'guard_before', 'unrecoverable' ), true ) ) {
 	throw new RuntimeException( 'Invalid disposable hook-boundary scenario.' );
 }
 $checks = 0;
@@ -50,6 +50,8 @@ $hook_name = null;
 $hook_fn   = null;
 $veto_fn   = null;
 $all_keep  = null;
+$guard_arm_fn = null;
+$guard_hook   = null;
 
 try {
 	$project = 'hook-boundary-' . substr( hash( 'sha256', wp_generate_uuid4() ), 0, 16 );
@@ -115,14 +117,34 @@ try {
 	};
 	add_action( 'before_delete_post', $observe_native, 1, 1 );
 
-	if ( 'permission' === $stage || 'unrecoverable' === $stage ) {
-		$hook_name = 'map_meta_cap';
-		$hook_fn = static function ( $caps, $cap, $user_id, $args ) use ( &$trigger_count, $id, $provider_exception, $stage ) {
-			if ( 'delete_post' === $cap && in_array( $id, $args, true ) ) {
+	if ( in_array( $stage, array( 'permission', 'guard_pre', 'guard_before', 'unrecoverable' ), true ) ) {
+		$hook_name    = 'map_meta_cap';
+		$guard_armed  = false;
+		if ( 'guard_pre' === $stage || 'guard_before' === $stage ) {
+			// Only start throwing INSIDE the native terminal-guard
+			// authorization, not the earlier Ability or Store checks.
+			$guard_hook   = 'guard_pre' === $stage ? 'pre_delete_post' : 'before_delete_post';
+			$guard_arm_fn = static function ( $first, $candidate = null, $force = null ) use ( &$guard_armed, $guard_hook, $id ) {
+				$native_id = 'pre_delete_post' === $guard_hook && $candidate instanceof WP_Post ?
+					(int) $candidate->ID : (int) $first;
+				if ( $native_id === $id ) {
+					$guard_armed = true;
+				}
+				return $first;
+			};
+			if ( 'pre_delete_post' === $guard_hook ) {
+				add_filter( $guard_hook, $guard_arm_fn, 10, 3 );
+			} else {
+				add_action( $guard_hook, $guard_arm_fn, 10, 2 );
+			}
+		}
+		$hook_fn = static function ( $caps, $cap, $user_id, $args ) use ( &$trigger_count, $id, $provider_exception, $stage, &$guard_armed ) {
+			$armed = ! in_array( $stage, array( 'guard_pre', 'guard_before' ), true ) || $guard_armed;
+			if ( $armed && 'delete_post' === $cap && in_array( $id, $args, true ) ) {
 				++$trigger_count;
 				if ( 'unrecoverable' === $stage ) {
-					// The global dispatcher cannot be reconstructed from a
-					// foreign object. No WP_Ability catch may resume this run.
+					// Deliberately replace the active hook with a foreign
+					// object: reconstruction MUST be declared impossible.
 					$GLOBALS['wp_filter']['map_meta_cap'] = (object) array( 'untrusted' => true );
 				}
 				throw $provider_exception;
@@ -173,6 +195,45 @@ try {
 	$stack_before     = $wp_current_filter;
 	$registry_before  = $wp_filter[ $hook_name ]->callbacks;
 	$all_before       = $wp_filter['all']->callbacks;
+	$guard_before     = $guard_hook ? $wp_filter[ $guard_hook ]->callbacks : null;
+	if ( 'unrecoverable' === $stage ) {
+		// PHP exit() still runs WordPress's registered shutdown function.
+		// A named shutdown marker and a universal 'all' shutdown marker
+		// MUST NOT be called after the terminal quarantine.
+		add_action(
+			'shutdown',
+			static function () {
+				echo "UNSAFE_WORDPRESS_SHUTDOWN_HOOK_RAN\n";
+			},
+			10,
+			0
+		);
+		add_action(
+			'all',
+			static function ( $hook ) {
+				if ( 'shutdown' === $hook ) {
+					echo "UNSAFE_WORDPRESS_ALL_SHUTDOWN_RAN\n";
+				}
+			},
+			20,
+			1
+		);
+		// This plain PHP function is registered AFTER WordPress's own
+		// shutdown handler. It must run and see the hook quarantine,
+		// distinguishing safe shutdown from skipped shutdown entirely.
+		register_shutdown_function(
+			static function () {
+				$registry = $GLOBALS['wp_filter'] ?? null;
+				$stack    = $GLOBALS['wp_current_filter'] ?? null;
+				if ( is_array( $registry ) && array() === $registry &&
+					is_array( $stack ) && array() === $stack ) {
+					echo "PASS: #126 PHP shutdown completed with quarantined WordPress hooks.\n";
+				} else {
+					echo "UNSAFE_TERMINAL_HOOK_REGISTRY\n";
+				}
+			}
+		);
+	}
 	$throw_seen       = null;
 	$result           = null;
 	$ability          = wp_get_ability( 'wp-ai-bridge/workspace-delete' );
@@ -189,9 +250,13 @@ try {
 	}
 
 	$assert( 1 === $trigger_count, 'Wrong number of provider exceptions during guarded operation.' );
-	$expected_native_starts = 'activity' === $stage ? 1 : 0;
+	$expected_native_starts = in_array( $stage, array( 'activity', 'guard_before' ), true ) ? 1 : 0;
 	$assert( $blog_id === (int) get_current_blog_id() && $expected_native_starts === $native_started,
 		'Native cleanup or site switch differed from the expected stage.' );
+	if ( $guard_hook ) {
+		$assert( $guard_armed && $wp_filter[ $guard_hook ]->callbacks === $guard_before,
+			'Native terminal-guard exception did not fire at its intended stage or altered hook registration.' );
+	}
 	$assert( $wp_current_filter === $stack_before &&
 		! doing_filter( 'map_meta_cap' ) &&
 		! doing_filter( 'get_post_metadata' ) &&
@@ -202,7 +267,11 @@ try {
 		$wp_filter['all']->callbacks === $all_before,
 		'Provider hook callback IDs/priority/registration order were changed during recovery.' );
 	$reflection = new ReflectionClass( WP_Hook::class );
-	foreach ( array( $hook_name, 'all' ) as $named_hook ) {
+	$hook_assertions = array( $hook_name, 'all' );
+	if ( $guard_hook ) {
+		$hook_assertions[] = $guard_hook;
+	}
+	foreach ( $hook_assertions as $named_hook ) {
 		$instance = $wp_filter[ $named_hook ];
 		$assert( get_class( $instance ) === WP_Hook::class,
 			'Provider dispatcher was replaced with an incompatible type.' );
@@ -237,8 +306,12 @@ try {
 		remove_filter( 'pre_delete_post', $veto_fn, 10 );
 		$veto_fn = null;
 	}
+	if ( $guard_hook && $guard_arm_fn ) {
+		remove_filter( $guard_hook, $guard_arm_fn, 10 );
+		$guard_arm_fn = null;
+	}
 	$pending_rows = get_post_meta( $id, Store::META_STATE, false );
-	if ( 'permission' === $stage || 'post_cas' === $stage ) {
+	if ( in_array( $stage, array( 'permission', 'post_cas', 'guard_pre', 'guard_before' ), true ) ) {
 		$expected_wrapped_code = 'permission' === $stage ? 'ability_invalid_permissions' : 'ability_callback_exception';
 		$wrapped = null === $throw_seen && is_wp_error( $result ) &&
 			$expected_wrapped_code === $result->get_error_code();
@@ -296,6 +369,9 @@ try {
 	}
 	if ( $veto_fn ) {
 		remove_filter( 'pre_delete_post', $veto_fn, 10 );
+	}
+	if ( $guard_hook && $guard_arm_fn ) {
+		remove_filter( $guard_hook, $guard_arm_fn, 10 );
 	}
 	if ( $all_keep ) {
 		remove_action( 'all', $all_keep, 40 );
