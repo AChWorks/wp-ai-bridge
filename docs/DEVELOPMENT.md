@@ -191,10 +191,10 @@ bin/             development/build/test helpers
 docs/maintainer/ recovery map and preserved design references
 ```
 
-### Latest published v0.6.3-to-candidate ZIP upgrade regression
+### Latest published v0.6.4-to-candidate ZIP upgrade regression
 
 This fixture verifies an actual published-installation upgrade from the
-**immutable v0.6.3 release ZIP** (SHA-256 pinned in the runner) to the current
+**immutable v0.6.4 release ZIP** (SHA-256 pinned in the runner) to the current
 candidate, using WordPress Core's normal replacement operation:
 
 ```bash
@@ -207,7 +207,7 @@ Workspace data, canonical settings and signed-client OAuth/PKCE and refresh
 credentials, then installs the candidate in place. It verifies preserved
 record hashes and OAuth identity, exercises the original bearer through the
 official MCP Adapter and rotates the original refresh token. The candidate
-must register `workspace-delete` and `diagnostics-read` while retaining
+must register `workspace-delete`, `diagnostics-read`, and the guarded exact package-replacement contract while retaining
 default-off Users & Destructive authority; registration is not authorization.
 Fixture credentials remain confined to the disposable test environment.
 

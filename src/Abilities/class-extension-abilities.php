@@ -10,6 +10,7 @@ namespace WP_AI_Bridge\Abilities;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Extension_Install_Lock;
+use WP_AI_Bridge\Support\Extension_Package_Inspector;
 use WP_AI_Bridge\Support\Settings;
 use WP_Error;
 
@@ -62,7 +63,7 @@ final class Extension_Abilities {
 			'wp-ai-bridge/extension-lifecycle',
 			array(
 				'label'               => __( 'Manage Plugin or Theme Lifecycle', 'wp-ai-bridge' ),
-				'description'         => __( 'Installs WordPress.org extensions by slug or explicitly authorized external HTTPS packages, and manages installed extensions through WordPress Core APIs. Deletion additionally requires destructive access.', 'wp-ai-bridge' ),
+				'description'         => __( 'Installs WordPress.org extensions or authorized public HTTPS packages and supports explicitly confirmed, identity-checked replacement of an installed extension from a public HTTPS ZIP. Existing update offers remain supported; deletion requires destructive access.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => $this->mutate_schema(),
 				'output_schema'       => array(
@@ -108,8 +109,10 @@ final class Extension_Abilities {
 		if ( ! $this->permissions->allowed( Settings::GROUP_CODE_EXTENSIONS, $capability ) ) {
 			return false;
 		}
-		if ( 'install' === $action && ! empty( $input['package_url'] ) ) {
-			return $this->permissions->allowed( Settings::GROUP_EXTERNAL_PACKAGES, $capability );
+		if ( ! empty( $input['package_url'] ) && in_array( $action, array( 'install', 'update' ), true ) ) {
+			// Explicit package replacement requires both the update permission and
+			// the same native install authority as a WordPress-admin ZIP upload.
+			return $this->permissions->allowed( Settings::GROUP_EXTERNAL_PACKAGES, $this->capability( $kind, 'install' ) );
 		}
 		if ( 'delete' === $action ) {
 			return $this->permissions->allowed( Settings::GROUP_USERS_DESTRUCTIVE, $this->capability( $kind, 'delete' ) );
@@ -148,6 +151,9 @@ final class Extension_Abilities {
 		}
 
 		if ( 'install' === $action ) {
+			if ( isset( $input['expected_sha256'], $input['expected_installed_version'] ) || isset( $input['confirm_replace'] ) || isset( $input['allow_non_upgrade'] ) || isset( $input['expected_package_version'] ) ) {
+				return new WP_Error( 'extension_replace_arguments_not_applicable', __( 'Replacement confirmation and identities cannot be used for a new installation.', 'wp-ai-bridge' ) );
+			}
 			$has_slug    = '' !== $slug;
 			$package_url = isset( $input['package_url'] ) && is_string( $input['package_url'] ) ? $input['package_url'] : '';
 			$has_package = '' !== $package_url;
@@ -163,8 +169,14 @@ final class Extension_Abilities {
 			return $this->install( $kind, $slug );
 		}
 
-		if ( isset( $input['slug'] ) || isset( $input['package_url'] ) ) {
-			return new WP_Error( 'extension_install_source_not_applicable', __( 'Install source fields are accepted only for the install action.', 'wp-ai-bridge' ) );
+		if ( 'update' === $action && ! empty( $input['package_url'] ) ) {
+			if ( isset( $input['slug'] ) ) {
+				return new WP_Error( 'extension_install_source_not_applicable', __( 'A replacement ZIP must identify the installed target, not a WordPress.org slug.', 'wp-ai-bridge' ) );
+			}
+			return $this->install_external_package( $kind, $input );
+		}
+		if ( isset( $input['slug'] ) || isset( $input['package_url'] ) || isset( $input['expected_sha256'] ) || isset( $input['expected_installed_version'] ) || isset( $input['expected_package_version'] ) || isset( $input['confirm_replace'] ) || isset( $input['allow_non_upgrade'] ) ) {
+			return new WP_Error( 'extension_install_source_not_applicable', __( 'Package source and replacement fields require an explicit install or package-update action.', 'wp-ai-bridge' ) );
 		}
 		if ( '' === $target ) {
 			return new WP_Error( 'extension_target_required', __( 'An installed plugin file or theme stylesheet is required.', 'wp-ai-bridge' ) );
@@ -344,9 +356,17 @@ final class Extension_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private function install_external_package_checked( $kind, $input, &$state ) {
-		$url = isset( $input['package_url'] ) && is_string( $input['package_url'] ) ? $input['package_url'] : '';
+		$url         = isset( $input['package_url'] ) && is_string( $input['package_url'] ) ? $input['package_url'] : '';
+		$replacement = 'update' === ( $input['action'] ?? '' );
 		if ( ! $this->can_mutate( $input ) ) {
-			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-ai-bridge' ) );
+			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External packages require Code & Extensions, External Packages and the native WordPress install/update capabilities.', 'wp-ai-bridge' ) );
+		}
+		$this->load_external_package_files();
+		if ( $replacement ) {
+			$preflight = $this->preflight_replacement( $kind, $input );
+			if ( is_wp_error( $preflight ) ) {
+				return $preflight;
+			}
 		}
 		if ( '' === $url || strlen( $url ) > 8192 || preg_match( '/[\x00-\x20\x7f]/', $url ) || ! $this->is_safe_package_destination( $url ) ) {
 			return $this->external_package_error( $kind, 'unsafe_external_package_url', __( 'WordPress did not accept the external package URL as a safe public HTTPS destination.', 'wp-ai-bridge' ) );
@@ -420,8 +440,18 @@ final class Extension_Abilities {
 		if ( '' !== $length && ( ! is_scalar( $length ) || ! ctype_digit( (string) $length ) || ltrim( (string) $length, '0' ) !== (string) $bytes ) ) {
 			return $this->external_package_error( $kind, 'external_package_incomplete', __( 'The downloaded external package length does not match the complete response.', 'wp-ai-bridge' ) );
 		}
+		if ( $replacement ) {
+			$download_hash = hash_file( 'sha256', $temp_file );
+			if ( ! is_string( $download_hash ) || ! hash_equals( strtolower( (string) $input['expected_sha256'] ), $download_hash ) ) {
+				return $this->external_package_error( $kind, 'external_package_hash_mismatch', __( 'The downloaded ZIP does not match the explicitly approved SHA-256.', 'wp-ai-bridge' ) );
+			}
+			$inspected = ( new Extension_Package_Inspector() )->inspect( $temp_file, $kind, (string) $input['target'], (string) $input['expected_package_version'], $max_bytes );
+			if ( is_wp_error( $inspected ) ) {
+				return $this->external_package_error( $kind, $inspected->get_error_code(), __( 'The replacement archive identity or safety inspection failed.', 'wp-ai-bridge' ) );
+			}
+		}
 		if ( ! $this->can_mutate( $input ) ) {
-			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-ai-bridge' ) );
+			return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package authority was revoked before the native installer.', 'wp-ai-bridge' ) );
 		}
 
 		$lock = new Extension_Install_Lock();
@@ -432,15 +462,24 @@ final class Extension_Abilities {
 			if ( ! $this->can_mutate( $input ) || ! $lock->is_owned() ) {
 				return $this->external_package_error( $kind, 'external_package_permission_denied', __( 'External package installation requires Code & Extensions, External Packages, and the native WordPress install capability.', 'wp-ai-bridge' ) );
 			}
+			if ( $replacement ) {
+				// Recheck the exact installed preimage while holding the shared,
+				// lock-coherent WordPress content filesystem admission lock.
+				$current = $this->preflight_replacement( $kind, $input );
+				if ( is_wp_error( $current ) ) {
+					return $current;
+				}
+			}
 			$state['install_started'] = true;
 			$skin                     = new \Automatic_Upgrader_Skin();
+			$args                     = $replacement ? array( 'overwrite_package' => true ) : array();
 			if ( 'plugin' === $kind ) {
 				$upgrader = new \Plugin_Upgrader( $skin );
-				$ok       = $upgrader->install( $temp_file );
+				$ok       = $upgrader->install( $temp_file, $args );
 				$target   = $upgrader->plugin_info();
 			} else {
 				$upgrader = new \Theme_Upgrader( $skin );
-				$ok       = $upgrader->install( $temp_file );
+				$ok       = $upgrader->install( $temp_file, $args );
 				$theme    = $upgrader->theme_info();
 				$target   = is_object( $theme ) && method_exists( $theme, 'get_stylesheet' ) ? $theme->get_stylesheet() : '';
 			}
@@ -456,10 +495,35 @@ final class Extension_Abilities {
 			if ( ! $lock->is_owned() ) {
 				throw new \RuntimeException( 'Native Core install lock was lost before durable outcome.' );
 			}
+			if ( $replacement ) {
+				if ( ! hash_equals( (string) $input['target'], $target ) ) {
+					throw new \RuntimeException( 'The upgrader returned a different installed extension identity.' );
+				}
+				if ( 'plugin' === $kind ) {
+					wp_clean_plugins_cache( true );
+					$installed      = get_plugins();
+					$actual_version = (string) ( $installed[ $target ]['Version'] ?? '' );
+					$active         = is_plugin_active( $target );
+					$network        = is_multisite() && is_plugin_active_for_network( $target );
+					if ( ! hash_equals( (string) $input['expected_package_version'], $actual_version )
+						|| $active !== $current['active'] || $network !== $current['network_active'] ) {
+						throw new \RuntimeException( 'Plugin identity, version or activation state changed unexpectedly.' );
+					}
+				} else {
+					wp_clean_themes_cache( true );
+					$installed = wp_get_theme( $target );
+					if ( ! $installed->exists()
+						|| ! hash_equals( (string) $input['expected_package_version'], (string) $installed->get( 'Version' ) )
+						|| get_stylesheet() !== $current['active_stylesheet']
+						|| get_template() !== $current['active_template'] ) {
+						throw new \RuntimeException( 'Theme identity, version or activation state changed unexpectedly.' );
+					}
+				}
+			}
 			$state['installed_target'] = $target;
 			return array(
 				'kind'                              => $kind,
-				'action'                            => 'install',
+				'action'                            => $replacement ? 'update' : 'install',
 				'target'                            => $target,
 				'success'                           => true,
 				'requires_manual_filesystem_access' => false,
@@ -512,6 +576,57 @@ final class Extension_Abilities {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * Validates a single explicit existing-extension replacement preimage.
+	 *
+	 * @param string              $kind  Plugin or theme.
+	 * @param array<string,mixed> $input Administrator-bound confirmation.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private function preflight_replacement( $kind, $input ) {
+		$target        = isset( $input['target'] ) && is_string( $input['target'] ) ? $input['target'] : '';
+		$plugin_target = 'plugin' === $kind && 1 === preg_match( '/\\A[a-zA-Z0-9][a-zA-Z0-9._-]*\\/[a-zA-Z0-9][a-zA-Z0-9._-]*\\.php\\z/', $target );
+		$theme_target  = 'theme' === $kind && 1 === preg_match( '/\\A[a-zA-Z0-9][a-zA-Z0-9._-]*\\z/', $target );
+		if ( ( ! $plugin_target && ! $theme_target ) || true !== ( $input['confirm_replace'] ?? null )
+			|| ! is_string( $input['expected_sha256'] ?? null ) || 1 !== preg_match( '/\\A[a-fA-F0-9]{64}\\z/', $input['expected_sha256'] )
+			|| ! is_string( $input['expected_installed_version'] ?? null ) || ! is_string( $input['expected_package_version'] ?? null ) ) {
+			return $this->external_package_error( $kind, 'external_package_confirmation_required', __( 'An exact installed extension, two versions, SHA-256 and explicit replacement confirmation are required.', 'wp-ai-bridge' ) );
+		}
+		$before = (string) $input['expected_installed_version'];
+		$after  = (string) $input['expected_package_version'];
+		if ( ! preg_match( '/\\A[0-9A-Za-z][0-9A-Za-z._+-]{0,63}\\z/', $before ) || ! preg_match( '/\\A[0-9A-Za-z][0-9A-Za-z._+-]{0,63}\\z/', $after ) ) {
+			return $this->external_package_error( $kind, 'external_package_confirmation_required', __( 'Expected extension versions are invalid.', 'wp-ai-bridge' ) );
+		}
+		if ( ! version_compare( $after, $before, '>' ) && true !== ( $input['allow_non_upgrade'] ?? false ) ) {
+			return $this->external_package_error( $kind, 'external_package_downgrade_denied', __( 'Replacing with the same or an older version requires separate explicit approval.', 'wp-ai-bridge' ) );
+		}
+		if ( 'plugin' === $kind ) {
+			$installed = get_plugins();
+			if ( ! isset( $installed[ $target ] ) ) {
+				return $this->external_package_error( $kind, 'external_package_target_missing', __( 'The exact installed plugin does not exist.', 'wp-ai-bridge' ) );
+			}
+			$version = (string) $installed[ $target ]['Version'];
+			$state   = array(
+				'active'         => is_plugin_active( $target ),
+				'network_active' => is_multisite() && is_plugin_active_for_network( $target ),
+			);
+		} else {
+			$installed = wp_get_theme( $target );
+			if ( ! $installed->exists() ) {
+				return $this->external_package_error( $kind, 'external_package_target_missing', __( 'The exact installed theme does not exist.', 'wp-ai-bridge' ) );
+			}
+			$version = (string) $installed->get( 'Version' );
+			$state   = array(
+				'active_stylesheet' => get_stylesheet(),
+				'active_template'   => get_template(),
+			);
+		}
+		if ( ! hash_equals( $before, $version ) ) {
+			return $this->external_package_error( $kind, 'external_package_target_stale', __( 'The installed extension version changed; inspect it before replacing.', 'wp-ai-bridge' ) );
+		}
+		return $state;
 	}
 
 	/**
@@ -746,27 +861,41 @@ final class Extension_Abilities {
 		return array(
 			'type'                 => 'object',
 			'properties'           => array(
-				'kind'        => array(
+				'kind'                       => array(
 					'type' => 'string',
 					'enum' => array( 'plugin', 'theme' ),
 				),
-				'action'      => array(
+				'action'                     => array(
 					'type' => 'string',
 					'enum' => array( 'install', 'update', 'activate', 'deactivate', 'delete' ),
 				),
-				'target'      => array(
+				'target'                     => array(
 					'type'      => 'string',
 					'maxLength' => 300,
 				),
-				'slug'        => array(
+				'slug'                       => array(
 					'type'      => 'string',
 					'maxLength' => 200,
 					'pattern'   => '^[a-z0-9-]+$',
 				),
-				'package_url' => array(
+				'package_url'                => array(
 					'type'      => 'string',
 					'maxLength' => 8192,
 				),
+				'expected_sha256'            => array(
+					'type'    => 'string',
+					'pattern' => '^[a-fA-F0-9]{64}$',
+				),
+				'expected_installed_version' => array(
+					'type'      => 'string',
+					'maxLength' => 64,
+				),
+				'expected_package_version'   => array(
+					'type'      => 'string',
+					'maxLength' => 64,
+				),
+				'confirm_replace'            => array( 'type' => 'boolean' ),
+				'allow_non_upgrade'          => array( 'type' => 'boolean' ),
 			),
 			'required'             => array( 'kind', 'action' ),
 			'additionalProperties' => false,

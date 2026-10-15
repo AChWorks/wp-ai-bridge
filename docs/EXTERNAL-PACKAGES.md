@@ -1,4 +1,4 @@
-# External package installation
+# External package installation and verified replacement
 
 `External Packages` is a separate administrator-controlled access group for installing plugin or theme ZIP packages from an explicit public HTTPS URL. It is disabled by default on fresh installs and upgrades.
 
@@ -6,11 +6,11 @@ This boundary is deliberately narrower than a generic package downloader. It doe
 
 ## Authorization
 
-An external package install through `wp-ai-bridge/extension-lifecycle` requires all of the following at the same time:
+An external package install or explicit existing-extension replacement through `wp-ai-bridge/extension-lifecycle` requires all of the following at the same time:
 
 1. **Code & Extensions** is enabled;
 2. **External Packages** is enabled;
-3. the connected WordPress user has the native `install_plugins` or `install_themes` capability for the selected kind.
+3. the connected WordPress user has the native `install_plugins` or `install_themes` capability for the selected kind; **replacement also requires** `update_plugins` or `update_themes` respectively.
 
 The existing WordPress.org slug install path remains available under **Code & Extensions** alone. Enabling External Packages does not grant a WordPress capability and does not enable Source Editing.
 
@@ -41,6 +41,29 @@ After a complete bounded download and one final authorization check, the Bridge 
 The Bridge does not automatically activate the installed plugin or theme. Activation stays a separate explicit lifecycle operation with its existing WordPress capability checks.
 
 Installing an executable plugin/theme package is **administrator-level code trust, not a sandbox**. Once activated, package code has the normal authority available to WordPress runtime code. External Packages should therefore be enabled only when an administrator intends to delegate that trust.
+
+## Replacing an existing installed extension from a public ZIP
+
+The ordinary `action=update` with no `package_url` still uses native WordPress update offers. To intentionally select a vendor/GitHub ZIP instead, obtain the installed extension's exact `target` and version with `extensions-read`, verify the trusted public release URL, expected *new* version and SHA-256, and explicitly confirm the operation:
+
+```json
+{
+  "kind": "plugin",
+  "action": "update",
+  "target": "wp-ai-bridge/wp-ai-bridge.php",
+  "package_url": "https://github.com/AChWorks/wp-ai-bridge/releases/download/v0.6.5/wp-ai-bridge.zip",
+  "expected_installed_version": "0.6.4",
+  "expected_package_version": "0.6.5",
+  "expected_sha256": "<the exact verified 64-character ZIP SHA-256>",
+  "confirm_replace": true
+}
+```
+
+The URL/version above illustrate the **release-verification contract**, not a claim that a candidate ZIP has already been published. The live URL and hash must be verified before the call. For themes use `kind:"theme"` and its exact installed stylesheet as `target`. Version rollback/same-version replacement is refused by default; `allow_non_upgrade:true` is a separately explicit high-trust override, not a default.
+
+Only installed **directory-based plugins with an exact main PHP filename** and installed themes with a matching top-level `style.css` are admitted by the strict ZIP identity check. For unsupported single-file plugin or unusual archive layouts, use the native WordPress administrator workflow; never guess an alternate archive path. The replacement ZIP must contain only the expected canonical directory, have a matching embedded version header and pass finite archive-entry/decompression/symlink/path safety checks.
+
+After bounded HTTPS streaming and SHA-256 validation, the current installed version, delegation, native install/update capabilities and the shared filesystem lock are rechecked. Only then is Core's `Plugin_Upgrader::install(..., ['overwrite_package'=>true])` or equivalent Theme Upgrader called; **ordinary installs never overwrite** an existing extension. The Bridge confirms the exact installed target/version and preserves active/network activation or current-theme identity. A mismatched post-state or ambiguous Core outcome requires an administrator to inspect/recover; never automatically replay it. Replacing the active Bridge itself can terminate the in-flight connection on some hosting stacks, so verify the next authenticated request and have a verified backup/host recovery path.
 
 ## Cleanup and recovery
 

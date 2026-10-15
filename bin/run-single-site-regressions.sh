@@ -89,5 +89,23 @@ run_eval issue61-f004-f005-persistence-smoke.php
 run_eval issue61-f006-same-request-dispatch-smoke.php
 
 run_eval issue67-external-packages-smoke.php
+run_eval issue168-exact-zip-replacement-smoke.php
 run_eval issue135-no-private-packages-smoke.php
+
+# Must run LAST: replaces the installed plugin directory, removing its test fixtures.
+run_eval issue168-self-replacement-smoke.php
+"${wp[@]}" eval '
+$fixture = get_option("wpai168_self_upgrade_fixture", array());
+$expected = (string) ($fixture["expected_version"] ?? "");
+if ($expected === "" || WP_AI_BRIDGE_VERSION !== $expected || !is_plugin_active("wp-ai-bridge/wp-ai-bridge.php")) {
+    throw new RuntimeException("Fresh PHP process did not load the updated and active Bridge.");
+}
+$bridge = wp_get_ability("wp-ai-bridge/bridge-info");
+$info = $bridge instanceof WP_Ability ? $bridge->execute(array()) : new WP_Error("missing");
+if (is_wp_error($info) || ($info["plugin_version"] ?? "") !== $expected) {
+    throw new RuntimeException("Installed Bridge did not report the replaced plugin version.");
+}
+delete_option("wpai168_self_upgrade_fixture");
+' --user=1 --allow-root
+echo "PASS: active Bridge self-replacement survived a fresh WordPress bootstrap."
 echo "Consolidated single-site regressions: PASS"
