@@ -30,7 +30,7 @@ It exposes bounded, typed site-management abilities while keeping WordPress capa
 ## Requirements
 
 - WordPress **6.9 or newer**.
-- The official [WordPress MCP Adapter](https://github.com/WordPress/mcp-adapter), installed as a separate WordPress plugin (not bundled). The supported CI lanes exercise MCP Adapter `0.6.1` and `0.7.0`; check the exact installed Bridge/Adapter builds and the version-specific notes below.
+- The official [WordPress MCP Adapter](https://wordpress.org/plugins/mcp-adapter/), installed as a separate WordPress plugin (not bundled). The supported CI lanes exercise MCP Adapter `0.6.1` and `0.7.0`; check the exact installed Bridge/Adapter builds and the version-specific notes below.
 - HTTPS and a publicly reachable WordPress REST API for direct ChatGPT Workspace App connections; other remote clients must be able to reach the endpoint over their supported transport.
 - A WordPress account with the capabilities required for the operations you enable.
 
@@ -118,7 +118,7 @@ Only **Site Read** is enabled by default.
 
 ## Uploads and extension installation
 
-`wp-ai-bridge/media-upload` accepts Base64-encoded file bytes plus a filename and hands them to WordPress Media Library handling. Published v0.5.1 uses a **20 MiB** inline fallback cap; v0.6.0 makes that default administrator-configurable within PHP/native WordPress limits. This does **not** guarantee an AI client or MCP Gateway can transfer the configured amount in one request. Actual inline capacity may be lower. **v0.6.0 source includes the WordPress-side authenticated private transfer path, but neither source integration nor publishing proves a hosted-client attachment**; typed JSON/MCP calls must not be presented as a general file upload/download stream. Use [type-appropriate data exchange](./docs/LARGE-PAYLOADS.md) rather than relying on a large JSON/Base64 upload. The caller cannot choose a server filesystem path.
+`wp-ai-bridge/media-upload` sends Base64-encoded bytes plus a filename to the native WordPress Media Library. Its **20 MiB default inline budget** is adjustable by a WordPress administrator within current PHP/WordPress constraints, but the actual AI-client/MCP message limit may be much smaller. The separate authenticated `private-transfer` Ability offers resumable byte windows on hosts with an approved confidential temporary storage location; on some shared hosts it can refuse staging with `transfer_storage_unsafe`. Neither path promises that a particular ChatGPT/AI client can attach or download a native file without an independently supported client handoff. Use [type-appropriate data exchange](./docs/LARGE-PAYLOADS.md). The caller cannot choose a server filesystem path.
 
 `wp-ai-bridge/media-import-url` accepts a public HTTP(S) URL and a filename, streams it within the current WordPress upload limit, and creates a normal attachment. It requires explicit **Remote Media** plus **Builder Write** access; upgrades do not enable it automatically. See [URL media import](./docs/ABILITIES.md#url-media-import).
 
@@ -132,7 +132,7 @@ Source Editing remains a separate administrator-level trust boundary and is not 
 
 WP AI Bridge uses one native product identity throughout the maintained runtime: the plugin directory/entrypoint is `wp-ai-bridge/wp-ai-bridge.php`, the PHP namespace is `WP_AI_Bridge`, the text domain is `wp-ai-bridge`, Bridge Ability identifiers use `wp-ai-bridge/*`, and admin/OAuth/MCP routes use the `wp-ai-bridge` slug.
 
-Version 0.4.0 was the bounded one-time migration release for the sole pre-canonical Workspace transition. Version 0.4.1 retires that migration implementation after successful real-site verification. The maintained runtime no longer reads or depends on pre-0.4.0 product/storage identifiers. Historical release notes remain available in the changelog and immutable v0.4.0 release for recovery/audit purposes.
+The maintained runtime no longer reads pre-0.4.0 product/storage identifiers. If upgrading a legacy v0.3.0 installation that needs to preserve Workspace data, follow the [legacy migration steps](./docs/INSTALLATION.md#sites-still-on-the-published-030-package) before installing a current version.
 
 ## Optional integrations
 
@@ -170,12 +170,9 @@ Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Au
 - [Application Password boundary](./docs/ABILITIES.md#application-password-boundary)
 - [Integrations](./docs/INTEGRATIONS.md)
 - [Security](./docs/SECURITY.md)
-- [Master Specification — accepted product goal](./MASTER-SPEC.md)
 - [Architecture](./docs/ARCHITECTURE.md)
 - [Large and binary data exchange](./docs/LARGE-PAYLOADS.md)
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)
-- [Development and testing](./docs/DEVELOPMENT.md)
-- [Administrator capability audit](./docs/POST-PARITY-AUDIT.md) — dated source/live evidence and owners, not a guarantee for every installed site.
 - [Changelog](./CHANGELOG.md)
 
 ## License

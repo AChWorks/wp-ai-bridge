@@ -79,6 +79,7 @@ Keep implementation proportional: no duplicate registry, custom policy language,
 - This Bridge installed and active; HTTPS for remote connections.
 - Current development and CI baseline includes PHP 8.4. Minimum PHP support follows the tested intersection with WordPress and MCP Adapter, not an unverified compatibility promise.
 - No SaaS bridge, additional MCP server, external database, daemon, or queue is required by default.
+- Preserve eligibility for a possible future **WordPress.org Plugin Directory** distribution: maintain an accurate native plugin/dependency/PHP header, GPL-compatible readable shipped code, transparent external communication and privacy behavior, Core-native installation/updates, and a distributable package that can pass the applicable official submission review. This is a design constraint, **not** a claim of listing, approval, or authority to publish. Resolve any actual Plugin Directory policy conflict (especially remotely authorized extension installation) from primary policy/reviewer evidence without silently dropping legitimate native WordPress administration.
 - Installed site plugins and themes are optional sources of additional operations, not a fixed supported-provider list or mandatory Bridge dependencies.
 
 Do not bundle a private MCP Adapter. Detect missing dependencies and report the actual administrator action required. Version-sensitive contracts must be checked against the supported runtimes before adoption.

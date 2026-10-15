@@ -70,6 +70,10 @@ The Bridge requires a compatible Code Snippets programmatic lifecycle in the cur
 
 If status remains unavailable, verify the installed version, plugin activation, and whether another plugin is altering Code Snippets loading/capabilities. Rescan the App after changing provider state.
 
+## Private transfer returns `transfer_storage_unsafe`
+
+On some shared WordPress hosts, the effective native temporary directory is within the web-served WordPress content tree. The current filesystem-backed private-transfer storage intentionally rejects that location because static web servers and CDN/offload rules might expose private bytes. This is a privacy protection, **not** a request to change global `WP_TEMP_DIR`, add a host-specific `.htaccess` rule, or store private bytes in public uploads. If only explicitly publishable media is needed, the native Media Library upload or safe HTTPS URL import remains independent; confidential Media/WXR/source transfers must not be redirected into a public URL. The portable private-storage limitation is tracked in [Issue #134](https://github.com/AChWorks/wp-ai-bridge/issues/134).
+
 ## Media upload fails
 
 Check:
