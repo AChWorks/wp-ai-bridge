@@ -93,4 +93,20 @@ $GLOBALS['wpai_test']['capabilities']['manage_options'] = true;
 update_option( Settings::OPTION_NAME, array( Settings::GROUP_BUILDER_WRITE => 1, Settings::GROUP_USERS_DESTRUCTIVE => 0 ) );
 $assert( ! $api->can_delete( $input ), 'Revoked destructive Bridge group was ignored.' );
 $auth->setValue( null, '' );
+
+// Repeat the same authorization callback across simulated revocation instead
+// of assuming the initial Ability permission was still valid after a lock wait.
+$authorization_check = new ReflectionMethod( Store::class, 'deletion_authorized' );
+$grant_still_valid = true;
+$live_permission = static function () use ( &$grant_still_valid ) {
+	return $grant_still_valid;
+};
+$assert( true === $authorization_check->invoke( new Store(), $live_permission, $input ), 'Fresh initial delete authorization check failed.' );
+$grant_still_valid = false;
+$assert( false === $authorization_check->invoke( new Store(), $live_permission, $input ), 'A revoked delete authorization remained cached.' );
+$throwing_permission = static function () {
+	throw new RuntimeException( 'Simulated revoked/failed permission hook.' );
+};
+$assert( false === $authorization_check->invoke( new Store(), $throwing_permission, $input ), 'A throwing permission callback did not fail closed.' );
+
 echo "PASS: #126 {$checks} exact-delete authorization, confirmation and no-DB-denial assertions.\n";

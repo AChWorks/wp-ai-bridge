@@ -106,6 +106,33 @@ try {
 	$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
 	update_option( Settings::OPTION_NAME, $access, false );
 
+	// Revoke the destructive grant mid-operation, after initial preflight
+	// but before metadata CAS. The exact document must stay unchanged.
+	$revoked_mid_operation = false;
+	$revoke_during_read    = static function ( $value, $object_id, $meta_key ) use ( &$revoked_mid_operation, &$access, $doc ) {
+		if ( ! $revoked_mid_operation && (int) $doc['id'] === (int) $object_id && Store::META_STATE === $meta_key ) {
+			$revoked_mid_operation                           = true;
+			$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 0;
+			update_option( Settings::OPTION_NAME, $access, false );
+		}
+		return $value;
+	};
+	add_filter( 'get_post_metadata', $revoke_during_read, 10, 3 );
+	try {
+		$denied = $abilities( $doc_input );
+	} finally {
+		remove_filter( 'get_post_metadata', $revoke_during_read, 10 );
+	}
+	$after_revocation = $store->get_document( $doc['id'] );
+	$assert( $revoked_mid_operation && is_wp_error( $denied ) && 'workspace_delete_denied' === $denied->get_error_code(),
+		'Mid-operation grant revocation failed to stop exact document deletion.' );
+	$assert( ! is_wp_error( $after_revocation ) &&
+		$doc['state_hash'] === $after_revocation['state_hash'] &&
+		$doc['version'] === $after_revocation['version'],
+		'Mid-operation revocation incorrectly fenced or changed the document.' );
+	$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
+	update_option( Settings::OPTION_NAME, $access, false );
+
 	$updated = $store->update_document(
 		$doc['id'],
 		array(
@@ -136,7 +163,9 @@ try {
 
 	// A plugin filter may fail while writing Activity AFTER irreversible
 	// deletion. It must not mask a verified success and invite a blind retry.
-	$break_activity = static function () {
+	$activity_fault_injected = false;
+	$break_activity         = static function () use ( &$activity_fault_injected ) {
+		$activity_fault_injected = true;
 		throw new RuntimeException( 'Synthetic disposable Activity storage failure.' );
 	};
 	add_filter( 'pre_update_option_wp_ai_bridge_recent_actions', $break_activity, 10, 2 );
@@ -145,6 +174,7 @@ try {
 	} finally {
 		remove_filter( 'pre_update_option_wp_ai_bridge_recent_actions', $break_activity, 10 );
 	}
+	$assert( true === $activity_fault_injected, 'The WordPress Activity write-failure filter was not actually exercised.' );
 	$assert( ! is_wp_error( $ok ) && true === $ok['deleted'] && $task['id'] === $ok['id'], 'Exact task deletion did not return a verified receipt when Activity storage failed.' );
 	$assert( ! get_post( $task['id'] ) && ! get_post_meta( $task['id'], Store::META_STATE, false ), 'Deleted task or private metadata remains visible.' );
 	$assert( $old_docs === $record_ids( Store::DOCUMENT_POST_TYPE ) &&

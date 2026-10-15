@@ -1267,10 +1267,11 @@ final class Store {
 	 * previously committed canonical project/key remains reserved, preserving
 	 * the durable no-duplicate contract even after explicit deletion.
 	 *
-	 * @param array<string,mixed> $input Exact WordPress site and record identity.
+	 * @param array<string,mixed> $input     Exact WordPress site and record identity.
+	 * @param callable            $authorize Fresh same-principal Ability authorization callback.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public function delete_exact( $input ) {
+	public function delete_exact( $input, $authorize ) {
 		if ( ! is_array( $input ) || 7 !== count( $input ) ||
 			! isset( $input['kind'], $input['id'], $input['blog_id'], $input['project_ref'], $input['expected_version'], $input['expected_state_hash'], $input['confirmation'] ) ||
 			! in_array( $input['kind'], array( 'document', 'task' ), true ) ||
@@ -1282,6 +1283,12 @@ final class Store {
 			! is_string( $input['confirmation'] ) ||
 			0 !== strcmp( sprintf( 'PERMANENTLY DELETE %s %d', strtoupper( $input['kind'] ), $input['id'] ), $input['confirmation'] ) ) {
 			return new WP_Error( 'workspace_delete_invalid', __( 'Exact site, bound record identity, version/hash and explicit record-specific confirmation are required.', 'wp-ai-bridge' ) );
+		}
+
+		// Authorization must remain valid after admission waits and immediately
+		// before the irreversible effect; an earlier Ability check is not enough.
+		if ( ! $this->deletion_authorized( $authorize, $input ) ) {
+			return new WP_Error( 'workspace_delete_denied', __( 'Current WordPress principal cannot permanently delete this private record.', 'wp-ai-bridge' ) );
 		}
 
 		$kind  = $input['kind'];
@@ -1300,7 +1307,7 @@ final class Store {
 			if ( ! $post || $type !== $post->post_type ) {
 				return new WP_Error( 'workspace_delete_not_found', __( 'The exact private Workspace record was not found.', 'wp-ai-bridge' ) );
 			}
-			if ( ! current_user_can( 'delete_post', $id ) ) {
+			if ( ! $this->deletion_authorized( $authorize, $input ) ) {
 				return new WP_Error( 'workspace_delete_denied', __( 'Current WordPress principal cannot permanently delete this private record.', 'wp-ai-bridge' ) );
 			}
 			$rows = get_post_meta( $id, self::META_STATE, false );
@@ -1327,13 +1334,16 @@ final class Store {
 			$state['version']        = $state['version'] + 1;
 			$state['modified_gmt']   = gmdate( 'c' );
 			$fenced_json             = $this->encode_state( $state );
+			if ( ! $this->deletion_authorized( $authorize, $input ) ) {
+				return new WP_Error( 'workspace_delete_denied', __( 'Current WordPress principal cannot permanently delete this private record.', 'wp-ai-bridge' ) );
+			}
 			if ( ! is_string( $fenced_json ) ||
 				false === update_post_meta( $id, self::META_STATE, wp_slash( $fenced_json ), $original_json ) ) {
 				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Deletion admission was not verified. Check the exact record before retrying.', 'wp-ai-bridge' ) );
 			}
 			if ( ! $lock->is_owned() ||
 				(string) get_post_meta( $id, self::META_STATE, true ) !== $fenced_json ||
-				! current_user_can( 'delete_post', $id ) ) {
+				! $this->deletion_authorized( $authorize, $input ) ) {
 				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Deletion is fenced but could not be safely completed. Administrator reconciliation is required.', 'wp-ai-bridge' ) );
 			}
 			// Hooks may change the active WordPress site. Never delete on a
@@ -1362,6 +1372,22 @@ final class Store {
 			);
 		} finally {
 			$lock->release();
+		}
+	}
+
+	/**
+	 * Re-evaluates the authoritative Ability grant without caching it across
+	 * lock waits, CAS or provider hooks. Thrown access filters fail closed.
+	 *
+	 * @param callable $authorize Current Ability authorization callback.
+	 * @param array    $input     Exact record identity.
+	 * @return bool
+	 */
+	private function deletion_authorized( $authorize, $input ) {
+		try {
+			return is_callable( $authorize ) && true === call_user_func( $authorize, $input );
+		} catch ( \Throwable $exception ) {
+			return false;
 		}
 	}
 
