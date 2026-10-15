@@ -162,7 +162,7 @@ try {
 	// prevent it, including an active sibling whose files must survive.
 	$sibling_basename = $plugin_root . '/sibling.php';
 	$sibling_path     = $plugin_directory . '/sibling.php';
-	$sibling_content  = "<?php\\n/*\\nPlugin Name: WP AI Bridge Shared Directory Sibling\\nVersion: 9.9.9\\n*/\\n";
+	$sibling_content  = "<?php\n/*\nPlugin Name: WP AI Bridge Shared Directory Sibling\nVersion: 9.9.9\n*/\n";
 	file_put_contents( $sibling_path, $sibling_content );
 	wp_clean_plugins_cache( false );
 	try {
