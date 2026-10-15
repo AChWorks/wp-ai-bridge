@@ -4,6 +4,13 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.6.4
+
+- Introduce a narrowly scoped `workspace-delete` Ability for one explicitly identified project-bound private document or task. A current WordPress site administrator and authenticated OAuth client must meet WordPress delete permissions and both Builder Write and Users & Destructive grants, provide exact blog/project/record identity, version and state hash, and confirm the individual permanent deletion. Preserve the canonical-key reservation and return an explicit unknown outcome rather than unsafe retries when native effects cannot be established (#126, PR #166).
+- Extend the existing bounded WordPress Activity log with redacted provider-side private-transfer diagnostics and a strictly administrator-authorized, read-only `diagnostics-read` Ability. Diagnostics expose only allowlisted metadata, and cannot observe Gateway or pre-WordPress rejections (#165, PR #166).
+- Harden exact Workspace deletion against WordPress native hook and universal `all` callback exceptions across supported WordPress versions. Restore only provably valid dispatchers, track nested native and compensation scopes, and quarantine WordPress hooks before terminal shutdown on unrecoverable dispatcher corruption (#126, PR #166).
+- Preserve existing WordPress plugin identity, Workspace records, OAuth approvals and credentials, and deliberate opt-in access groups when replacing published v0.6.3 with v0.6.4; installation and real-site transfer/fresh-chat acceptance remain separate (#126, #134, #165).
+
 ## 0.6.3
 
 - Display the Task inspector's **raw Notes body** as an escaped, whitespace-preserving LTR/left-aligned text region, consistent with the inspected Document Markdown body. The Task heading, Project ID, Goal, Notes label, Dashboard and mixed-language tables continue to inherit the localized WordPress admin direction (#157).
