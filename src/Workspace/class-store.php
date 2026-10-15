@@ -1352,6 +1352,12 @@ final class Store {
 			if ( ! $this->delete_gate_allows( $id, $type, $input, $fenced_json, $posts_table, $lock, $authorize ) ) {
 				return $this->pre_native_delete_aborted( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock );
 			}
+			// Never enter nested native deletion when either targeted dispatcher
+			// is already executing. An aborted nested hook could not be rebuilt
+			// without interfering with the still-running outer hook.
+			if ( doing_filter( 'pre_delete_post' ) || doing_action( 'before_delete_post' ) ) {
+				return $this->pre_native_delete_aborted( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock );
+			}
 			// Enforce the pre_delete_post boundary and terminal callback
 			// ordering: other hooks may change blog, grant, or DB session.
 			$native_vetoed         = false;
@@ -1436,10 +1442,19 @@ final class Store {
 			add_filter( 'pre_delete_post', $guard_pre_delete, PHP_INT_MAX, 3 );
 			add_action( 'before_delete_post', $observe_delete_start, PHP_INT_MIN, 1 );
 			add_action( 'before_delete_post', $guard_native_start, PHP_INT_MAX, 2 );
+			// WordPress WP_Hook does not use finally to unwind callback
+			// execution. Preserve the exact outer filter stack so a controlled
+			// abort can rebuild only the escaped hook frames.
+			$native_hook_baseline = $GLOBALS['wp_current_filter'] ?? null;
 			try {
 				try {
 					wp_delete_post( $id, true );
 				} catch ( \Throwable $exception ) {
+					if ( ! $this->restore_native_hook_dispatch( $native_hook_baseline ) ) {
+						// Never continue the WordPress request with a dispatcher
+						// whose execution state cannot be reconstructed safely.
+						throw $exception;
+					}
 					if ( $exception === $pre_hook_order_abort && ! $native_delete_started ) {
 						// This EXACT exception belongs to our pre_delete_post
 						// sentinel. Core has not entered before_delete_post,
@@ -1525,6 +1540,82 @@ final class Store {
 		}
 		$last = end( $callbacks );
 		return is_array( $last ) && isset( $last['function'] ) && $last['function'] === $sentinel;
+	}
+
+	/**
+	 * Reconstitute hook dispatchers after an exception escapes native Core
+	 * hooks. WordPress' WP_Hook and global filter stack do not unwind in a
+	 * finally block. Build fresh dispatchers using public WP_Hook APIs and
+	 * preserve every callback, priority and insertion order, including any
+	 * dynamically registered third-party callbacks.
+	 *
+	 * Never replace a dispatcher already running in an outer frame, or a
+	 * custom/unknown dispatcher. On failed proof the caller must propagate
+	 * the exception, not continue in an inconsistent WordPress request.
+	 *
+	 * @param array<int,string> $baseline Filter stack before wp_delete_post().
+	 * @return bool True only after complete safe dispatcher restoration.
+	 */
+	private function restore_native_hook_dispatch( $baseline ) {
+		global $wp_filter, $wp_current_filter;
+		if ( ! is_array( $baseline ) || ! is_array( $wp_current_filter ) ||
+			count( $wp_current_filter ) < count( $baseline ) ||
+			array_slice( $wp_current_filter, 0, count( $baseline ) ) !== $baseline ) {
+			return false;
+		}
+		$escaped = array_slice( $wp_current_filter, count( $baseline ) );
+		if ( count( $escaped ) > 16 ) {
+			return false;
+		}
+		$replacements = array();
+		try {
+			foreach ( array_unique( $escaped ) as $hook ) {
+				if ( ! is_string( $hook ) || '' === $hook ||
+					in_array( $hook, $baseline, true ) ||
+					! isset( $wp_filter[ $hook ] ) ||
+					get_class( $wp_filter[ $hook ] ) !== \WP_Hook::class ) {
+					return false;
+				}
+				$previous = $wp_filter[ $hook ];
+				$fresh    = new \WP_Hook();
+				foreach ( $previous->callbacks as $priority => $callbacks ) {
+					if ( ! is_int( $priority ) || ! is_array( $callbacks ) ) {
+						return false;
+					}
+					foreach ( $callbacks as $callback ) {
+						if ( ! is_array( $callback ) ||
+							! array_key_exists( 'function', $callback ) ||
+							! isset( $callback['accepted_args'] ) ||
+							! is_int( $callback['accepted_args'] ) ) {
+							return false;
+						}
+						$fresh->add_filter( $hook, $callback['function'], $priority, $callback['accepted_args'] );
+					}
+				}
+				// Never silently drop, reorder or rewrite provider hooks.
+				if ( $fresh->callbacks !== $previous->callbacks ) {
+					return false;
+				}
+				$replacements[ $hook ] = array(
+					'previous' => $previous,
+					'fresh'    => $fresh,
+				);
+			}
+		} catch ( \Throwable $exception ) {
+			return false;
+		}
+		// The freshly built WP_Hook objects have no stale iteration, nesting
+		// or doing_action state. Commit the swap only after full preflight.
+		foreach ( $replacements as $hook => $pair ) {
+			if ( ! isset( $wp_filter[ $hook ] ) || $wp_filter[ $hook ] !== $pair['previous'] ) {
+				return false;
+			}
+		}
+		foreach ( $replacements as $hook => $pair ) {
+			$wp_filter[ $hook ] = $pair['fresh'];
+		}
+		$wp_current_filter = $baseline;
+		return true;
 	}
 
 	/**
