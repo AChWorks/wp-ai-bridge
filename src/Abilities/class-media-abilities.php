@@ -299,46 +299,51 @@ final class Media_Abilities {
 			return $this->logged_error( $ability, 'media_temp_failed', __( 'WordPress could not allocate a temporary upload file.', 'wp-ai-bridge' ) );
 		}
 
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- wp_tempnam() created this bounded upload staging file.
-		$written = file_put_contents( $tmp_name, $bytes );
-		unset( $bytes );
-		if ( false === $written ) {
-			wp_delete_file( $tmp_name );
-			return $this->logged_error( $ability, 'media_temp_write_failed', __( 'WordPress could not write the temporary upload file.', 'wp-ai-bridge' ) );
-		}
+		try {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Bounded, exclusively allocated private WordPress staging inode.
+			$written = file_put_contents( $tmp_name, $bytes );
+			if ( false === $written || strlen( $bytes ) !== $written ) {
+				return $this->logged_error( $ability, 'media_temp_write_failed', __( 'WordPress could not write the temporary upload file.', 'wp-ai-bridge' ) );
+			}
+			unset( $bytes );
 
-		$post_data = array();
-		if ( array_key_exists( 'title', $input ) ) {
-			$post_data['post_title'] = (string) $input['title'];
-		}
-		if ( array_key_exists( 'caption', $input ) ) {
-			$post_data['post_excerpt'] = (string) $input['caption'];
-		}
-		if ( array_key_exists( 'description', $input ) ) {
-			$post_data['post_content'] = (string) $input['description'];
-		}
+			$post_data = array();
+			if ( array_key_exists( 'title', $input ) ) {
+				$post_data['post_title'] = (string) $input['title'];
+			}
+			if ( array_key_exists( 'caption', $input ) ) {
+				$post_data['post_excerpt'] = (string) $input['caption'];
+			}
+			if ( array_key_exists( 'description', $input ) ) {
+				$post_data['post_content'] = (string) $input['description'];
+			}
 
-		$file_array = array(
-			'name'     => $filename,
-			'tmp_name' => $tmp_name,
-			'error'    => 0,
-			'size'     => (int) $written,
-		);
-		$post_id    = ! empty( $input['post_id'] ) ? (int) $input['post_id'] : 0;
-		$result     = media_handle_sideload( $file_array, $post_id, null, $post_data );
-		if ( is_wp_error( $result ) ) {
-			wp_delete_file( $tmp_name );
-			$this->log->record( $ability, 'attachment', 0, false, $result->get_error_code() );
-			return $result;
-		}
+			$file_array = array(
+				'name'     => $filename,
+				'tmp_name' => $tmp_name,
+				'error'    => 0,
+				'size'     => (int) $written,
+			);
+			$post_id    = ! empty( $input['post_id'] ) ? (int) $input['post_id'] : 0;
+			$result     = media_handle_sideload( $file_array, $post_id, null, $post_data );
+			if ( is_wp_error( $result ) ) {
+				$this->log->record( $ability, 'attachment', 0, false, $result->get_error_code() );
+				return $result;
+			}
 
-		$attachment_id = (int) $result;
-		if ( array_key_exists( 'alt_text', $input ) ) {
-			update_post_meta( $attachment_id, '_wp_attachment_image_alt', sanitize_text_field( (string) $input['alt_text'] ) );
-		}
+			$attachment_id = (int) $result;
+			if ( array_key_exists( 'alt_text', $input ) ) {
+				update_post_meta( $attachment_id, '_wp_attachment_image_alt', sanitize_text_field( (string) $input['alt_text'] ) );
+			}
 
-		$this->log->record( $ability, 'attachment', $attachment_id, true, '' );
-		return $this->format_attachment( get_post( $attachment_id ) );
+			$this->log->record( $ability, 'attachment', $attachment_id, true, '' );
+			return $this->format_attachment( get_post( $attachment_id ) );
+		} finally {
+			// WordPress moves successful sideloads; retain no failed/exceptional pre-effect bytes.
+			if ( is_file( $tmp_name ) ) {
+				wp_delete_file( $tmp_name );
+			}
+		}
 	}
 
 	/**
