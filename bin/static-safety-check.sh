@@ -477,6 +477,16 @@ admission_lock='src/Support/class-admission-lock.php'
 create_claim_store='src/Support/class-create-claim-store.php'
 cron_run_store='src/Support/class-cron-run-claim.php'
 native_content_cas='src/Support/class-native-content-cas.php'
+# #134 adds only this bounded, WordPress site-local private-transfer InnoDB
+# fallback. No generic SQL endpoint or direct database access in Abilities.
+private_transfer_db='src/Support/class-private-transfer-db-store.php'
+if [[ ! -f "$private_transfer_db" ||
+      "$(grep -cF "'wpai_private_lease'" "$private_transfer_db" || true)" != "2" ||
+      "$(grep -cF "'wpai_private_chunk'" "$private_transfer_db" || true)" != "1" ||
+      "$(grep -cF 'dbDelta(' "$private_transfer_db" || true)" != "2" ]]; then
+    echo "ERROR: private transfer database store is missing its fixed tables/schema." >&2
+    exit 1
+fi
 workspace_scan='src/Workspace/class-record-scan-store.php'
 # #153 permits one read-only, per-blog, private-post-type Workspace
 # enumeration store. It is not a general-purpose SQL or record editor.
@@ -540,7 +550,7 @@ if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$cron_run_store" |
     echo "ERROR: targeted Cron claim store introduced an unreviewed database primitive." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$private_transfer_db" | grep -vFx "$workspace_scan" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2
