@@ -191,33 +191,30 @@ bin/             development/build/test helpers
 docs/maintainer/ recovery map and preserved design references
 ```
 
-### Historical v0.6.2-to-candidate published-package upgrade regression
+### Latest published v0.6.3-to-candidate ZIP upgrade regression
 
-This fixture currently uses the immutable published v0.6.2 release as its pinned
-baseline. It checks that an older published installation retains state
-across an upgrade to a current candidate, but it **does not prove the separate
-latest-published-predecessor upgrade path** required when preparing a future
-release. Run it whenever the affected upgrade/runtime surface justifies it:
+This fixture verifies an actual published-installation upgrade from the
+**immutable v0.6.3 release ZIP** (SHA-256 pinned in the runner) to the current
+candidate, using WordPress Core's normal replacement operation:
 
 ```bash
 bash bin/run-published-upgrade.sh 6.9-php8.4-apache
 bash bin/run-published-upgrade.sh php8.4-apache
 ```
 
-The runner verifies the published v0.6.2 asset's pinned SHA-256, installs and
-activates that artifact with the official MCP Adapter, creates disposable
-Workspace/settings and signed-client OAuth/PKCE + refresh-token state, then
-replaces the installed plugin through WordPress Core with the current candidate
-ZIP. It checks persisted state, original access-token use through the official
-MCP Adapter, signed refresh rotation, new groups remaining disabled, canonical
-plugin identity and absence of retired migration state. Test-only tokens and
-the signing key remain in a private Docker volume and are not printed.
+The runner verifies the original release ZIP checksum, seeds private WordPress
+Workspace data, canonical settings and signed-client OAuth/PKCE and refresh
+credentials, then installs the candidate in place. It verifies preserved
+record hashes and OAuth identity, exercises the original bearer through the
+official MCP Adapter and rotates the original refresh token. The candidate
+must register `workspace-delete` and `diagnostics-read` while retaining
+default-off Users & Destructive authority; registration is not authorization.
+Fixture credentials remain confined to the disposable test environment.
 
-The CI specialized matrix owns both upgrade lanes. Future release preparation
-must deliberately revisit the pinned *previous published version* and checksum
-instead of silently treating v0.6.2 as the permanent upgrade baseline. In
-particular, the next release must test the latest published v0.6.3 ZIP against
-its exact new-version candidate; the current v0.6.2 test does not prove that.
+Both supported CI upgrade lanes use this runner. For each **later** public
+release, update the source version, published predecessor ZIP URL, immutable
+SHA-256 checksum and fixture version together. A historical predecessor's
+green result cannot substitute for the latest-published-to-candidate proof.
 
 ## Release process
 
