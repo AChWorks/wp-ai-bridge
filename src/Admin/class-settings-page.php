@@ -337,20 +337,20 @@ final class Settings_Page {
 		?>
 		<div class="wrap">
 			<h1><?php echo esc_html__( 'Activity', 'wp-ai-bridge' ); ?></h1>
-			<p><?php echo esc_html__( 'Recent Bridge mutation metadata only. Workspace memory and request payloads are not stored in this activity log.', 'wp-ai-bridge' ); ?></p>
+			<p><?php echo esc_html__( 'Recent metadata-only Bridge activity; at most 50 entries are stored with a 30-day display window. This screen excludes content, secrets and request bodies. Failures before the request reaches WordPress are not captured here.', 'wp-ai-bridge' ); ?></p>
 			<table class="widefat striped">
-				<thead><tr><th><?php echo esc_html__( 'Time (UTC)', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'User', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Ability', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Target', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Result', 'wp-ai-bridge' ); ?></th></tr></thead>
+				<thead><tr><th><?php echo esc_html__( 'Time (UTC)', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'User', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Ability', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Operation', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Target', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Result', 'wp-ai-bridge' ); ?></th><th><?php echo esc_html__( 'Reference', 'wp-ai-bridge' ); ?></th></tr></thead>
 				<tbody>
 				<?php
 				if ( ! $entries ) :
 					?>
-					<tr><td colspan="5"><?php echo esc_html__( 'No recent Bridge activity.', 'wp-ai-bridge' ); ?></td></tr><?php endif; ?>
+					<tr><td colspan="7"><?php echo esc_html__( 'No recent Bridge activity.', 'wp-ai-bridge' ); ?></td></tr><?php endif; ?>
 				<?php foreach ( $entries as $entry ) : ?>
-					<tr><td><?php echo esc_html( $entry['timestamp'] ); ?></td><td><?php echo esc_html( (string) $entry['user_id'] ); ?></td><td><code><?php echo esc_html( $entry['ability'] ); ?></code></td><td><?php echo esc_html( $entry['target_type'] . ( $entry['target_id'] ? ':' . $entry['target_id'] : '' ) ); ?></td><td><?php echo esc_html( $entry['success'] ? __( 'Success', 'wp-ai-bridge' ) : __( 'Failed', 'wp-ai-bridge' ) ); ?>
+					<tr><td><?php echo esc_html( $entry['timestamp'] ); ?></td><td><?php echo esc_html( (string) $entry['user_id'] ); ?></td><td><code><?php echo esc_html( $entry['ability'] ); ?></code></td><td><code dir="ltr"><?php echo esc_html( (string) ( $entry['operation'] ?? '' ) ); ?></code></td><td><?php echo esc_html( $entry['target_type'] . ( $entry['target_id'] ? ':' . $entry['target_id'] : '' ) ); ?></td><td><?php echo esc_html( $entry['success'] ? __( 'Success', 'wp-ai-bridge' ) : __( 'Failed', 'wp-ai-bridge' ) ); ?>
 					<?php
 					if ( ! empty( $entry['error_code'] ) ) :
 						?>
-						— <code><?php echo esc_html( $entry['error_code'] ); ?></code><?php endif; ?></td></tr>
+						— <code><?php echo esc_html( $entry['error_code'] ); ?></code><?php endif; ?></td><td><code dir="ltr"><?php echo esc_html( (string) ( $entry['event_ref'] ?? '' ) ); ?></code></td></tr>
 				<?php endforeach; ?>
 				</tbody>
 			</table>

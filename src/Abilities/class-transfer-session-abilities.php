@@ -8,6 +8,7 @@
 namespace WP_AI_Bridge\Abilities;
 
 use WP_AI_Bridge\Auth\OAuth_Server;
+use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Private_Transfer_Session;
 use WP_AI_Bridge\Support\Settings;
@@ -26,10 +27,14 @@ final class Transfer_Session_Abilities {
 	/** @var Private_Transfer_Session */
 	private $store;
 
-	/** @param Permissions $permissions Bridge delegation. */
-	public function __construct( Permissions $permissions ) {
+	/** @var Mutation_Log */
+	private $log;
+
+	/** @param Permissions $permissions Bridge delegation. @param Mutation_Log|null $log Shared Activity log. */
+	public function __construct( Permissions $permissions, ?Mutation_Log $log = null ) {
 		$this->permissions = $permissions;
 		$this->store       = new Private_Transfer_Session( $permissions );
+		$this->log         = $log ? $log : new Mutation_Log();
 	}
 
 	/** @return array<int,object> */
@@ -241,10 +246,10 @@ final class Transfer_Session_Abilities {
 				! $this->can_purpose( $input['purpose'] ) ||
 				! is_int( $input['total_bytes'] ) || $input['total_bytes'] < 0 ||
 				! is_string( $input['sha256'] ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $input['sha256'] ) ) {
-				return $this->invalid();
+				return $this->diagnose( 'begin', $this->invalid(), 'validation' );
 			}
 			if ( $input['total_bytes'] > $policy['file'] ) {
-				return new WP_Error( 'transfer_size_setting', __( 'The file exceeds the current administrator-configured transfer size. Increase the transfer file and reservation budgets in WP AI Bridge Settings.', 'wp-ai-bridge' ) );
+				return $this->diagnose( 'begin', new WP_Error( 'transfer_size_setting', __( 'The file exceeds the current administrator-configured transfer size. Increase the transfer file and reservation budgets in WP AI Bridge Settings.', 'wp-ai-bridge' ) ), 'validation' );
 			}
 			$receipt = $this->store->begin(
 				$input['purpose'],
@@ -256,6 +261,7 @@ final class Transfer_Session_Abilities {
 				$policy['ttl'],
 				$policy['active']
 			);
+			$this->diagnose( 'begin', $receipt );
 			return is_wp_error( $receipt ) ? $receipt : $this->result( $action, $receipt, $policy, $chunk );
 		}
 		$id = $input['transfer_id'] ?? '';
@@ -267,6 +273,7 @@ final class Transfer_Session_Abilities {
 				return $this->invalid();
 			}
 			$released = $this->store->admin_release_unknown( $id );
+			$this->diagnose( $action, $released );
 			return is_wp_error( $released ) ? $released : $this->result( $action, $released, $policy, $chunk );
 		}
 		if ( 'append' === $action ) {
@@ -277,11 +284,11 @@ final class Transfer_Session_Abilities {
 			$encoded = $input['content_base64'];
 			if ( '' === $encoded || strlen( $encoded ) > $budget - 4096 ||
 				strlen( $encoded ) > intdiv( $chunk, 3 ) * 4 + ( $chunk % 3 ? 4 : 0 ) ) {
-				return new WP_Error( 'transfer_message_budget', __( 'The transfer chunk exceeds the configured incoming MCP message budget. Use a smaller chunk or adjust the WordPress administrator budget.', 'wp-ai-bridge' ) );
+				return $this->diagnose( $action, new WP_Error( 'transfer_message_budget', __( 'The transfer chunk exceeds the configured incoming MCP message budget. Use a smaller chunk or adjust the WordPress administrator budget.', 'wp-ai-bridge' ) ), 'validation' );
 			}
 			$body = wp_json_encode( $input );
 			if ( ! is_string( $body ) || strlen( $body ) > $budget - 2048 ) {
-				return new WP_Error( 'transfer_message_budget', __( 'The encoded incoming transfer message exceeds the configured MCP request budget.', 'wp-ai-bridge' ) );
+				return $this->diagnose( $action, new WP_Error( 'transfer_message_budget', __( 'The encoded incoming transfer message exceeds the configured MCP request budget.', 'wp-ai-bridge' ) ), 'validation' );
 			}
 			$decoded = base64_decode( $encoded, true );
 			if ( ! is_string( $decoded ) || base64_encode( $decoded ) !== $encoded ||
@@ -300,7 +307,7 @@ final class Transfer_Session_Abilities {
 			// single 3/4 Base64 estimate is not a valid MCP wire budget.
 			$receipt = $this->store->status( $id );
 			if ( is_wp_error( $receipt ) ) {
-				return $receipt;
+				return $this->diagnose( $action, $receipt );
 			}
 			$low  = 1;
 			$high = min( $chunk, $input['max_bytes'], (int) $receipt['chunk'] );
@@ -309,7 +316,7 @@ final class Transfer_Session_Abilities {
 				$middle = intdiv( $low + $high, 2 );
 				$window = $this->store->read_media_export( $id, $input['offset'], $middle );
 				if ( is_wp_error( $window ) ) {
-					return $window;
+					return $this->diagnose( $action, $window );
 				}
 				$candidate                     = $this->result( $action, $receipt, $policy, $middle );
 				$candidate['read_offset']      = $window['offset'];
@@ -326,7 +333,7 @@ final class Transfer_Session_Abilities {
 			}
 			if ( ! is_array( $best ) ||
 				( $receipt['total'] > $input['offset'] && $best['read_next_offset'] === $input['offset'] ) ) {
-				return new WP_Error( 'transfer_message_budget', __( 'Requested outbound window exceeds the current MCP response budget. Request fewer bytes or adjust the administrator response setting.', 'wp-ai-bridge' ) );
+				return $this->diagnose( $action, new WP_Error( 'transfer_message_budget', __( 'Requested outbound window exceeds the current MCP response budget. Request fewer bytes or adjust the administrator response setting.', 'wp-ai-bridge' ) ), 'validation' );
 			}
 			return $best;
 		} elseif ( 'release' === $action ) {
@@ -351,7 +358,28 @@ final class Transfer_Session_Abilities {
 				);
 			}
 		}
+		$this->diagnose( $action, $receipt );
 		return is_wp_error( $receipt ) ? $receipt : $this->result( $action, $receipt, $policy, $chunk );
+	}
+
+	/**
+	 * Record a provider result after authenticated callback entry, never
+	 * interrupting the actual transfer outcome if log storage fails.
+	 *
+	 * @param string $action Safe fixed operation.
+	 * @param mixed $result Original provider result.
+	 * @param string $phase Provider or validation.
+	 * @return mixed Unaltered provider result.
+	 */
+	private function diagnose( $action, $result, $phase = 'provider' ) {
+		// Diagnostics are best-effort: a logging fault after a successful
+		// begin must NEVER turn an already-created lease into an apparent failure.
+		try {
+			$this->log->record_transfer( $action, $result, $phase );
+		} catch ( \Throwable $exception ) {
+			// No raw logger exception may escape or replace the provider result.
+		}
+		return $result;
 	}
 
 	/** @return WP_Error */

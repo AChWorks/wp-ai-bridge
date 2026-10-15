@@ -13,6 +13,7 @@ use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Workspace_Limits;
 use WP_AI_Bridge\Support\Create_Claim;
 use WP_AI_Bridge\Support\Admission_Lock;
+use WP_AI_Bridge\Support\Hook_Dispatch_Recovery;
 
 /**
  * Stores compact Workspace documents and tasks in private WordPress objects.
@@ -422,6 +423,11 @@ final class Store {
 				$state = $this->decode_state( $json );
 				if ( null === $state || $kind !== $state['kind'] ) {
 					return new WP_Error( 'workspace_incomplete', __( 'One or more Workspace records could not be decoded; results cannot be claimed complete.', 'wp-ai-bridge' ), array( 'id' => (int) $id ) );
+				}
+				// A fenced but incomplete delete is not a live object and must
+				// never appear in a supposedly complete Workspace projection.
+				if ( ! empty( $state['delete_pending'] ) ) {
+					return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Workspace record is pending permanent deletion.', 'wp-ai-bridge' ), array( 'id' => (int) $id ) );
 				}
 				return call_user_func( $consumer, $this->decorate_state( (int) $id, $state, $json ) );
 			}
@@ -1246,7 +1252,427 @@ final class Store {
 			return new WP_Error( 'workspace_state_invalid', __( 'The Workspace record state is invalid.', 'wp-ai-bridge' ) );
 		}
 
+		if ( ! empty( $state['delete_pending'] ) ) {
+			return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Workspace record is pending permanent deletion.', 'wp-ai-bridge' ) );
+		}
 		return $this->decorate_state( $id, $state, $json );
+	}
+
+
+	/**
+	 * Permanently delete ONLY the exact project-bound private record after a
+	 * strong identity check and an atomic deletion fence. No bulk or legacy
+	 * Workspace records can be deleted through this surface.
+	 *
+	 * The claim/key reservation ledger is intentionally untouched: a
+	 * previously committed canonical project/key remains reserved, preserving
+	 * the durable no-duplicate contract even after explicit deletion.
+	 *
+	 * @param array<string,mixed> $input     Exact WordPress site and record identity.
+	 * @param callable            $authorize Fresh same-principal Ability authorization callback.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function delete_exact( $input, $authorize ) {
+		return Hook_Dispatch_Recovery::run(
+			function () use ( $input, $authorize ) {
+				return $this->delete_exact_inner( $input, $authorize );
+			}
+		);
+	}
+
+	/** @return array<string,mixed>|WP_Error Exact guarded delete implementation. */
+	private function delete_exact_inner( $input, $authorize ) {
+		if ( ! is_array( $input ) || 7 !== count( $input ) ||
+			! isset( $input['kind'], $input['id'], $input['blog_id'], $input['project_ref'], $input['expected_version'], $input['expected_state_hash'], $input['confirmation'] ) ||
+			! in_array( $input['kind'], array( 'document', 'task' ), true ) ||
+			! is_int( $input['id'] ) || $input['id'] < 1 ||
+			! is_int( $input['blog_id'] ) || (int) get_current_blog_id() !== $input['blog_id'] ||
+			! is_string( $input['project_ref'] ) || '' === $input['project_ref'] || ! $this->valid_project_filter( $input['project_ref'] ) ||
+			! is_int( $input['expected_version'] ) || $input['expected_version'] < 1 ||
+			! is_string( $input['expected_state_hash'] ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $input['expected_state_hash'] ) ||
+			! is_string( $input['confirmation'] ) ||
+			0 !== strcmp( sprintf( 'PERMANENTLY DELETE %s %d', strtoupper( $input['kind'] ), $input['id'] ), $input['confirmation'] ) ) {
+			return new WP_Error( 'workspace_delete_invalid', __( 'Exact site, bound record identity, version/hash and explicit record-specific confirmation are required.', 'wp-ai-bridge' ) );
+		}
+
+		// Authorization must remain valid after admission waits and immediately
+		// before the irreversible effect; an earlier Ability check is not enough.
+		if ( ! $this->deletion_authorized( $authorize, $input ) ) {
+			return new WP_Error( 'workspace_delete_denied', __( 'Current WordPress principal cannot permanently delete this private record.', 'wp-ai-bridge' ) );
+		}
+
+		$kind  = $input['kind'];
+		$id    = $input['id'];
+		$type  = 'document' === $kind ? self::DOCUMENT_POST_TYPE : self::TASK_POST_TYPE;
+		$scope = 'document' === $kind ? 'documents' : 'tasks';
+		$lock  = Admission_Lock::acquire( $scope );
+		if ( ! $lock ) {
+			return new WP_Error( 'workspace_delete_busy', __( 'Exclusive Workspace deletion admission is unavailable; no deletion was attempted.', 'wp-ai-bridge' ) );
+		}
+		$posts_table = Admission_Lock::current_posts_table();
+		try {
+			if ( ! $lock->is_owned() ) {
+				return new WP_Error( 'workspace_delete_busy', __( 'Workspace deletion admission was lost; no deletion was attempted.', 'wp-ai-bridge' ) );
+			}
+			$post = get_post( $id );
+			if ( ! $post || $type !== $post->post_type ) {
+				return new WP_Error( 'workspace_delete_not_found', __( 'The exact private Workspace record was not found.', 'wp-ai-bridge' ) );
+			}
+			if ( ! $this->deletion_authorized( $authorize, $input ) ) {
+				return new WP_Error( 'workspace_delete_denied', __( 'Current WordPress principal cannot permanently delete this private record.', 'wp-ai-bridge' ) );
+			}
+			$rows = get_post_meta( $id, self::META_STATE, false );
+			if ( ! is_array( $rows ) || 1 !== count( $rows ) || ! is_string( $rows[0] ) ) {
+				return new WP_Error( 'workspace_state_invalid', __( 'Workspace state has missing or multiple authoritative rows; no deletion was attempted.', 'wp-ai-bridge' ) );
+			}
+			$original_json = $rows[0];
+			$state         = $this->decode_state( $original_json );
+			if ( null === $state || $kind !== $state['kind'] ||
+				! isset( $state['project_ref'] ) || $state['project_ref'] !== $input['project_ref'] ) {
+				return new WP_Error( 'workspace_delete_not_found', __( 'The exact bound private Workspace record was not found.', 'wp-ai-bridge' ) );
+			}
+			if ( ! empty( $state['delete_pending'] ) ) {
+				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'A previous exact-record deletion may be incomplete. Reconcile the record before retrying.', 'wp-ai-bridge' ) );
+			}
+			if ( $state['version'] !== $input['expected_version'] ||
+				! hash_equals( $this->state_hash( $original_json ), $input['expected_state_hash'] ) ) {
+				return new WP_Error( 'workspace_stale', __( 'Workspace state changed since the exact deletion was approved; refresh before retrying.', 'wp-ai-bridge' ) );
+			}
+
+			// Atomic metadata CAS fences every subsequent Store mutation. If
+			// another writer won the race, do not attempt a destructive effect.
+			$state['delete_pending'] = true;
+			$state['version']        = $state['version'] + 1;
+			$state['modified_gmt']   = gmdate( 'c' );
+			$fenced_json             = $this->encode_state( $state );
+			if ( ! $this->deletion_authorized( $authorize, $input ) ) {
+				return new WP_Error( 'workspace_delete_denied', __( 'Current WordPress principal cannot permanently delete this private record.', 'wp-ai-bridge' ) );
+			}
+			if ( ! is_string( $fenced_json ) ) {
+				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Deletion admission was not verified. Check the exact record before retrying.', 'wp-ai-bridge' ) );
+			}
+			if ( false === update_post_meta( $id, self::META_STATE, wp_slash( $fenced_json ), $original_json ) ) {
+				// A failed/ambiguous CAS can still have committed before a
+				// metadata callback aborted. Restore only when its exact
+				// fenced row and all pre-native prerequisites are provable.
+				return $this->pre_native_delete_aborted( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock );
+			}
+			// This guard runs AFTER committing the CAS fence. Failure is known
+			// pre-native and must be compensated conditionally, not stranded.
+			if ( ! $this->delete_gate_allows( $id, $type, $input, $fenced_json, $posts_table, $lock, $authorize ) ) {
+				return $this->pre_native_delete_aborted( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock );
+			}
+			// Never enter nested native deletion when either targeted dispatcher
+			// is already executing. An aborted nested hook could not be rebuilt
+			// without interfering with the still-running outer hook.
+			if ( doing_filter( 'pre_delete_post' ) || doing_action( 'before_delete_post' ) ) {
+				return $this->pre_native_delete_aborted( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock );
+			}
+			// The universal 'all' dispatcher has no frame named 'all' in
+			// wp_current_filter. Never replace it if an OUTER dispatch is
+			// active; its public current_priority() exposes that condition.
+			global $wp_filter;
+			if ( isset( $wp_filter['all'] ) &&
+				( ! is_object( $wp_filter['all'] ) ||
+				get_class( $wp_filter['all'] ) !== \WP_Hook::class ||
+				false !== $wp_filter['all']->current_priority() ) ) {
+				return $this->pre_native_delete_aborted( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock );
+			}
+			// Enforce the pre_delete_post boundary and terminal callback
+			// ordering: other hooks may change blog, grant, or DB session.
+			$native_vetoed          = false;
+			$bridge_vetoed          = false;
+			$native_delete_started  = false;
+			$pre_hook_order_abort   = new \RuntimeException( 'Workspace pre-delete hook guard is no longer terminal.' );
+			$native_hook_gate_abort = new \RuntimeException( 'Workspace native deletion gate rejected changed context or hook order.' );
+			$guard_pre_delete       = null;
+			$guard_pre_delete       = function (
+				$check,
+				$candidate,
+				$force
+			) use (
+				$id,
+				$type,
+				$input,
+				$fenced_json,
+				$posts_table,
+				$lock,
+				$authorize,
+				$pre_hook_order_abort,
+				&$guard_pre_delete,
+				&$native_vetoed,
+				&$bridge_vetoed
+			) {
+				if ( $candidate instanceof \WP_Post && (int) $candidate->ID === $id && true === $force ) {
+					// Throwing, rather than returning false, ensures any callback
+					// appended AFTER this sentinel cannot reset the veto to null.
+					if ( ! $this->is_terminal_delete_guard( 'pre_delete_post', $guard_pre_delete ) ) {
+						throw $pre_hook_order_abort;
+					}
+					if ( null !== $check ) {
+						$native_vetoed = true;
+						return $check;
+					}
+					$allowed = $type === $candidate->post_type &&
+						$this->delete_gate_allows( $id, $type, $input, $fenced_json, $posts_table, $lock, $authorize );
+					// Permission callbacks also run arbitrary WP hooks and may
+					// dynamically register callbacks after this sentinel.
+					if ( ! $this->is_terminal_delete_guard( 'pre_delete_post', $guard_pre_delete ) ) {
+						throw $pre_hook_order_abort;
+					}
+					if ( ! $allowed ) {
+						$bridge_vetoed = true;
+						return false;
+					}
+				}
+				return $check;
+			};
+			$observe_delete_start   = static function ( $candidate_id ) use ( $id, &$native_delete_started ) {
+				if ( (int) $candidate_id === $id ) {
+					$native_delete_started = true;
+				}
+			};
+			// Terminal native lifecycle check before Core cleanup, including
+			// site drift or callbacks added after this sentinel. An exception
+			// from this phase remains outcome_unknown; never auto-restore.
+			$guard_native_start = null;
+			$guard_native_start = function (
+				$candidate_id,
+				$candidate
+			) use (
+				$id,
+				$type,
+				$input,
+				$fenced_json,
+				$posts_table,
+				$lock,
+				$authorize,
+				$native_hook_gate_abort,
+				&$guard_native_start
+			) {
+				if ( (int) $candidate_id === $id ) {
+					$allowed = $candidate instanceof \WP_Post && $type === $candidate->post_type &&
+						$this->delete_gate_allows( $id, $type, $input, $fenced_json, $posts_table, $lock, $authorize );
+					// Later callbacks cannot be allowed to run after the final
+					// invariant check, even if dynamically registered while
+					// before_delete_post is already executing.
+					if ( ! $allowed || ! $this->is_terminal_delete_guard( 'before_delete_post', $guard_native_start ) ) {
+						throw $native_hook_gate_abort;
+					}
+				}
+			};
+			add_filter( 'pre_delete_post', $guard_pre_delete, PHP_INT_MAX, 3 );
+			add_action( 'before_delete_post', $observe_delete_start, PHP_INT_MIN, 1 );
+			add_action( 'before_delete_post', $guard_native_start, PHP_INT_MAX, 2 );
+			// WordPress WP_Hook does not use finally to unwind callback
+			// execution. Preserve the exact outer filter stack so a controlled
+			// abort can rebuild only the escaped hook frames.
+			$native_hook_baseline = Hook_Dispatch_Recovery::begin_scope();
+			try {
+				try {
+					wp_delete_post( $id, true );
+				} catch ( \Throwable $exception ) {
+					// WordPress 7.1+ can catch arbitrary Ability callback exceptions
+					// and CONTINUE the request. Fully unwind escaped named hooks
+					// plus the otherwise invisible 'all' dispatcher first. The
+					// previous outer-'all' admission check makes its replacement safe.
+					$owned_hook = $exception === $pre_hook_order_abort ? 'pre_delete_post' :
+						( $exception === $native_hook_gate_abort ? 'before_delete_post' : null );
+					Hook_Dispatch_Recovery::restore_or_terminate( $native_hook_baseline, $owned_hook );
+					if ( null === $owned_hook ) {
+						// A provider/Core exception remains the caller's failure,
+						// never a verified Bridge deletion outcome.
+						throw $exception;
+					}
+					if ( $exception === $pre_hook_order_abort && ! $native_delete_started ) {
+						// This EXACT exception belongs to our pre_delete_post
+						// sentinel. Core has not entered before_delete_post,
+						// and no dynamically appended tail callback has run.
+						$bridge_vetoed = true;
+					} else {
+						return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Exact deletion could not be confirmed from WordPress readback. Do not recreate the record.', 'wp-ai-bridge' ) );
+					}
+				}
+			} finally {
+				try {
+					remove_action( 'before_delete_post', $guard_native_start, PHP_INT_MAX );
+					remove_action( 'before_delete_post', $observe_delete_start, PHP_INT_MIN );
+					remove_filter( 'pre_delete_post', $guard_pre_delete, PHP_INT_MAX );
+				} finally {
+					Hook_Dispatch_Recovery::end_scope( $native_hook_baseline );
+				}
+			}
+			if ( ! $native_delete_started && ( $native_vetoed || $bridge_vetoed ) ) {
+				return $this->pre_native_delete_aborted(
+					$id,
+					$type,
+					$input,
+					$original_json,
+					$fenced_json,
+					$posts_table,
+					$scope,
+					$lock,
+					$native_vetoed
+				);
+			}
+			// Never inspect another blog's post with this numeric ID, or
+			// infer verified deletion after losing exclusive DB admission.
+			if ( (int) get_current_blog_id() !== $input['blog_id'] ||
+				Admission_Lock::current_posts_table() !== $posts_table || ! $lock->is_owned() ) {
+				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Exact deletion could not be confirmed from WordPress readback. Do not recreate the record.', 'wp-ai-bridge' ) );
+			}
+			$remaining_post  = get_post( $id );
+			$remaining_state = get_post_meta( $id, self::META_STATE, false );
+			if ( ! $remaining_post && ! $remaining_state ) {
+				return array(
+					'deleted' => true,
+					'id'      => $id,
+					'kind'    => $kind,
+					'blog_id' => (int) get_current_blog_id(),
+				);
+			}
+			return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Exact deletion could not be confirmed from WordPress readback. Do not recreate the record.', 'wp-ai-bridge' ) );
+		} finally {
+			$lock->release();
+		}
+	}
+
+	/**
+	 * Verify the exact site, private record, CAS fence and DB admission
+	 * immediately around any authorization callback or third-party hook.
+	 * Authorization hooks can themselves switch site or replace DB sessions.
+	 */
+	private function delete_gate_allows( $id, $type, $input, $fenced_json, $posts_table, $lock, $authorize ) {
+		// A provider exception can poison WordPress hook iteration (including
+		// the hidden 'all' dispatcher). It must propagate, not be translated
+		// into a normal denied result and followed by more WordPress hooks.
+		return $this->delete_fence_intact( $id, $type, $input, $fenced_json, $posts_table, $lock ) &&
+			$this->deletion_authorized( $authorize, $input ) &&
+			$this->delete_fence_intact( $id, $type, $input, $fenced_json, $posts_table, $lock );
+	}
+
+	/**
+	 * WordPress can append same-priority callbacks while a hook is running.
+	 * PHP_INT_MAX is a priority, NOT a guarantee of terminal execution.
+	 * The last callback must be this exact sentinel after every callback-
+	 * invoking authorization check; otherwise abort before Core cleanup.
+	 *
+	 * @param string   $hook Hook name.
+	 * @param callable $sentinel Exact registered guard closure.
+	 * @return bool Whether the hook has no callbacks after this guard.
+	 */
+	private function is_terminal_delete_guard( $hook, $sentinel ) {
+		global $wp_filter;
+		if ( ! isset( $wp_filter[ $hook ] ) || ! $wp_filter[ $hook ] instanceof \WP_Hook ) {
+			return false;
+		}
+		$callbacks = $wp_filter[ $hook ]->callbacks[ PHP_INT_MAX ] ?? null;
+		if ( ! is_array( $callbacks ) || ! $callbacks ) {
+			return false;
+		}
+		$last = end( $callbacks );
+		return is_array( $last ) && isset( $last['function'] ) && $last['function'] === $sentinel;
+	}
+
+
+	/**
+	 * Observational state proof; does not require a still-active destructive
+	 * grant when compensating for an already-committed pre-native fence.
+	 */
+	private function delete_fence_intact( $id, $type, $input, $fenced_json, $posts_table, $lock ) {
+		if ( (int) get_current_blog_id() !== $input['blog_id'] ||
+			Admission_Lock::current_posts_table() !== $posts_table || ! $lock->is_owned() ) {
+			return false;
+		}
+		$post = get_post( $id );
+		$rows = get_post_meta( $id, self::META_STATE, false );
+		return $post instanceof \WP_Post &&
+			$type === $post->post_type &&
+			array( $fenced_json ) === $rows &&
+			(int) get_current_blog_id() === $input['blog_id'] &&
+			Admission_Lock::current_posts_table() === $posts_table && $lock->is_owned();
+	}
+
+	/**
+	 * Roll back only a conclusively pre-native exact-delete abort. On any
+	 * ambiguous readback, lock acquisition or hook side effect, retain the
+	 * delete_pending fence and require administrator reconciliation.
+	 */
+	private function restore_pre_native_delete( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock ) {
+		$hook_baseline = Hook_Dispatch_Recovery::begin_scope();
+		$switched      = false;
+		$reacquired    = false;
+		try {
+			if ( (int) get_current_blog_id() !== $input['blog_id'] ) {
+				if ( ! is_multisite() || ! switch_to_blog( $input['blog_id'] ) ) {
+					return false;
+				}
+				$switched = true;
+			}
+			if ( (int) get_current_blog_id() !== $input['blog_id'] || Admission_Lock::current_posts_table() !== $posts_table ) {
+				return false;
+			}
+			if ( ! $lock->is_owned() ) {
+				// An expired DB session no longer owns admission. Never
+				// compensate without first acquiring a fresh exclusive lock.
+				$lock->release();
+				$reacquired = Admission_Lock::acquire( $scope );
+				if ( ! $reacquired ) {
+					return false;
+				}
+			}
+			$owned = $reacquired ? $reacquired : $lock;
+			if ( ! $this->delete_fence_intact( $id, $type, $input, $fenced_json, $posts_table, $owned ) ||
+				false === update_post_meta( $id, self::META_STATE, wp_slash( $original_json ), $fenced_json ) ) {
+				return false;
+			}
+			$post = get_post( $id );
+			return $post instanceof \WP_Post && $type === $post->post_type &&
+				array( $original_json ) === get_post_meta( $id, self::META_STATE, false ) &&
+				(int) get_current_blog_id() === $input['blog_id'] &&
+				Admission_Lock::current_posts_table() === $posts_table && $owned->is_owned();
+		} catch ( \Throwable $exception ) {
+			// This helper deliberately converts an uncertain compensation to
+			// false. Restore hook state BEFORE that normal continuation.
+			Hook_Dispatch_Recovery::restore_or_terminate( $hook_baseline );
+			return false;
+		} finally {
+			try {
+				if ( $reacquired ) {
+					$reacquired->release();
+				}
+				if ( $switched ) {
+					restore_current_blog();
+				}
+			} finally {
+				Hook_Dispatch_Recovery::end_scope( $hook_baseline );
+			}
+		}
+	}
+
+	/** @return WP_Error A definite pre-native abort, or an unverifiable state. */
+	private function pre_native_delete_aborted( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock, $external_veto = false ) {
+		if ( $this->restore_pre_native_delete( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock ) ) {
+			if ( $external_veto ) {
+				return new WP_Error( 'workspace_delete_vetoed', __( 'WordPress vetoed permanent deletion; the unchanged Workspace record was restored.', 'wp-ai-bridge' ) );
+			}
+			return new WP_Error( 'workspace_delete_aborted', __( 'Permanent deletion was aborted before WordPress cleanup; the unchanged Workspace record was restored.', 'wp-ai-bridge' ) );
+		}
+		return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Deletion is fenced but could not be safely completed. Administrator reconciliation is required.', 'wp-ai-bridge' ) );
+	}
+
+	/**
+	 * Re-evaluates the authoritative Ability grant without caching it across
+	 * lock waits, CAS or provider hooks. An exception from an access filter
+	 * propagates rather than allowing a poisoned WordPress hook dispatcher
+	 * to be reused in a normally continuing request.
+	 *
+	 * @param callable $authorize Current Ability authorization callback.
+	 * @param array    $input     Exact record identity.
+	 * @return bool
+	 */
+	private function deletion_authorized( $authorize, $input ) {
+		return is_callable( $authorize ) && true === call_user_func( $authorize, $input );
 	}
 
 	/**
@@ -1271,6 +1697,10 @@ final class Store {
 		$kind          = self::DOCUMENT_POST_TYPE === $expected_type ? 'document' : 'task';
 		if ( null === $current_state || $kind !== $current_state['kind'] ) {
 			return new WP_Error( 'workspace_state_invalid', __( 'The Workspace record state is invalid.', 'wp-ai-bridge' ) );
+		}
+
+		if ( ! empty( $current_state['delete_pending'] ) ) {
+			return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Workspace record is pending permanent deletion and cannot be modified.', 'wp-ai-bridge' ) );
 		}
 
 		$expected_version = isset( $input['expected_version'] ) ? (int) $input['expected_version'] : 0;

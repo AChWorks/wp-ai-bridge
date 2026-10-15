@@ -30,4 +30,11 @@ return array(
 	'Read WordPress Core Update Status' => 'خواندن وضعیت به‌روزرسانی هستهٔ وردپرس',
 	'Reads cached WordPress Core update offers and check freshness; never checks for or installs an update.' => 'پیشنهادهای ذخیره‌شدهٔ به‌روزرسانی هستهٔ وردپرس و تازگی بررسی را می‌خواند؛ هیچ به‌روزرسانی‌ای را بررسی مجدد یا نصب نمی‌کند.',
 	'Site Configuration and native WordPress administration permission are required.' => 'گروه پیکربندی سایت و مجوز مدیریت بومی وردپرس لازم است.',
+	'Recent metadata-only Bridge activity; at most 50 entries are stored with a 30-day display window. This screen excludes content, secrets and request bodies. Failures before the request reaches WordPress are not captured here.' => 'فعالیت اخیر Bridge تنها شامل فراداده است؛ حداکثر ۵۰ رویداد ذخیره می‌شود و فقط رویدادهای ۳۰ روز اخیر نمایش داده می‌شوند. محتوا، اسرار و بدنهٔ درخواست‌ها در این صفحه ثبت نمی‌شوند. خطاهای پیش از رسیدن درخواست به وردپرس در اینجا دیده نمی‌شوند.',
+	'Operation' => 'عملیات',
+	'Reference' => 'شناسهٔ ارجاع',
+	'Read Bridge Diagnostics' => 'خواندن عیب‌یابی Bridge',
+	'Administrator-only, recent sanitized WordPress-side transfer results. No payloads, private paths, or upstream Gateway errors.' => 'نتایج اخیر و پالایش‌شدهٔ انتقال در سمت وردپرس، فقط برای مدیر. بدون محتوای درخواست، مسیرهای خصوصی یا خطاهای سمت Gateway.',
+	'Authenticated site administrator and delegated Site Read are required.' => 'مدیر سایتِ احراز هویت‌شده و مجوز واگذارشدهٔ خواندن سایت لازم است.',
+	'The requested diagnostic limit is invalid.' => 'محدودیت درخواستی برای عیب‌یابی معتبر نیست.',
 );

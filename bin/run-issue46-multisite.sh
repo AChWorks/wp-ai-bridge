@@ -48,6 +48,37 @@ tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue135-no-private-packages-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue130-141-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-128-multisite-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-delete-native-multisite-smoke.php --user=1 --allow-root
+# Run each native hook exception and non-native Ability lifecycle case
+# in its own disposable PHP request. Provider exceptions may be normalized
+# by WordPress 7.1+, so prove same-request WP_Hook recovery explicitly.
+for stage in pre_delete_post before_delete_post; do
+    "${compose[@]}" run --rm -e "WPAI_ALL_HOOK_STAGE=${stage}" cli eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-all-hook-exception-smoke.php --user=1 --allow-root
+done
+for stage in permission post_cas compensation activity guard_pre guard_before; do
+    "${compose[@]}" run --rm -e "WPAI_HOOK_BOUNDARY_STAGE=${stage}" cli eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-hook-boundary-smoke.php --user=1 --allow-root
+done
+# An unprovable dispatcher is the ONLY intentionally non-zero test. PHP
+# exit(70), not a throwable, must bypass WP_Ability::invoke_callback()
+# including on WordPress 7.1+, and must not print a continuation marker.
+if unrecoverable_output=$("${compose[@]}" run --rm -e WPAI_HOOK_BOUNDARY_STAGE=unrecoverable cli eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-hook-boundary-smoke.php --user=1 --allow-root 2>&1); then
+    echo "ERROR: Unrecoverable Workspace hook dispatcher continued normally." >&2
+    exit 1
+else
+    unrecoverable_code=$?
+fi
+if [[ "$unrecoverable_code" != "70" ||
+      "$unrecoverable_output" != *"WP AI Bridge: unsafe WordPress hook dispatcher; request stopped."* ||
+      "$unrecoverable_output" != *"PASS: #126 PHP shutdown completed with quarantined WordPress hooks."* ||
+      "$unrecoverable_output" == *"UNSAFE_BOUNDARY_CONTINUED"* ||
+      "$unrecoverable_output" == *"UNSAFE_WORDPRESS_SHUTDOWN_HOOK_RAN"* ||
+      "$unrecoverable_output" == *"UNSAFE_WORDPRESS_ALL_SHUTDOWN_RAN"* ||
+      "$unrecoverable_output" == *"UNSAFE_TERMINAL_HOOK_REGISTRY"* ]]; then
+    printf '%s\n' "$unrecoverable_output" >&2
+    echo "ERROR: Unrecoverable Workspace hook boundary did not terminate safely." >&2
+    exit 1
+fi
+echo "PASS: #126 unrecoverable hook dispatcher blocked WordPress shutdown/all callbacks before PHP exit."
 # Execute the actual secondary-blog 199->200 race in ONE specialized CI
 # lane. This runner does not receive MCP_ADAPTER_EXPECTED_VERSION; the old
 # condition silently skipped the entire fixture even though CI was green.

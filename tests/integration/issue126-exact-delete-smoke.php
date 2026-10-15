@@ -1,0 +1,310 @@
+<?php
+/**
+ * Real isolated WordPress exact Workspace delete acceptance (#126).
+ *
+ * The test runner supplies a fresh disposable database; it MUST NOT be run
+ * against an unrelated installed/production site.
+ *
+ * @package WP_AI_Bridge
+ */
+
+use WP_AI_Bridge\Auth\OAuth_Server;
+use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Workspace\Store;
+
+$checks = 0;
+$assert = static function ( $condition, $message ) use ( &$checks ) {
+	++$checks;
+	if ( ! $condition ) {
+		throw new RuntimeException( $message );
+	}
+};
+$abilities = static function ( $input ) {
+	$api = wp_get_ability( 'wp-ai-bridge/workspace-delete' );
+	if ( ! $api instanceof WP_Ability ) {
+		throw new RuntimeException( 'Expected exact Workspace delete Ability is not registered.' );
+	}
+	return $api->execute( $input );
+};
+$record_ids = static function ( $type ) {
+	$ids = get_posts( array(
+		'post_type'      => $type,
+		'post_status'    => 'any',
+		'posts_per_page' => -1,
+		'fields'         => 'ids',
+	) );
+	$ids = array_map( 'intval', $ids );
+	sort( $ids, SORT_NUMERIC );
+	return $ids;
+};
+$store        = new Store();
+$settings     = new Settings();
+$before       = get_option( Settings::OPTION_NAME, null );
+$old_docs     = $record_ids( Store::DOCUMENT_POST_TYPE );
+$old_tasks    = $record_ids( Store::TASK_POST_TYPE );
+$access       = $settings->defaults();
+$access[ Settings::GROUP_SITE_READ ]         = 1;
+$access[ Settings::GROUP_BUILDER_WRITE ]     = 1;
+$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
+update_option( Settings::OPTION_NAME, $access, false );
+$auth         = new ReflectionProperty( OAuth_Server::class, 'authenticated_mcp_client_id' );
+$auth->setValue( null, 'disposable-ci-exact-delete' );
+$project_ref  = 'issue126-e2e-' . substr( hash( 'sha256', wp_generate_uuid4() ), 0, 16 );
+$blog_id      = (int) get_current_blog_id();
+$doc          = null;
+$task         = null;
+try {
+	$doc = $store->create_document( array(
+		'project_ref' => $project_ref,
+		'key'         => 'fixture-brief',
+		'title'       => 'CI disposable Project Brief',
+		'content'     => "# Brief\n\nDisposable exact-delete fixture.",
+	) );
+	$assert( ! is_wp_error( $doc ) && $doc['project_ref'] === $project_ref, 'Bound project document create failed.' );
+	$task = $store->create_task( array(
+		'project_ref' => $project_ref,
+		'title'       => 'CI disposable active task',
+		'progress'    => 'in_progress',
+		'next_action' => 'Check exact fixture delete and stale-state rejection',
+	) );
+	$assert( ! is_wp_error( $task ) && $task['project_ref'] === $project_ref, 'Bound project task create failed.' );
+	$doc_input = array(
+		'kind'                => 'document',
+		'id'                  => (int) $doc['id'],
+		'blog_id'             => $blog_id,
+		'project_ref'         => $project_ref,
+		'expected_version'    => (int) $doc['version'],
+		'expected_state_hash' => (string) $doc['state_hash'],
+		'confirmation'        => 'PERMANENTLY DELETE DOCUMENT ' . $doc['id'],
+	);
+	$task_input = array(
+		'kind'                => 'task',
+		'id'                  => (int) $task['id'],
+		'blog_id'             => $blog_id,
+		'project_ref'         => $project_ref,
+		'expected_version'    => (int) $task['version'],
+		'expected_state_hash' => (string) $task['state_hash'],
+		'confirmation'        => 'PERMANENTLY DELETE TASK ' . $task['id'],
+	);
+
+	$deny = $abilities( array_merge( $doc_input, array( 'blog_id' => $blog_id + 1 ) ) );
+	$assert( is_wp_error( $deny ) && (bool) get_post( $doc['id'] ), 'Cross-blog request deleted a fixture.' );
+	$deny = $abilities( array_merge( $doc_input, array( 'project_ref' => 'wrong-project' ) ) );
+	$assert( is_wp_error( $deny ) && (bool) get_post( $doc['id'] ), 'Wrong-project request deleted a fixture.' );
+	$deny = $abilities( array_merge( $doc_input, array( 'kind' => 'task', 'confirmation' => 'PERMANENTLY DELETE TASK ' . $doc['id'] ) ) );
+	$assert( is_wp_error( $deny ) && (bool) get_post( $doc['id'] ), 'Wrong post type request deleted a fixture.' );
+	$deny = $abilities( array_merge( $doc_input, array( 'confirmation' => 'yes' ) ) );
+	$assert( is_wp_error( $deny ) && (bool) get_post( $doc['id'] ), 'Weak confirmation deleted a fixture.' );
+	$auth->setValue( null, '' );
+	$deny = $abilities( $doc_input );
+	$assert( is_wp_error( $deny ) && (bool) get_post( $doc['id'] ), 'Missing authenticated MCP client permitted deletion.' );
+	$auth->setValue( null, 'disposable-ci-exact-delete' );
+	$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 0;
+	update_option( Settings::OPTION_NAME, $access, false );
+	$deny = $abilities( $doc_input );
+	$assert( is_wp_error( $deny ) && (bool) get_post( $doc['id'] ), 'Revoked destructive grant permitted deletion.' );
+	$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
+	update_option( Settings::OPTION_NAME, $access, false );
+
+	// Revoke the destructive grant mid-operation, after initial preflight
+	// but before metadata CAS. The exact document must stay unchanged.
+	$revoked_mid_operation = false;
+	$revoke_during_read    = static function ( $value, $object_id, $meta_key ) use ( &$revoked_mid_operation, &$access, $doc ) {
+		if ( ! $revoked_mid_operation && (int) $doc['id'] === (int) $object_id && Store::META_STATE === $meta_key ) {
+			$revoked_mid_operation                           = true;
+			$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 0;
+			update_option( Settings::OPTION_NAME, $access, false );
+		}
+		return $value;
+	};
+	add_filter( 'get_post_metadata', $revoke_during_read, 10, 3 );
+	try {
+		$denied = $abilities( $doc_input );
+	} finally {
+		remove_filter( 'get_post_metadata', $revoke_during_read, 10 );
+	}
+	$after_revocation = $store->get_document( $doc['id'] );
+	$assert( $revoked_mid_operation && is_wp_error( $denied ) && 'workspace_delete_denied' === $denied->get_error_code(),
+		'Mid-operation grant revocation failed to stop exact document deletion.' );
+	$assert( ! is_wp_error( $after_revocation ) &&
+		$doc['state_hash'] === $after_revocation['state_hash'] &&
+		$doc['version'] === $after_revocation['version'],
+		'Mid-operation revocation incorrectly fenced or changed the document.' );
+	$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
+	update_option( Settings::OPTION_NAME, $access, false );
+
+	// A grant can be revoked by an updated_post_meta hook AFTER the guarded
+	// delete_pending CAS has already committed. Core must never be entered,
+	// and exact CAS compensation must restore the original readable state.
+	$native_starts = 0;
+	$observe_native = static function ( $candidate_id ) use ( $doc, &$native_starts ) {
+		if ( (int) $candidate_id === (int) $doc['id'] ) {
+			++$native_starts;
+		}
+	};
+	add_action( 'before_delete_post', $observe_native, 10, 1 );
+	$post_cas_revoked = false;
+	$revoke_after_cas = static function ( $meta_id, $object_id, $meta_key, $meta_value ) use ( &$post_cas_revoked, &$access, $doc ) {
+		if ( ! $post_cas_revoked && (int) $object_id === (int) $doc['id'] &&
+			Store::META_STATE === $meta_key && is_string( $meta_value ) ) {
+			$decoded = json_decode( $meta_value, true );
+			if ( is_array( $decoded ) && ! empty( $decoded['delete_pending'] ) ) {
+				$post_cas_revoked = true;
+				$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 0;
+				update_option( Settings::OPTION_NAME, $access, false );
+			}
+		}
+	};
+	add_action( 'updated_post_meta', $revoke_after_cas, 10, 4 );
+	try {
+		$aborted = $abilities( $doc_input );
+	} finally {
+		remove_action( 'updated_post_meta', $revoke_after_cas, 10 );
+	}
+	$restored = $store->get_document( $doc['id'] );
+	$assert( $post_cas_revoked && is_wp_error( $aborted ) &&
+		'workspace_delete_aborted' === $aborted->get_error_code() && 0 === $native_starts,
+		'A post-CAS/pre-native grant revocation was not safely aborted and recovered.' );
+	$assert( ! is_wp_error( $restored ) && $doc['version'] === $restored['version'] &&
+		$doc['state_hash'] === $restored['state_hash'],
+		'Post-CAS denial left a durable unreadable fence.' );
+	$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
+	update_option( Settings::OPTION_NAME, $access, false );
+
+	// An earlier Core filter can revoke authorization while returning null.
+	// The late exact-record enforcement gate must short-circuit WordPress.
+	$pre_delete_revoked = false;
+	$revoke_pre_delete = static function ( $check, $post, $force ) use ( &$pre_delete_revoked, &$access, $doc ) {
+		if ( (int) $post->ID === (int) $doc['id'] && true === $force ) {
+			$pre_delete_revoked = true;
+			$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 0;
+			update_option( Settings::OPTION_NAME, $access, false );
+		}
+		return $check;
+	};
+	add_filter( 'pre_delete_post', $revoke_pre_delete, 10, 3 );
+	try {
+		$aborted = $abilities( $doc_input );
+	} finally {
+		remove_filter( 'pre_delete_post', $revoke_pre_delete, 10 );
+	}
+	$restored = $store->get_document( $doc['id'] );
+	$assert( $pre_delete_revoked && is_wp_error( $aborted ) &&
+		'workspace_delete_aborted' === $aborted->get_error_code() && 0 === $native_starts,
+		'An earlier pre_delete_post grant revocation entered Core cleanup.' );
+	$assert( ! is_wp_error( $restored ) && $doc['version'] === $restored['version'] &&
+		$doc['state_hash'] === $restored['state_hash'],
+		'A pre_delete_post grant change was not safely compensated.' );
+	$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
+	update_option( Settings::OPTION_NAME, $access, false );
+
+	// The named lock is connection-scoped. A disposable callback simulates
+	// its loss before Core cleanup; the Bridge must not proceed unadmitted.
+	global $wpdb;
+	$identity = strlen( DB_NAME ) . ':' . DB_NAME .
+		strlen( $wpdb->posts ) . ':' . $wpdb->posts . 'documents';
+	$lock_name = 'wpai_admit_' . substr( hash( 'sha256', $identity ), 0, 40 );
+	$lost_lock = false;
+	$release_before_native = static function ( $check, $post, $force ) use ( &$lost_lock, $doc, $wpdb, $lock_name ) {
+		if ( (int) $post->ID === (int) $doc['id'] && true === $force ) {
+			$lost_lock = '1' === (string) $wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock_name ) );
+		}
+		return $check;
+	};
+	add_filter( 'pre_delete_post', $release_before_native, 10, 3 );
+	try {
+		$aborted = $abilities( $doc_input );
+	} finally {
+		remove_filter( 'pre_delete_post', $release_before_native, 10 );
+		remove_action( 'before_delete_post', $observe_native, 10 );
+	}
+	$restored = $store->get_document( $doc['id'] );
+	$assert( $lost_lock && is_wp_error( $aborted ) &&
+		'workspace_delete_aborted' === $aborted->get_error_code() && 0 === $native_starts,
+		'The pre-native admission-lock loss entered WordPress cleanup.' );
+	$assert( ! is_wp_error( $restored ) && $doc['version'] === $restored['version'] &&
+		$doc['state_hash'] === $restored['state_hash'],
+		'Admission-lock loss left an intact record permanently fenced.' );
+
+	$updated = $store->update_document(
+		$doc['id'],
+		array(
+			'content'             => "# Brief\n\nRevision before guarded delete.",
+			'expected_version'    => $doc['version'],
+			'expected_state_hash' => $doc['state_hash'],
+		)
+	);
+	$assert( ! is_wp_error( $updated ) && $updated['version'] === $doc['version'] + 1, 'Document CAS revision failed.' );
+	$deny = $abilities( $doc_input );
+	$assert( is_wp_error( $deny ) && 'workspace_stale' === $deny->get_error_code() &&
+		(bool) get_post( $doc['id'] ), 'Stale deletion removed a concurrently updated document.' );
+	$doc_input['expected_version']    = $updated['version'];
+	$doc_input['expected_state_hash'] = $updated['state_hash'];
+
+	// A legitimate Core pre_delete_post filter can veto a permanent delete
+	// before native effects. The temporary CAS fence must be restored only
+	// in this proven no-native-delete path; other records stay intact.
+	$native_veto_seen = false;
+	$veto_delete = static function ( $check, $post, $force ) use ( &$native_veto_seen, $doc ) {
+		if ( (int) $post->ID === (int) $doc['id'] && true === $force ) {
+			$native_veto_seen = true;
+			return false;
+		}
+		return $check;
+	};
+	add_filter( 'pre_delete_post', $veto_delete, 10, 3 );
+	try {
+		$vetoed = $abilities( $doc_input );
+	} finally {
+		remove_filter( 'pre_delete_post', $veto_delete, 10 );
+	}
+	$after_veto = $store->get_document( $doc['id'] );
+	$assert( $native_veto_seen && is_wp_error( $vetoed ) &&
+		'workspace_delete_vetoed' === $vetoed->get_error_code(),
+		'A Core pre-delete veto was not safely recognized.' );
+	$assert( ! is_wp_error( $after_veto ) &&
+		$after_veto['version'] === $doc_input['expected_version'] &&
+		$after_veto['state_hash'] === $doc_input['expected_state_hash'],
+		'A veto left the unchanged record incorrectly CAS-fenced or unreadable.' );
+
+	$ok = $abilities( $doc_input );
+	$assert( ! is_wp_error( $ok ) && true === $ok['deleted'] && $doc['id'] === $ok['id'], 'Exact doc deletion did not return a verified receipt.' );
+	$assert( ! get_post( $doc['id'] ) && ! get_post_meta( $doc['id'], Store::META_STATE, false ), 'Deleted document or private metadata remains visible.' );
+	$deny = $abilities( $doc_input );
+	$assert( is_wp_error( $deny ), 'Replayed permanent delete returned a misleading success.' );
+	$still_reserved = $store->create_document( array(
+		'project_ref' => $project_ref,
+		'key'         => 'fixture-brief',
+		'title'       => 'Dangerous accidental recreate',
+		'content'     => 'Should not be created',
+	) );
+	$assert( is_wp_error( $still_reserved ), 'Durable canonical key claim was incorrectly recycled after deletion.' );
+
+	// A plugin filter may fail while writing Activity AFTER irreversible
+	// deletion. It must not mask a verified success and invite a blind retry.
+	$activity_fault_injected = false;
+	$break_activity         = static function () use ( &$activity_fault_injected ) {
+		$activity_fault_injected = true;
+		throw new RuntimeException( 'Synthetic disposable Activity storage failure.' );
+	};
+	add_filter( 'pre_update_option_wp_ai_bridge_recent_actions', $break_activity, 10, 2 );
+	try {
+		$ok = $abilities( $task_input );
+	} finally {
+		remove_filter( 'pre_update_option_wp_ai_bridge_recent_actions', $break_activity, 10 );
+	}
+	$assert( true === $activity_fault_injected, 'The WordPress Activity write-failure filter was not actually exercised.' );
+	$assert( ! is_wp_error( $ok ) && true === $ok['deleted'] && $task['id'] === $ok['id'], 'Exact task deletion did not return a verified receipt when Activity storage failed.' );
+	$assert( ! get_post( $task['id'] ) && ! get_post_meta( $task['id'], Store::META_STATE, false ), 'Deleted task or private metadata remains visible.' );
+	$assert( $old_docs === $record_ids( Store::DOCUMENT_POST_TYPE ) &&
+		$old_tasks === $record_ids( Store::TASK_POST_TYPE ), 'Original documents/tasks changed or a test fixture remains.' );
+
+	echo "PASS: #126 {$checks} real WordPress guarded exact-delete, CAS, authority and exact cleanup assertions.\n";
+} finally {
+	$auth->setValue( null, '' );
+	if ( null === $before ) {
+		delete_option( Settings::OPTION_NAME );
+	} else {
+		update_option( Settings::OPTION_NAME, $before, false );
+	}
+}

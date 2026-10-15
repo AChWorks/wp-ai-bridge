@@ -68,6 +68,10 @@ final class Registrar {
 	private $code_snippets_abilities;
 	/** @var Workspace_Abilities */
 	private $workspace_abilities;
+	/** @var Workspace_Delete_Abilities */
+	private $workspace_delete_abilities;
+	/** @var Mutation_Log */
+	private $mutation_log;
 	/** @var Native_Ability_Delegation|null */
 	private $native_ability_delegation;
 
@@ -87,6 +91,7 @@ final class Registrar {
 		$this->native_ability_delegation   = $native_ability_delegation;
 		$this->resolver                    = new Ability_Resolver();
 		$mutation_log                      = new Mutation_Log();
+		$this->mutation_log                = $mutation_log;
 		$this->site_abilities              = new Site_Abilities( $this->resolver, $this->permissions );
 		$this->catalog_abilities           = new Ability_Catalog_Abilities( $this->resolver, $this->permissions, $native_ability_delegation );
 		$this->content_abilities           = new Content_Abilities( $this->permissions, $mutation_log );
@@ -106,7 +111,9 @@ final class Registrar {
 		$this->comment_abilities           = new Comment_Abilities( $this->permissions, $mutation_log );
 		$this->gravity_forms_abilities     = new Gravity_Forms_Abilities( $this->permissions, $mutation_log );
 		$this->code_snippets_abilities     = new Code_Snippets_Abilities( $this->permissions, $mutation_log );
-		$this->workspace_abilities         = new Workspace_Abilities( $this->permissions, $workspace ? $workspace : new Store(), $mutation_log );
+		$workspace_store                   = $workspace ? $workspace : new Store();
+		$this->workspace_abilities         = new Workspace_Abilities( $this->permissions, $workspace_store, $mutation_log );
+		$this->workspace_delete_abilities  = new Workspace_Delete_Abilities( $this->permissions, $workspace_store, $mutation_log );
 	}
 
 	/**
@@ -205,7 +212,8 @@ final class Registrar {
 			$this->block_abilities,
 			$this->media_abilities,
 			new File_Transfer_Abilities( $this->permissions ),
-			new Transfer_Session_Abilities( $this->permissions ),
+			new Transfer_Session_Abilities( $this->permissions, $this->mutation_log ),
+			new Diagnostics_Abilities( $this->permissions, $this->mutation_log ),
 			new Transfer_Media_Abilities( $this->permissions ),
 			new Transfer_Media_Export_Abilities( $this->permissions ),
 			new Transfer_Content_Abilities( $this->permissions ),
@@ -227,6 +235,7 @@ final class Registrar {
 			$this->gravity_forms_abilities,
 			$this->code_snippets_abilities,
 			$this->workspace_abilities,
+			$this->workspace_delete_abilities,
 		);
 
 		foreach ( $providers as $provider ) {

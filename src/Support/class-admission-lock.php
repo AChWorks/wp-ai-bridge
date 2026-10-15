@@ -54,6 +54,20 @@ final class Admission_Lock {
 	}
 
 	/**
+	 * Return the current WordPress posts table binding without exposing a
+	 * second direct database surface in the Workspace application store.
+	 * A deletion may continue only while this matches its admitted table.
+	 *
+	 * @return string Empty when WordPress DB context is unavailable.
+	 */
+	public static function current_posts_table() {
+		global $wpdb;
+		return isset( $wpdb ) && is_object( $wpdb ) &&
+			isset( $wpdb->posts ) && is_string( $wpdb->posts ) ?
+			$wpdb->posts : '';
+	}
+
+	/**
 	 * @param string $scope One fixed Bridge-owned admission surface.
 	 * @return self|false
 	 */

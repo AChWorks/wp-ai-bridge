@@ -112,7 +112,9 @@ for test in \
     issue134-direct-mcp-bytes-smoke.php \
     issue134-public-session-smoke.php \
     issue134-private-staging-smoke.php \
+    issue165-diagnostics-smoke.php \
     issue126-128-workspace-smoke.php \
+    issue126-exact-delete-smoke.php \
     issue128-native-creates-smoke.php \
     issue147-operation-capacity-smoke.php \
     issue8-workspace-smoke.php
