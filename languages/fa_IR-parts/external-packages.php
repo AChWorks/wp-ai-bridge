@@ -39,4 +39,6 @@ return array(
 	'The replacement ZIP did not pass the required package identity and safety checks.' => 'فایل ZIP جایگزین بررسی‌های ضروری هویت و امنیت بسته را با موفقیت نگذراند.',
 	'The installed extension contains a symbolic link or an uninspectable filesystem tree; replace it manually after checking the deployment.' => 'افزونه یا پوسته نصب‌شده دارای پیوند نمادین یا ساختار فایل بررسی‌ناپذیر است؛ پس از بررسی محیط نصب، جایگزینی را به‌صورت دستی انجام دهید.',
 
+	'This plugin shares its installed directory with another registered plugin; replace the package manually after authorizing the full directory.' => 'این افزونه پوشه نصب مشترکی با یک افزونه ثبت‌شده دیگر دارد؛ تنها پس از دریافت مجوز برای کل پوشه، جایگزینی را به‌صورت دستی انجام دهید.',
+
 );

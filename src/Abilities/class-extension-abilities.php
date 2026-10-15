@@ -465,7 +465,7 @@ final class Extension_Abilities {
 			if ( $replacement ) {
 				// Recheck the exact installed preimage while holding the shared,
 				// lock-coherent WordPress content filesystem admission lock.
-				$current = $this->preflight_replacement( $kind, $input );
+				$current = $this->preflight_replacement( $kind, $input, true );
 				if ( is_wp_error( $current ) ) {
 					return $current;
 				}
@@ -583,9 +583,10 @@ final class Extension_Abilities {
 	 *
 	 * @param string              $kind  Plugin or theme.
 	 * @param array<string,mixed> $input Administrator-bound confirmation.
+	 * @param bool                $fresh Discard request-local Core caches under the installer lock.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	private function preflight_replacement( $kind, $input ) {
+	private function preflight_replacement( $kind, $input, $fresh = false ) {
 		$target        = isset( $input['target'] ) && is_string( $input['target'] ) ? $input['target'] : '';
 		$plugin_target = 'plugin' === $kind && 1 === preg_match( '/\\A[a-zA-Z0-9][a-zA-Z0-9._-]*\\/[a-zA-Z0-9][a-zA-Z0-9._-]*\\.php\\z/', $target );
 		$theme_target  = 'theme' === $kind && 1 === preg_match( '/\\A[a-zA-Z0-9][a-zA-Z0-9._-]*\\z/', $target );
@@ -602,10 +603,36 @@ final class Extension_Abilities {
 		if ( ! version_compare( $after, $before, '>' ) && true !== ( $input['allow_non_upgrade'] ?? false ) ) {
 			return $this->external_package_error( $kind, 'external_package_downgrade_denied', __( 'Replacing with the same or an older version requires separate explicit approval.', 'wp-ai-bridge' ) );
 		}
+		if ( $fresh ) {
+			// Another request may have committed while this request downloaded
+			// the ZIP. Core caches plugin/theme headers inside this PHP request.
+			// Evict them only when the shared installer lock has been acquired,
+			// before the authoritative replacement-preimage comparison.
+			wp_clean_plugins_cache( false );
+			wp_clean_themes_cache( false );
+			// Preserve exact activation and theme selection under the lock
+			// without trusting an earlier request-local options snapshot.
+			wp_cache_delete( 'alloptions', 'options' );
+			wp_cache_delete( 'notoptions', 'options' );
+			foreach ( array( 'active_plugins', 'stylesheet', 'template' ) as $option ) {
+				wp_cache_delete( $option, 'options' );
+			}
+			if ( is_multisite() ) {
+				wp_cache_delete( get_current_network_id() . ':active_sitewide_plugins', 'site-options' );
+			}
+		}
 		if ( 'plugin' === $kind ) {
 			$installed = get_plugins();
 			if ( ! isset( $installed[ $target ] ) ) {
 				return $this->external_package_error( $kind, 'external_package_target_missing', __( 'The exact installed plugin does not exist.', 'wp-ai-bridge' ) );
+			}
+			// Core overwrites an entire directory, not one main PHP basename.
+			// A different recognized plugin in the same directory would be
+			// silently deleted. Authorizing just $target is never sufficient.
+			foreach ( $installed as $basename => $details ) {
+				if ( $basename !== $target && dirname( $basename ) === dirname( $target ) ) {
+					return $this->external_package_error( $kind, 'external_package_shared_plugin_directory', __( 'This plugin shares its installed directory with another registered plugin; replace the package manually after authorizing the full directory.', 'wp-ai-bridge' ) );
+				}
 			}
 			$version = (string) $installed[ $target ]['Version'];
 			$state   = array(

@@ -157,6 +157,35 @@ try {
 	unlink( $outside . '/untouched.txt' );
 	rmdir( $outside );
 
+	// Core overwrites an entire directory even when the caller supplied
+	// only one exact plugin basename. Independently registered siblings MUST
+	// prevent it, including an active sibling whose files must survive.
+	$sibling_basename = $plugin_root . '/sibling.php';
+	$sibling_path     = $plugin_directory . '/sibling.php';
+	$sibling_content  = "<?php\\n/*\\nPlugin Name: WP AI Bridge Shared Directory Sibling\\nVersion: 9.9.9\\n*/\\n";
+	file_put_contents( $sibling_path, $sibling_content );
+	wp_clean_plugins_cache( false );
+	try {
+		wpai168_check( '9.9.9' === (string) ( get_plugins()[ $sibling_basename ]['Version'] ?? '' ), 'Core did not register the sibling plugin.' );
+		wpai168_check( null === activate_plugin( $sibling_basename ), 'Could not activate the sibling fixture.' );
+		wpai168_check( is_plugin_active( $sibling_basename ), 'Sibling was not active.' );
+		$before_shared_calls = $calls;
+		$assert_error( $plugin_input, 'external_package_shared_plugin_directory' );
+		wpai168_check( $before_shared_calls === $calls, 'Shared-directory refusal downloaded a package.' );
+		wpai168_check( $sibling_content === file_get_contents( $sibling_path ), 'Shared-directory refusal changed sibling source.' );
+		wpai168_check( 'original-version' === file_get_contents( $plugin_directory . '/fixture-data.txt' ), 'Shared-directory refusal changed target source.' );
+		wpai168_check( is_plugin_active( $sibling_basename ) && is_plugin_active( $plugin_file ), 'Shared-directory refusal changed activation.' );
+		wpai168_check( '1.0.0' === (string) get_plugins()[ $plugin_file ]['Version'], 'Shared-directory refusal changed target version.' );
+	} finally {
+		if ( is_plugin_active( $sibling_basename ) ) {
+			deactivate_plugins( $sibling_basename );
+		}
+		if ( is_file( $sibling_path ) ) {
+			unlink( $sibling_path );
+		}
+		wp_clean_plugins_cache( false );
+	}
+
 	$assert_error( array_replace( $plugin_input, array( 'expected_sha256' => str_repeat( 'a', 64 ) ) ), 'external_package_hash_mismatch' );
 	wpai168_check( is_plugin_active( $plugin_file ) && 'original-version' === file_get_contents( $plugin_directory . '/fixture-data.txt' ), 'Rejected SHA changed active plugin.' );
 
