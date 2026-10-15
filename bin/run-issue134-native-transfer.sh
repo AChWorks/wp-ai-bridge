@@ -25,6 +25,10 @@ wp=("${compose[@]}" run --rm cli)
     --title='Private transfer native acceptance' --admin_user=admin \
     --admin_password='test-only-password' --admin_email=admin@example.invalid \
     --skip-email --allow-root
+if [[ "${WPAI_ISSUE134_PUBLIC_TEMP:-0}" == "1" ]]; then
+    # Disposable fixture only: WordPress may have a publicly served default temp.
+    "${wp[@]}" config set WP_TEMP_DIR /var/www/html/wp-content --allow-root
+fi
 "${wp[@]}" plugin install \
     "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip}" \
     --activate --allow-root
@@ -42,6 +46,9 @@ for fixture in issue134-payload-settings-smoke.php issue134-direct-mcp-bytes-smo
     echo "== $fixture =="
     "${wp[@]}" eval-file "wp-content/plugins/wp-ai-bridge/tests/integration/$fixture" --user=1 --allow-root
 done
+if [[ "${WPAI_ISSUE134_PUBLIC_TEMP:-0}" == "1" ]]; then
+    "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue134-host-private-fallback-smoke.php --user=1 --allow-root
+fi
 # One deterministic two-process native CAS race, with independent staged
 # leases and an ordinary WordPress writer as a competing author.
 if [[ "$tag" == '6.9-php8.4-apache' ]]; then
