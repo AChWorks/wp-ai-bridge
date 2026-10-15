@@ -132,8 +132,21 @@ try {
 		// PHP process. Do not leave the throwing provider registered.
 		remove_action( 'all', $throwing_all, PHP_INT_MAX );
 	}
+	$actual_kind = is_wp_error( $actual ) ? $actual->get_error_code() :
+		( is_array( $actual ) ? 'array' : get_debug_type( $actual ) );
+	$caught_kind = $caught instanceof Throwable ? get_class( $caught ) : 'none';
 	$assert( $caught === $provider_exception && null === $actual && 1 === $throw_count,
-		'Bridge swallowed or replaced the original provider exception from the all dispatcher.' );
+		sprintf(
+			'All-hook propagation mismatch: stage=%s, WordPress=%s, throws=%d, caught_type=%s, caught_exact=%d, result=%s, user=%d, blog=%d.',
+			$stage,
+			get_bloginfo( 'version' ),
+			$throw_count,
+			$caught_kind,
+			(int) ( $caught === $provider_exception ),
+			$actual_kind,
+			get_current_user_id(),
+			get_current_blog_id()
+		) );
 	$assert( $still_registered && $callbacks_after === $callbacks_before,
 		'Bridge removed, rewrote or reordered an unrelated all-hook callback.' );
 	$assert( $all_hook_depth > 0 &&
