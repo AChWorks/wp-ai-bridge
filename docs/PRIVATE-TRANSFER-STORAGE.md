@@ -25,6 +25,16 @@ WordPress source documentation:
 - https://developer.wordpress.org/plugins/plugin-basics/activation-deactivation-hooks/
 - https://developer.wordpress.org/plugins/plugin-basics/uninstall-methods/
 
+## Implemented on the Draft PR (staging-only, NOT accepted for release)
+
+A **partial candidate** currently exists on PR #170, starting with commit `117cda1` and corrected at `31d7c60`. It adds `Private_Transfer_DB_Store`, an InnoDB, site-local, lazily created fallback that is selected when the existing confidential filesystem root check refuses the host's temporary directory. The verified scope is `begin`, `append`, `status`, `verify`, `cancel`, exact replay/conflict detection, bounded reservations and opportunistic expired-lease removal. Raw bytes live as database BLOB chunks, not as files under an HTTP-addressable content/uploads directory. Existing filesystem leases and working existing-host paths remain unchanged.
+
+The production native consumers **are not yet converted** to read the database backend. `verified_private_source` and `prepare_media_sideload` deliberately reject DB-backed leases rather than materializing public plaintext. Native Media import, content editing, WXR, source editing, private artifact production, export `read`/`release`, recovery compatibility and other end-to-end workflows remain **open**. DB staging verification alone does not fix the installed-site user workflow; do not mark Issue #134 resolved. The production README must not claim this partial backend is available until full acceptance and release.
+
+New `bin/run-issue134-portable-db.sh` exercises an **official MCP Adapter 0.7.0** disposable WordPress install with a forced content-local `WP_TEMP_DIR` (a fixture-only configuration, never a production prerequisite). It verifies authenticated zero-byte, one-byte, Unicode and 1,136,532-byte binary transfers, byte offsets, replay conflict, SHA-256, cancellation and expired chunk cleanup. Runs passed for **WordPress 6.9.4 / PHP 8.4** and **WordPress 7.1.3 / PHP 8.4** on separate disposable Docker stacks. The local `composer test`, PHP lint, PHPCS and static security checks passed. Full `composer check` did not complete on the development server because its CLI PHP lacks `ZipArchive`; the disposable test runner assembled a ZIP from the same shipped file set and validated it with `unzip`. No claim is made about unrun full CI or a completed independent review.
+
+The remaining acceptance gates are intentionally unchanged below. Before considering integration, add genuine database-native consumers and durable one-way claim semantics, OAuth/principal/revocation/multisite security tests, output/artifact pathways, crash and concurrency tests, all supported hosting matrices, an explicit existing-lease upgrade/rollback story, then fresh author-separated review and exact final candidate CI. No production installation was modified.
+
 ## Implementation direction (do not assert completed)
 
 Keep the existing public Ability schemas and site/principal/OAuth-client/purpose-bound lease semantics. Introduce only the backing storage abstraction needed to make them host-neutral; inspect **all** call sites of `Private_Transfer_Session`, private artifact writer, Media/text/WXR/source consumers and effect-claim journaling first.

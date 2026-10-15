@@ -51,6 +51,53 @@ try {
 		$meta     = $record['data'];
 		$id       = $meta['transfer_id'];
 		$leases[] = $id;
+		if ( 'Z' === $payload ) {
+			// A live lease must be unusable after an admin revokes the
+			// originating transfer purpose; restoring grants is test-only.
+			$disabled                                  = $grants;
+			$disabled[ Settings::GROUP_BUILDER_WRITE ] = 0;
+			update_option( Settings::OPTION_NAME, $disabled, false );
+			$denied = wpai134_review_transfer(
+				$token,
+				$session,
+				array(
+					'action'      => 'status',
+					'transfer_id' => $id,
+				)
+			);
+			update_option( Settings::OPTION_NAME, $grants, false );
+			wpai134_review_require( ! empty( $denied['result']['isError'] ), 'Revoked Builder grant could still access private DB lease.' );
+			// An independently authenticated principal cannot read a lease
+			// even when that principal has ordinary WordPress edit authority.
+			$other_id = wp_create_user( 'wpai134-other-' . bin2hex( random_bytes( 5 ) ), wp_generate_password( 24 ), 'wpai134-other@example.invalid' );
+			wpai134_review_require( ! is_wp_error( $other_id ) && $other_id > 0, 'Could not create disposable isolation actor.' );
+			wp_update_user(
+				array(
+					'ID'   => $other_id,
+					'role' => 'editor',
+				)
+			);
+			$other_token = '';
+			$other_store = null;
+			try {
+				list( $other_token, $other_session, $other_store ) = wpai134_review_connect( $other_id );
+				$denied = wpai134_review_transfer(
+					$other_token,
+					$other_session,
+					array(
+						'action'      => 'status',
+						'transfer_id' => $id,
+					)
+				);
+				wpai134_review_require( ! empty( $denied['result']['isError'] ), 'Another WordPress principal accessed a private DB lease.' );
+			} finally {
+				if ( '' !== $other_token && is_object( $other_store ) ) {
+					$other_store->revoke( $other_token );
+				}
+				require_once ABSPATH . 'wp-admin/includes/user.php';
+				wp_delete_user( $other_id );
+			}
+		}
 		wpai134_review_require(
 			1 === (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE id = %s', $lease_table, $id ) ),
 			'Private lease was not persisted in per-site InnoDB storage.'
