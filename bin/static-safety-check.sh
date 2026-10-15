@@ -79,9 +79,9 @@ if grep -nE "'(client_path|filesystem_path|target_path|public_url|download_url|f
 fi
 
 media_write_count="$(grep -cF 'file_put_contents( $tmp_name, $bytes )' src/Abilities/class-media-abilities.php || true)"
-media_temp_count="$(grep -cF 'wp_tempnam( $filename )' src/Abilities/class-media-abilities.php || true)"
-media_base64_temp_count="$(grep -cF '$tmp_name = wp_tempnam( $filename );' src/Abilities/class-media-abilities.php || true)"
-media_import_temp_count="$(grep -Ec '\$temp_file[[:space:]]*=[[:space:]]*wp_tempnam\([[:space:]]*\$filename[[:space:]]*\);' src/Abilities/class-media-abilities.php || true)"
+media_temp_count="$(grep -cF 'Safe_Temporary_Staging::create( $filename )' src/Abilities/class-media-abilities.php || true)"
+media_base64_temp_count="$(grep -cF '$tmp_name = \WP_AI_Bridge\Support\Safe_Temporary_Staging::create( $filename );' src/Abilities/class-media-abilities.php || true)"
+media_import_temp_count="$(grep -cF '$temp_file          = \WP_AI_Bridge\Support\Safe_Temporary_Staging::create( $filename );' src/Abilities/class-media-abilities.php || true)"
 media_all_write_count="$(grep -cF 'file_put_contents(' src/Abilities/class-media-abilities.php || true)"
 if [[ "$media_write_count" != "1" || "$media_all_write_count" != "1" || "$media_temp_count" != "2" || "$media_base64_temp_count" != "1" || "$media_import_temp_count" != "1" ]]; then
     echo "ERROR: media upload filesystem exception no longer matches the single bounded WordPress temp-file write." >&2
@@ -365,7 +365,7 @@ external_package_http_helper_pattern='^wp_(safe_)?remote_(request|get|post|head)
 external_package_safe_get_pattern='^wp_safe_remote_get$'
 external_package_http_helper_count="$(printf '%s\n' "$external_package_identifier_inventory" | grep -Ec "$external_package_http_helper_pattern" || true)"
 external_package_safe_get_count="$(printf '%s\n' "$external_package_identifier_inventory" | grep -Ec "$external_package_safe_get_pattern" || true)"
-if [[ "$external_package_http_helper_count" != "1" || "$external_package_safe_get_count" != "1" || "$(grep -cF "wp_tempnam( 'wp-ai-bridge-package.zip' )" "$external_package_provider" || true)" != "1" ]]; then
+if [[ "$external_package_http_helper_count" != "1" || "$external_package_safe_get_count" != "1" || "$(grep -cF "Safe_Temporary_Staging::create( 'wp-ai-bridge-package.zip' )" "$external_package_provider" || true)" != "1" ]]; then
     printf '%s\n' "$external_package_identifier_inventory" | grep -E "$external_package_http_helper_pattern" || true
     echo "ERROR: external package installation must retain exactly one wp_safe_remote_get() request and one WordPress temp allocation." >&2
     exit 1

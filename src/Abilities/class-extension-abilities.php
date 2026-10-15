@@ -378,9 +378,9 @@ final class Extension_Abilities {
 		}
 
 		$this->load_external_package_files();
-		$temp_file          = wp_tempnam( 'wp-ai-bridge-package.zip' );
-		$state['temp_file'] = $temp_file ? (string) $temp_file : '';
-		if ( ! $temp_file ) {
+		$temp_file          = \WP_AI_Bridge\Support\Safe_Temporary_Staging::create( 'wp-ai-bridge-package.zip' );
+		$state['temp_file'] = is_string( $temp_file ) ? $temp_file : '';
+		if ( is_wp_error( $temp_file ) ) {
 			return $this->external_package_error( $kind, 'external_package_temp_failed', __( 'WordPress could not allocate a temporary upload file.', 'wp-ai-bridge' ) );
 		}
 		if ( ! $this->can_mutate( $input ) ) {
