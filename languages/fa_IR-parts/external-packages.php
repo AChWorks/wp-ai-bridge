@@ -22,4 +22,23 @@ return array(
 	'Default 100 MiB; configured: %1$s MiB; WordPress upload allowance: %2$s bytes; effective package budget: %3$s bytes. Increase host/PHP upload, temporary disk and execution resources separately where supported. Larger packages may still fail in Core/hosting or time out.' => 'پیش‌فرض: ۱۰۰ MiB؛ ظرفیت تنظیم‌شده: %1$s MiB؛ سقف بارگذاری وردپرس: %2$s بایت؛ ظرفیت مؤثر بسته: %3$s بایت. در صورت پشتیبانی، منابع بارگذاری PHP/هاست، دیسک موقت و زمان اجرا را جداگانه افزایش دهید. بسته‌های بزرگ‌تر همچنان ممکن است در هسته/هاست رد شوند یا با پایان مهلت روبه‌رو شوند.',
 	'Save external package capacity' => 'ذخیره ظرفیت بستهٔ خارجی',
 	'External package capacity must be a positive whole number of MiB within the displayed PHP integer range. The invalid value was not saved.' => 'ظرفیت بستهٔ خارجی باید عدد صحیح و مثبت در واحد MiB و در بازهٔ نمایش‌داده‌شدهٔ صحیح PHP باشد. مقدار نامعتبر ذخیره نشد.',
+	'Installs WordPress.org extensions or authorized public HTTPS packages and supports explicitly confirmed, identity-checked replacement of an installed extension from a public HTTPS ZIP. Existing update offers remain supported; deletion requires destructive access.' => 'افزونه یا پوسته را از WordPress.org یا بسته عمومی مجاز HTTPS نصب می‌کند و جایگزینی صریح و تأییدشده افزونه نصب‌شده را با بررسی دقیق هویت بسته پشتیبانی می‌کند. به‌روزرسانی‌های معمول همچنان فعال‌اند و حذف به مجوز مخرب نیاز دارد.',
+	'Replacement confirmation and identities cannot be used for a new installation.' => 'اطلاعات هویت و تأیید جایگزینی برای نصب افزونه جدید پذیرفته نمی‌شوند.',
+	'A replacement ZIP must identify the installed target, not a WordPress.org slug.' => 'برای جایگزینی ZIP باید شناسه دقیق افزونه نصب‌شده مشخص باشد، نه نامک WordPress.org.',
+	'Package source and replacement fields require an explicit install or package-update action.' => 'فیلدهای بسته و جایگزینی فقط برای نصب یا به‌روزرسانی صریح از بسته قابل استفاده‌اند.',
+	'External packages require Code & Extensions, External Packages and the native WordPress install/update capabilities.' => 'بسته‌های خارجی به دسترسی‌های «کد و افزونه‌ها»، «بسته‌های خارجی» و مجوزهای بومی نصب و به‌روزرسانی وردپرس نیاز دارند.',
+	'The downloaded ZIP does not match the explicitly approved SHA-256.' => 'فایل ZIP دریافت‌شده با هش SHA-256 تأییدشده مطابقت ندارد.',
+	'The replacement archive identity or safety inspection failed.' => 'بررسی هویت یا امنیت آرشیو جایگزین ناموفق بود.',
+	'External package authority was revoked before the native installer.' => 'مجوز بسته خارجی پیش از اجرای نصب‌کننده بومی لغو شد.',
+	'An exact installed extension, two versions, SHA-256 and explicit replacement confirmation are required.' => 'شناسه دقیق افزونه نصب‌شده، دو نسخه، هش SHA-256 و تأیید صریح جایگزینی الزامی‌اند.',
+	'Expected extension versions are invalid.' => 'نسخه‌های مورد انتظار افزونه معتبر نیستند.',
+	'Replacing with the same or an older version requires separate explicit approval.' => 'جایگزینی با همان نسخه یا نسخه قدیمی‌تر نیازمند تأیید صریح و جداگانه است.',
+	'The exact installed plugin does not exist.' => 'افزونه نصب‌شده با شناسه دقیق مشخص‌شده پیدا نشد.',
+	'The exact installed theme does not exist.' => 'پوسته نصب‌شده با شناسه دقیق مشخص‌شده پیدا نشد.',
+	'The installed extension version changed; inspect it before replacing.' => 'نسخه افزونه یا پوسته نصب‌شده تغییر کرده است؛ پیش از جایگزینی دوباره بررسی کنید.',
+	'The replacement ZIP did not pass the required package identity and safety checks.' => 'فایل ZIP جایگزین بررسی‌های ضروری هویت و امنیت بسته را با موفقیت نگذراند.',
+	'The installed extension contains a symbolic link or an uninspectable filesystem tree; replace it manually after checking the deployment.' => 'افزونه یا پوسته نصب‌شده دارای پیوند نمادین یا ساختار فایل بررسی‌ناپذیر است؛ پس از بررسی محیط نصب، جایگزینی را به‌صورت دستی انجام دهید.',
+
+	'This plugin shares its installed directory with another registered plugin; replace the package manually after authorizing the full directory.' => 'این افزونه پوشه نصب مشترکی با یک افزونه ثبت‌شده دیگر دارد؛ تنها پس از دریافت مجوز برای کل پوشه، جایگزینی را به‌صورت دستی انجام دهید.',
+
 );

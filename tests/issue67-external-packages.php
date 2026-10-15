@@ -80,6 +80,8 @@ function wpnb67_reset() {
 	wpai_test_reset_state();
 	$GLOBALS['wpai_test']['capabilities']['install_plugins'] = true;
 	$GLOBALS['wpai_test']['capabilities']['install_themes']  = true;
+	$GLOBALS['wpai_test']['capabilities']['update_plugins'] = true;
+	$GLOBALS['wpai_test']['capabilities']['update_themes'] = true;
 	$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ] = array(
 		'code_extensions'   => 1,
 		'external_packages' => 1,
@@ -116,6 +118,9 @@ function wp_delete_file( $file ) {
 		unlink( $file );
 	}
 }
+function is_plugin_active( $plugin ) { return in_array( $plugin, (array) get_option( 'active_plugins', array() ), true ); }
+function is_multisite() { return false; }
+function is_plugin_active_for_network( $plugin ) { return false; }
 function wp_http_validate_url( $url ) {
 	$parts = parse_url( $url );
 	if ( ! is_array( $parts ) || ! in_array( $parts['scheme'] ?? '', array( 'http', 'https' ), true ) || empty( $parts['host'] ) || isset( $parts['user'] ) || isset( $parts['pass'] ) ) {
@@ -345,7 +350,39 @@ try {
 
 	wpnb67_reset();
 	wpnb67_error( $ability->mutate( array( 'kind' => 'plugin', 'action' => 'install', 'slug' => 'hello-dolly', 'package_url' => $package['package_url'] ) ), 'extension_install_source_required' );
-	wpnb67_error( $ability->mutate( array( 'kind' => 'plugin', 'action' => 'update', 'target' => 'fixture/fixture.php', 'package_url' => $package['package_url'] ) ), 'extension_install_source_not_applicable' );
+	wpnb67_error( $ability->mutate( array( 'kind' => 'plugin', 'action' => 'update', 'target' => 'fixture/fixture.php', 'package_url' => $package['package_url'] ) ), 'external_package_confirmation_required' );
+	// #168: the new package replacement API is separately confirmed and
+	// requires both install/update native capabilities plus both access groups.
+	wpnb67_reset();
+	$GLOBALS['wpai_test']['plugins']['fixture/fixture.php'] = array( 'Version' => '1.0.0' );
+	$replace = array(
+		'kind' => 'plugin',
+		'action' => 'update',
+		'target' => 'fixture/fixture.php',
+		'package_url' => $package['package_url'],
+		'expected_sha256' => str_repeat( 'a', 64 ),
+		'expected_installed_version' => '1.0.0',
+		'expected_package_version' => '1.1.0',
+		'confirm_replace' => true,
+	);
+	wpnb67_assert( isset( $definition['input_schema']['properties']['confirm_replace'], $definition['input_schema']['properties']['expected_sha256'] ), 'The typed replacement contract was not registered.' );
+	$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ]['external_packages'] = 0;
+	wpnb67_assert( ! $ability->can_mutate( $replace ), 'Package update bypassed External Packages consent.' );
+	$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ]['external_packages'] = 1;
+	$GLOBALS['wpai_test']['capabilities']['install_plugins'] = false;
+	wpnb67_assert( ! $ability->can_mutate( $replace ), 'Package update bypassed install_plugins capability.' );
+	$GLOBALS['wpai_test']['capabilities']['install_plugins'] = true;
+	$GLOBALS['wpai_test']['capabilities']['update_plugins'] = false;
+	wpnb67_assert( ! $ability->can_mutate( $replace ), 'Package update bypassed update_plugins capability.' );
+	$GLOBALS['wpai_test']['capabilities']['update_plugins'] = true;
+	wpnb67_assert( $ability->can_mutate( $replace ), 'Authorized replacement was denied by the group/capability check.' );
+	$no_network = $GLOBALS['wpnb67']['http_calls'];
+	wpnb67_error( $ability->mutate( array_replace( $replace, array( 'confirm_replace' => false ) ) ), 'external_package_confirmation_required' );
+	wpnb67_error( $ability->mutate( array_replace( $replace, array( 'expected_installed_version' => '0.9.0' ) ) ), 'external_package_target_stale' );
+	wpnb67_error( $ability->mutate( array_replace( $replace, array( 'expected_package_version' => '0.8.0' ) ) ), 'external_package_downgrade_denied' );
+	wpnb67_error( $ability->mutate( array_replace( $replace, array( 'target' => '../fixture.php' ) ) ), 'external_package_confirmation_required' );
+	wpnb67_error( $ability->mutate( array_replace( $replace, array( 'target' => 'missing/missing.php' ) ) ), 'external_package_target_missing' );
+	wpnb67_assert( $GLOBALS['wpnb67']['http_calls'] === $no_network, 'Denied exact-target replacement performed a package download.' );
 } finally {
 	restore_error_handler();
 	foreach ( $GLOBALS['wpnb67']['files'] ?? array() as $file ) {

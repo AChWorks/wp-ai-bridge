@@ -108,8 +108,11 @@ if [[ ! -f "$external_package_provider" ]]; then
     echo "ERROR: bounded external-package provider is missing." >&2
     exit 1
 fi
-package_url_schema_files="$(grep -R -lF "'package_url' => array(" src/Abilities --include='*.php' || true)"
-if [[ "$package_url_schema_files" != "$external_package_provider" || "$(grep -cF "'package_url' => array(" "$external_package_provider" || true)" != "1" ]]; then
+# Match the exact package_url key/operator/call rather than incidental
+# phpcs array alignment spaces; retain the one-file/one-key fail-closed rule.
+package_url_schema_pattern="'package_url'[[:space:]]*=>[[:space:]]*array\\("
+package_url_schema_files="$(grep -R -lE "$package_url_schema_pattern" src/Abilities --include='*.php' || true)"
+if [[ "$package_url_schema_files" != "$external_package_provider" || "$(grep -cE "$package_url_schema_pattern" "$external_package_provider" || true)" != "1" ]]; then
     printf '%s\n' "$package_url_schema_files"
     echo "ERROR: package_url must remain one exact extension-lifecycle schema field." >&2
     exit 1

@@ -89,5 +89,67 @@ run_eval issue61-f004-f005-persistence-smoke.php
 run_eval issue61-f006-same-request-dispatch-smoke.php
 
 run_eval issue67-external-packages-smoke.php
+run_eval issue168-exact-zip-replacement-smoke.php
+
+# Two distinct WP-CLI PHP processes share ONE disposable WordPress filesystem.
+# A is paused inside safe-HTTP streaming after its cached initial preflight.
+# B completes the newer Core overwrite under the shared Bridge lock. Only
+# then may A proceed to its fresh under-lock preimage check. A must fail stale.
+race_phase() {
+    local phase="$1"
+    "${compose[@]}" run --rm -e "WPAI168_RACE_PHASE=$phase" cli \
+        eval-file "wp-content/plugins/wp-ai-bridge/tests/integration/issue168-preimage-race.php" \
+        --user=1 --allow-root
+}
+race_phase setup
+race_log="$(mktemp "${TMPDIR:-/tmp}/wpai168-race-a-XXXXXX")"
+race_phase a > "$race_log" 2>&1 &
+race_a_pid=$!
+race_ready=0
+for attempt in $(seq 1 45); do
+    if "${compose[@]}" exec -T wordpress test -f /var/www/html/wp-content/wpai168-race-signals/a-ready; then
+        race_ready=1
+        break
+    fi
+    if ! kill -0 "$race_a_pid" 2>/dev/null; then
+        cat "$race_log"
+        wait "$race_a_pid" || true
+        echo "ERROR: A exited before the concurrency barrier." >&2
+        exit 1
+    fi
+    sleep 1
+done
+if [[ "$race_ready" != 1 ]]; then
+    cat "$race_log"
+    echo "ERROR: A did not reach the pre-lock concurrency barrier." >&2
+    exit 1
+fi
+race_phase b
+if ! wait "$race_a_pid"; then
+    cat "$race_log"
+    echo "ERROR: A failed the post-B stale-preimage denial." >&2
+    exit 1
+fi
+cat "$race_log"
+rm -f -- "$race_log"
+race_phase verify
+
 run_eval issue135-no-private-packages-smoke.php
+
+# Must run LAST: replaces the installed plugin directory, removing its test fixtures.
+run_eval issue168-self-replacement-smoke.php
+"${wp[@]}" eval '
+$fixture = get_option("wpai168_self_upgrade_fixture", array());
+$expected = (string) ($fixture["expected_version"] ?? "");
+if ($expected === "" || WP_AI_BRIDGE_VERSION !== $expected || !is_plugin_active("wp-ai-bridge/wp-ai-bridge.php")) {
+    throw new RuntimeException("Fresh PHP process did not load the updated and active Bridge.");
+}
+$bridge = wp_get_ability("wp-ai-bridge/bridge-info");
+$info = $bridge instanceof WP_Ability ? $bridge->execute(array()) : new WP_Error("missing");
+if (is_wp_error($info) || ($info["plugin_version"] ?? "") !== $expected) {
+    throw new RuntimeException("Installed Bridge did not report the replaced plugin version.");
+}
+delete_option("wpai168_self_upgrade_fixture");
+' --user=1 --allow-root
+echo "PASS: active Bridge self-replacement survived a fresh WordPress bootstrap."
 echo "Consolidated single-site regressions: PASS"
