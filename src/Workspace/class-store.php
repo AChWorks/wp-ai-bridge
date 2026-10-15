@@ -13,6 +13,7 @@ use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Workspace_Limits;
 use WP_AI_Bridge\Support\Create_Claim;
 use WP_AI_Bridge\Support\Admission_Lock;
+use WP_AI_Bridge\Support\Hook_Dispatch_Recovery;
 
 /**
  * Stores compact Workspace documents and tasks in private WordPress objects.
@@ -1272,6 +1273,15 @@ final class Store {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function delete_exact( $input, $authorize ) {
+		return Hook_Dispatch_Recovery::run(
+			function () use ( $input, $authorize ) {
+				return $this->delete_exact_inner( $input, $authorize );
+			}
+		);
+	}
+
+	/** @return array<string,mixed>|WP_Error Exact guarded delete implementation. */
+	private function delete_exact_inner( $input, $authorize ) {
 		if ( ! is_array( $input ) || 7 !== count( $input ) ||
 			! isset( $input['kind'], $input['id'], $input['blog_id'], $input['project_ref'], $input['expected_version'], $input['expected_state_hash'], $input['confirmation'] ) ||
 			! in_array( $input['kind'], array( 'document', 'task' ), true ) ||
@@ -1457,7 +1467,7 @@ final class Store {
 			// WordPress WP_Hook does not use finally to unwind callback
 			// execution. Preserve the exact outer filter stack so a controlled
 			// abort can rebuild only the escaped hook frames.
-			$native_hook_baseline = $GLOBALS['wp_current_filter'] ?? null;
+			$native_hook_baseline = Hook_Dispatch_Recovery::snapshot();
 			try {
 				try {
 					wp_delete_post( $id, true );
@@ -1468,11 +1478,7 @@ final class Store {
 					// previous outer-'all' admission check makes its replacement safe.
 					$owned_hook = $exception === $pre_hook_order_abort ? 'pre_delete_post' :
 						( $exception === $native_hook_gate_abort ? 'before_delete_post' : null );
-					if ( ! $this->restore_native_hook_dispatch( $native_hook_baseline, $owned_hook ) ) {
-						// Never continue the WordPress request with a dispatcher
-						// whose execution state cannot be reconstructed safely.
-						throw $exception;
-					}
+					Hook_Dispatch_Recovery::restore_or_terminate( $native_hook_baseline, $owned_hook );
 					if ( null === $owned_hook ) {
 						// A provider/Core exception remains the caller's failure,
 						// never a verified Bridge deletion outcome.
@@ -1564,92 +1570,6 @@ final class Store {
 		return is_array( $last ) && isset( $last['function'] ) && $last['function'] === $sentinel;
 	}
 
-	/**
-	 * Restore escaped named hook frames AND the special universal 'all'
-	 * dispatcher, which is active without an 'all' wp_current_filter frame.
-	 *
-	 * Admission refuses native deletion when 'all' was active in an OUTER
-	 * frame. Within this synchronous native call, we can therefore rebuild
-	 * a currently-active 'all' only if it was entered by this call. Use
-	 * public WP_Hook registration APIs, preserve each callback's exact ID,
-	 * priority, arguments and order, and swap ONLY after full preflight.
-	 *
-	 * @param array<int,string> $baseline Filter stack before wp_delete_post().
-	 * @param ?string           $owned_hook Optional exact owned-sentinel stage.
-	 * @return bool Whether every affected dispatcher and stack was restored.
-	 */
-	private function restore_native_hook_dispatch( $baseline, $owned_hook ) {
-		global $wp_filter, $wp_current_filter;
-		if ( ! is_array( $baseline ) || ! is_array( $wp_current_filter ) ||
-			count( $wp_current_filter ) < count( $baseline ) ||
-			array_slice( $wp_current_filter, 0, count( $baseline ) ) !== $baseline ) {
-			return false;
-		}
-		$escaped = array_slice( $wp_current_filter, count( $baseline ) );
-		if ( 16 < count( $escaped ) || ( null !== $owned_hook && array( $owned_hook ) !== $escaped ) ) {
-			return false;
-		}
-		$affected = array_values( array_unique( $escaped ) );
-		// WordPress's global stack records the TARGET name, not "all".
-		// Since native admission proved there was no outer 'all' frame,
-		// any remaining universal dispatcher can be safely rebuilt. Do so
-		// for ALL escaped native exceptions: current_priority() alone
-		// could miss an iteration whose callback list became empty.
-		if ( isset( $wp_filter['all'] ) ) {
-			if ( ! is_object( $wp_filter['all'] ) || get_class( $wp_filter['all'] ) !== \WP_Hook::class ) {
-				return false;
-			}
-			$affected[] = 'all';
-		}
-		$replacements = array();
-		try {
-			foreach ( array_unique( $affected ) as $hook ) {
-				if ( ! is_string( $hook ) || '' === $hook ||
-					in_array( $hook, $baseline, true ) ||
-					! isset( $wp_filter[ $hook ] ) ||
-					! is_object( $wp_filter[ $hook ] ) ||
-					get_class( $wp_filter[ $hook ] ) !== \WP_Hook::class ) {
-					return false;
-				}
-				$previous = $wp_filter[ $hook ];
-				$fresh    = new \WP_Hook();
-				foreach ( $previous->callbacks as $priority => $callbacks ) {
-					if ( ! is_int( $priority ) || ! is_array( $callbacks ) ) {
-						return false;
-					}
-					foreach ( $callbacks as $callback ) {
-						if ( ! is_array( $callback ) ||
-							! array_key_exists( 'function', $callback ) ||
-							! isset( $callback['accepted_args'] ) ||
-							! is_int( $callback['accepted_args'] ) ) {
-							return false;
-						}
-						$fresh->add_filter( $hook, $callback['function'], $priority, $callback['accepted_args'] );
-					}
-				}
-				if ( $fresh->callbacks !== $previous->callbacks ) {
-					return false;
-				}
-				$replacements[ $hook ] = array(
-					'previous' => $previous,
-					'fresh'    => $fresh,
-				);
-			}
-		} catch ( \Throwable $exception ) {
-			return false;
-		}
-		// No swaps until all affected registries match their original form.
-		foreach ( $replacements as $hook => $pair ) {
-			if ( ! isset( $wp_filter[ $hook ] ) || $wp_filter[ $hook ] !== $pair['previous'] ) {
-				return false;
-			}
-		}
-		foreach ( $replacements as $hook => $pair ) {
-			$wp_filter[ $hook ] = $pair['fresh'];
-		}
-		$wp_current_filter = $baseline;
-		return true;
-	}
 
 	/**
 	 * Observational state proof; does not require a still-active destructive
@@ -1675,8 +1595,9 @@ final class Store {
 	 * delete_pending fence and require administrator reconciliation.
 	 */
 	private function restore_pre_native_delete( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock ) {
-		$switched   = false;
-		$reacquired = false;
+		$hook_baseline = Hook_Dispatch_Recovery::snapshot();
+		$switched      = false;
+		$reacquired    = false;
 		try {
 			if ( (int) get_current_blog_id() !== $input['blog_id'] ) {
 				if ( ! is_multisite() || ! switch_to_blog( $input['blog_id'] ) ) {
@@ -1707,6 +1628,9 @@ final class Store {
 				(int) get_current_blog_id() === $input['blog_id'] &&
 				Admission_Lock::current_posts_table() === $posts_table && $owned->is_owned();
 		} catch ( \Throwable $exception ) {
+			// This helper deliberately converts an uncertain compensation to
+			// false. Restore hook state BEFORE that normal continuation.
+			Hook_Dispatch_Recovery::restore_or_terminate( $hook_baseline );
 			return false;
 		} finally {
 			if ( $reacquired ) {

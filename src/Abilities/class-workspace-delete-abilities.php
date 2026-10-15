@@ -11,6 +11,7 @@ use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Hook_Dispatch_Recovery;
 use WP_AI_Bridge\Workspace\Store;
 use WP_Error;
 
@@ -121,6 +122,15 @@ final class Workspace_Delete_Abilities {
 	 * @return bool
 	 */
 	public function can_delete( $input ) {
+		return Hook_Dispatch_Recovery::run(
+			function () use ( $input ) {
+				return $this->can_delete_inner( $input );
+			}
+		);
+	}
+
+	/** @return bool Current exact native destructive authority. */
+	private function can_delete_inner( $input ) {
 		if ( ! is_array( $input ) || ! isset( $input['id'], $input['blog_id'], $input['kind'] ) ||
 			! is_int( $input['id'] ) || $input['id'] < 1 ||
 			! is_int( $input['blog_id'] ) || (int) get_current_blog_id() !== $input['blog_id'] ||
@@ -143,6 +153,15 @@ final class Workspace_Delete_Abilities {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function execute( $input ) {
+		return Hook_Dispatch_Recovery::run(
+			function () use ( $input ) {
+				return $this->execute_inner( $input );
+			}
+		);
+	}
+
+	/** @return array<string,mixed>|WP_Error One guarded exact-delete attempt. */
+	private function execute_inner( $input ) {
 		if ( ! $this->can_delete( $input ) ) {
 			return new WP_Error( 'workspace_delete_denied', __( 'Deletion requires authenticated MCP site-administrator authority and enabled destructive grants.', 'wp-ai-bridge' ) );
 		}
@@ -158,15 +177,20 @@ final class Workspace_Delete_Abilities {
 		// An Activity failure cannot undo a permanent WordPress deletion.
 		// Never replace a verified delete receipt with a logging exception.
 		try {
-			$this->log->record(
-				'wp-ai-bridge/workspace-delete',
-				$kind,
-				(int) $input['id'],
-				! is_wp_error( $result ),
-				is_wp_error( $result ) ? (string) $result->get_error_code() : ''
+			Hook_Dispatch_Recovery::run(
+				function () use ( $kind, $input, $result ) {
+					$this->log->record(
+						'wp-ai-bridge/workspace-delete',
+						$kind,
+						(int) $input['id'],
+						! is_wp_error( $result ),
+						is_wp_error( $result ) ? (string) $result->get_error_code() : ''
+					);
+				}
 			);
 		} catch ( \Throwable $exception ) {
-			// Metadata diagnostics are best-effort, not a deletion commit gate.
+			// The nested dispatcher boundary MUST recover first. Logging is
+			// best-effort; a verified deletion receipt must never be lost.
 		}
 		return $result;
 	}
