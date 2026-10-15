@@ -23,7 +23,6 @@ $admin                                   = get_current_user_id();
 $settings                                = new Settings();
 $previous                                = get_option( Settings::OPTION_NAME, false );
 $grants                                  = $settings->defaults();
-$grants[ Settings::GROUP_BUDER_WRITE ]   = 1;
 $grants[ Settings::GROUP_BUILDER_WRITE ] = 1;
 update_option( Settings::OPTION_NAME, $grants, false );
 $lease_table = $wpdb->prefix . 'wpai_private_lease';
