@@ -70,14 +70,20 @@ $assert_clean_hook_dispatch = static function ( $baseline, $stage ) use ( $asser
 		'current_priority' => array(),
 		'doing_action'    => false,
 	);
+	// WordPress legitimately unregisters a hook when its final callback is
+	// removed. Only the just-executed stage must still exist; an absent
+	// unrelated hook is clean and may be registered normally below.
+	$assert( isset( $wp_filter[ $stage ] ),
+		$stage . ': targeted native hook was unexpectedly unregistered.' );
 	foreach ( array( 'pre_delete_post', 'before_delete_post' ) as $hook ) {
-		$assert( isset( $wp_filter[ $hook ] ) &&
-			get_class( $wp_filter[ $hook ] ) === WP_Hook::class,
-			$stage . ': native hook dispatcher was replaced by an unknown object.' );
-		foreach ( $fields as $field => $expected ) {
-			$actual = $reflected->getProperty( $field )->getValue( $wp_filter[ $hook ] );
-			$assert( $actual === $expected,
-				$stage . ': leaked WP_Hook internal state: ' . $hook . ':' . $field );
+		if ( isset( $wp_filter[ $hook ] ) ) {
+			$assert( get_class( $wp_filter[ $hook ] ) === WP_Hook::class,
+				$stage . ': native hook dispatcher was replaced by an unknown object.' );
+			foreach ( $fields as $field => $expected ) {
+				$actual = $reflected->getProperty( $field )->getValue( $wp_filter[ $hook ] );
+				$assert( $actual === $expected,
+					$stage . ': leaked WP_Hook internal state: ' . $hook . ':' . $field );
+			}
 		}
 		$probe = static function ( $first ) { return $first; };
 		add_filter( $hook, $probe, 25, 1 );
