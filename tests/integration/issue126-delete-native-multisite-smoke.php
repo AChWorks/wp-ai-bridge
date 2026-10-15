@@ -59,6 +59,15 @@ try {
 		'content' => 'Original blog private record, not a generic post.',
 	) );
 	$assert( ! is_wp_error( $doc ), 'Could not create original blog private record.' );
+	// Seed both fixtures before an intentionally unresolved delete_pending
+	// state can block unrelated Workspace create admission.
+	$dynamic_doc = $store->create_document( array(
+		'project_ref' => $project,
+		'key'         => 'dynamic-before-guard',
+		'title'       => 'Disposable before-delete hook-order fixture',
+		'content'     => 'Must never be cleaned by Core while a hook guard is nonterminal.',
+	) );
+	$assert( ! is_wp_error( $dynamic_doc ), 'Cannot create second exact multisite fixture.' );
 	$id = (int) $doc['id'];
 	$input = array(
 		'kind' => 'document',
@@ -234,13 +243,6 @@ try {
 	// A second exact fixture proves the analogous PHP_INT_MAX tail risk in
 	// before_delete_post, without trying to re-delete the first uncertain
 	// record. Native entry is observable but Core cleanup must NOT proceed.
-	$dynamic_doc = $store->create_document( array(
-		'project_ref' => $project,
-		'key'         => 'dynamic-before-guard',
-		'title'       => 'Disposable before-delete hook-order fixture',
-		'content'     => 'Must never be cleaned by Core while a hook guard is nonterminal.',
-	) );
-	$assert( ! is_wp_error( $dynamic_doc ), 'Cannot create second exact multisite fixture.' );
 	$dynamic_id = (int) $dynamic_doc['id'];
 	$dynamic_input = array(
 		'kind'                => 'document',
