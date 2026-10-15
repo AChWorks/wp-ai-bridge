@@ -423,6 +423,11 @@ final class Store {
 				if ( null === $state || $kind !== $state['kind'] ) {
 					return new WP_Error( 'workspace_incomplete', __( 'One or more Workspace records could not be decoded; results cannot be claimed complete.', 'wp-ai-bridge' ), array( 'id' => (int) $id ) );
 				}
+				// A fenced but incomplete delete is not a live object and must
+				// never appear in a supposedly complete Workspace projection.
+				if ( ! empty( $state['delete_pending'] ) ) {
+					return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Workspace record is pending permanent deletion.', 'wp-ai-bridge' ), array( 'id' => (int) $id ) );
+				}
 				return call_user_func( $consumer, $this->decorate_state( (int) $id, $state, $json ) );
 			}
 		);
@@ -1270,7 +1275,7 @@ final class Store {
 			! isset( $input['kind'], $input['id'], $input['blog_id'], $input['project_ref'], $input['expected_version'], $input['expected_state_hash'], $input['confirmation'] ) ||
 			! in_array( $input['kind'], array( 'document', 'task' ), true ) ||
 			! is_int( $input['id'] ) || $input['id'] < 1 ||
-			! is_int( $input['blog_id'] ) || $input['blog_id'] !== (int) get_current_blog_id() ||
+			! is_int( $input['blog_id'] ) || (int) get_current_blog_id() !== $input['blog_id'] ||
 			! is_string( $input['project_ref'] ) || '' === $input['project_ref'] || ! $this->valid_project_filter( $input['project_ref'] ) ||
 			! is_int( $input['expected_version'] ) || $input['expected_version'] < 1 ||
 			! is_string( $input['expected_state_hash'] ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $input['expected_state_hash'] ) ||

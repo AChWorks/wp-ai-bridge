@@ -123,7 +123,7 @@ final class Workspace_Delete_Abilities {
 	public function can_delete( $input ) {
 		if ( ! is_array( $input ) || ! isset( $input['id'], $input['blog_id'], $input['kind'] ) ||
 			! is_int( $input['id'] ) || $input['id'] < 1 ||
-			! is_int( $input['blog_id'] ) || $input['blog_id'] !== (int) get_current_blog_id() ||
+			! is_int( $input['blog_id'] ) || (int) get_current_blog_id() !== $input['blog_id'] ||
 			! in_array( $input['kind'], array( 'document', 'task' ), true ) ||
 			0 === get_current_user_id() || '' === OAuth_Server::authenticated_mcp_client_id() ) {
 			return false;
@@ -148,13 +148,19 @@ final class Workspace_Delete_Abilities {
 		}
 		$result = $this->store->delete_exact( $input );
 		$kind   = 'document' === $input['kind'] ? 'workspace_document' : 'workspace_task';
-		$this->log->record(
-			'wp-ai-bridge/workspace-delete',
-			$kind,
-			(int) $input['id'],
-			! is_wp_error( $result ),
-			is_wp_error( $result ) ? (string) $result->get_error_code() : ''
-		);
+		// An Activity failure cannot undo a permanent WordPress deletion.
+		// Never replace a verified delete receipt with a logging exception.
+		try {
+			$this->log->record(
+				'wp-ai-bridge/workspace-delete',
+				$kind,
+				(int) $input['id'],
+				! is_wp_error( $result ),
+				is_wp_error( $result ) ? (string) $result->get_error_code() : ''
+			);
+		} catch ( \Throwable $exception ) {
+			// Metadata diagnostics are best-effort, not a deletion commit gate.
+		}
 		return $result;
 	}
 }

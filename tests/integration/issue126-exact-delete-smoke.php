@@ -134,8 +134,18 @@ try {
 	) );
 	$assert( is_wp_error( $still_reserved ), 'Durable canonical key claim was incorrectly recycled after deletion.' );
 
-	$ok = $abilities( $task_input );
-	$assert( ! is_wp_error( $ok ) && true === $ok['deleted'] && $task['id'] === $ok['id'], 'Exact task deletion did not return a verified receipt.' );
+	// A plugin filter may fail while writing Activity AFTER irreversible
+	// deletion. It must not mask a verified success and invite a blind retry.
+	$break_activity = static function () {
+		throw new RuntimeException( 'Synthetic disposable Activity storage failure.' );
+	};
+	add_filter( 'pre_update_option_wp_ai_bridge_recent_actions', $break_activity, 10, 2 );
+	try {
+		$ok = $abilities( $task_input );
+	} finally {
+		remove_filter( 'pre_update_option_wp_ai_bridge_recent_actions', $break_activity, 10 );
+	}
+	$assert( ! is_wp_error( $ok ) && true === $ok['deleted'] && $task['id'] === $ok['id'], 'Exact task deletion did not return a verified receipt when Activity storage failed.' );
 	$assert( ! get_post( $task['id'] ) && ! get_post_meta( $task['id'], Store::META_STATE, false ), 'Deleted task or private metadata remains visible.' );
 	$assert( $old_docs === $record_ids( Store::DOCUMENT_POST_TYPE ) &&
 		$old_tasks === $record_ids( Store::TASK_POST_TYPE ), 'Original documents/tasks changed or a test fixture remains.' );

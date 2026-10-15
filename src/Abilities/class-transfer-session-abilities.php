@@ -372,7 +372,13 @@ final class Transfer_Session_Abilities {
 	 * @return mixed Unaltered provider result.
 	 */
 	private function diagnose( $action, $result, $phase = 'provider' ) {
-		$this->log->record_transfer( $action, $result, $phase );
+		// Diagnostics are best-effort: a logging fault after a successful
+		// begin must NEVER turn an already-created lease into an apparent failure.
+		try {
+			$this->log->record_transfer( $action, $result, $phase );
+		} catch ( \Throwable $exception ) {
+			// No raw logger exception may escape or replace the provider result.
+		}
 		return $result;
 	}
 
