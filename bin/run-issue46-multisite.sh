@@ -48,6 +48,7 @@ tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue135-no-private-packages-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue130-141-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-128-multisite-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-delete-native-multisite-smoke.php --user=1 --allow-root
 # Execute the actual secondary-blog 199->200 race in ONE specialized CI
 # lane. This runner does not receive MCP_ADAPTER_EXPECTED_VERSION; the old
 # condition silently skipped the entire fixture even though CI was green.

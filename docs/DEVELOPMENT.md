@@ -191,10 +191,10 @@ bin/             development/build/test helpers
 docs/maintainer/ recovery map and preserved design references
 ```
 
-### Historical v0.4.2-to-candidate published-package upgrade regression
+### Historical v0.6.2-to-candidate published-package upgrade regression
 
-This fixture was introduced for the first candidate after the immutable v0.4.2
-release. It still checks that an older published installation retains state
+This fixture currently uses the immutable published v0.6.2 release as its pinned
+baseline. It checks that an older published installation retains state
 across an upgrade to a current candidate, but it **does not prove the separate
 latest-published-predecessor upgrade path** required when preparing a future
 release. Run it whenever the affected upgrade/runtime surface justifies it:
@@ -204,7 +204,7 @@ bash bin/run-published-upgrade.sh 6.9-php8.4-apache
 bash bin/run-published-upgrade.sh php8.4-apache
 ```
 
-The runner verifies the published v0.4.2 asset's pinned SHA-256, installs and
+The runner verifies the published v0.6.2 asset's pinned SHA-256, installs and
 activates that artifact with the official MCP Adapter, creates disposable
 Workspace/settings and signed-client OAuth/PKCE + refresh-token state, then
 replaces the installed plugin through WordPress Core with the current candidate
@@ -215,7 +215,9 @@ the signing key remain in a private Docker volume and are not printed.
 
 The CI specialized matrix owns both upgrade lanes. Future release preparation
 must deliberately revisit the pinned *previous published version* and checksum
-instead of silently treating v0.4.2 as the permanent upgrade baseline.
+instead of silently treating v0.6.2 as the permanent upgrade baseline. In
+particular, the next release must test the latest published v0.6.3 ZIP against
+its exact new-version candidate; the current v0.6.2 test does not prove that.
 
 ## Release process
 

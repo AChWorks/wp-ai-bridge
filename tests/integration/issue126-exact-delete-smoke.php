@@ -133,6 +133,99 @@ try {
 	$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
 	update_option( Settings::OPTION_NAME, $access, false );
 
+	// A grant can be revoked by an updated_post_meta hook AFTER the guarded
+	// delete_pending CAS has already committed. Core must never be entered,
+	// and exact CAS compensation must restore the original readable state.
+	$native_starts = 0;
+	$observe_native = static function ( $candidate_id ) use ( $doc, &$native_starts ) {
+		if ( (int) $candidate_id === (int) $doc['id'] ) {
+			++$native_starts;
+		}
+	};
+	add_action( 'before_delete_post', $observe_native, 10, 1 );
+	$post_cas_revoked = false;
+	$revoke_after_cas = static function ( $meta_id, $object_id, $meta_key, $meta_value ) use ( &$post_cas_revoked, &$access, $doc ) {
+		if ( ! $post_cas_revoked && (int) $object_id === (int) $doc['id'] &&
+			Store::META_STATE === $meta_key && is_string( $meta_value ) ) {
+			$decoded = json_decode( $meta_value, true );
+			if ( is_array( $decoded ) && ! empty( $decoded['delete_pending'] ) ) {
+				$post_cas_revoked = true;
+				$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 0;
+				update_option( Settings::OPTION_NAME, $access, false );
+			}
+		}
+	};
+	add_action( 'updated_post_meta', $revoke_after_cas, 10, 4 );
+	try {
+		$aborted = $abilities( $doc_input );
+	} finally {
+		remove_action( 'updated_post_meta', $revoke_after_cas, 10 );
+	}
+	$restored = $store->get_document( $doc['id'] );
+	$assert( $post_cas_revoked && is_wp_error( $aborted ) &&
+		'workspace_delete_aborted' === $aborted->get_error_code() && 0 === $native_starts,
+		'A post-CAS/pre-native grant revocation was not safely aborted and recovered.' );
+	$assert( ! is_wp_error( $restored ) && $doc['version'] === $restored['version'] &&
+		$doc['state_hash'] === $restored['state_hash'],
+		'Post-CAS denial left a durable unreadable fence.' );
+	$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
+	update_option( Settings::OPTION_NAME, $access, false );
+
+	// An earlier Core filter can revoke authorization while returning null.
+	// The late exact-record enforcement gate must short-circuit WordPress.
+	$pre_delete_revoked = false;
+	$revoke_pre_delete = static function ( $check, $post, $force ) use ( &$pre_delete_revoked, &$access, $doc ) {
+		if ( (int) $post->ID === (int) $doc['id'] && true === $force ) {
+			$pre_delete_revoked = true;
+			$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 0;
+			update_option( Settings::OPTION_NAME, $access, false );
+		}
+		return $check;
+	};
+	add_filter( 'pre_delete_post', $revoke_pre_delete, 10, 3 );
+	try {
+		$aborted = $abilities( $doc_input );
+	} finally {
+		remove_filter( 'pre_delete_post', $revoke_pre_delete, 10 );
+	}
+	$restored = $store->get_document( $doc['id'] );
+	$assert( $pre_delete_revoked && is_wp_error( $aborted ) &&
+		'workspace_delete_aborted' === $aborted->get_error_code() && 0 === $native_starts,
+		'An earlier pre_delete_post grant revocation entered Core cleanup.' );
+	$assert( ! is_wp_error( $restored ) && $doc['version'] === $restored['version'] &&
+		$doc['state_hash'] === $restored['state_hash'],
+		'A pre_delete_post grant change was not safely compensated.' );
+	$access[ Settings::GROUP_USERS_DESTRUCTIVE ] = 1;
+	update_option( Settings::OPTION_NAME, $access, false );
+
+	// The named lock is connection-scoped. A disposable callback simulates
+	// its loss before Core cleanup; the Bridge must not proceed unadmitted.
+	global $wpdb;
+	$identity = strlen( DB_NAME ) . ':' . DB_NAME .
+		strlen( $wpdb->posts ) . ':' . $wpdb->posts . 'documents';
+	$lock_name = 'wpai_admit_' . substr( hash( 'sha256', $identity ), 0, 40 );
+	$lost_lock = false;
+	$release_before_native = static function ( $check, $post, $force ) use ( &$lost_lock, $doc, $wpdb, $lock_name ) {
+		if ( (int) $post->ID === (int) $doc['id'] && true === $force ) {
+			$lost_lock = '1' === (string) $wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock_name ) );
+		}
+		return $check;
+	};
+	add_filter( 'pre_delete_post', $release_before_native, 10, 3 );
+	try {
+		$aborted = $abilities( $doc_input );
+	} finally {
+		remove_filter( 'pre_delete_post', $release_before_native, 10 );
+		remove_action( 'before_delete_post', $observe_native, 10 );
+	}
+	$restored = $store->get_document( $doc['id'] );
+	$assert( $lost_lock && is_wp_error( $aborted ) &&
+		'workspace_delete_aborted' === $aborted->get_error_code() && 0 === $native_starts,
+		'The pre-native admission-lock loss entered WordPress cleanup.' );
+	$assert( ! is_wp_error( $restored ) && $doc['version'] === $restored['version'] &&
+		$doc['state_hash'] === $restored['state_hash'],
+		'Admission-lock loss left an intact record permanently fenced.' );
+
 	$updated = $store->update_document(
 		$doc['id'],
 		array(
