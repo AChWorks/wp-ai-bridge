@@ -29,8 +29,8 @@ final class Workspace_Delete_Abilities {
 
 	/**
 	 * @param Permissions $permissions Bridge delegation.
-	 * @param Store $store Existing private Workspace store.
-	 * @param Mutation_Log $log Existing metadata-only Activity log.
+	 * @param Store        $store       Existing private Workspace store.
+	 * @param Mutation_Log $log         Existing metadata-only Activity log.
 	 */
 	public function __construct( Permissions $permissions, Store $store, Mutation_Log $log ) {
 		$this->permissions = $permissions;
@@ -50,13 +50,36 @@ final class Workspace_Delete_Abilities {
 				'input_schema'        => array(
 					'type'                 => 'object',
 					'properties'           => array(
-						'kind'                => array( 'type' => 'string', 'enum' => array( 'document', 'task' ) ),
-						'id'                  => array( 'type' => 'integer', 'minimum' => 1 ),
-						'blog_id'             => array( 'type' => 'integer', 'minimum' => 1 ),
-						'project_ref'         => array( 'type' => 'string', 'minLength' => 1, 'maxLength' => 128, 'pattern' => '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$' ),
-						'expected_version'    => array( 'type' => 'integer', 'minimum' => 1 ),
-						'expected_state_hash' => array( 'type' => 'string', 'pattern' => '^[a-f0-9]{64}$' ),
-						'confirmation'        => array( 'type' => 'string', 'maxLength' => 96 ),
+						'kind'                => array(
+							'type' => 'string',
+							'enum' => array( 'document', 'task' ),
+						),
+						'id'                  => array(
+							'type'    => 'integer',
+							'minimum' => 1,
+						),
+						'blog_id'             => array(
+							'type'    => 'integer',
+							'minimum' => 1,
+						),
+						'project_ref'         => array(
+							'type'      => 'string',
+							'minLength' => 1,
+							'maxLength' => 128,
+							'pattern'   => '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$',
+						),
+						'expected_version'    => array(
+							'type'    => 'integer',
+							'minimum' => 1,
+						),
+						'expected_state_hash' => array(
+							'type'    => 'string',
+							'pattern' => '^[a-f0-9]{64}$',
+						),
+						'confirmation'        => array(
+							'type'      => 'string',
+							'maxLength' => 96,
+						),
 					),
 					'required'             => array( 'kind', 'id', 'blog_id', 'project_ref', 'expected_version', 'expected_state_hash', 'confirmation' ),
 					'additionalProperties' => false,
@@ -87,7 +110,6 @@ final class Workspace_Delete_Abilities {
 				),
 			)
 		);
-
 		return array_values( array_filter( $registered, 'is_object' ) );
 	}
 
@@ -103,7 +125,7 @@ final class Workspace_Delete_Abilities {
 			! is_int( $input['id'] ) || $input['id'] < 1 ||
 			! is_int( $input['blog_id'] ) || $input['blog_id'] !== (int) get_current_blog_id() ||
 			! in_array( $input['kind'], array( 'document', 'task' ), true ) ||
-			get_current_user_id() < 1 || '' === OAuth_Server::authenticated_mcp_client_id() ) {
+			0 === get_current_user_id() || '' === OAuth_Server::authenticated_mcp_client_id() ) {
 			return false;
 		}
 		return current_user_can( 'delete_post', $input['id'] ) &&

@@ -1275,15 +1275,15 @@ final class Store {
 			! is_int( $input['expected_version'] ) || $input['expected_version'] < 1 ||
 			! is_string( $input['expected_state_hash'] ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $input['expected_state_hash'] ) ||
 			! is_string( $input['confirmation'] ) ||
-			sprintf( 'PERMANENTLY DELETE %s %d', strtoupper( $input['kind'] ), $input['id'] ) !== $input['confirmation'] ) {
+			0 !== strcmp( sprintf( 'PERMANENTLY DELETE %s %d', strtoupper( $input['kind'] ), $input['id'] ), $input['confirmation'] ) ) {
 			return new WP_Error( 'workspace_delete_invalid', __( 'Exact site, bound record identity, version/hash and explicit record-specific confirmation are required.', 'wp-ai-bridge' ) );
 		}
 
-		$kind     = $input['kind'];
-		$id       = $input['id'];
-		$type     = 'document' === $kind ? self::DOCUMENT_POST_TYPE : self::TASK_POST_TYPE;
-		$scope    = 'document' === $kind ? 'documents' : 'tasks';
-		$lock     = Admission_Lock::acquire( $scope );
+		$kind  = $input['kind'];
+		$id    = $input['id'];
+		$type  = 'document' === $kind ? self::DOCUMENT_POST_TYPE : self::TASK_POST_TYPE;
+		$scope = 'document' === $kind ? 'documents' : 'tasks';
+		$lock  = Admission_Lock::acquire( $scope );
 		if ( ! $lock ) {
 			return new WP_Error( 'workspace_delete_busy', __( 'Exclusive Workspace deletion admission is unavailable; no deletion was attempted.', 'wp-ai-bridge' ) );
 		}
@@ -1321,7 +1321,7 @@ final class Store {
 			$state['delete_pending'] = true;
 			$state['version']        = $state['version'] + 1;
 			$state['modified_gmt']   = gmdate( 'c' );
-			$fenced_json            = $this->encode_state( $state );
+			$fenced_json             = $this->encode_state( $state );
 			if ( ! is_string( $fenced_json ) ||
 				false === update_post_meta( $id, self::META_STATE, wp_slash( $fenced_json ), $original_json ) ) {
 				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Deletion admission was not verified. Check the exact record before retrying.', 'wp-ai-bridge' ) );

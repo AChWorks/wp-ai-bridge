@@ -10,6 +10,7 @@
 use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Transfer_Settings;
 
 $checks = 0;
 $assert = static function ( $test, $why ) use ( &$checks ) {
@@ -35,15 +36,15 @@ try {
 	$bad = $transfer->execute( array(
 		'action'      => 'begin',
 		'purpose'     => 'media',
-		'total_bytes' => -1,
+		'total_bytes' => ( new Transfer_Settings() )->bytes()['file'] + 1,
 		'sha256'      => hash( 'sha256', '' ),
 	) );
-	$assert( is_wp_error( $bad ) && 'transfer_invalid' === $bad->get_error_code(), 'Authenticated invalid begin did not fail without creating a fixture.' );
+	$assert( is_wp_error( $bad ) && 'transfer_size_setting' === $bad->get_error_code(), 'An above-budget begin was not rejected without allocating a fixture.' );
 	$diagnostic = $read->execute( array( 'limit' => 2 ) );
 	$assert( ! is_wp_error( $diagnostic ) && count( $diagnostic['events'] ) > 0 &&
 		'begin' === $diagnostic['events'][0]['operation'] &&
 		'validation' === $diagnostic['events'][0]['phase'] &&
-		'transfer_invalid' === $diagnostic['events'][0]['error_code'], 'The actual WordPress callback did not record sanitized begin failure.' );
+		'transfer_size_setting' === $diagnostic['events'][0]['error_code'], 'The actual WordPress callback did not record sanitized begin failure.' );
 	$assert( ! isset( $diagnostic['events'][0]['user_id'] ) &&
 		! isset( $diagnostic['events'][0]['target_id'] ) &&
 		16 === strlen( $diagnostic['events'][0]['event_ref'] ), 'Read-only Ability exposed identity or omitted correlation ref.' );
