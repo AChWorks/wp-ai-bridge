@@ -65,7 +65,7 @@ if ( 'setup' === $mode ) {
 $state = is_file( $statefile ) ? json_decode( (string) file_get_contents( $statefile ), true ) : null;
 wpai134_review_require( is_array( $state ) && ! empty( $state['id'] ), 'Media crash state was unavailable.' );
 $id   = $state['id'];
-$root = realpath( get_temp_dir() ) . '/wpai-transfer-' .
+$root = \WP_AI_Bridge\Support\Safe_Temporary_Staging::directory() . '/wpai-transfer-' .
 	substr( hash( 'sha256', serialize( array( DB_NAME, ABSPATH, get_current_blog_id(), wp_salt( 'auth' ) ) ) ), 0, 40 );
 
 if ( 'cleanup' === $mode ) {
