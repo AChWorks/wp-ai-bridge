@@ -43,6 +43,9 @@ wp=("${compose[@]}" run --rm cli)
   --skip-email --allow-root
 # Test-only hostile temporary path: ordinary production installs need no config.
 "${wp[@]}" config set WP_TEMP_DIR /var/www/html/wp-content --allow-root
+if [[ "${WPAI_ISSUE134_GATE_A:-0}" == "1" ]]; then
+  "${wp[@]}" config set SAVEQUERIES true --raw --allow-root
+fi
 "${compose[@]}" cp "$root/build/wp-ai-bridge.zip" wordpress:/var/www/html/wp-ai-bridge.zip
 "${wp[@]}" plugin install "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip}" --activate --allow-root
 "${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
@@ -51,3 +54,6 @@ tar --mode='u+rwX,go+rX' -C "$root" -cf - tests |
   "${compose[@]}" exec -T wordpress tar -xf - -C /var/www/html/wp-content/plugins/wp-ai-bridge
 echo "Candidate $(git -c safe.directory="$root" -C "$root" rev-parse HEAD) WordPress $("${wp[@]}" core version --allow-root | tail -1) Adapter $("${wp[@]}" plugin get mcp-adapter --field=version --allow-root | tail -1)"
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue134-portable-db-staging-smoke.php --user=1 --allow-root
+if [[ "${WPAI_ISSUE134_GATE_A:-0}" == "1" ]]; then
+  "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue134-gateA-feasibility.php --user=1 --allow-root
+fi
