@@ -49,6 +49,12 @@ tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue130-141-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-128-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-delete-native-multisite-smoke.php --user=1 --allow-root
+# Run each deliberately throwing special 'all' hook in a separate PHP
+# process. WordPress's third-party-exception state is intentionally left
+# poisoned; the Bridge must propagate instead of disguising it as WP_Error.
+for stage in pre_delete_post before_delete_post; do
+    "${compose[@]}" run --rm -e "WPAI_ALL_HOOK_STAGE=${stage}" cli eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-all-hook-exception-smoke.php --user=1 --allow-root
+done
 # Execute the actual secondary-blog 199->200 race in ONE specialized CI
 # lane. This runner does not receive MCP_ADAPTER_EXPECTED_VERSION; the old
 # condition silently skipped the entire fixture even though CI was green.

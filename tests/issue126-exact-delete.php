@@ -104,9 +104,17 @@ $live_permission = static function () use ( &$grant_still_valid ) {
 $assert( true === $authorization_check->invoke( new Store(), $live_permission, $input ), 'Fresh initial delete authorization check failed.' );
 $grant_still_valid = false;
 $assert( false === $authorization_check->invoke( new Store(), $live_permission, $input ), 'A revoked delete authorization remained cached.' );
-$throwing_permission = static function () {
-	throw new RuntimeException( 'Simulated revoked/failed permission hook.' );
+$unexpected_permission_exception = new RuntimeException( 'Simulated failed permission hook.' );
+$throwing_permission = static function () use ( $unexpected_permission_exception ) {
+	throw $unexpected_permission_exception;
 };
-$assert( false === $authorization_check->invoke( new Store(), $throwing_permission, $input ), 'A throwing permission callback did not fail closed.' );
+$caught_permission_exception = null;
+try {
+	$authorization_check->invoke( new Store(), $throwing_permission, $input );
+} catch ( Throwable $exception ) {
+	$caught_permission_exception = $exception;
+}
+$assert( $caught_permission_exception === $unexpected_permission_exception,
+	'A third-party permission exception was swallowed instead of failing closed without continuing WordPress.' );
 
 echo "PASS: #126 {$checks} exact-delete authorization, confirmation and no-DB-denial assertions.\n";

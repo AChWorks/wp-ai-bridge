@@ -1360,12 +1360,13 @@ final class Store {
 			}
 			// Enforce the pre_delete_post boundary and terminal callback
 			// ordering: other hooks may change blog, grant, or DB session.
-			$native_vetoed         = false;
-			$bridge_vetoed         = false;
-			$native_delete_started = false;
-			$pre_hook_order_abort  = new \RuntimeException( 'Workspace pre-delete hook guard is no longer terminal.' );
-			$guard_pre_delete      = null;
-			$guard_pre_delete      = function (
+			$native_vetoed          = false;
+			$bridge_vetoed          = false;
+			$native_delete_started  = false;
+			$pre_hook_order_abort   = new \RuntimeException( 'Workspace pre-delete hook guard is no longer terminal.' );
+			$native_hook_gate_abort = new \RuntimeException( 'Workspace native deletion gate rejected changed context or hook order.' );
+			$guard_pre_delete       = null;
+			$guard_pre_delete       = function (
 				$check,
 				$candidate,
 				$force
@@ -1406,7 +1407,7 @@ final class Store {
 				}
 				return $check;
 			};
-			$observe_delete_start  = static function ( $candidate_id ) use ( $id, &$native_delete_started ) {
+			$observe_delete_start   = static function ( $candidate_id ) use ( $id, &$native_delete_started ) {
 				if ( (int) $candidate_id === $id ) {
 					$native_delete_started = true;
 				}
@@ -1426,6 +1427,7 @@ final class Store {
 				$posts_table,
 				$lock,
 				$authorize,
+				$native_hook_gate_abort,
 				&$guard_native_start
 			) {
 				if ( (int) $candidate_id === $id ) {
@@ -1435,7 +1437,7 @@ final class Store {
 					// invariant check, even if dynamically registered while
 					// before_delete_post is already executing.
 					if ( ! $allowed || ! $this->is_terminal_delete_guard( 'before_delete_post', $guard_native_start ) ) {
-						throw new \RuntimeException( 'Workspace native deletion gate rejected changed context or hook order.' );
+						throw $native_hook_gate_abort;
 					}
 				}
 			};
@@ -1450,7 +1452,15 @@ final class Store {
 				try {
 					wp_delete_post( $id, true );
 				} catch ( \Throwable $exception ) {
-					if ( ! $this->restore_native_hook_dispatch( $native_hook_baseline ) ) {
+					// Generic plugin/Core exceptions can escape the special WordPress
+					// 'all' dispatcher, which has no matching current_filter stack
+					// frame. Its internal iteration state is then unknown. Never
+					// catch-and-continue after a third-party exception.
+					if ( $exception !== $pre_hook_order_abort && $exception !== $native_hook_gate_abort ) {
+						throw $exception;
+					}
+					$escaped_hook = $exception === $pre_hook_order_abort ? 'pre_delete_post' : 'before_delete_post';
+					if ( ! $this->restore_native_hook_dispatch( $native_hook_baseline, $escaped_hook ) ) {
 						// Never continue the WordPress request with a dispatcher
 						// whose execution state cannot be reconstructed safely.
 						throw $exception;
@@ -1510,13 +1520,12 @@ final class Store {
 	 * Authorization hooks can themselves switch site or replace DB sessions.
 	 */
 	private function delete_gate_allows( $id, $type, $input, $fenced_json, $posts_table, $lock, $authorize ) {
-		try {
-			return $this->delete_fence_intact( $id, $type, $input, $fenced_json, $posts_table, $lock ) &&
-				$this->deletion_authorized( $authorize, $input ) &&
-				$this->delete_fence_intact( $id, $type, $input, $fenced_json, $posts_table, $lock );
-		} catch ( \Throwable $exception ) {
-			return false;
-		}
+		// A provider exception can poison WordPress hook iteration (including
+		// the hidden 'all' dispatcher). It must propagate, not be translated
+		// into a normal denied result and followed by more WordPress hooks.
+		return $this->delete_fence_intact( $id, $type, $input, $fenced_json, $posts_table, $lock ) &&
+			$this->deletion_authorized( $authorize, $input ) &&
+			$this->delete_fence_intact( $id, $type, $input, $fenced_json, $posts_table, $lock );
 	}
 
 	/**
@@ -1543,78 +1552,59 @@ final class Store {
 	}
 
 	/**
-	 * Reconstitute hook dispatchers after an exception escapes native Core
-	 * hooks. WordPress' WP_Hook and global filter stack do not unwind in a
-	 * finally block. Build fresh dispatchers using public WP_Hook APIs and
-	 * preserve every callback, priority and insertion order, including any
-	 * dynamically registered third-party callbacks.
+	 * Restore ONLY the named dispatcher escaped by one of our own guarded
+	 * deletion sentinels. A third-party exception may unwind WordPress's
+	 * special 'all' dispatcher, which is invisible in wp_current_filter;
+	 * such exceptions must propagate and never enter this method.
 	 *
-	 * Never replace a dispatcher already running in an outer frame, or a
-	 * custom/unknown dispatcher. On failed proof the caller must propagate
-	 * the exception, not continue in an inconsistent WordPress request.
+	 * The known sentinel runs after the 'all' callbacks finished, so only
+	 * its exact native hook can have an unbalanced dispatcher frame.
+	 * Re-register callbacks using public WP_Hook APIs and require identical
+	 * callback keys/order before replacing the hook object.
 	 *
 	 * @param array<int,string> $baseline Filter stack before wp_delete_post().
-	 * @return bool True only after complete safe dispatcher restoration.
+	 * @param string            $expected_hook Exactly the owned sentinel's hook.
+	 * @return bool True only after exact single-frame dispatcher recovery.
 	 */
-	private function restore_native_hook_dispatch( $baseline ) {
+	private function restore_native_hook_dispatch( $baseline, $expected_hook ) {
 		global $wp_filter, $wp_current_filter;
-		if ( ! is_array( $baseline ) || ! is_array( $wp_current_filter ) ||
-			count( $wp_current_filter ) < count( $baseline ) ||
-			array_slice( $wp_current_filter, 0, count( $baseline ) ) !== $baseline ) {
+		if ( ! in_array( $expected_hook, array( 'pre_delete_post', 'before_delete_post' ), true ) ||
+			! is_array( $baseline ) || ! is_array( $wp_current_filter ) ||
+			in_array( $expected_hook, $baseline, true ) ||
+			array_slice( $wp_current_filter, 0, count( $baseline ) ) !== $baseline ||
+			array_slice( $wp_current_filter, count( $baseline ) ) !== array( $expected_hook ) ||
+			! isset( $wp_filter[ $expected_hook ] ) ||
+			! is_object( $wp_filter[ $expected_hook ] ) ||
+			get_class( $wp_filter[ $expected_hook ] ) !== \WP_Hook::class ) {
 			return false;
 		}
-		$escaped = array_slice( $wp_current_filter, count( $baseline ) );
-		if ( count( $escaped ) > 16 ) {
-			return false;
-		}
-		$replacements = array();
+		$previous = $wp_filter[ $expected_hook ];
+		$fresh    = new \WP_Hook();
 		try {
-			foreach ( array_unique( $escaped ) as $hook ) {
-				if ( ! is_string( $hook ) || '' === $hook ||
-					in_array( $hook, $baseline, true ) ||
-					! isset( $wp_filter[ $hook ] ) ||
-					get_class( $wp_filter[ $hook ] ) !== \WP_Hook::class ) {
+			foreach ( $previous->callbacks as $priority => $callbacks ) {
+				if ( ! is_int( $priority ) || ! is_array( $callbacks ) ) {
 					return false;
 				}
-				$previous = $wp_filter[ $hook ];
-				$fresh    = new \WP_Hook();
-				foreach ( $previous->callbacks as $priority => $callbacks ) {
-					if ( ! is_int( $priority ) || ! is_array( $callbacks ) ) {
+				foreach ( $callbacks as $callback ) {
+					if ( ! is_array( $callback ) ||
+						! array_key_exists( 'function', $callback ) ||
+						! isset( $callback['accepted_args'] ) ||
+						! is_int( $callback['accepted_args'] ) ) {
 						return false;
 					}
-					foreach ( $callbacks as $callback ) {
-						if ( ! is_array( $callback ) ||
-							! array_key_exists( 'function', $callback ) ||
-							! isset( $callback['accepted_args'] ) ||
-							! is_int( $callback['accepted_args'] ) ) {
-							return false;
-						}
-						$fresh->add_filter( $hook, $callback['function'], $priority, $callback['accepted_args'] );
-					}
+					$fresh->add_filter( $expected_hook, $callback['function'], $priority, $callback['accepted_args'] );
 				}
-				// Never silently drop, reorder or rewrite provider hooks.
-				if ( $fresh->callbacks !== $previous->callbacks ) {
-					return false;
-				}
-				$replacements[ $hook ] = array(
-					'previous' => $previous,
-					'fresh'    => $fresh,
-				);
 			}
 		} catch ( \Throwable $exception ) {
 			return false;
 		}
-		// The freshly built WP_Hook objects have no stale iteration, nesting
-		// or doing_action state. Commit the swap only after full preflight.
-		foreach ( $replacements as $hook => $pair ) {
-			if ( ! isset( $wp_filter[ $hook ] ) || $wp_filter[ $hook ] !== $pair['previous'] ) {
-				return false;
-			}
+		if ( $fresh->callbacks !== $previous->callbacks ||
+			! isset( $wp_filter[ $expected_hook ] ) ||
+			$wp_filter[ $expected_hook ] !== $previous ) {
+			return false;
 		}
-		foreach ( $replacements as $hook => $pair ) {
-			$wp_filter[ $hook ] = $pair['fresh'];
-		}
-		$wp_current_filter = $baseline;
+		$wp_filter[ $expected_hook ] = $fresh;
+		$wp_current_filter           = $baseline;
 		return true;
 	}
 
@@ -1698,18 +1688,16 @@ final class Store {
 
 	/**
 	 * Re-evaluates the authoritative Ability grant without caching it across
-	 * lock waits, CAS or provider hooks. Thrown access filters fail closed.
+	 * lock waits, CAS or provider hooks. An exception from an access filter
+	 * propagates rather than allowing a poisoned WordPress hook dispatcher
+	 * to be reused in a normally continuing request.
 	 *
 	 * @param callable $authorize Current Ability authorization callback.
 	 * @param array    $input     Exact record identity.
 	 * @return bool
 	 */
 	private function deletion_authorized( $authorize, $input ) {
-		try {
-			return is_callable( $authorize ) && true === call_user_func( $authorize, $input );
-		} catch ( \Throwable $exception ) {
-			return false;
-		}
+		return is_callable( $authorize ) && true === call_user_func( $authorize, $input );
 	}
 
 	/**
