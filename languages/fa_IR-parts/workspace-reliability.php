@@ -97,6 +97,7 @@ return array(
 	'Deletion admission was not verified. Check the exact record before retrying.' => 'تأیید قفل حذف ممکن نشد؛ پیش از تلاش دوباره همان رکورد را بررسی کنید.',
 	'Deletion is fenced but could not be safely completed. Administrator reconciliation is required.' => 'رکورد برای حذف محافظت شده، اما حذف ایمن تکمیل نشده است؛ بررسی و رفع ابهام توسط مدیر لازم است.',
 	'Exact deletion could not be confirmed from WordPress readback. Do not recreate the record.' => 'حذف دقیق از طریق بازخوانی وردپرس تأیید نشد؛ رکورد را دوباره ایجاد نکنید.',
+	'WordPress vetoed permanent deletion; the unchanged Workspace record was restored.' => 'وردپرس حذف دائمی را رد کرد؛ وضعیت اصلی رکورد Workspace بدون تغییر بازیابی شد.',
 	'Workspace record is pending permanent deletion and cannot be modified.' => 'رکورد Workspace در انتظار حذف دائمی است و امکان ویرایش آن وجود ندارد.',
 	'Permanently Delete Exact Workspace Record' => 'حذف دائمی یک رکورد دقیق Workspace',
 	'Permanently deletes one explicitly confirmed, project-bound private Workspace record with exact blog, record, and version/hash checks. Never clears all Workspace.' => 'یک رکورد خصوصی Workspace متصل به پروژه را فقط با تأیید صریح و بررسی دقیق سایت، شناسهٔ رکورد و نسخه/هش به‌طور دائمی حذف می‌کند؛ هرگز کل Workspace را پاک نمی‌کند.',

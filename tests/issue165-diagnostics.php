@@ -81,6 +81,13 @@ $poison['error_code'] = 'transfer_token_secret_injected';
 array_unshift( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ], $poison );
 $view = $log->diagnostic_view( 50 );
 $assert( ! in_array( 'transfer_token_secret_injected', array_column( $view['events'], 'error_code' ), true ), 'Poisoned option values leaked into remote diagnostic results.' );
+$poisoned_time = $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ][0];
+$poisoned_time['timestamp'] = 'now';
+array_unshift( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ], $poisoned_time );
+$view = $log->diagnostic_view( 50 );
+$assert( ! in_array( 'now', array_column( $view['events'], 'timestamp' ), true ),
+	'Untrusted natural-language timestamp was exposed as UTC diagnostic metadata.' );
+array_shift( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ] );
 for ( $i = 0; $i < 75; ++$i ) {
 	$log->record_transfer( 'begin', new WP_Error( 'transfer_capacity', 'secret' ) );
 }

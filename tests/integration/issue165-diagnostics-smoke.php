@@ -48,6 +48,20 @@ try {
 	$assert( ! isset( $diagnostic['events'][0]['user_id'] ) &&
 		! isset( $diagnostic['events'][0]['target_id'] ) &&
 		16 === strlen( $diagnostic['events'][0]['event_ref'] ), 'Read-only Ability exposed identity or omitted correlation ref.' );
+	// A legitimate authenticated provider read failure must be observable;
+	// unavailable private sessions never expose their opaque bytes or paths.
+	$missing = $transfer->execute( array(
+		'action'      => 'read',
+		'transfer_id' => str_repeat( 'a', 64 ),
+		'offset'      => 0,
+		'max_bytes'   => 32,
+	) );
+	$read_event = $read->execute( array( 'limit' => 1 ) );
+	$assert( is_wp_error( $missing ) && ! is_wp_error( $read_event ) &&
+		'read' === $read_event['events'][0]['operation'] &&
+		'provider' === $read_event['events'][0]['phase'] &&
+		false === $read_event['events'][0]['success'],
+		'Authenticated private-read failure was not recorded in sanitized diagnostics.' );
 	$option = get_option( Mutation_Log::OPTION_NAME, array() );
 	$assert( is_array( $option ) && count( $option ) <= 50 && ! str_contains( wp_json_encode( $option ), hash( 'sha256', '' ) ), 'Private input/hash was recorded in site Activity.' );
 	$auth->setValue( null, '' );

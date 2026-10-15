@@ -139,8 +139,16 @@ final class Mutation_Log {
 					if ( ! is_array( $entry ) || ! isset( $entry['timestamp'] ) || ! is_string( $entry['timestamp'] ) ) {
 						return false;
 					}
+					// Remote diagnostics must not echo attacker-controlled/freeform
+					// option text as a purported UTC timestamp. Existing records
+					// were written using gmdate('c') with a fixed +00:00 offset.
+					if ( 25 !== strlen( $entry['timestamp'] ) ||
+						1 !== preg_match( '/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\+00:00$/D', $entry['timestamp'] ) ) {
+						return false;
+					}
 					$when = strtotime( $entry['timestamp'] );
-					return false !== $when && $when >= $cutoff && $when <= time() + 86400;
+					return false !== $when && gmdate( 'c', $when ) === $entry['timestamp'] &&
+						$when >= $cutoff && $when <= time() + 86400;
 				}
 			)
 		);

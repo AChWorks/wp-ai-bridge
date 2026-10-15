@@ -148,6 +148,32 @@ try {
 	$doc_input['expected_version']    = $updated['version'];
 	$doc_input['expected_state_hash'] = $updated['state_hash'];
 
+	// A legitimate Core pre_delete_post filter can veto a permanent delete
+	// before native effects. The temporary CAS fence must be restored only
+	// in this proven no-native-delete path; other records stay intact.
+	$native_veto_seen = false;
+	$veto_delete = static function ( $check, $post, $force ) use ( &$native_veto_seen, $doc ) {
+		if ( (int) $post->ID === (int) $doc['id'] && true === $force ) {
+			$native_veto_seen = true;
+			return false;
+		}
+		return $check;
+	};
+	add_filter( 'pre_delete_post', $veto_delete, 10, 3 );
+	try {
+		$vetoed = $abilities( $doc_input );
+	} finally {
+		remove_filter( 'pre_delete_post', $veto_delete, 10 );
+	}
+	$after_veto = $store->get_document( $doc['id'] );
+	$assert( $native_veto_seen && is_wp_error( $vetoed ) &&
+		'workspace_delete_vetoed' === $vetoed->get_error_code(),
+		'A Core pre-delete veto was not safely recognized.' );
+	$assert( ! is_wp_error( $after_veto ) &&
+		$after_veto['version'] === $doc_input['expected_version'] &&
+		$after_veto['state_hash'] === $doc_input['expected_state_hash'],
+		'A veto left the unchanged record incorrectly CAS-fenced or unreadable.' );
+
 	$ok = $abilities( $doc_input );
 	$assert( ! is_wp_error( $ok ) && true === $ok['deleted'] && $doc['id'] === $ok['id'], 'Exact doc deletion did not return a verified receipt.' );
 	$assert( ! get_post( $doc['id'] ) && ! get_post_meta( $doc['id'], Store::META_STATE, false ), 'Deleted document or private metadata remains visible.' );

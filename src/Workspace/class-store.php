@@ -1351,25 +1351,56 @@ final class Store {
 			if ( (int) get_current_blog_id() !== $input['blog_id'] ) {
 				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Deletion is fenced but could not be safely completed. Administrator reconciliation is required.', 'wp-ai-bridge' ) );
 			}
-			// Force-delete one known private CPT only; no generic posts, no
-			// trash/archival semantic confusion, no whole-Workspace clearing.
-			// Provider hooks can throw after the irreversible effect; treat this
-			// as unknown rather than leaking a raw exception or retrying.
+			// A native pre_delete_post veto is before WordPress starts its
+			// destructive lifecycle. Observe only this exact ID while Core runs,
+			// without changing either hook's outcome. Never restore a fence after
+			// before_delete_post, an exception, or an unverifiable effect.
+			$native_vetoed         = false;
+			$native_delete_started = false;
+			$observe_veto          = static function ( $check, $candidate, $force ) use ( &$native_vetoed, $id ) {
+				if ( $candidate instanceof \WP_Post && (int) $candidate->ID === $id &&
+					true === $force && null !== $check ) {
+					$native_vetoed = true;
+				}
+				return $check;
+			};
+			$observe_delete_start  = static function ( $candidate_id ) use ( &$native_delete_started, $id ) {
+				if ( (int) $candidate_id === $id ) {
+					$native_delete_started = true;
+				}
+			};
+			add_filter( 'pre_delete_post', $observe_veto, PHP_INT_MAX, 3 );
+			add_action( 'before_delete_post', $observe_delete_start, PHP_INT_MIN, 1 );
 			try {
-				wp_delete_post( $id, true );
-			} catch ( \Throwable $exception ) {
+				try {
+					wp_delete_post( $id, true );
+				} catch ( \Throwable $exception ) {
+					return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Exact deletion could not be confirmed from WordPress readback. Do not recreate the record.', 'wp-ai-bridge' ) );
+				}
+			} finally {
+				remove_action( 'before_delete_post', $observe_delete_start, PHP_INT_MIN );
+				remove_filter( 'pre_delete_post', $observe_veto, PHP_INT_MAX );
+			}
+			if ( (int) get_current_blog_id() !== $input['blog_id'] || ! $lock->is_owned() ) {
 				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Exact deletion could not be confirmed from WordPress readback. Do not recreate the record.', 'wp-ai-bridge' ) );
 			}
-			if ( (int) get_current_blog_id() !== $input['blog_id'] ||
-				get_post( $id ) || get_post_meta( $id, self::META_STATE, false ) ) {
-				return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Exact deletion could not be confirmed from WordPress readback. Do not recreate the record.', 'wp-ai-bridge' ) );
+			$remaining_post  = get_post( $id );
+			$remaining_state = get_post_meta( $id, self::META_STATE, false );
+			if ( ! $remaining_post && ! $remaining_state ) {
+				return array(
+					'deleted' => true,
+					'id'      => $id,
+					'kind'    => $kind,
+					'blog_id' => (int) get_current_blog_id(),
+				);
 			}
-			return array(
-				'deleted' => true,
-				'id'      => $id,
-				'kind'    => $kind,
-				'blog_id' => (int) get_current_blog_id(),
-			);
+			if ( $native_vetoed && ! $native_delete_started && $remaining_post &&
+				$type === $remaining_post->post_type && array( $fenced_json ) === $remaining_state &&
+				false !== update_post_meta( $id, self::META_STATE, wp_slash( $original_json ), $fenced_json ) &&
+				get_post( $id ) && array( $original_json ) === get_post_meta( $id, self::META_STATE, false ) ) {
+				return new WP_Error( 'workspace_delete_vetoed', __( 'WordPress vetoed permanent deletion; the unchanged Workspace record was restored.', 'wp-ai-bridge' ) );
+			}
+			return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Exact deletion could not be confirmed from WordPress readback. Do not recreate the record.', 'wp-ai-bridge' ) );
 		} finally {
 			$lock->release();
 		}

@@ -284,11 +284,11 @@ final class Transfer_Session_Abilities {
 			$encoded = $input['content_base64'];
 			if ( '' === $encoded || strlen( $encoded ) > $budget - 4096 ||
 				strlen( $encoded ) > intdiv( $chunk, 3 ) * 4 + ( $chunk % 3 ? 4 : 0 ) ) {
-				return new WP_Error( 'transfer_message_budget', __( 'The transfer chunk exceeds the configured incoming MCP message budget. Use a smaller chunk or adjust the WordPress administrator budget.', 'wp-ai-bridge' ) );
+				return $this->diagnose( $action, new WP_Error( 'transfer_message_budget', __( 'The transfer chunk exceeds the configured incoming MCP message budget. Use a smaller chunk or adjust the WordPress administrator budget.', 'wp-ai-bridge' ) ), 'validation' );
 			}
 			$body = wp_json_encode( $input );
 			if ( ! is_string( $body ) || strlen( $body ) > $budget - 2048 ) {
-				return new WP_Error( 'transfer_message_budget', __( 'The encoded incoming transfer message exceeds the configured MCP request budget.', 'wp-ai-bridge' ) );
+				return $this->diagnose( $action, new WP_Error( 'transfer_message_budget', __( 'The encoded incoming transfer message exceeds the configured MCP request budget.', 'wp-ai-bridge' ) ), 'validation' );
 			}
 			$decoded = base64_decode( $encoded, true );
 			if ( ! is_string( $decoded ) || base64_encode( $decoded ) !== $encoded ||
@@ -307,7 +307,7 @@ final class Transfer_Session_Abilities {
 			// single 3/4 Base64 estimate is not a valid MCP wire budget.
 			$receipt = $this->store->status( $id );
 			if ( is_wp_error( $receipt ) ) {
-				return $receipt;
+				return $this->diagnose( $action, $receipt );
 			}
 			$low  = 1;
 			$high = min( $chunk, $input['max_bytes'], (int) $receipt['chunk'] );
@@ -316,7 +316,7 @@ final class Transfer_Session_Abilities {
 				$middle = intdiv( $low + $high, 2 );
 				$window = $this->store->read_media_export( $id, $input['offset'], $middle );
 				if ( is_wp_error( $window ) ) {
-					return $window;
+					return $this->diagnose( $action, $window );
 				}
 				$candidate                     = $this->result( $action, $receipt, $policy, $middle );
 				$candidate['read_offset']      = $window['offset'];
@@ -333,7 +333,7 @@ final class Transfer_Session_Abilities {
 			}
 			if ( ! is_array( $best ) ||
 				( $receipt['total'] > $input['offset'] && $best['read_next_offset'] === $input['offset'] ) ) {
-				return new WP_Error( 'transfer_message_budget', __( 'Requested outbound window exceeds the current MCP response budget. Request fewer bytes or adjust the administrator response setting.', 'wp-ai-bridge' ) );
+				return $this->diagnose( $action, new WP_Error( 'transfer_message_budget', __( 'Requested outbound window exceeds the current MCP response budget. Request fewer bytes or adjust the administrator response setting.', 'wp-ai-bridge' ) ), 'validation' );
 			}
 			return $best;
 		} elseif ( 'release' === $action ) {
