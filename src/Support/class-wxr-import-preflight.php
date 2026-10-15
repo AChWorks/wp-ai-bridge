@@ -91,7 +91,7 @@ final class WXR_Import_Preflight {
 		}
 		$path      = $artifact['path'];
 		$canonical = realpath( $path );
-		$temp_dir  = realpath( get_temp_dir() );
+		$temp_dir  = Safe_Temporary_Staging::directory();
 		if (
 			! is_string( $canonical ) || ! is_string( $temp_dir ) ||
 			is_link( $path ) || ! is_file( $path ) || ! is_readable( $path ) ||

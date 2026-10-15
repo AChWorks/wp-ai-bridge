@@ -24,29 +24,7 @@ final class Safe_Temporary_Staging {
 	 * @return string|WP_Error Absolute file path or a safe error.
 	 */
 	public static function create( $filename ) {
-		$directories = array();
-		if ( function_exists( 'get_temp_dir' ) ) {
-			$directories[] = get_temp_dir();
-		}
-		if ( function_exists( 'sys_get_temp_dir' ) ) {
-			$directories[] = sys_get_temp_dir();
-		}
-		$php_upload = ini_get( 'upload_tmp_dir' );
-		if ( is_string( $php_upload ) && '' !== $php_upload ) {
-			$directories[] = $php_upload;
-		}
-
-		$attempted = array();
-		foreach ( $directories as $directory ) {
-			if ( ! is_string( $directory ) || '' === $directory || ! is_dir( $directory ) || ! is_writable( $directory ) ) {
-				continue;
-			}
-			$root = realpath( $directory );
-			if ( ! is_string( $root ) || '' === $root || isset( $attempted[ $root ] ) || self::is_served_path( $root ) ) {
-				continue;
-			}
-			$attempted[ $root ] = true;
-
+		foreach ( self::private_directories() as $root ) {
 			// WordPress creates the inode exclusively. No unverified payload is
 			// written to this path before all confinement checks succeed.
 			$file = wp_tempnam( $filename, rtrim( $root, '/\\' ) . DIRECTORY_SEPARATOR );
@@ -79,6 +57,54 @@ final class Safe_Temporary_Staging {
 			'temporary_storage_unsafe',
 			__( 'A private temporary staging directory is unavailable; nothing was imported.', 'wp-ai-bridge' )
 		);
+	}
+
+	/**
+	 * Locate the stable default private scratch root without creating files.
+	 * Only internal consumers may use this location; do not expose its path.
+	 *
+	 * @return string|WP_Error
+	 */
+	public static function directory() {
+		$directories = self::private_directories();
+		if ( $directories ) {
+			return $directories[0];
+		}
+		return new WP_Error(
+			'temporary_storage_unsafe',
+			__( 'A private temporary staging directory is unavailable; nothing was imported.', 'wp-ai-bridge' )
+		);
+	}
+
+	/**
+	 * Prefer the WordPress default when genuinely private so existing transfer
+	 * journals remain at their original stable location across upgrades.
+	 *
+	 * @return array<int,string> Canonical, distinct writable private directories.
+	 */
+	private static function private_directories() {
+		$candidates = array();
+		if ( function_exists( 'get_temp_dir' ) ) {
+			$candidates[] = get_temp_dir();
+		}
+		if ( function_exists( 'sys_get_temp_dir' ) ) {
+			$candidates[] = sys_get_temp_dir();
+		}
+		$candidates[] = ini_get( 'upload_tmp_dir' );
+		$directories  = array();
+		foreach ( $candidates as $candidate ) {
+			if ( ! is_string( $candidate ) || '' === $candidate ||
+				! is_dir( $candidate ) || ! is_writable( $candidate ) ) {
+				continue;
+			}
+			$path = realpath( $candidate );
+			if ( ! is_string( $path ) || '' === $path ||
+				isset( $directories[ $path ] ) || self::is_served_path( $path ) ) {
+				continue;
+			}
+			$directories[ $path ] = $path;
+		}
+		return array_values( $directories );
 	}
 
 	/**

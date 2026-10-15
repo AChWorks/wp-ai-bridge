@@ -21,15 +21,6 @@ final class Private_Transfer_Session {
 	/** @var Permissions */
 	private $permissions;
 
-	/** Database staging fallback, sharing the existing purpose policy. */
-	private function database_store() {
-		return new Private_Transfer_DB_Store(
-			function ( $purpose ) {
-				return $this->allowed( $purpose );
-			}
-		);
-	}
-
 	/** @param Permissions $permissions Bridge current principal policy. */
 	public function __construct( Permissions $permissions ) {
 		$this->permissions = $permissions;
@@ -65,8 +56,7 @@ final class Private_Transfer_Session {
 		}
 		$root = $this->root();
 		if ( is_wp_error( $root ) ) {
-			// Standard WordPress hosts may have no confidential filesystem root.
-			return $this->database_store()->begin( $purpose, $total, $sha256, $max_total, $max_chunk, $active_limit, $ttl_seconds, $max_active );
+			return $root;
 		}
 		$guard = $this->guard( $root );
 		if ( is_wp_error( $guard ) ) {
@@ -187,9 +177,6 @@ final class Private_Transfer_Session {
 
 	/** @param string $id Exact opaque transfer ID. @return array<string,mixed>|WP_Error */
 	public function status( $id ) {
-		if ( $this->database_store()->has_id( $id ) ) {
-			return $this->database_store()->status( $id );
-		}
 		$loaded = $this->load( $id );
 		if ( is_wp_error( $loaded ) ) {
 			return $loaded;
@@ -215,9 +202,6 @@ final class Private_Transfer_Session {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function append( $id, $offset, $bytes ) {
-		if ( $this->database_store()->has_id( $id ) ) {
-			return $this->database_store()->append( $id, $offset, $bytes );
-		}
 		$loaded = $this->load( $id );
 		if ( is_wp_error( $loaded ) ) {
 			return $loaded;
@@ -275,9 +259,6 @@ final class Private_Transfer_Session {
 
 	/** @param string $id Opaque session. @return array<string,mixed>|WP_Error */
 	public function verify( $id ) {
-		if ( $this->database_store()->has_id( $id ) ) {
-			return $this->database_store()->verify( $id );
-		}
 		$loaded = $this->load( $id );
 		if ( is_wp_error( $loaded ) ) {
 			return $loaded;
@@ -321,9 +302,6 @@ final class Private_Transfer_Session {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function verified_private_source( $id, $purpose ) {
-		if ( $this->database_store()->has_id( $id ) ) {
-			return $this->database_store()->consumer_unavailable();
-		}
 		$loaded = $this->load( $id );
 		if ( is_wp_error( $loaded ) ) {
 			return $loaded;
@@ -527,7 +505,7 @@ final class Private_Transfer_Session {
 		}
 		$path      = $artifact['path'];
 		$canonical = realpath( $path );
-		$temp_dir  = realpath( get_temp_dir() );
+		$temp_dir  = Safe_Temporary_Staging::directory();
 		if ( ! is_string( $canonical ) || ! is_string( $temp_dir ) ||
 			is_link( $path ) || ! is_file( $path ) || ! is_readable( $path ) ||
 			dirname( $canonical ) !== $temp_dir ||
@@ -891,9 +869,6 @@ final class Private_Transfer_Session {
 
 	/** @param string $id Opaque session. @return bool|WP_Error */
 	public function cancel( $id ) {
-		if ( $this->database_store()->has_id( $id ) ) {
-			return $this->database_store()->cancel( $id );
-		}
 		$root = $this->root();
 		if ( is_wp_error( $root ) ) {
 			return $root;
@@ -972,7 +947,7 @@ final class Private_Transfer_Session {
 
 	/** @return string|WP_Error */
 	private function root() {
-		$base = realpath( get_temp_dir() );
+		$base = Safe_Temporary_Staging::directory();
 		if ( ! is_string( $base ) || ! is_dir( $base ) || ! is_writable( $base ) ) {
 			return new WP_Error( 'transfer_storage_unavailable', 'No writable temporary private storage is available.' );
 		}
@@ -1528,9 +1503,6 @@ final class Private_Transfer_Session {
 	 * @return array<string,mixed>|WP_Error Internal-only copy + held lease.
 	 */
 	public function prepare_media_sideload( $id ) {
-		if ( $this->database_store()->has_id( $id ) ) {
-			return $this->database_store()->consumer_unavailable();
-		}
 		$root = $this->root();
 		if ( is_wp_error( $root ) ) {
 			return $root;

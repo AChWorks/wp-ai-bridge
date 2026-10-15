@@ -41,6 +41,7 @@ try {
 	// WP_TEMP_DIR may be a publicly served content directory; stage elsewhere
 	// automatically when the host has a trustworthy ordinary OS temp directory.
 	$_SERVER['DOCUMENT_ROOT'] = ABSPATH;
+	wpai173_check( Safe_Temporary_Staging::directory() === realpath( sys_get_temp_dir() ), 'Private transfer root did not recover from publicly served WP temp.' );
 	$file = Safe_Temporary_Staging::create( 'untrusted-image.png' );
 	wpai173_check( is_string( $file ) && is_file( $file ), 'No safe scratch file was created.' );
 	wpai173_check( dirname( $file ) === realpath( sys_get_temp_dir() ), 'Staging did not leave the served content root.' );
@@ -67,6 +68,7 @@ try {
 	$_SERVER['DOCUMENT_ROOT'] = sys_get_temp_dir();
 	$before = count( $GLOBALS['wpai173']['created'] );
 	$denied = Safe_Temporary_Staging::create( 'untrusted-media.png' );
+	wpai173_check( Safe_Temporary_Staging::directory() instanceof WP_Error, 'Unsafe-only host exposed a private transfer root.' );
 	wpai173_check( $denied instanceof WP_Error && 'temporary_storage_unsafe' === $denied->get_error_code(), 'Unsafe-only host did not fail closed.' );
 	wpai173_check( count( $GLOBALS['wpai173']['created'] ) === $before, 'Unsafe-only host allocated a public temporary file.' );
 	echo "PASS: Issue #173 private-temp staging, served roots, aliases, symlinks and fail-closed.\n";
