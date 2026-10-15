@@ -147,7 +147,14 @@ final class Workspace_Delete_Abilities {
 			return new WP_Error( 'workspace_delete_denied', __( 'Deletion requires authenticated MCP site-administrator authority and enabled destructive grants.', 'wp-ai-bridge' ) );
 		}
 		$result = $this->store->delete_exact( $input, array( $this, 'can_delete' ) );
-		$kind   = 'document' === $input['kind'] ? 'workspace_document' : 'workspace_task';
+		// Native WordPress hooks can switch blogs during deletion and leave
+		// the caller in that context. Never write the current-blog Activity
+		// option under an unrelated tenant's ID, even for a failed delete.
+		// Best-effort logging may be omitted; a wrong-site audit is forbidden.
+		if ( (int) get_current_blog_id() !== $input['blog_id'] ) {
+			return $result;
+		}
+		$kind = 'document' === $input['kind'] ? 'workspace_document' : 'workspace_task';
 		// An Activity failure cannot undo a permanent WordPress deletion.
 		// Never replace a verified delete receipt with a logging exception.
 		try {

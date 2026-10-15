@@ -1352,11 +1352,13 @@ final class Store {
 			if ( ! $this->delete_gate_allows( $id, $type, $input, $fenced_json, $posts_table, $lock, $authorize ) ) {
 				return $this->pre_native_delete_aborted( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock );
 			}
-			// Re-validate at the last pre_delete_post boundary: other plugins
-			// may have changed current blog, DB session, or access grants.
+			// Enforce the pre_delete_post boundary and terminal callback
+			// ordering: other hooks may change blog, grant, or DB session.
 			$native_vetoed         = false;
 			$bridge_vetoed         = false;
 			$native_delete_started = false;
+			$pre_hook_order_abort  = new \RuntimeException( 'Workspace pre-delete hook guard is no longer terminal.' );
+			$guard_pre_delete      = null;
 			$guard_pre_delete      = function (
 				$check,
 				$candidate,
@@ -1369,16 +1371,31 @@ final class Store {
 				$posts_table,
 				$lock,
 				$authorize,
+				$pre_hook_order_abort,
+				&$guard_pre_delete,
 				&$native_vetoed,
 				&$bridge_vetoed
 			) {
 				if ( $candidate instanceof \WP_Post && (int) $candidate->ID === $id && true === $force ) {
+					// Throwing, rather than returning false, ensures any callback
+					// appended AFTER this sentinel cannot reset the veto to null.
+					if ( ! $this->is_terminal_delete_guard( 'pre_delete_post', $guard_pre_delete ) ) {
+						throw $pre_hook_order_abort;
+					}
 					if ( null !== $check ) {
 						$native_vetoed = true;
-					} elseif ( $type !== $candidate->post_type ||
-						! $this->delete_gate_allows( $id, $type, $input, $fenced_json, $posts_table, $lock, $authorize ) ) {
+						return $check;
+					}
+					$allowed = $type === $candidate->post_type &&
+						$this->delete_gate_allows( $id, $type, $input, $fenced_json, $posts_table, $lock, $authorize );
+					// Permission callbacks also run arbitrary WP hooks and may
+					// dynamically register callbacks after this sentinel.
+					if ( ! $this->is_terminal_delete_guard( 'pre_delete_post', $guard_pre_delete ) ) {
+						throw $pre_hook_order_abort;
+					}
+					if ( ! $allowed ) {
 						$bridge_vetoed = true;
-						return false; // Core must not begin native cleanup.
+						return false;
 					}
 				}
 				return $check;
@@ -1388,9 +1405,10 @@ final class Store {
 					$native_delete_started = true;
 				}
 			};
-			// Last possible check before Core starts cleanup, including site
-			// drift in earlier before_delete_post callbacks. An exception
+			// Terminal native lifecycle check before Core cleanup, including
+			// site drift or callbacks added after this sentinel. An exception
 			// from this phase remains outcome_unknown; never auto-restore.
+			$guard_native_start = null;
 			$guard_native_start = function (
 				$candidate_id,
 				$candidate
@@ -1401,12 +1419,18 @@ final class Store {
 				$fenced_json,
 				$posts_table,
 				$lock,
-				$authorize
+				$authorize,
+				&$guard_native_start
 			) {
-				if ( (int) $candidate_id === $id &&
-					( ! ( $candidate instanceof \WP_Post ) || $type !== $candidate->post_type ||
-						! $this->delete_gate_allows( $id, $type, $input, $fenced_json, $posts_table, $lock, $authorize ) ) ) {
-					throw new \RuntimeException( 'Workspace native deletion gate rejected changed context.' );
+				if ( (int) $candidate_id === $id ) {
+					$allowed = $candidate instanceof \WP_Post && $type === $candidate->post_type &&
+						$this->delete_gate_allows( $id, $type, $input, $fenced_json, $posts_table, $lock, $authorize );
+					// Later callbacks cannot be allowed to run after the final
+					// invariant check, even if dynamically registered while
+					// before_delete_post is already executing.
+					if ( ! $allowed || ! $this->is_terminal_delete_guard( 'before_delete_post', $guard_native_start ) ) {
+						throw new \RuntimeException( 'Workspace native deletion gate rejected changed context or hook order.' );
+					}
 				}
 			};
 			add_filter( 'pre_delete_post', $guard_pre_delete, PHP_INT_MAX, 3 );
@@ -1416,7 +1440,14 @@ final class Store {
 				try {
 					wp_delete_post( $id, true );
 				} catch ( \Throwable $exception ) {
-					return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Exact deletion could not be confirmed from WordPress readback. Do not recreate the record.', 'wp-ai-bridge' ) );
+					if ( $exception === $pre_hook_order_abort && ! $native_delete_started ) {
+						// This EXACT exception belongs to our pre_delete_post
+						// sentinel. Core has not entered before_delete_post,
+						// and no dynamically appended tail callback has run.
+						$bridge_vetoed = true;
+					} else {
+						return new WP_Error( 'workspace_delete_outcome_unknown', __( 'Exact deletion could not be confirmed from WordPress readback. Do not recreate the record.', 'wp-ai-bridge' ) );
+					}
 				}
 			} finally {
 				remove_action( 'before_delete_post', $guard_native_start, PHP_INT_MAX );
@@ -1471,6 +1502,29 @@ final class Store {
 		} catch ( \Throwable $exception ) {
 			return false;
 		}
+	}
+
+	/**
+	 * WordPress can append same-priority callbacks while a hook is running.
+	 * PHP_INT_MAX is a priority, NOT a guarantee of terminal execution.
+	 * The last callback must be this exact sentinel after every callback-
+	 * invoking authorization check; otherwise abort before Core cleanup.
+	 *
+	 * @param string   $hook Hook name.
+	 * @param callable $sentinel Exact registered guard closure.
+	 * @return bool Whether the hook has no callbacks after this guard.
+	 */
+	private function is_terminal_delete_guard( $hook, $sentinel ) {
+		global $wp_filter;
+		if ( ! isset( $wp_filter[ $hook ] ) || ! $wp_filter[ $hook ] instanceof \WP_Hook ) {
+			return false;
+		}
+		$callbacks = $wp_filter[ $hook ]->callbacks[ PHP_INT_MAX ] ?? null;
+		if ( ! is_array( $callbacks ) || ! $callbacks ) {
+			return false;
+		}
+		$last = end( $callbacks );
+		return is_array( $last ) && isset( $last['function'] ) && $last['function'] === $sentinel;
 	}
 
 	/**
