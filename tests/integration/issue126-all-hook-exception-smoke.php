@@ -4,8 +4,8 @@
  * dispatcher must never be converted into a normal Workspace delete result.
  *
  * Invoke once per stage in a SEPARATE WP-CLI process, and only on a fresh
- * isolated WordPress database. The deliberately thrown provider exception
- * leaves WP_Hook's "all" execution state stale in that process.
+ * isolated WordPress database. Native WP_Hook normally lacks exception-safe
+ * cleanup; Bridge must restore the global all-hook before returning.
  *
  * @package WP_AI_Bridge
  */
@@ -92,6 +92,35 @@ try {
 	} finally {
 		restore_current_blog();
 	}
+	// If a provider invokes the Bridge from an already-running OUTER 'all'
+	// callback, native deletion must refuse admission and must not replace
+	// the outer dispatcher. The exact pre-native CAS fence is compensated.
+	global $wp_filter, $wp_current_filter;
+	$outer_result = null;
+	$outer_calls  = 0;
+	$outer_all = static function ( $hook_name ) use ( &$outer_calls, &$outer_result, $input ) {
+		if ( 'wpai_issue126_all_outer_probe' === $hook_name ) {
+			++$outer_calls;
+			$ability      = wp_get_ability( 'wp-ai-bridge/workspace-delete' );
+			$outer_result = $ability->execute( $input );
+		}
+	};
+	add_action( 'all', $outer_all, 10, 1 );
+	$outer_dispatcher = $wp_filter['all'];
+	try {
+		do_action( 'wpai_issue126_all_outer_probe' );
+		$outer_identity_intact = isset( $wp_filter['all'] ) && $wp_filter['all'] === $outer_dispatcher;
+	} finally {
+		remove_action( 'all', $outer_all, 10 );
+	}
+	$outer_state = $store->get_document( $id );
+	$assert( 1 === $outer_calls && is_wp_error( $outer_result ) &&
+		'workspace_delete_aborted' === $outer_result->get_error_code(),
+		'Nested deletion inside an active outer all dispatcher did not fail closed.' );
+	$assert( $outer_identity_intact && ! is_wp_error( $outer_state ) &&
+		$outer_state['version'] === $doc['version'] &&
+		$outer_state['state_hash'] === $doc['state_hash'],
+		'An active outer all dispatcher was replaced or its pre-native CAS fence was not restored.' );
 	$local_activity = get_option( Mutation_Log::OPTION_NAME, null );
 
 	// Registered only after fixture preparation. A provider may throw during
@@ -127,31 +156,55 @@ try {
 		$stack_after      = $wp_current_filter;
 		$all_hook_depth   = isset( $wp_filter['all'] ) ?
 			( new ReflectionProperty( WP_Hook::class, 'nesting_level' ) )->getValue( $wp_filter['all'] ) : 0;
+		$all_iterations   = ( new ReflectionProperty( WP_Hook::class, 'iterations' ) )->getValue( $wp_filter['all'] );
+		$all_priorities   = ( new ReflectionProperty( WP_Hook::class, 'current_priority' ) )->getValue( $wp_filter['all'] );
+		$all_action_state = ( new ReflectionProperty( WP_Hook::class, 'doing_action' ) )->getValue( $wp_filter['all'] );
+		// Prove an ordinary SAME-REQUEST hook invokes 'all' normally with
+		// its existing third-party callback still installed and ordered.
+		$reuse_count = 0;
+		$reuse_callback = static function () use ( &$reuse_count ) {
+			++$reuse_count;
+		};
+		add_action( 'wpai_issue126_all_reuse_probe', $reuse_callback, 10, 0 );
+		try {
+			do_action( 'wpai_issue126_all_reuse_probe' );
+		} finally {
+			remove_action( 'wpai_issue126_all_reuse_probe', $reuse_callback, 10 );
+		}
+		$reused_cleanly = 1 === $reuse_count &&
+			$wp_current_filter === $stack_before &&
+			false === $wp_filter['all']->current_priority();
 	} finally {
-		// The prior error deliberately poisoned 'all' inside this disposable
-		// PHP process. Do not leave the throwing provider registered.
+		// Only the temporary third-party fixture callback is removed.
 		remove_action( 'all', $throwing_all, PHP_INT_MAX );
 	}
 	$actual_kind = is_wp_error( $actual ) ? $actual->get_error_code() :
 		( is_array( $actual ) ? 'array' : get_debug_type( $actual ) );
 	$caught_kind = $caught instanceof Throwable ? get_class( $caught ) : 'none';
-	$assert( $caught === $provider_exception && null === $actual && 1 === $throw_count,
+	// WP 6.9 propagates the same Throwable; WP 7.1.3's WP_Ability
+	// catches it and returns ability_callback_exception. In BOTH cases
+	// the Bridge must reconstruct all hook state before this framework
+	// boundary resumes execution.
+	$original_propagated = $caught === $provider_exception && null === $actual;
+	$core_normalized     = null === $caught && is_wp_error( $actual ) &&
+		'ability_callback_exception' === $actual->get_error_code();
+	$assert( 1 === $throw_count && ( $original_propagated || $core_normalized ),
 		sprintf(
-			'All-hook propagation mismatch: stage=%s, WordPress=%s, throws=%d, caught_type=%s, caught_exact=%d, result=%s, user=%d, blog=%d.',
+			'All-hook error contract mismatch: stage=%s, WordPress=%s, throws=%d, caught_type=%s, caught_exact=%d, result=%s.',
 			$stage,
 			get_bloginfo( 'version' ),
 			$throw_count,
 			$caught_kind,
 			(int) ( $caught === $provider_exception ),
-			$actual_kind,
-			get_current_user_id(),
-			get_current_blog_id()
+			$actual_kind
 		) );
 	$assert( $still_registered && $callbacks_after === $callbacks_before,
 		'Bridge removed, rewrote or reordered an unrelated all-hook callback.' );
-	$assert( $all_hook_depth > 0 &&
-		$stack_after === array_merge( $stack_before, array( $stage ) ),
-		'The test did not reach the hidden all dispatcher with an escaped native hook frame.' );
+	$assert( 0 === $all_hook_depth && array() === $all_iterations &&
+		array() === $all_priorities && false === $all_action_state &&
+		$stack_after === $stack_before && $reused_cleanly &&
+		! doing_filter( 'pre_delete_post' ) && ! doing_action( 'before_delete_post' ),
+		'The hidden all dispatcher or named native hook remained poisoned after recovery.' );
 
 	// Inspect the bounded disposable state AFTER removing the injected hook.
 	// Unknown third-party effects must not be reclassified as a clean abort

@@ -1358,6 +1358,16 @@ final class Store {
 			if ( doing_filter( 'pre_delete_post' ) || doing_action( 'before_delete_post' ) ) {
 				return $this->pre_native_delete_aborted( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock );
 			}
+			// The universal 'all' dispatcher has no frame named 'all' in
+			// wp_current_filter. Never replace it if an OUTER dispatch is
+			// active; its public current_priority() exposes that condition.
+			global $wp_filter;
+			if ( isset( $wp_filter['all'] ) &&
+				( ! is_object( $wp_filter['all'] ) ||
+				get_class( $wp_filter['all'] ) !== \WP_Hook::class ||
+				false !== $wp_filter['all']->current_priority() ) ) {
+				return $this->pre_native_delete_aborted( $id, $type, $input, $original_json, $fenced_json, $posts_table, $scope, $lock );
+			}
 			// Enforce the pre_delete_post boundary and terminal callback
 			// ordering: other hooks may change blog, grant, or DB session.
 			$native_vetoed          = false;
@@ -1452,17 +1462,20 @@ final class Store {
 				try {
 					wp_delete_post( $id, true );
 				} catch ( \Throwable $exception ) {
-					// Generic plugin/Core exceptions can escape the special WordPress
-					// 'all' dispatcher, which has no matching current_filter stack
-					// frame. Its internal iteration state is then unknown. Never
-					// catch-and-continue after a third-party exception.
-					if ( $exception !== $pre_hook_order_abort && $exception !== $native_hook_gate_abort ) {
-						throw $exception;
-					}
-					$escaped_hook = $exception === $pre_hook_order_abort ? 'pre_delete_post' : 'before_delete_post';
-					if ( ! $this->restore_native_hook_dispatch( $native_hook_baseline, $escaped_hook ) ) {
+					// WordPress 7.1+ can catch arbitrary Ability callback exceptions
+					// and CONTINUE the request. Fully unwind escaped named hooks
+					// plus the otherwise invisible 'all' dispatcher first. The
+					// previous outer-'all' admission check makes its replacement safe.
+					$owned_hook = $exception === $pre_hook_order_abort ? 'pre_delete_post' :
+						( $exception === $native_hook_gate_abort ? 'before_delete_post' : null );
+					if ( ! $this->restore_native_hook_dispatch( $native_hook_baseline, $owned_hook ) ) {
 						// Never continue the WordPress request with a dispatcher
 						// whose execution state cannot be reconstructed safely.
+						throw $exception;
+					}
+					if ( null === $owned_hook ) {
+						// A provider/Core exception remains the caller's failure,
+						// never a verified Bridge deletion outcome.
 						throw $exception;
 					}
 					if ( $exception === $pre_hook_order_abort && ! $native_delete_started ) {
@@ -1552,59 +1565,89 @@ final class Store {
 	}
 
 	/**
-	 * Restore ONLY the named dispatcher escaped by one of our own guarded
-	 * deletion sentinels. A third-party exception may unwind WordPress's
-	 * special 'all' dispatcher, which is invisible in wp_current_filter;
-	 * such exceptions must propagate and never enter this method.
+	 * Restore escaped named hook frames AND the special universal 'all'
+	 * dispatcher, which is active without an 'all' wp_current_filter frame.
 	 *
-	 * The known sentinel runs after the 'all' callbacks finished, so only
-	 * its exact native hook can have an unbalanced dispatcher frame.
-	 * Re-register callbacks using public WP_Hook APIs and require identical
-	 * callback keys/order before replacing the hook object.
+	 * Admission refuses native deletion when 'all' was active in an OUTER
+	 * frame. Within this synchronous native call, we can therefore rebuild
+	 * a currently-active 'all' only if it was entered by this call. Use
+	 * public WP_Hook registration APIs, preserve each callback's exact ID,
+	 * priority, arguments and order, and swap ONLY after full preflight.
 	 *
 	 * @param array<int,string> $baseline Filter stack before wp_delete_post().
-	 * @param string            $expected_hook Exactly the owned sentinel's hook.
-	 * @return bool True only after exact single-frame dispatcher recovery.
+	 * @param ?string           $owned_hook Optional exact owned-sentinel stage.
+	 * @return bool Whether every affected dispatcher and stack was restored.
 	 */
-	private function restore_native_hook_dispatch( $baseline, $expected_hook ) {
+	private function restore_native_hook_dispatch( $baseline, $owned_hook ) {
 		global $wp_filter, $wp_current_filter;
-		if ( ! in_array( $expected_hook, array( 'pre_delete_post', 'before_delete_post' ), true ) ||
-			! is_array( $baseline ) || ! is_array( $wp_current_filter ) ||
-			in_array( $expected_hook, $baseline, true ) ||
-			array_slice( $wp_current_filter, 0, count( $baseline ) ) !== $baseline ||
-			array_slice( $wp_current_filter, count( $baseline ) ) !== array( $expected_hook ) ||
-			! isset( $wp_filter[ $expected_hook ] ) ||
-			! is_object( $wp_filter[ $expected_hook ] ) ||
-			get_class( $wp_filter[ $expected_hook ] ) !== \WP_Hook::class ) {
+		if ( ! is_array( $baseline ) || ! is_array( $wp_current_filter ) ||
+			count( $wp_current_filter ) < count( $baseline ) ||
+			array_slice( $wp_current_filter, 0, count( $baseline ) ) !== $baseline ) {
 			return false;
 		}
-		$previous = $wp_filter[ $expected_hook ];
-		$fresh    = new \WP_Hook();
+		$escaped = array_slice( $wp_current_filter, count( $baseline ) );
+		if ( 16 < count( $escaped ) || ( null !== $owned_hook && array( $owned_hook ) !== $escaped ) ) {
+			return false;
+		}
+		$affected = array_values( array_unique( $escaped ) );
+		// WordPress's global stack records the TARGET name, not "all".
+		// Since native admission proved there was no outer 'all' frame,
+		// any remaining universal dispatcher can be safely rebuilt. Do so
+		// for ALL escaped native exceptions: current_priority() alone
+		// could miss an iteration whose callback list became empty.
+		if ( isset( $wp_filter['all'] ) ) {
+			if ( ! is_object( $wp_filter['all'] ) || get_class( $wp_filter['all'] ) !== \WP_Hook::class ) {
+				return false;
+			}
+			$affected[] = 'all';
+		}
+		$replacements = array();
 		try {
-			foreach ( $previous->callbacks as $priority => $callbacks ) {
-				if ( ! is_int( $priority ) || ! is_array( $callbacks ) ) {
+			foreach ( array_unique( $affected ) as $hook ) {
+				if ( ! is_string( $hook ) || '' === $hook ||
+					in_array( $hook, $baseline, true ) ||
+					! isset( $wp_filter[ $hook ] ) ||
+					! is_object( $wp_filter[ $hook ] ) ||
+					get_class( $wp_filter[ $hook ] ) !== \WP_Hook::class ) {
 					return false;
 				}
-				foreach ( $callbacks as $callback ) {
-					if ( ! is_array( $callback ) ||
-						! array_key_exists( 'function', $callback ) ||
-						! isset( $callback['accepted_args'] ) ||
-						! is_int( $callback['accepted_args'] ) ) {
+				$previous = $wp_filter[ $hook ];
+				$fresh    = new \WP_Hook();
+				foreach ( $previous->callbacks as $priority => $callbacks ) {
+					if ( ! is_int( $priority ) || ! is_array( $callbacks ) ) {
 						return false;
 					}
-					$fresh->add_filter( $expected_hook, $callback['function'], $priority, $callback['accepted_args'] );
+					foreach ( $callbacks as $callback ) {
+						if ( ! is_array( $callback ) ||
+							! array_key_exists( 'function', $callback ) ||
+							! isset( $callback['accepted_args'] ) ||
+							! is_int( $callback['accepted_args'] ) ) {
+							return false;
+						}
+						$fresh->add_filter( $hook, $callback['function'], $priority, $callback['accepted_args'] );
+					}
 				}
+				if ( $fresh->callbacks !== $previous->callbacks ) {
+					return false;
+				}
+				$replacements[ $hook ] = array(
+					'previous' => $previous,
+					'fresh'    => $fresh,
+				);
 			}
 		} catch ( \Throwable $exception ) {
 			return false;
 		}
-		if ( $fresh->callbacks !== $previous->callbacks ||
-			! isset( $wp_filter[ $expected_hook ] ) ||
-			$wp_filter[ $expected_hook ] !== $previous ) {
-			return false;
+		// No swaps until all affected registries match their original form.
+		foreach ( $replacements as $hook => $pair ) {
+			if ( ! isset( $wp_filter[ $hook ] ) || $wp_filter[ $hook ] !== $pair['previous'] ) {
+				return false;
+			}
 		}
-		$wp_filter[ $expected_hook ] = $fresh;
-		$wp_current_filter           = $baseline;
+		foreach ( $replacements as $hook => $pair ) {
+			$wp_filter[ $hook ] = $pair['fresh'];
+		}
+		$wp_current_filter = $baseline;
 		return true;
 	}
 
