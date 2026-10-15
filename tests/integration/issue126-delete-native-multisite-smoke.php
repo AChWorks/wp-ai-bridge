@@ -51,6 +51,66 @@ $call = static function ( $input ) {
 	}
 	return $ability->execute( $input );
 };
+
+// Verify the *same request* remains in a WordPress-consistent hook state
+// after a deliberate native-hook exception has been caught by the Bridge.
+// Private properties are OBSERVED only in disposable tests, never mutated.
+$assert_clean_hook_dispatch = static function ( $baseline, $stage ) use ( $assert ) {
+	global $wp_filter, $wp_current_filter;
+	$expected_current = $baseline ? end( $baseline ) : false;
+	$assert( $wp_current_filter === $baseline &&
+		current_filter() === $expected_current &&
+		! doing_filter( 'pre_delete_post' ) &&
+		! doing_action( 'before_delete_post' ),
+		$stage . ': WordPress global hook stack was not restored.' );
+	$reflected = new ReflectionClass( WP_Hook::class );
+	$fields = array(
+		'nesting_level'   => 0,
+		'iterations'      => array(),
+		'current_priority' => array(),
+		'doing_action'    => false,
+	);
+	foreach ( array( 'pre_delete_post', 'before_delete_post' ) as $hook ) {
+		$assert( isset( $wp_filter[ $hook ] ) &&
+			get_class( $wp_filter[ $hook ] ) === WP_Hook::class,
+			$stage . ': native hook dispatcher was replaced by an unknown object.' );
+		foreach ( $fields as $field => $expected ) {
+			$actual = $reflected->getProperty( $field )->getValue( $wp_filter[ $hook ] );
+			$assert( $actual === $expected,
+				$stage . ': leaked WP_Hook internal state: ' . $hook . ':' . $field );
+		}
+		$probe = static function ( $first ) { return $first; };
+		add_filter( $hook, $probe, 25, 1 );
+		$assert( 25 === has_filter( $hook, $probe ),
+			$stage . ': add_filter failed after dispatcher recovery.' );
+		$assert( remove_filter( $hook, $probe, 25 ) &&
+			false === has_filter( $hook, $probe ),
+			$stage . ': remove_filter failed after dispatcher recovery.' );
+	}
+	// Core hooks must still function normally in THIS PHP request. This
+	// disposable ordinary post is distinct from both private Workspace IDs.
+	$plain = wp_insert_post( array(
+		'post_type'    => 'post',
+		'post_status'  => 'draft',
+		'post_title'   => 'Disposable post-delete hook-dispatch recovery probe',
+		'post_content' => 'Must be removed normally.',
+	), true );
+	$assert( ! is_wp_error( $plain ) && is_int( $plain ) && $plain > 0,
+		$stage . ': could not create ordinary Core post.' );
+	try {
+		$deleted = wp_delete_post( $plain, true );
+		$assert( $deleted instanceof WP_Post && ! get_post( $plain ),
+			$stage . ': a later ordinary native hook invocation did not complete.' );
+	} finally {
+		if ( get_post( $plain ) ) {
+			wp_delete_post( $plain, true );
+		}
+	}
+	$assert( $wp_current_filter === $baseline &&
+		current_filter() === $expected_current,
+		$stage . ': subsequent native WordPress hook invocation left a stale stack.' );
+};
+
 try {
 	$doc = $store->create_document( array(
 		'project_ref' => $project,
@@ -172,8 +232,12 @@ try {
 		return $check;
 	};
 	add_filter( 'pre_delete_post', $register_late_pre, 10, 3 );
+	$pre_dispatch_baseline = $GLOBALS['wp_current_filter'];
 	try {
 		$dynamic_pre_result = $call( $input );
+		$assert( PHP_INT_MAX === has_filter( 'pre_delete_post', $late_pre ),
+			'Dynamic pre-delete hook was discarded during dispatcher recovery.' );
+		$assert_clean_hook_dispatch( $pre_dispatch_baseline, 'pre_delete_post' );
 	} finally {
 		remove_filter( 'pre_delete_post', $register_late_pre, 10 );
 		remove_filter( 'pre_delete_post', $late_pre, PHP_INT_MAX );
@@ -300,8 +364,12 @@ try {
 	};
 	add_action( 'before_delete_post', $observe_dynamic, 1, 1 );
 	add_action( 'before_delete_post', $register_late_before, 10, 1 );
+	$before_dispatch_baseline = $GLOBALS['wp_current_filter'];
 	try {
 		$dynamic_before_result = $call( $dynamic_input );
+		$assert( PHP_INT_MAX === has_filter( 'before_delete_post', $late_before ),
+			'Dynamic before-delete hook was discarded during dispatcher recovery.' );
+		$assert_clean_hook_dispatch( $before_dispatch_baseline, 'before_delete_post' );
 	} finally {
 		remove_action( 'before_delete_post', $observe_dynamic, 1 );
 		remove_action( 'before_delete_post', $register_late_before, 10 );
