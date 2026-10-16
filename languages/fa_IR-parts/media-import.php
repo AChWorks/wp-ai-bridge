@@ -1,5 +1,6 @@
 <?php
 return array(
+	'A private temporary staging directory is unavailable; nothing was imported.' => 'فضای موقت خصوصی برای آماده‌سازی فایل در دسترس نیست؛ هیچ فایلی درون‌ریزی نشد.',
 	'Import Media from URL' => 'درون‌ریزی رسانه از URL',
 	'Downloads safe HTTP(S) media into the Media Library when Remote Media and Builder Write are enabled.' => 'وقتی دسترسی «رسانهٔ راه‌دور» و «نوشتن سازنده» فعال باشند، رسانه را از نشانی امن HTTP(S) دریافت و وارد کتابخانهٔ رسانه می‌کند.',
 	'Remote Media' => 'رسانهٔ راه‌دور',

@@ -102,8 +102,9 @@ function wpnb67_reset() {
 	);
 }
 function wp_max_upload_size() { return $GLOBALS['wpnb67']['max']; }
-function wp_tempnam( $name ) {
-	$file = tempnam( sys_get_temp_dir(), 'wpnb67-' );
+function wp_tempnam( $name, $directory = '' ) {
+	$file = tempnam( '' !== $directory ? $directory : sys_get_temp_dir(), 'wpai-native-stage-' );
+	$GLOBALS['wpnb67_stage_dirs'][] = dirname( $file );
 	$GLOBALS['wpnb67']['files'][] = $file;
 	return $file;
 }
@@ -391,6 +392,9 @@ try {
 	$wpai67_lock_file = $wpai67_lock_dir . '/.wpai-extension-native-mutation.lock';
 	if ( is_file( $wpai67_lock_file ) ) {
 		unlink( $wpai67_lock_file );
+	}
+	foreach ( array_unique( $GLOBALS['wpnb67_stage_dirs'] ?? array() ) as $dir ) {
+		if ( str_starts_with( basename( $dir ), 'wpai-native-input-' ) && is_dir( $dir ) ) { rmdir( $dir ); }
 	}
 	rmdir( $wpai67_lock_dir );
 }

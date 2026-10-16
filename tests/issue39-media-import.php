@@ -34,10 +34,11 @@ function wp_max_upload_size() {
 	if ( 'limit_throw' === $GLOBALS['wpnb39']['mode'] ) { throw new RuntimeException( 'private-token limit' ); }
 	return $GLOBALS['wpnb39']['max'];
 }
-function wp_tempnam( $name ) {
+function wp_tempnam( $name, $directory = '' ) {
 	if ( 'temp_throw' === $GLOBALS['wpnb39']['mode'] ) { throw new RuntimeException( 'private-token temp' ); }
 	if ( 'temp_failure' === $GLOBALS['wpnb39']['mode'] ) { return false; }
-	$file = tempnam( sys_get_temp_dir(), 'wpnb39-' );
+	$file = tempnam( '' !== $directory ? $directory : sys_get_temp_dir(), 'wpai-native-stage-' );
+	$GLOBALS['wpnb39_stage_dirs'][] = dirname( $file );
 	$GLOBALS['wpnb39']['files'][] = $file;
 	$GLOBALS['wpnb39']['staging'][] = $file;
 	if ( 'revoke_temp' === $GLOBALS['wpnb39']['mode'] ) { $GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ]['remote_media'] = 0; }
@@ -261,6 +262,9 @@ try {
 } finally {
 	restore_error_handler();
 	foreach ( $GLOBALS['wpnb39']['files'] as $file ) { if ( is_file( $file ) ) { unlink( $file ); } }
+	foreach ( array_unique( $GLOBALS['wpnb39_stage_dirs'] ?? array() ) as $dir ) {
+		if ( str_starts_with( basename( $dir ), 'wpai-native-input-' ) && is_dir( $dir ) ) { rmdir( $dir ); }
+	}
 }
 
 }
