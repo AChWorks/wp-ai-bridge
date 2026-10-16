@@ -56,7 +56,7 @@ try {
 	wpai134_review_require( ! empty( $failed['result']['isError'] ), 'Directory fsync refusal reached a native WordPress write.' );
 	wpai134_review_require( $GLOBALS['wpai134_test_dirsync_attempts'] > 0, 'Directory fsync fault injection did not reach the durable publication boundary.' );
 
-	$root = realpath( get_temp_dir() ) . '/wpai-transfer-' .
+	$root = \WP_AI_Bridge\Support\Safe_Temporary_Staging::directory() . '/wpai-transfer-' .
 		substr( hash( 'sha256', serialize( array( DB_NAME, ABSPATH, get_current_blog_id(), wp_salt( 'auth' ) ) ) ), 0, 40 );
 	wpai134_review_require( file_exists( $root . '/' . $staged . '.claim' ), 'The interrupted durable publication removed the one-way claim fence.' );
 	$post_query = get_posts(

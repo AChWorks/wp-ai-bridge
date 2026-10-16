@@ -505,7 +505,7 @@ final class Private_Transfer_Session {
 		}
 		$path      = $artifact['path'];
 		$canonical = realpath( $path );
-		$temp_dir  = realpath( get_temp_dir() );
+		$temp_dir  = Safe_Temporary_Staging::directory();
 		if ( ! is_string( $canonical ) || ! is_string( $temp_dir ) ||
 			is_link( $path ) || ! is_file( $path ) || ! is_readable( $path ) ||
 			dirname( $canonical ) !== $temp_dir ||
@@ -947,7 +947,7 @@ final class Private_Transfer_Session {
 
 	/** @return string|WP_Error */
 	private function root() {
-		$base = realpath( get_temp_dir() );
+		$base = Safe_Temporary_Staging::directory();
 		if ( ! is_string( $base ) || ! is_dir( $base ) || ! is_writable( $base ) ) {
 			return new WP_Error( 'transfer_storage_unavailable', 'No writable temporary private storage is available.' );
 		}

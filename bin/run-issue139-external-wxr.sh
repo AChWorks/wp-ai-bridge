@@ -30,6 +30,10 @@ host_port="$("${compose[@]}" port wordpress 443 | awk -F: '{print $NF}')"
 [[ "$host_port" =~ ^[0-9]+$ ]] || { echo 'ERROR: missing loopback HTTPS port' >&2; exit 1; }
 "${compose[@]}" cp build/wp-ai-bridge.zip wordpress:/var/www/html/wp-ai-bridge.zip
 "${wp[@]}" core install --url="https://localhost:$host_port" --title='WXR external MCP proof' --admin_user=admin --admin_password=disposable-fixture-only --admin_email=admin@example.invalid --skip-email --allow-root
+if [[ "${WPAI_ISSUE134_PUBLIC_TEMP:-0}" == "1" ]]; then
+    # Disposable acceptance only: WordPress default temp is deliberately HTTP served.
+    "${wp[@]}" config set WP_TEMP_DIR /var/www/html/wp-content --allow-root
+fi
 "${wp[@]}" rewrite structure '/%postname%/' --hard --allow-root
 "${wp[@]}" rewrite flush --hard --allow-root
 "${wp[@]}" plugin install https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip --activate --allow-root

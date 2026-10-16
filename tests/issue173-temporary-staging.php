@@ -27,7 +27,8 @@ function get_temp_dir() { return $GLOBALS['wpai173']['temp_dir']; }
 function wp_get_upload_dir() { return array( 'basedir' => $GLOBALS['wpai173']['uploads'] ); }
 function wp_tempnam( $filename, $directory = '' ) {
 	$target = '' === $directory ? get_temp_dir() : $directory;
-	$file = tempnam( $target, 'wpai-native-stage-' );
+	$prefix = str_starts_with( $filename, 'wpai-private-artifact' ) ? 'wpai-private-artifact-' : 'wpai-native-stage-';
+	$file = tempnam( $target, $prefix );
 	$GLOBALS['wpai173']['created'][] = $file;
 	return $file;
 }
@@ -41,6 +42,7 @@ try {
 	// WP_TEMP_DIR may be a publicly served content directory; stage elsewhere
 	// automatically when the host has a trustworthy ordinary OS temp directory.
 	$_SERVER['DOCUMENT_ROOT'] = ABSPATH;
+	wpai173_check( Safe_Temporary_Staging::directory() === realpath( sys_get_temp_dir() ), 'Private transfer root did not recover from publicly served WP temp.' );
 	$file = Safe_Temporary_Staging::create( 'untrusted-image.png' );
 	wpai173_check( is_string( $file ) && is_file( $file ), 'No safe scratch file was created.' );
 	wpai173_check( dirname( dirname( $file ) ) === realpath( sys_get_temp_dir() ), 'Staging did not leave the served content root.' );
@@ -65,10 +67,20 @@ try {
 	wpai173_check( dirname( dirname( $file ) ) === realpath( sys_get_temp_dir() ), 'Symlink to served path accepted.' );
 	wp_delete_file( $file );
 
+	// WXR producer artifacts retain the stable parent + prefix expected by
+	// preflight, while ordinary Media/ZIP orphans remain in a separate 0700 dir.
+	$artifact = Safe_Temporary_Staging::create_private_artifact();
+	wpai173_check( is_string( $artifact ) && is_file( $artifact ), 'Private producer artifact unavailable.' );
+	wpai173_check( dirname( $artifact ) === realpath( sys_get_temp_dir() ), 'WXR artifact unexpectedly placed in one-shot directory.' );
+	wpai173_check( str_starts_with( basename( $artifact ), 'wpai-private-artifact' ) &&
+		0600 === ( fileperms( $artifact ) & 0777 ), 'WXR artifact filename or permissions not preserved.' );
+	wp_delete_file( $artifact );
+
 	// If every available directory is served, refuse before writing anything.
 	$_SERVER['DOCUMENT_ROOT'] = sys_get_temp_dir();
 	$before = count( $GLOBALS['wpai173']['created'] );
 	$denied = Safe_Temporary_Staging::create( 'untrusted-media.png' );
+	wpai173_check( Safe_Temporary_Staging::directory() instanceof WP_Error, 'Unsafe-only host exposed a private transfer root.' );
 	wpai173_check( $denied instanceof WP_Error && 'temporary_storage_unsafe' === $denied->get_error_code(), 'Unsafe-only host did not fail closed.' );
 	wpai173_check( count( $GLOBALS['wpai173']['created'] ) === $before, 'Unsafe-only host allocated a public temporary file.' );
 	echo "PASS: Issue #173 private-temp staging, served roots, aliases, symlinks and fail-closed.\n";

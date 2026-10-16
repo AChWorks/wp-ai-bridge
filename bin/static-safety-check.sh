@@ -20,7 +20,8 @@ fi
 one_shot=src/Support/class-safe-temporary-staging.php
 if [[ "$(grep -cF '@mkdir( $path, 0700 )' "$one_shot" || true)" != "1" ||
       "$(grep -cE '(^|[^[:alnum:]_])mkdir[[:space:]]*\(' "$one_shot" || true)" != "1" ||
-      "$(grep -cF "wp_tempnam( 'wpai-native-stage', \$staging . DIRECTORY_SEPARATOR )" "$one_shot" || true)" != "1" ]] ||
+      "$(grep -cF "wp_tempnam( 'wpai-native-stage', \$staging . DIRECTORY_SEPARATOR )" "$one_shot" || true)" != "1" ||
+      "$(grep -cF "wp_tempnam( 'wpai-private-artifact.bin', \$root . DIRECTORY_SEPARATOR )" "$one_shot" || true)" != "1" ]] ||
     grep -nE '(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|rmdir)[[:space:]]*\(' "$one_shot"; then
     echo "ERROR: native temporary staging exceeded its exact private directory exception." >&2
     exit 1
@@ -34,7 +35,7 @@ fi
 private_writer=src/Support/class-private-artifact-writer.php
 private_forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|unlink|rename|copy|mkdir|rmdir)[[:space:]]*\('
 if grep -nE "$private_forbidden" "$private_writer" ||
-   [[ "$(grep -cF "wp_tempnam( 'wpai-private-artifact.bin' )" "$private_writer" || true)" != "1" ]] ||
+   [[ "$(grep -cF "Safe_Temporary_Staging::create_private_artifact()" "$private_writer" || true)" != "1" ]] ||
    [[ "$(grep -cF "fopen( \$real, 'wb' )" "$private_writer" || true)" != "1" ]] ||
    [[ "$(grep -cF 'fwrite( $this->handle, substr( $bytes, $offset ) )' "$private_writer" || true)" != "1" ]] ||
    [[ "$(grep -Ec '(^|[^[:alnum:]_])fopen[[:space:]]*\(' "$private_writer" || true)" != "1" ]] ||

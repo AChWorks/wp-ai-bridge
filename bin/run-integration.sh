@@ -273,6 +273,14 @@ fi
 echo "== Issue #119 registered REST capacity: small, synthetic provider-heavy, exact 4096/4097 ceiling =="
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue119-rest-capacity-smoke.php --user=1 --allow-root
 
+# Only one existing WordPress 6.9 / official Adapter 0.7.0 job pays for
+# the candidate-specific #134 published-lease and private fallback proof.
+# Its own disposable Docker project/volumes are isolated from this suite.
+if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
+    echo '== #134 portable private temp, v0.6.5 upgrade, safe native consumers =='
+    bash "$root/bin/run-issue134-private-portability.sh" "$wordpress_tag"
+fi
+
 echo "== Workspace deactivation/uninstall preservation =="
 "${wp[@]}" eval '
 $store = new WP_AI_Bridge\Workspace\Store();

@@ -53,9 +53,9 @@ final class Private_Artifact_Writer {
 		}
 		$instance = new self( $budget );
 		require_once ABSPATH . 'wp-admin/includes/file.php';
-		$file = wp_tempnam( 'wpai-private-artifact.bin' );
-		if ( ! is_string( $file ) || '' === $file || ! is_file( $file ) || is_link( $file ) ) {
-			return new WP_Error( 'artifact_storage_unavailable', 'Could not allocate a private temporary artifact.' );
+		$file = Safe_Temporary_Staging::create_private_artifact();
+		if ( is_wp_error( $file ) ) {
+			return new WP_Error( 'artifact_storage_unsafe', 'No safe private temporary directory is available for an artifact.' );
 		}
 		$real = realpath( $file );
 		if ( ! is_string( $real ) || '' === $real || self::is_under_webroot( $real ) ) {

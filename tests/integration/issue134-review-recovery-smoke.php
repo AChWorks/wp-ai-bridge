@@ -23,7 +23,7 @@ $client = null;
 try {
 	list( $admin_token, $admin_session, $client ) = wpai134_review_connect( $admin );
 	$tokens[]                                     = $admin_token;
-	$root = realpath( get_temp_dir() ) . '/wpai-transfer-' .
+	$root = \WP_AI_Bridge\Support\Safe_Temporary_Staging::directory() . '/wpai-transfer-' .
 		substr( hash( 'sha256', serialize( array( DB_NAME, ABSPATH, get_current_blog_id(), wp_salt( 'auth' ) ) ) ), 0, 40 );
 
 	$pending_id = wpai134_review_stage( $admin_token, $admin_session, 'text', 'unpublished claimant' );
