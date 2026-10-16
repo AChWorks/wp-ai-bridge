@@ -1,13 +1,16 @@
 # Development and testing
 
-## Project continuity
+## Where to find reliable project information
 
-Before changing durable architecture or resuming development after a long gap, read:
+- **Product intent and lasting constraints:** [MASTER-SPEC](../MASTER-SPEC.md). It is not a release history or active task tracker.
+- **Architecture and actual operation contracts:** [Architecture](./ARCHITECTURE.md), [Ability reference](./ABILITIES.md) and the relevant narrowly scoped `docs/` guide.
+- **Security, identity and recovery:** [Security](./SECURITY.md), [approved OAuth clients](./OAUTH-CLIENTS.md) and the executable regression tests.
+- **Current work:** GitHub Issues and PRs. **Validation:** the relevant exact-head CI. **Published behavior:** GitHub release assets, tags and changelog.
+- **User workflows:** root README and [installation](./INSTALLATION.md) / [user guide](./USER-GUIDE.md). Do not duplicate developer checkpoints in them.
 
-- [`../MASTER-SPEC.md`](../MASTER-SPEC.md) for canonical project intent and durable constraints;
-- [`maintainer/README.md`](./maintainer/README.md) for the recovery/source-of-truth map and preserved design references.
+Use Git history for **occasional historical investigation**, not as an active documentation tree. The original v0.1 design snapshot remains recoverable at [this immutable historical commit](https://github.com/AChWorks/wp-ai-bridge/tree/fe2516435d82bb7957d7e66dae039cad410ff022/docs/maintainer/reference/v0.1-pre-release). The dated v0.5.1 administrator coverage matrix remains recoverable at [this exact Git revision](https://github.com/AChWorks/wp-ai-bridge/blob/76759d71dddd26d390a4fd748377512326fc76d8/docs/POST-PARITY-AUDIT.md), alongside the accepted outcome in [closed Issue #99](https://github.com/AChWorks/wp-ai-bridge/issues/99). Neither is a current implementation/roadmap.
 
-Do not reconstruct active work from old chats or historical reference files. Current source/tests, GitHub Issues/PRs, CI, and Releases own mutable implementation/project state.
+Do not introduce parallel handoff journals, old-release snapshots or long-lived topic branches as substitutes for GitHub truth. After a merged topic has no dependent work, its branch can be removed without losing Git or PR history.
 
 ## Fast development loop
 
@@ -191,10 +194,10 @@ bin/             development/build/test helpers
 docs/maintainer/ recovery map and preserved design references
 ```
 
-### Latest published v0.6.6-to-candidate ZIP upgrade regression
+### Pinned published-predecessor ZIP upgrade regression
 
-This fixture verifies an actual published-installation upgrade from the
-**published v0.6.6 release ZIP, pinned by SHA-256** (the runner checks byte identity; GitHub does not enforce asset immutability) to the current
+The currently checked-in fixture exercises the real **published v0.6.7 → v0.6.8** replacement path. It starts from the
+**published v0.6.7 release ZIP, pinned by SHA-256** (the runner checks byte identity; GitHub does not enforce asset immutability) to the current
 candidate, using WordPress Core's normal replacement operation:
 
 ```bash
@@ -211,16 +214,13 @@ must register `workspace-delete`, `diagnostics-read`, and the guarded exact pack
 default-off Users & Destructive authority; registration is not authorization.
 Fixture credentials remain confined to the disposable test environment.
 
-Both supported CI upgrade lanes use this runner. For each **later** public
-release, update the source version, published predecessor ZIP URL, immutable
-SHA-256 checksum and fixture version together. A historical predecessor's
-green result cannot substitute for the latest-published-to-candidate proof.
+Both supported CI upgrade lanes use this runner. Its frozen v0.6.7 predecessor is correct for the already-published **v0.6.8** candidate, **not** automatically the newest release for future work. Before validating the **next** plugin release, explicitly advance the predecessor ZIP URL, checksum, version and compatible fixture to the actual latest published predecessor. Do not label a historical predecessor run as newest-published-to-candidate proof.
 
 ## Canonical GitHub distribution and conditional WordPress.org directory eligibility
 
 Open acceptance and release-policy work is tracked in [WordPress.org directory readiness #171](https://github.com/AChWorks/wp-ai-bridge/issues/171); this section owns enduring maintainer guidance, not live submission status.
 
-**Owner direction (2026-10-16):** GitHub Releases is the maintained public distribution and update channel for the **full-feature plugin**. Do not remove, hide, or separate administrator-approved External Packages, installed plugin/theme Source Editing, or other legitimate features to satisfy Plugin Directory policy. The GitHub release ZIP keeps the canonical `wp-ai-bridge/wp-ai-bridge.php` identity. Starting with the first published version containing `Update URI: https://github.com/AChWorks/wp-ai-bridge`, Core's native `update_plugins_github.com` path discovers official published stable release assets; actual downloads/replacements still use WordPress Core. Existing v0.6.7 installations need one manual ZIP replacement to bootstrap this capability. Never claim an unreleased candidate is installed or published.
+**Distribution policy:** GitHub Releases is the maintained public distribution and update channel for the **full-feature plugin**. Do not remove, hide, or separate administrator-approved External Packages, installed plugin/theme Source Editing, or other legitimate features to satisfy Plugin Directory policy. The GitHub release ZIP keeps the canonical `wp-ai-bridge/wp-ai-bridge.php` identity. Starting with published **v0.6.8**, which contains `Update URI: https://github.com/AChWorks/wp-ai-bridge`, Core's native `update_plugins_github.com` path discovers official published stable release assets; actual downloads/replacements still use WordPress Core. Sites still running v0.6.7 or older need one manual ZIP replacement to bootstrap this capability; active v0.6.8+ installations can discover future stable releases natively. Never claim an unreleased candidate is installed or published.
 
 Official WordPress.org listing is a **separate, conditional eligibility/reviewer/submission outcome**: attempt only if the **same full-feature product** is acceptable. No code- or metadata-disguised directory-only variant and no reviewer contact without Owner approval. A Plugin Check `plugin_updater_detected` result is evidence about directory eligibility, not permission to remove the GitHub update channel.
 
@@ -250,12 +250,4 @@ Do not force-move a published version tag. Use a patch release for post-publicat
 
 Repository-only documentation/maintainer updates do not require a plugin version bump unless they change the shipped plugin package or published product contract.
 
-## Generic term metadata validation
-
-`composer test` includes `tests/issue36-term-meta.php` for bounded schemas/physical reads, target and group gates, shared secret policy, JSON/opaque-value refusal and stale-state failures. The actual WordPress capability/filter and persistence behavior is exercised by `tests/integration/issue36-term-meta-security-smoke.php` in **both** existing integration lanes. The fixture uses Core categories/tags and a private custom taxonomy with a dedicated edit capability, without an external provider plugin.
-
-Keep the Issue #34 regression/integration tests unchanged. The new tests cover explicit/provider/mapped authorization, shared term identity, physical defaults/virtual reads, exact-byte CAS, duplicate contention, original-invocation creation ownership, compensation lifecycle/cache state, SQL NULL/scalar/slashing behavior, sanitizer pass count, authority/target races (including taxonomy or term-taxonomy identity changes before and during all three compensation pre-hooks) and log redaction. `bin/static-safety-check.sh` confines the term store separately; adding another database surface requires explicit architectural review, not an exclusion from the check.
-
-The primary-write regression `tests/integration/issue36-primary-identity-smoke.php` runs in both native lanes. Its isolated `query` observer returns SQL unchanged and moves only a fixture term immediately before the pending physical mutation, after the last PHP guard. It covers taxonomy and term-taxonomy-ID transfers for creation, update and deletion, including NULL/string branches; it checks that every boundary was actually reached, the transferred target is real, the result is an error, and all physical metadata bytes are unchanged. Keep the separate 12 before/during-compensation transfer tests intact. This deterministic timing test is not a separate multi-session database-lock lifetime test.
-
-The term store's identity joins may read only native `terms`/`term_taxonomy` while writing only termmeta. `bin/check-term-meta-confinement.php` pins the complete literal SQL and every bound argument, including table identity and the original authorized taxonomy/term-taxonomy snapshot. Tests mutate these source tokens without executing the malformed samples. Do not regenerate expectations merely to approve an unreviewed query change, or relax the independently shipped post-meta checks.
+Term-meta security and race regressions live with their executable sources: `tests/issue36-term-meta.php`, `tests/integration/issue36-term-meta-security-smoke.php`, `tests/integration/issue36-primary-identity-smoke.php` and `bin/check-term-meta-confinement.php`. Change those proofs only when the corresponding runtime contract changes; do not duplicate each assertion as a maintainer narrative.

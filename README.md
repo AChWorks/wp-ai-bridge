@@ -1,67 +1,33 @@
 # WP AI Bridge
 
-[![CI](https://github.com/AChWorks/wp-ai-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/AChWorks/wp-ai-bridge/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/AChWorks/wp-ai-bridge)](https://github.com/AChWorks/wp-ai-bridge/releases/latest)
 [![License](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](./LICENSE)
 
-WP AI Bridge connects WordPress to authenticated, compatible AI/MCP clients through HTTPS, WordPress-backed OAuth, the official WordPress MCP Adapter, and the WordPress Abilities API. It includes a tested direct ChatGPT connection and administrator-approved additional OAuth client identities; compatibility with other named AI products must be verified rather than assumed.
+**Connect compatible AI assistants and approved integrations to your WordPress site, on your terms.** WP AI Bridge lets authorized clients discover and perform supported WordPress administration through native WordPress permissions and access groups controlled by the site administrator.
 
-It exposes bounded, typed site-management abilities while keeping WordPress capabilities and explicit Bridge access groups in control. The long-term goal is full legitimate administrator coverage, **not a claim that every registered REST API or browser-only admin operation is already exposed**. Bridge is a secure access/delegation and data-exchange layer, not a replacement for Core or specialized feature plugins; its private Workspace intentionally preserves recoverable AI project context.
-
-## What it provides
-
-- Direct ChatGPT Workspace App connection over HTTPS with OAuth 2.1 and PKCE, plus explicit approval of independently operated compatible OAuth clients.
-- Read and update posts, pages, supported custom post types, revisions, and Gutenberg blocks.
-- Admin-controlled generic post/term metadata access for exact WordPress objects the connected user may edit, including protected/private metadata without provider/post-type/taxonomy/meta-key allowlists.
-- Media Library read, upload, safe URL import, update, and delete operations.
-- WordPress-native WXR content export and consent-bound official Importer execution over private OAuth/MCP byte windows (**introduced in the v0.6.0 source; absent from v0.5.1**). This is neither complete site backup nor proof of hosted model attachment exchange.
-- Taxonomy and classic navigation management.
-- Bounded WordPress site settings.
-- WordPress.org plugin/theme lifecycle operations, separately authorized public HTTPS package installation, and explicitly confirmed safe replacement of existing plugin/theme ZIP packages by URL (no automatic activation). **No manual private-ZIP staging UI:** the generic authenticated private byte plane was added in v0.6.0 source (PR #145), not in v0.5.1; hosted client attachment acceptance remains under [#134](https://github.com/AChWorks/wp-ai-bridge/issues/134).
-- Separately enabled installed plugin/theme source read, preview, apply, and conflict-safe recovery using native WordPress authority.
-- Filtered, bounded discovery of registered Core/provider REST routes and high-trust guarded native invocation, under independent default-off administrator grants and real provider permissions.
-- User lifecycle and assignment of **existing editable roles** behind explicit permission checks; creation/editing of role definitions belongs to the owning WordPress/plugin API, not a second role editor inside Bridge.
-- Persistent Workspace documents and tasks for durable project context.
-- Native Astra Ability reuse when Astra Abilities are enabled.
-- Managed Code Snippets lifecycle support for compatible Code Snippets versions.
-- Gravity Forms fallback through GFAPI when no native Gravity Forms Ability surface is active.
-- Persian (`fa_IR`) localization and RTL-compatible admin screens.
+The plugin is free and self-hosted. A direct **ChatGPT** connection is tested; a separate Gateway is optional. Other compatible clients and services can use approved connections where their authentication and transport actually interoperate. **Not every administrator operation or future service workflow is available yet.**
 
 ## Requirements
 
-- WordPress **6.9 or newer**.
-- The official [WordPress MCP Adapter](https://wordpress.org/plugins/mcp-adapter/), installed as a separate WordPress plugin (not bundled). The supported CI lanes exercise MCP Adapter `0.6.1` and `0.7.0`; check the exact installed Bridge/Adapter builds and the version-specific notes below.
-- HTTPS and a publicly reachable WordPress REST API for direct ChatGPT Workspace App connections; other remote clients must be able to reach the endpoint over their supported transport.
-- A WordPress account with the capabilities required for the operations you enable.
+- **WordPress 6.9 or newer**.
+- The separate official [WordPress MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) plugin, installed and active for MCP connections. Published integration tests cover Adapter 0.6.1 and 0.7.0.
+- HTTPS and a publicly reachable WordPress REST API for direct ChatGPT access.
+- A WordPress account with the capabilities needed for the operations you authorize.
 
 ## Install
 
-1. Download `wp-ai-bridge.zip` from the [latest GitHub release](https://github.com/AChWorks/wp-ai-bridge/releases/latest).
-2. In WordPress open **Plugins → Add Plugin → Upload Plugin**.
-3. Upload the ZIP, install it, and activate **WP AI Bridge**.
-4. Install and activate the official WordPress MCP Adapter if it is not already active.
-5. Open **WP AI Bridge → Settings**.
+1. Download the official **`wp-ai-bridge.zip`** from the [latest stable GitHub Release](https://github.com/AChWorks/wp-ai-bridge/releases/latest). **Do not download “Source code (zip)”; it is not the installable plugin package.**
+2. In WordPress open **Plugins → Add Plugin → Upload Plugin**, select the ZIP and install it.
+3. Activate WP AI Bridge and the official MCP Adapter.
+4. Visit **WP AI Bridge → Settings** to review the connection details and access groups.
 
-**MCP Adapter 0.7.0 compatibility (October 2026):** The official 0.7.0 release
-changes internal Adapter/schema APIs and adds MCP `2026-07-28`. WP AI Bridge
-uses the standalone Adapter plugin and its registered HTTP transport, not the
-removed DTO/validator APIs. In the established MCP `2025-11-25` HTTP flow,
-clients must send both `Mcp-Session-Id` and
-`MCP-Protocol-Version: 2025-11-25` with every subsequent session request
-after `initialize`; omitting the version header produces HTTP 400 under
-Adapter 0.7.0 even when 0.6.1 accepted the earlier request. Correct the client
-request rather than enabling Bridge grants or rotating OAuth credentials.
-The new sessionless 2026-07-28 client flow has a different request contract;
-the 2025-11-25 compatibility tests do not establish that flow. See the
-[official 0.7.0 migration notes](https://github.com/WordPress/mcp-adapter/blob/trunk/docs/migration/v0.7.0.md).
+Upgrading? Back up your site and database first, then use WordPress's normal **Replace current with uploaded** flow, without uninstalling the old plugin. Existing canonical settings, OAuth identity and private Workspace are intended to remain intact; verify them after upgrading.
 
-Version 0.4.1 established the native canonical baseline at `wp-ai-bridge/wp-ai-bridge.php`. Later canonical builds retain that installation identity and use the normal WordPress replace/update flow; the retired pre-0.4.0 migration runtime is not included. Install a **published** release, not an untagged source or release-candidate branch. Review the selected release's security and hosting requirements before upgrading. A site still on the published 0.3.0 package that must preserve its old Workspace data should first perform the one-time migration using the immutable v0.4.0 release, verify the migrated Workspace, and then update to the latest release.
+If you still use the historical v0.3.0 installation and need to preserve old Workspace data, **follow the special v0.4.0 migration first**. See [complete installation and upgrade instructions](./docs/INSTALLATION.md).
 
-See [Installation and connection](./docs/INSTALLATION.md) for the complete setup.
+## Connect ChatGPT directly
 
-## Connect ChatGPT (built-in client)
-
-On an HTTPS WordPress site, **WP AI Bridge → Settings** shows the canonical MCP endpoint for the site:
+Your site's settings screen displays the actual MCP endpoint, in this form:
 
 ```text
 https://YOUR-SITE.example/wp-json/wp-ai-bridge/v1/mcp
@@ -69,126 +35,69 @@ https://YOUR-SITE.example/wp-json/wp-ai-bridge/v1/mcp
 
 In a ChatGPT workspace with Developer Mode enabled:
 
-1. Open **Workspace settings → Apps**.
-2. Create a custom App.
-3. Enter the MCP endpoint shown by WordPress.
-4. Choose OAuth authentication and run **Scan Tools**.
-5. Sign in to WordPress when prompted.
-6. Review the WordPress consent page and authorize ChatGPT.
+1. Open **Workspace settings → Apps** and create a custom App.
+2. Enter your WordPress MCP endpoint and select OAuth authentication.
+3. Scan Tools, sign in to WordPress, then review and approve the consent screen.
+4. Back in WordPress, enable only the access groups needed for your intended work.
 
-Canonical builds serve only the `wp-ai-bridge` MCP/OAuth routes. Updating an already-canonical installation preserves the canonical plugin/storage identity; verify OAuth connectivity and existing permission boundaries after an upgrade, rather than assuming a new build is already connected or that new grants are enabled.
+OAuth consent does **not** automatically enable Bridge write privileges or grant missing WordPress capabilities. Another compatible OAuth client must have its own administrator-approved identity; it cannot borrow ChatGPT's connection. See [approved OAuth clients](./docs/OAUTH-CLIENTS.md) and [connection troubleshooting](./docs/TROUBLESHOOTING.md).
 
-No tunnel or separate proxy service is required for the direct ChatGPT HTTPS setup. Independently operated clients supporting the existing metadata and signed-client contract can be explicitly approved under **WP AI Bridge → OAuth Clients**; see [Approved OAuth clients](./docs/OAUTH-CLIENTS.md). This does not assert direct Claude or Gemini interoperability has been tested.
+## What you can do
 
-## WordPress admin
+The actual operations available depend on your site's WordPress/plugins/themes, the connected user's WordPress authority and the Bridge access groups you enable.
 
-The plugin adds a top-level **WP AI Bridge** menu:
+- **Content:** read and manage supported posts, pages, custom post types, revisions, Gutenberg blocks, taxonomies and navigation.
+- **Media:** inspect and manage the Media Library; upload files and import media from approved public HTTP(S) URLs.
+- **Site administration:** manage supported settings, comments, user operations, registered Core/provider Abilities, and eligible registered REST operations under the applicable extra permissions.
+- **Extensions:** manage supported plugins, themes and managed snippets. Explicit additional grants enable approved external package installation or installed plugin/theme source read/edit/recovery.
+- **Project continuity:** keep private Workspace documents and tasks inside WordPress, with project references, compact resume, guarded editing and archival.
+- **Supported data transfer:** exchange bounded text and file content through authenticated private-transfer workflows and native Media/WXR operations, where the client/hosting transport supports them.
+- **Optional providers:** reuse applicable Abilities/APIs from installed integrations such as Astra, Code Snippets and Gravity Forms.
 
-- **Dashboard** — Workspace summary and connection status.
-- **Documents** — durable project documents.
-- **Tasks** — durable work items with independent progress, review, and delivery state.
-- **Activity** — bounded mutation activity.
-- **Settings** — shared MCP endpoint, ChatGPT onboarding and Bridge access groups.
+The Bridge's WordPress-side file-transfer capabilities do **not** prove that every AI client or optional Gateway can send or receive native attachments. Check the specific client/transport before relying on a file workflow. See the [Ability reference](./docs/ABILITIES.md), [data exchange guide](./docs/LARGE-PAYLOADS.md) and [integrations](./docs/INTEGRATIONS.md).
 
-Administration uses only the canonical `wp-ai-bridge...` slugs. Former product admin aliases are not registered by current releases.
+## Permissions you control
 
-Workspace state is private to WordPress and is not exposed through ordinary post, Gutenberg, or generic metadata abilities.
+Go to **WP AI Bridge → Settings**. **Only Site Read is enabled by default.** Every other access group is an administrator choice, and none overrides the connected WordPress account's own permissions.
 
-## Access groups
-
-Bridge permissions are additive to normal WordPress capabilities. Enabling a Bridge group never grants a WordPress capability the connected user does not already have. Advanced Metadata is a deliberate exception to WordPress's generic protected-unregistered-meta default denial: when an administrator enables the group, protected unregistered post/term/user/comment metadata may be accessed through the exact target's native edit authority. Explicit registered/provider metadata authorization contracts remain authoritative.
-
-| Group | Purpose |
+| Access group | Intended use |
 | --- | --- |
-| **Site Read** | Inspect site information, content, media, navigation, extensions, integrations, and Workspace state. |
-| **Builder Write** | Create and update drafts, content, Gutenberg blocks, media, taxonomies, navigation, forms, and Workspace objects. |
-| **Remote Media** | Import safe HTTP(S) media into the Media Library; Builder Write and native upload authority are also required. |
-| **Live Content** | Permit publishing and other live-content status changes when WordPress also permits them. |
-| **Site Configuration** | Permit bounded global WordPress/theme configuration changes. |
-| **Advanced Metadata** | Permit generic bounded metadata read/update for exact authorized post, term, user, and comment targets; role/capability/session/application-password/credential-like state, options, and Workspace internals remain excluded. |
-| **Authentication & Credentials** | Permit Core-native WordPress Application Password list/get/create/rename/revoke operations. Disabled by default including upgrades; generated plaintext credentials are returned only once at creation and are never persisted by the Bridge. |
-| **Code & Extensions** | Permit supported managed-snippet and plugin/theme lifecycle operations. |
-| **External Packages** | Permit plugin/theme installation or explicit hash-checked replacement from a safe public HTTPS package URL. Disabled by default including upgrades; Code & Extensions and native WordPress install authority (plus update authority for replacement) are also required. |
-| **Source Editing** | Separately permit installed plugin/theme source read/preview/apply/recovery. Code & Extensions and native WordPress source-edit authority are still required. Disabled by default, including upgrades. |
-| **Native Abilities** | Permit registered Core/provider Abilities to execute through the WP AI Bridge MCP routes when their own WordPress/provider permission checks also allow it. This is broad registered-operation trust, not a sandbox, and is disabled by default including upgrades. |
-| **Comments** | Permit bounded standard-comment discovery, replies, and moderation through the fixed WordPress Core comments REST contract. Disabled by default including upgrades; permanent deletion additionally requires Users & Destructive. |
-| **Users & Destructive** | Permit user/role administration and destructive operations when WordPress also permits them. Metadata deletion requires this group in addition to Advanced Metadata. |
+| **Site Read** | Inspect permitted site, content, media and extensions. |
+| **Builder Write** | Create and edit supported content, Media and Workspace data. |
+| **Remote Media** | Import safe remote media; also requires Builder Write and native upload permission. |
+| **Live Content** | Publish content and change live status when WordPress permits. |
+| **Site Configuration** | Configure supported WordPress and provider settings. |
+| **Advanced Metadata** | Work with authorized object metadata, excluding credentials and sessions. |
+| **Authentication & Credentials** | Manage WordPress Application Passwords using native APIs. |
+| **Code & Extensions** | Perform supported plugin/theme and snippet lifecycle operations. |
+| **External Packages** | Install or deliberately replace plugins/themes from approved HTTPS packages, with Code & Extensions and native installer authority. |
+| **Source Editing** | Read, preview, apply and recover installed plugin/theme source, with Code & Extensions and native source-editor authority. |
+| **Native Abilities** | Invoke applicable registered WordPress/provider Abilities. |
+| **Registered REST Discovery** | Inspect registered REST operations without executing them. |
+| **High-Trust Registered REST Invocation** | Invoke guarded registered REST operations under additional high-trust grants and native WordPress checks. |
+| **Comments** | Read, reply to and moderate supported comments. |
+| **Users & Destructive** | Administer authorized users/roles and perform destructive actions. |
 
-Only **Site Read** is enabled by default.
+**Source Editing and External Packages can execute code with WordPress's ordinary runtime privileges.** They are not sandboxes. Enable high-trust groups only for appropriate accounts and approved clients. See the [security guide](./docs/SECURITY.md) and [user guide](./docs/USER-GUIDE.md).
 
-## Uploads and extension installation
+## Updates from GitHub
 
-`wp-ai-bridge/media-upload` sends Base64-encoded bytes plus a filename to the native WordPress Media Library. Its **20 MiB default inline budget** is adjustable by a WordPress administrator within current PHP/WordPress constraints, but the actual AI-client/MCP message limit may be much smaller. The separate authenticated `private-transfer` Ability offers resumable byte windows on hosts with an approved confidential temporary storage location; on some shared hosts it can refuse staging with `transfer_storage_unsafe`. Neither path promises that a particular ChatGPT/AI client can attach or download a native file without an independently supported client handoff. Use [type-appropriate data exchange](./docs/LARGE-PAYLOADS.md). The caller cannot choose a server filesystem path.
+Starting with the **published v0.6.8 release**, an **active** WP AI Bridge can discover newer, official **stable GitHub Releases** in WordPress's standard plugin update checks. WordPress Core manages upgrade notices, permission checks, package installation and optional auto-updates; the Bridge does not turn automatic updates on for you.
 
-When staging is necessary, the Bridge can automatically use a private temporary working directory outside `wp-content` on compatible hosts; the directory may remain available for reuse. After authorized native processing, public Media files are in the normal WordPress uploads/Media Library and approved extension packages are installed in WordPress plugin/theme directories, **without manual file relocation**. Temporary bytes are subject to scoped cleanup/recovery and do not become publicly accessible attachments merely because staging succeeded. When no suitably private temporary location is available, protected workflows fail without publishing confidential input.
+A site still running **v0.6.7 or earlier needs one manual upgrade** to v0.6.8 or newer using the official installable ZIP and WordPress's replacement flow, because the older version does not contain the GitHub update callback. An **inactive** Bridge cannot register that callback and must also be updated manually. GitHub API failures defer discovery rather than downloading an unverified source archive.
 
-`wp-ai-bridge/media-import-url` accepts a public HTTP(S) URL and a filename, streams it within the current WordPress upload limit, and creates a normal attachment. It requires explicit **Remote Media** plus **Builder Write** access; upgrades do not enable it automatically. See [URL media import](./docs/ABILITIES.md#url-media-import).
+GitHub Releases is the maintained distribution channel. WordPress.org Plugin Directory listing is **not** claimed; it depends on separate review and acceptance of the full-feature plugin.
 
-`wp-ai-bridge/extension-lifecycle` keeps the existing WordPress.org slug installation path under **Code & Extensions**. For a non-WordPress.org source, an administrator must additionally enable **External Packages** and the connected WordPress user must have the native plugin/theme install capability. The caller supplies one exact public HTTPS package URL; the Bridge does not accept local package paths, HTTP/FTP sources, URL credentials, caller-supplied request headers/cookies, or generic transport configuration. The package is streamed into a Bridge-owned temporary file with TLS/redirect/SSRF checks and a maximum of the smaller of the current WordPress upload limit and the administrator-configurable external package budget (**100 MiB default**, independently adjustable under Bridge Settings), then handed to the native WordPress Core Upgrader. The temporary package is retired and verified before success is returned. Installation does not activate the plugin/theme automatically, and package code has normal WordPress runtime authority once later activated. For an **existing** installed extension, a deliberate `action=update` with `package_url`, exact `target`, `expected_installed_version`, `expected_package_version`, full `expected_sha256` and `confirm_replace:true` uses native Core overwrite only after identity validation; no automatic downgrade or blind retry; existing plugin folders shared by separately registered plugins are explicitly refused, and the under-lock installed-version recheck uses refreshed Core identity/activation caches. The installed Bridge itself can be updated through this path once the replacement-capable version is installed. See [External package installation and replacement](./docs/EXTERNAL-PACKAGES.md).
+## Help and documentation
 
-External AI/MCP clients and services need **two-way, type-aware** exchange of documents, images/media, archives, and text. Current inline/URL/native WordPress operations remain useful but do not prove an external client can send or receive arbitrary file bytes. Verify the actual client/transport capability independently for ingress and egress; see [Type-appropriate data exchange](./docs/LARGE-PAYLOADS.md) and the accepted target contract in [#134](https://github.com/AChWorks/wp-ai-bridge/issues/134).
-
-Source Editing remains a separate administrator-level trust boundary and is not enabled by Code & Extensions or External Packages alone. The Bridge does **not** expose a generic HTTP client, arbitrary package request credentials, shell commands, generic SQL, unrestricted filesystem access, arbitrary WordPress options, or generic credential retrieval. WordPress Application Passwords are available only through the separate default-off purpose-specific lifecycle described above.
-
-## Native WordPress updates from GitHub
-
-GitHub Releases is the primary maintained distribution and update channel. Starting with a future published version containing the native GitHub updater, WordPress reads the plugin header `Update URI: https://github.com/AChWorks/wp-ai-bridge` and uses the native `update_plugins_github.com` hook to check the public GitHub Releases API. It offers **only** a published stable `vX.Y.Z` release with the exact official installable `wp-ai-bridge.zip` asset; not prereleases, drafts, GitHub-generated source ZIPs, or arbitrary download URLs. Discovery is read-only and cached. WordPress Core retains control of update notices, administrator approval, optional native automatic updates, the plugin Upgrader and update errors.
-
-**GitHub update discovery requires WP AI Bridge to be **active**, because inactive plugins cannot register custom update callbacks; an inactive installation must be updated by uploading the new ZIP manually. Existing v0.6.7 installations do not yet have this updater.** The first published version containing it requires one normal manual ZIP replacement, or the already-authorized native `extension-lifecycle` self-replacement path, where available. Later eligible stable releases can appear under **Plugins → Updates** without installing a separate GitHub updater plugin. The canonical plugin folder/file, settings, OAuth identity and Workspace remain unchanged. A GitHub API outage or rate limit merely defers discovery; it must never substitute a source-code archive.
-
-The official WordPress.org Plugin Directory follows separate eligibility and update-channel rules. WP AI Bridge does not remove administrator-authorized operations or ship a hidden reduced-feature variant to obtain listing approval. A directory submission is conditional on WordPress.org accepting the full transparent product; the maintained GitHub release channel remains available regardless of that decision. See [Issue #171](https://github.com/AChWorks/wp-ai-bridge/issues/171).
-
-## Canonical identity
-
-WP AI Bridge uses one native product identity throughout the maintained runtime: the plugin directory/entrypoint is `wp-ai-bridge/wp-ai-bridge.php`, the PHP namespace is `WP_AI_Bridge`, the text domain is `wp-ai-bridge`, Bridge Ability identifiers use `wp-ai-bridge/*`, and admin/OAuth/MCP routes use the `wp-ai-bridge` slug.
-
-The maintained runtime no longer reads pre-0.4.0 product/storage identifiers. If upgrading a legacy v0.3.0 installation that needs to preserve Workspace data, follow the [legacy migration steps](./docs/INSTALLATION.md#sites-still-on-the-published-030-package) before installing a current version.
-
-## Optional integrations
-
-Integration is discovery-first: provider-owned public WordPress Abilities are reused at runtime, so a compatible new plugin or theme should normally require no Bridge-specific code. Remote execution of those registered provider/Core Abilities through the Bridge requires explicit **Native Abilities** access in addition to the provider's own permission callback. Provider fallbacks are reserved for bounded gaps with documented public APIs. Generic post, term, user, and comment metadata is provider-neutral and does not require a new Bridge adapter merely because a plugin/theme stores state in `post_meta` or `term_meta`. See [Architecture](./docs/ARCHITECTURE.md#discovery-and-reuse).
-
-- **Astra / Astra Pro:** enable Astra's **Abilities** setting. A separate Astra MCP server is not required for this Bridge setup.
-- **Code Snippets:** compatible provider APIs are used for managed snippet lifecycle; the Bridge does not directly evaluate submitted code.
-- **Gravity Forms:** native provider Abilities are preferred; otherwise the bounded GFAPI fallback is used when available.
-- **WooCommerce:** verified provider Abilities may be reused. Broad commerce/customer/order fallbacks are not exposed automatically.
-
-See [Integrations](./docs/INTEGRATIONS.md) for details.
-
-## Security model
-
-WP AI Bridge is intentionally not a general remote-administration shell. It combines:
-
-- WordPress OAuth identity;
-- WordPress capabilities and object-level checks;
-- explicit Bridge access groups;
-- closed input/output schemas;
-- stale-write/concurrency protection for overwrite-sensitive operations;
-- bounded mutation logging;
-- provider-native permission checks where integrations are used.
-
-For very large Gutenberg pages or text, use [bounded discovery and content windows](./docs/LARGE-PAYLOADS.md) rather than whole-tree or whole-file MCP responses. This does not change WordPress storage limits, native permissions, or binary upload policy.
-
-Read [Security](./docs/SECURITY.md) before enabling write, Advanced Metadata, Authentication & Credentials, External Packages, Source Editing, Native Abilities, or destructive access on an important site.
-
-## Documentation
-
-- [Installation and connection](./docs/INSTALLATION.md)
-- [User guide](./docs/USER-GUIDE.md)
-- [Ability reference](./docs/ABILITIES.md)
-- [External package installation](./docs/EXTERNAL-PACKAGES.md)
-- [Application Password boundary](./docs/ABILITIES.md#application-password-boundary)
-- [Integrations](./docs/INTEGRATIONS.md)
-- [Security](./docs/SECURITY.md)
-- [Architecture](./docs/ARCHITECTURE.md)
-- [Large and binary data exchange](./docs/LARGE-PAYLOADS.md)
+- [Installation, updates and connection](./docs/INSTALLATION.md)
+- [Using the WordPress Workspace](./docs/USER-GUIDE.md)
+- [Supported operations and permissions](./docs/ABILITIES.md)
+- [Authentication and approved clients](./docs/OAUTH-CLIENTS.md)
+- [Large text, media and file exchange](./docs/LARGE-PAYLOADS.md)
+- [External plugin/theme packages](./docs/EXTERNAL-PACKAGES.md)
+- [Security and privacy](./docs/SECURITY.md)
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)
-- [Changelog](./CHANGELOG.md)
+- [Release history](./CHANGELOG.md)
 
-## License
-
-WP AI Bridge is licensed under **GPL-2.0-or-later**. See [LICENSE](./LICENSE).
-
-## Author
-
-**ACh** — https://ach.li
+**License:** GPL-2.0-or-later — [LICENSE](./LICENSE) · **Author:** [ACh](https://ach.li)
