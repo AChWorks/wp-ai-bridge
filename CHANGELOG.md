@@ -4,6 +4,14 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.6.6
+
+- Reuse the existing filesystem-based confidential transfer journal on ordinary supported WordPress hosting with an automatically selected, validated private PHP/OS temporary location outside known served WordPress roots. Preserve pre-existing v0.6.5 leases, authenticated actor/client/blog binding, verified digests, claims, and no-blind-replay recovery; fail closed when no safe directory exists (#134, PR #170).
+- Stage native Media uploads and approved plugin/theme ZIP inputs as owner-only private files (0600) inside a reusable owner-only scratch directory (0700); complete authorized Media and extension operations through the native WordPress Media Library and Core Upgrader, without a second Media manager, installer, database storage backend or operator-managed directory (#173, PR #174; #134, PR #170).
+- Keep private WXR producer artifacts and preflight on the validated private location. Retire one-shot native inputs on successful completion and opportunistically reap stale abandoned inputs after 24 hours on a later safe allocation; no wall-clock deletion guarantee or universal CDN/custom webserver-alias safety claim.
+- Extend the real WordPress/official MCP Adapter security and portability regressions for native destinations, served temporary roots, restrictive open_basedir, interrupted operations, multisite, and v0.6.5 lease continuity. Pin the actual published v0.6.5 release ZIP and checksum for the next release's Core-native upgrade acceptance.
+- Hosted AI-client attachment materialization, Gateway cross-hop delivery, unusual host mapping acceptance, fresh-chat Workspace continuity, long-idle OAuth acceptance, and optional WordPress.org eligibility remain separately tracked; a source merge or GitHub ZIP release does not prove those external outcomes.
+
 ## 0.6.5
 
 - Add explicit, identity-bound replacement of an existing plugin or theme from a separately authorized public HTTPS ZIP via the existing native `extension-lifecycle(action=update)` Ability (#168). This preserves WordPress.org installs and ordinary update offers. Replacement requires Code & Extensions plus External Packages, the native install and update capabilities, the exact installed target and preimage version, an approved ZIP SHA-256, an expected package version and affirmative confirmation.
