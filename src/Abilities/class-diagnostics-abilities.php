@@ -58,13 +58,16 @@ final class Diagnostics_Abilities {
 							'items' => array(
 								'type'                 => 'object',
 								'properties'           => array(
-									'timestamp'  => array( 'type' => 'string' ),
-									'operation'  => array( 'type' => 'string' ),
-									'phase'      => array( 'type' => 'string' ),
-									'success'    => array( 'type' => 'boolean' ),
-									'error_code' => array( 'type' => 'string' ),
-									'event_ref'  => array( 'type' => 'string' ),
-									'storage_reason' => array( 'type' => 'string', 'enum' => array( 'root_web_served', 'root_symlink', 'root_noncanonical', 'root_mode', 'lease_file_mode' ) ),
+									'timestamp'      => array( 'type' => 'string' ),
+									'operation'      => array( 'type' => 'string' ),
+									'phase'          => array( 'type' => 'string' ),
+									'success'        => array( 'type' => 'boolean' ),
+									'error_code'     => array( 'type' => 'string' ),
+									'event_ref'      => array( 'type' => 'string' ),
+									'storage_reason' => array(
+										'type' => 'string',
+										'enum' => array( 'root_web_served', 'root_symlink', 'root_noncanonical', 'root_mode', 'lease_file_mode' ),
+									),
 								),
 								'required'             => array( 'timestamp', 'operation', 'phase', 'success', 'error_code', 'event_ref' ),
 								'additionalProperties' => false,
