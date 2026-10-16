@@ -37,7 +37,7 @@ final class Diagnostics_Abilities {
 			'wp-ai-bridge/diagnostics-read',
 			array(
 				'label'               => __( 'Read Bridge Diagnostics', 'wp-ai-bridge' ),
-				'description'         => __( 'Administrator-only, recent sanitized WordPress-side transfer results. No payloads, private paths, or upstream Gateway errors.', 'wp-ai-bridge' ),
+				'description'         => __( 'Administrator-only, recent sanitized WordPress-side transfer and Media staging results. No payloads, private paths, or upstream Gateway errors.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -64,6 +64,7 @@ final class Diagnostics_Abilities {
 									'success'    => array( 'type' => 'boolean' ),
 									'error_code' => array( 'type' => 'string' ),
 									'event_ref'  => array( 'type' => 'string' ),
+									'storage_reason' => array( 'type' => 'string', 'enum' => array( 'root_web_served', 'root_symlink', 'root_noncanonical', 'root_mode', 'lease_file_mode' ) ),
 								),
 								'required'             => array( 'timestamp', 'operation', 'phase', 'success', 'error_code', 'event_ref' ),
 								'additionalProperties' => false,
