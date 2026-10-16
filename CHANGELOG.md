@@ -4,6 +4,15 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.6.8
+
+- Advertise only the official stable GitHub Release `wp-ai-bridge.zip` asset through WordPress Core's native `Update URI` / `update_plugins_github.com` mechanism. WordPress Core continues to own update detection cadence, user confirmation, installs, activation and optional auto-update selection; no independent updater, background daemon or new privileged endpoint (#171, PR #179).
+- Strictly confine release metadata to the official AChWorks repository and the exact canonical installable release asset, reject drafts/prereleases, source-code archives, unrecognized release tags and cross-origin cache values, and use bounded WordPress safe HTTP with positive/negative caching.
+- Add the standard `readme.txt` with accurate feature, installation, update, privacy and third-party disclosures and keep its stable tag synchronized with the main plugin header in the package build. Protect the WordPress compiled Persian localization entrypoint against direct HTTP execution while retaining the full translation catalog.
+- Preserve all current administrator-authorized features (including separately gated Source Editing and External Packages) and the existing canonical plugin directory, Namespace, OAuth identities, Workspace state, native capabilities, permissions and installed-Adapter behavior. WordPress.org listing is conditional on acceptance of the unchanged full feature set; no directory-only fork or omission is made.
+- Validate the **actual published v0.6.7 ZIP** (SHA-256 `6e0edc1697ab63d10d2556002cf2a1f824b579110e690cf707353b9fe674ad3f`) through Core replacement and preservation of Workspace, OAuth signed-client refresh and administrator grants. Run additional isolated native GitHub metadata and Core bulk-upgrade tests on both WordPress integration lanes.
+- **Upgrade path:** Existing v0.6.7 installations do not contain the new update discovery hook and require one normal manual replacement with the first published updater-equipped ZIP. Starting from that version, *active* installations can receive standard WordPress update offers from later stable GitHub Releases. No claim of WordPress.org listing or live-site deployment is made.
+
 ## 0.6.7
 
 - Reuse an existing private transfer lease directory already verified as owner-only `0700`, or a private file already verified as `0600`, without requiring a redundant `chmod` that some managed/shared WordPress hosts refuse. Preserve canonical-path, symlink, inode, owner-only permission, stable per-site lease identity and fail-closed checks for unsafe storage (#134, PR #177).
