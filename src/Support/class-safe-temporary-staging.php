@@ -73,6 +73,45 @@ final class Safe_Temporary_Staging {
 	}
 
 	/**
+	 * Allocate producer-only WXR artifacts directly under the approved stable
+	 * private base, never the one-shot Media/ZIP directory. Native WXR preflight
+	 * verifies this exact parent and WordPress's artifact filename prefix.
+	 *
+	 * @return string|WP_Error Canonical private artifact path or safe failure.
+	 */
+	public static function create_private_artifact() {
+		foreach ( self::private_directories() as $root ) {
+			$file = wp_tempnam( 'wpai-private-artifact.bin', $root . DIRECTORY_SEPARATOR );
+			if ( ! is_string( $file ) || '' === $file || is_link( $file ) || ! is_file( $file ) ) {
+				continue;
+			}
+			$real = realpath( $file );
+			clearstatcache( true, $file );
+			if ( ! is_string( $real ) || dirname( $real ) !== $root || self::is_served_path( $real ) ||
+				0 !== filesize( $file ) || ! str_starts_with( basename( $real ), 'wpai-private-artifact' ) ) {
+				if ( is_string( $real ) && dirname( $real ) === $root && 0 === filesize( $file ) ) {
+					wp_delete_file( $file );
+				}
+				continue;
+			}
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- Exclusively allocated private WXR inode.
+			if ( 0600 !== ( fileperms( $file ) & 0777 ) && ! chmod( $file, 0600 ) ) {
+				wp_delete_file( $file );
+				continue;
+			}
+			clearstatcache( true, $file );
+			if ( 0600 === ( fileperms( $file ) & 0777 ) ) {
+				return $real;
+			}
+			wp_delete_file( $file );
+		}
+		return new WP_Error(
+			'temporary_storage_unsafe',
+			__( 'A private temporary staging directory is unavailable; nothing was imported.', 'wp-ai-bridge' )
+		);
+	}
+
+	/**
 	 * Locate the stable default private scratch root without creating files.
 	 * Only internal consumers may use this location; do not expose its path.
 	 *

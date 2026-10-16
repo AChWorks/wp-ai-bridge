@@ -53,7 +53,7 @@ final class Private_Artifact_Writer {
 		}
 		$instance = new self( $budget );
 		require_once ABSPATH . 'wp-admin/includes/file.php';
-		$file = Safe_Temporary_Staging::create( 'wpai-private-artifact.bin' );
+		$file = Safe_Temporary_Staging::create_private_artifact();
 		if ( is_wp_error( $file ) ) {
 			return new WP_Error( 'artifact_storage_unsafe', 'No safe private temporary directory is available for an artifact.' );
 		}
