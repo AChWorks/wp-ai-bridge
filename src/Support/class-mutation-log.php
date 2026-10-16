@@ -75,23 +75,23 @@ final class Mutation_Log {
 			// may contain sensitive text and must NEVER flow into this option.
 			$code = in_array( $provided, self::safe_error_codes(), true ) ? $provided : 'transfer_error_unspecified';
 			if ( 'transfer_storage_unsafe' === $code ) {
-				$data = $result->get_error_data();
+				$data            = $result->get_error_data();
 				$provided_reason = is_array( $data ) ? ( $data['storage_reason'] ?? null ) : null;
-				$reason = in_array( $provided_reason, self::safe_storage_reasons(), true ) ? $provided_reason : '';
+				$reason          = in_array( $provided_reason, self::safe_storage_reasons(), true ) ? $provided_reason : '';
 			}
 		}
 		$entry = array(
-				'timestamp'   => gmdate( 'c' ),
-				'user_id'     => get_current_user_id(),
-				'ability'     => 'wp-ai-bridge/private-transfer',
-				'target_type' => '',
-				'target_id'   => 0,
-				'success'     => $success,
-				'error_code'  => $code,
-				'operation'   => $operation,
-				'phase'       => 'validation' === $phase ? 'validation' : 'provider',
-				'event_ref'   => bin2hex( random_bytes( 8 ) ),
-				'event_type'  => 'diagnostic',
+			'timestamp'   => gmdate( 'c' ),
+			'user_id'     => get_current_user_id(),
+			'ability'     => 'wp-ai-bridge/private-transfer',
+			'target_type' => '',
+			'target_id'   => 0,
+			'success'     => $success,
+			'error_code'  => $code,
+			'operation'   => $operation,
+			'phase'       => 'validation' === $phase ? 'validation' : 'provider',
+			'event_ref'   => bin2hex( random_bytes( 8 ) ),
+			'event_type'  => 'diagnostic',
 		);
 		if ( '' !== $reason ) {
 			$entry['storage_reason'] = $reason;
@@ -200,7 +200,7 @@ final class Mutation_Log {
 				in_array( $entry['operation'] ?? '', array( 'begin', 'append', 'status', 'verify', 'cancel', 'read', 'release', 'admin_release' ), true ) &&
 				( '' === ( $entry['error_code'] ?? '' ) ||
 					in_array( $entry['error_code'] ?? null, self::safe_error_codes(), true ) );
-			$is_media = 'wp-ai-bridge/media-upload' === ( $entry['ability'] ?? '' ) &&
+			$is_media    = 'wp-ai-bridge/media-upload' === ( $entry['ability'] ?? '' ) &&
 				'media-upload' === ( $entry['operation'] ?? '' ) &&
 				false === ( $entry['success'] ?? null ) &&
 				in_array( $entry['error_code'] ?? null, array( 'media_temp_failed', 'media_temp_write_failed' ), true );
