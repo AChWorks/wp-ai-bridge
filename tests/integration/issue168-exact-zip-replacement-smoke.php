@@ -55,6 +55,9 @@ $old_template = get_template();
 $plugin_url = 'https://s.w.org/issue168-plugin.zip';
 $theme_url = 'https://s.w.org/issue168-theme.zip';
 $plugin_bytes = wpai168_zip( 'plugin', $plugin_root, '1.1.0', array( $plugin_root . '/fixture-data.txt' => 'candidate-version' ) );
+// Reuse the exact original archive bytes after negative fixtures. Repacking a
+// logically identical ZIP can change member timestamps and thus its SHA-256.
+$valid_plugin_bytes = $plugin_bytes;
 $theme_bytes = wpai168_zip( 'theme', $theme_root, '1.1.0' );
 $mode = 'normal';
 $calls = 0;
@@ -194,7 +197,8 @@ try {
 	$assert_error( array_replace( $plugin_input, array( 'expected_sha256' => hash( 'sha256', $wrong ) ) ), 'external_package_archive_invalid' );
 	$plugin_bytes = wpai168_zip( 'plugin', $plugin_root, '1.1.0', array( $plugin_root . '/../escape.php' => '<?php' ) );
 	$assert_error( array_replace( $plugin_input, array( 'expected_sha256' => hash( 'sha256', $plugin_bytes ) ) ), 'external_package_archive_invalid' );
-	$plugin_bytes = wpai168_zip( 'plugin', $plugin_root, '1.1.0', array( $plugin_root . '/fixture-data.txt' => 'candidate-version' ) );
+	$plugin_bytes = $valid_plugin_bytes;
+	wpai168_check( hash_equals( $plugin_input['expected_sha256'], hash( 'sha256', $plugin_bytes ) ), 'Restored fixture ZIP bytes no longer match the original expected SHA-256.' );
 	$mode = 'revoke';
 	$assert_error( $plugin_input, 'external_package_permission_denied' );
 	wpai168_check( 'original-version' === file_get_contents( $plugin_directory . '/fixture-data.txt' ), 'Revoked consent reached Core.' );
