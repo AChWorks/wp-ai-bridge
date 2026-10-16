@@ -109,7 +109,7 @@ A conservative starting point is:
 
 ## Native installer host readiness
 
-WordPress Core's package installer requires current WordPress permissions and hosting file modifications to be allowed. Bridge-owned native installer paths coordinate through the existing `WP_CONTENT_DIR` file lock and the database advisory lock where available. Do not infer lock coherence from a shared path string across independent physical filesystems. File transfer between a connected AI/client/service and WordPress is a separate future bidirectional contract (#134), not a WordPress admin upload page.
+WordPress Core's package installer requires current WordPress permissions and hosting file modifications to be allowed. Bridge-owned native installer paths coordinate through the existing `WP_CONTENT_DIR` file lock and the database advisory lock where available. Do not infer lock coherence from a shared path string across independent physical filesystems. The published WordPress-side private-transfer Abilities support authenticated, purpose-bound exchange, but real client/Gateway-native binary handoff still requires independently verified **bidirectional** transport (see #134). This is not a WordPress administrator upload page.
 
 ## Canonical runtime baseline
 

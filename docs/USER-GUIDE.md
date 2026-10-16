@@ -22,7 +22,7 @@ Use **WP AI Bridge → Documents** and **WP AI Bridge → Tasks** to inspect pri
 
 ### Capacity controls
 
-Settings provide **separate per-site Workspace document and task count limits**, initially **200 documents and 200 tasks**. Administrators may choose validated finite capacities of **10–20,000 documents** and **10–50,000 tasks**. Record sizes, network-message size and available hosting resources are independent constraints.
+Settings provide **separate per-site Workspace document and task count limits**, initially **200 documents and 200 tasks**. Administrators may choose validated finite capacities of **10–20,000 documents** and **10–50,000 tasks**. Record sizes, network-message size and available hosting resources are independent constraints. These ranges describe **current release implementation guardrails**, not the long-term product ceiling; expanding them safely requires corresponding bounded-query and hosting-capacity evidence.
 
 Lowering a count limit does **not** delete or conceal existing records; it limits further creation until usage is below the selected budget. Raising quotas increases real database work and does not guarantee throughput on a resource-constrained host. Use normal WordPress database backups for disaster recovery.
 
