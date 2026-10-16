@@ -2,6 +2,7 @@
 /**
  * Plugin Name: WP AI Bridge
  * Plugin URI: https://github.com/AChWorks/wp-ai-bridge
+ * Update URI: https://github.com/AChWorks/wp-ai-bridge
  * Description: Connects compatible AI/MCP clients to WordPress through OAuth and permission-checked WordPress Abilities.
  * Version: 0.6.7
  * Requires at least: 6.9

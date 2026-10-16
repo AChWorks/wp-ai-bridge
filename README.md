@@ -130,6 +130,14 @@ External AI/MCP clients and services need **two-way, type-aware** exchange of do
 
 Source Editing remains a separate administrator-level trust boundary and is not enabled by Code & Extensions or External Packages alone. The Bridge does **not** expose a generic HTTP client, arbitrary package request credentials, shell commands, generic SQL, unrestricted filesystem access, arbitrary WordPress options, or generic credential retrieval. WordPress Application Passwords are available only through the separate default-off purpose-specific lifecycle described above.
 
+## Native WordPress updates from GitHub
+
+GitHub Releases is the primary maintained distribution and update channel. Starting with a future published version containing the native GitHub updater, WordPress reads the plugin header `Update URI: https://github.com/AChWorks/wp-ai-bridge` and uses the native `update_plugins_github.com` hook to check the public GitHub Releases API. It offers **only** a published stable `vX.Y.Z` release with the exact official installable `wp-ai-bridge.zip` asset; not prereleases, drafts, GitHub-generated source ZIPs, or arbitrary download URLs. Discovery is read-only and cached. WordPress Core retains control of update notices, administrator approval, optional native automatic updates, the plugin Upgrader and update errors.
+
+**GitHub update discovery requires WP AI Bridge to be **active**, because inactive plugins cannot register custom update callbacks; an inactive installation must be updated by uploading the new ZIP manually. Existing v0.6.7 installations do not yet have this updater.** The first published version containing it requires one normal manual ZIP replacement, or the already-authorized native `extension-lifecycle` self-replacement path, where available. Later eligible stable releases can appear under **Plugins → Updates** without installing a separate GitHub updater plugin. The canonical plugin folder/file, settings, OAuth identity and Workspace remain unchanged. A GitHub API outage or rate limit merely defers discovery; it must never substitute a source-code archive.
+
+The official WordPress.org Plugin Directory follows separate eligibility and update-channel rules. WP AI Bridge does not remove administrator-authorized operations or ship a hidden reduced-feature variant to obtain listing approval. A directory submission is conditional on WordPress.org accepting the full transparent product; the maintained GitHub release channel remains available regardless of that decision. See [Issue #171](https://github.com/AChWorks/wp-ai-bridge/issues/171).
+
 ## Canonical identity
 
 WP AI Bridge uses one native product identity throughout the maintained runtime: the plugin directory/entrypoint is `wp-ai-bridge/wp-ai-bridge.php`, the PHP namespace is `WP_AI_Bridge`, the text domain is `wp-ai-bridge`, Bridge Ability identifiers use `wp-ai-bridge/*`, and admin/OAuth/MCP routes use the `wp-ai-bridge` slug.

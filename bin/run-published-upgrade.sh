@@ -108,3 +108,13 @@ actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
 actual_adapter="$("${wp[@]}" plugin get mcp-adapter --field=version --allow-root | tail -n 1)"
 echo "PASS: published 0.6.6 -> candidate ${expected_version} on WordPress ${actual_wp}, official MCP Adapter ${actual_adapter}; canonical OAuth/Workspace and safe grants preserved."
 
+# The regular Plugins-screen updater uses Core bulk_upgrade(), not the
+# deactivating single-plugin upgrade(). Mock only the release metadata and
+# archive download, then verify Core honors canonical identity/activation.
+# No external update is published or fetched in this disposable test.
+github_update_fixture="$root/tests/integration/issue171-github-native-upgrade-smoke.php"
+"${compose[@]}" cp "$github_update_fixture" wordpress:/var/www/html/wpai171-native-update.php
+"${wp[@]}" eval-file /var/www/html/wpai171-native-update.php --allow-root
+"${wp[@]}" plugin is-active wp-ai-bridge --allow-root
+echo "PASS: #171 simulated GitHub stable release Core-native Plugins-screen update on ${actual_wp}."
+

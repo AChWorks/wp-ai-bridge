@@ -1,4 +1,14 @@
 <?php
+/**
+ * Compiled Persian localization catalog.
+ *
+ * @package WP_AI_Bridge
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 $messages = array_merge(
 	require __DIR__ . '/fa_IR-parts/part-1.php',
 	require __DIR__ . '/fa_IR-parts/part-2.php',

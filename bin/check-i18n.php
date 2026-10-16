@@ -8,6 +8,12 @@
 $root    = dirname( __DIR__ );
 $catalog = $root . '/languages/wp-ai-bridge-fa_IR.l10n.php';
 
+// The compiled catalog is a WordPress runtime file, not a standalone endpoint.
+// The CLI-only catalog verifier may load it with a synthetic WordPress root.
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', $root . '/' );
+}
+
 if ( ! is_file( $catalog ) ) {
 	fwrite( STDERR, "ERROR: Persian localization catalog is missing.\n" );
 	exit( 1 );
