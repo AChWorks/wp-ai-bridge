@@ -4,6 +4,14 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.6.7
+
+- Reuse an existing private transfer lease directory already verified as owner-only `0700`, or a private file already verified as `0600`, without requiring a redundant `chmod` that some managed/shared WordPress hosts refuse. Preserve canonical-path, symlink, inode, owner-only permission, stable per-site lease identity and fail-closed checks for unsafe storage (#134, PR #177).
+- Extend the existing authenticated site-administrator diagnostic view with **fixed, allowlisted** storage-denial reason codes and narrow native Media temporary-staging error codes. Do not expose file paths, payloads, arbitrary `WP_Error` messages, OAuth secrets, or unrelated WordPress activity (#134, #173; PR #177).
+- Add regression checks for already-safe `0700/0600` reuse with denied redundant `chmod`, insecure-mode and symlink rejection, and sanitized diagnostics, with aligned Persian text and troubleshooting guidance.
+- Update the published-plugin upgrade acceptance to start from the **actual v0.6.6 GitHub Release ZIP**, pinned to SHA-256 `658cfe36724fc949f3687b4df713b431462df5a9a7bef416b0f6d767f395f6dc`, verifying native Core replacement and preservation of existing Workspace, OAuth and delegated settings.
+- **Limitations:** This is a focused compatibility and observability update, not a general new transfer backend or a claim that any specific shared host is repaired. Hosted native Media upload, confidential transfer and AI-client file handoff require real post-install acceptance. No WordPress.org submission or automatic production deployment is part of the GitHub ZIP release.
+
 ## 0.6.6
 
 - Reuse the existing filesystem-based confidential transfer journal on ordinary supported WordPress hosting with an automatically selected, validated private PHP/OS temporary location outside known served WordPress roots. Preserve pre-existing v0.6.5 leases, authenticated actor/client/blog binding, verified digests, claims, and no-blind-replay recovery; fail closed when no safe directory exists (#134, PR #170).
