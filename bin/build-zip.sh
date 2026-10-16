@@ -13,10 +13,20 @@ mkdir -p "$plugin_dir"
 cp "$root/wp-ai-bridge.php" "$plugin_dir/"
 cp "$root/uninstall.php" "$plugin_dir/"
 cp "$root/README.md" "$plugin_dir/"
+cp "$root/readme.txt" "$plugin_dir/"
 cp "$root/CHANGELOG.md" "$plugin_dir/"
 cp "$root/LICENSE" "$plugin_dir/"
 cp -R "$root/src" "$plugin_dir/src"
 cp -R "$root/languages" "$plugin_dir/languages"
+# Keep directory-facing readme metadata in lockstep with the installable
+# plugin header. This is enforced even for GitHub-only releases.
+plugin_version="$(sed -nE 's/^[[:space:]]*\*[[:space:]]Version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$/\1/p' "$root/wp-ai-bridge.php")"
+readme_version="$(sed -nE 's/^[[:space:]]*Stable tag:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$/\1/p' "$root/readme.txt")"
+if [[ -z "$plugin_version" || "$plugin_version" != "$readme_version" ]]; then
+    echo "ERROR: readme.txt Stable tag must match the main plugin header Version." >&2
+    exit 1
+fi
+
 rm -f "$zip_file"
 
 php -r '
@@ -49,6 +59,7 @@ $zip->close();
 mapfile -t entries < <(unzip -Z1 "$zip_file")
 required=(
     "wp-ai-bridge/wp-ai-bridge.php"
+    "wp-ai-bridge/readme.txt"
     "wp-ai-bridge/uninstall.php"
     "wp-ai-bridge/LICENSE"
     "wp-ai-bridge/CHANGELOG.md"

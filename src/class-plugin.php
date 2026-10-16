@@ -17,6 +17,7 @@ use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Transfer_Settings;
 use WP_AI_Bridge\Support\External_Package_Limits;
+use WP_AI_Bridge\Support\GitHub_Updates;
 use WP_AI_Bridge\Support\REST_Invocation_Input_Limits;
 use WP_AI_Bridge\Support\Operation_Receipt_Limits;
 use WP_AI_Bridge\Support\Operation_Content_Limits;
@@ -70,7 +71,8 @@ final class Plugin {
 			return;
 		}
 
-		$this->booted                    = true;
+		$this->booted = true;
+		( new GitHub_Updates() )->boot();
 		$this->environment               = new Environment();
 		$this->settings                  = new Settings();
 		$this->permissions               = new Permissions( $this->settings );

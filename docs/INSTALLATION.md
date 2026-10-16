@@ -30,6 +30,14 @@ An existing canonical 0.4.0-or-newer installation can be updated normally with W
 
 Before any production plugin update, keep a normal WordPress/database backup appropriate to the site.
 
+### GitHub release updates in the WordPress dashboard (v0.6.8 and later)
+
+Once the **v0.6.8 release** is actually published on GitHub and installed, an **active** WP AI Bridge can advertise newer **published stable** GitHub Releases to WordPress's standard **Plugins** update screen. This uses WordPress Core's `Update URI` and its normal package upgrader; the Bridge does not install another updater, turn on automatic updates, require a GitHub token, or change the `wp-ai-bridge/wp-ai-bridge.php` installation identity. An administrator may use the usual WordPress **Enable auto-updates** preference independently.
+
+The currently published **v0.6.7** package predates this feature. Upgrade it **once** through **Plugins → Add Plugin → Upload Plugin**, select the official `wp-ai-bridge.zip` file from [GitHub Releases](https://github.com/AChWorks/wp-ai-bridge/releases/latest), and approve the WordPress **Replace current with uploaded** flow after a normal site/database backup. Avoid GitHub's automatically generated `Source code (zip)` archive: it is not the installable release asset. Later qualifying stable versions can then be offered natively. When the Bridge is inactive its updater callback cannot run, so update inactive installations manually through the same canonical ZIP path.
+
+If the server cannot reach GitHub's public Release API (including a timeout or rate limit), no external update is offered until a future successful check; the existing installation remains unchanged. A GitHub release, CI success or a merged PR is **not** proof that a version is installed or available on WordPress.org. Verify the installed version, active state, Workspace content and OAuth connection after any upgrade. The plugin's own README and [release changelog](../CHANGELOG.md) document the exact current version and limitations.
+
 ### Sites still on the published 0.3.0 package
 
 Version 0.4.1 and later deliberately do not contain the retired pre-0.4.0 importer. If a site is still on 0.3.0 and must preserve its old Workspace Documents/Tasks, first use the immutable **v0.4.0** release and its documented one-time migration procedure. Verify the canonical Workspace after that migration, then update the resulting 0.4.0 installation to the current release.

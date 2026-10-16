@@ -216,16 +216,18 @@ release, update the source version, published predecessor ZIP URL, immutable
 SHA-256 checksum and fixture version together. A historical predecessor's
 green result cannot substitute for the latest-published-to-candidate proof.
 
-## WordPress.org distribution readiness (optional future delivery)
+## Canonical GitHub distribution and conditional WordPress.org directory eligibility
 
 Open acceptance and release-policy work is tracked in [WordPress.org directory readiness #171](https://github.com/AChWorks/wp-ai-bridge/issues/171); this section owns enduring maintainer guidance, not live submission status.
 
-The canonical GitHub ZIP release flow below remains supported. Potential WordPress.org distribution is a **separate acceptance and submission process**, not an automatic side effect of GitHub merge/tagging. Preserve the same plugin ID, behavior, security, and update semantics across both channels; do not fork away permission checks or create a different feature set merely to satisfy a scanner.
+**Owner direction (2026-10-16):** GitHub Releases is the maintained public distribution and update channel for the **full-feature plugin**. Do not remove, hide, or separate administrator-approved External Packages, installed plugin/theme Source Editing, or other legitimate features to satisfy Plugin Directory policy. The GitHub release ZIP keeps the canonical `wp-ai-bridge/wp-ai-bridge.php` identity. Starting with the first published version containing `Update URI: https://github.com/AChWorks/wp-ai-bridge`, Core's native `update_plugins_github.com` path discovers official published stable release assets; actual downloads/replacements still use WordPress Core. Existing v0.6.7 installations need one manual ZIP replacement to bootstrap this capability. Never claim an unreleased candidate is installed or published.
+
+Official WordPress.org listing is a **separate, conditional eligibility/reviewer/submission outcome**: attempt only if the **same full-feature product** is acceptable. No code- or metadata-disguised directory-only variant and no reviewer contact without Owner approval. A Plugin Check `plugin_updater_detected` result is evidence about directory eligibility, not permission to remove the GitHub update channel.
 
 Before submitting a frozen and independently reviewed candidate (resolve the policy eligibility **first**, before substantial directory-specific packaging):
 
 1. **Resolve an evidenced Plugin Directory policy conflict before submission.** [Detailed Plugin Guidelines §8](https://developer.wordpress.org/plugins/wordpress-org/detailed-plugin-guidelines/) explicitly lists installing/updating plugins, themes or add-ons from non-WordPress.org servers as disallowed externally loaded executable code, while allowing certain management services that push software through their own domain. The existing administrator-authorized `External Packages` route uses WordPress Core Upgrader but still selects public third-party ZIP sources, so security tests/Core API use **do not establish** directory eligibility. Seek written classification/acceptable architecture from the Plugin Review Team **only with Owner-approved external outreach**, then take an explicit owner-level decision on a single maintainable product/distribution policy. Do not silently remove the existing feature, conceal it from review, create divergent undocumented builds, or claim an automatic exception.
-2. Declare only verified minimum WordPress/PHP versions in the **main plugin header**, and declare the official WordPress.org `mcp-adapter` dependency using `Requires Plugins: mcp-adapter`; check version compatibility and ordinary WP dependency installation/deactivation behavior. The current plugin header still lacks `Requires PHP`/`Requires Plugins`: do not guess a minimum PHP version from the single PHP 8.4 CI lane.
+2. Declare only verified minimum WordPress/PHP versions in the **main plugin header**. Evaluate native `Requires Plugins: mcp-adapter` only after checking the installed/dependency-inactive upgrade and activation behavior in supported WordPress versions; the current plugin remains deliberately usable for its local admin/Workspace while the Adapter is absent, with a clear administrator notice. Do not silently change this behavior or guess a PHP minimum from the single PHP 8.4 CI lane.
 3. Prepare and validate the required WordPress.org-format **`readme.txt`** (distinct from user/developer `README.md`): truthful features, installation, dependencies, supported/tested versions, privacy/third-party data flows, privilege risks and known limitations, supported license and `Stable tag`. Obtain the actual WordPress.org contributor account/approved slug before presenting either as registered.
 4. Check GPL-compatible sources/assets/translations, privacy/consent and outward HTTP calls, stable upgrade/uninstall/multisite behavior, static asset delivery and absence of development/test/vendor artifacts in the distribution. Treat any required SVN trunk/tag publication and user-facing availability as a separately approved release operation, not a normal GitHub push.
 5. Run official **Plugin Check** (repository/security/performance checks, plus runtime checks where supported) against the **actual installable ZIP**, investigate every finding, and retain explicit evidence for any false positive. The existing repository PHPCS/security script and successful WordPress integration tests do not substitute for the Plugin Directory review.
@@ -236,13 +238,13 @@ Official references: [plugin headers](https://developer.wordpress.org/plugins/pl
 
 ## Release process
 
-1. update the plugin version and changelog when a new plugin build is being released;
+1. update the plugin version, `readme.txt` Stable tag (must equal the plugin header), and changelog when a new plugin build is being released;
 2. run `composer check`;
-3. run the complete supported WordPress assurance set;
+3. run the complete supported WordPress assurance set, including the native GitHub stable-release update/disposable Core Upgrader fixture;
 4. merge only after exact-head CI is green;
 5. build the ZIP from the release commit;
 6. create an immutable Git tag and GitHub Release for that commit;
-7. attach the validated ZIP and verify its checksum/metadata.
+7. attach the validated `wp-ai-bridge.zip` asset and verify its checksum/metadata and `vX.Y.Z` stable release identity; Core must never offer automatic GitHub source archives.
 
 Do not force-move a published version tag. Use a patch release for post-publication plugin-package changes.
 
