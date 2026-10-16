@@ -35,6 +35,11 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `media-import-url` | Remote Media + Builder Write | Stream a safe HTTP(S) resource into the Media Library using current upload/parent authority. |
 | `media-update` | Builder Write | Update bounded attachment metadata/parent. |
 | `media-delete` | Users & Destructive | Permanently delete an attachment when WordPress permits it. |
+| `file-bytes-read` | Site Read + exact readable Media authority | Read an existing attachment via hash/snapshot-bound Base64 windows; not a public URL or automatically downloadable client file. |
+| `private-transfer` | Authenticated approved MCP client + WordPress/Bridge grants for exact transfer purpose | Start, append, verify, resume, read, cancel or release private bytes; site-admin `admin_release` is narrowly scoped. Staging alone has no WordPress effect. |
+| `transfer-media-import` | Builder Write + native `upload_files`; authenticated MCP client | Consume a verified private Media lease through native WordPress sideload with one-way effect claim. |
+| `transfer-media-export` | Site Read + native exact attachment `read_post`; authenticated MCP client | Freeze an approved Media attachment into a private read lease; creates temporary private state, not an external-client attachment. |
+| `transfer-content-commit` | Builder Write + native content capability, with Live Content where applicable; authenticated MCP client | Create or conditionally update native WordPress content using an exact verified private UTF-8 lease; no blind replay. |
 | `terms-read` | Site Read | Read terms from eligible taxonomies. |
 | `term-upsert` | Builder Write | Create/update a taxonomy term. |
 | `terms-assign` | Builder Write | Assign existing terms to content. |
@@ -42,12 +47,17 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `navigation-read` | Site Read | Inspect classic menus, locations, and block navigation. |
 | `classic-navigation-mutate` | Builder Write | Create/update/reorder classic navigation; permanent item removal is destructive. |
 | `site-settings-read` | Site Read | Read the bounded site-settings allowlist. |
+| `registered-settings-list` | Site Read + native `manage_options` | Discover bounded non-sensitive registered WordPress REST settings without returning their values. |
+| `registered-setting-read` | Site Configuration + native `manage_options` | Read one exact non-sensitive REST-registered setting with its typed `value_json` contract. |
+| `registered-setting-update` | Site Configuration + native `manage_options` | Update one exact setting through Core REST validation; no arbitrary option or credential updates. |
+| `rest-routes-read` | Registered REST Discovery + native `manage_options` | Discover bounded, eligible registered WordPress REST route/method contracts; this does not execute them. |
+| `rest-route-invoke` | High-Trust Registered REST Invocation + required protected consents and native authority | Dispatch one exact eligible registered local REST route/method through WordPress permissions and validation; effects and unknown outcomes remain high trust. |
 | `site-settings-update` | Site Configuration | Update bounded site settings. |
-| `wxr-export-discover` | Site Configuration + native WordPress `export` | Read-only discovery of actually exportable WordPress post types and Core filter semantics; no file is created or delivered. **Introduced in v0.6.0 source by PR #146; absent from v0.5.1.** |
-| `wxr-export-create` | Site Configuration + native WordPress `export`; authenticated MCP client | Added in v0.6.0 source by PR #146: Core WXR to private, authenticated resumable download lease. No public URL or import effect. |
-| `wxr-import-preview` | Site Configuration + Builder Write + native `import`; authenticated MCP client | Added in v0.6.0 source by PR #146: read-only structural validation of an exact verified private WXR ingress lease; no import or plan execution. |
-| `wxr-import-plan` | Site Configuration + Builder Write + native `import` and administrator; official Importer dependency | Added in v0.6.0 source by PR #146: verified WXR and official native parser, exact source+principal+client+site+author choices+existing-target identity HMAC consent token. No effects. |
-| `wxr-import-execute` | Same as plan, explicit `confirm=true`, exact token; Live Content additionally for publish/allow-existing | Added in v0.6.0 source by PR #146: **effectful** once-only official WordPress Importer. No users or remote fetches. Fsynced irreversible claim, status/unknown effects/no replay. Reviewed at exact candidate SHA before merge. |
+| `wxr-export-discover` | Site Configuration + native WordPress `export` | Read-only discovery of actually exportable WordPress post types and Core filter semantics; no file is created or delivered. **Available from published v0.6.0 onward; no file effect.** |
+| `wxr-export-create` | Site Configuration + native WordPress `export`; authenticated MCP client | Published v0.6.0+ Core WXR to private, authenticated resumable download lease. No public URL or import effect. |
+| `wxr-import-preview` | Site Configuration + Builder Write + native `import`; authenticated MCP client | Published v0.6.0+ read-only structural validation of an exact verified private WXR ingress lease; no import or plan execution. |
+| `wxr-import-plan` | Site Configuration + Builder Write + native `import` and administrator; official Importer dependency | Published v0.6.0+ verified WXR and official native parser, exact source+principal+client+site+author choices+existing-target identity HMAC consent token. No effects. |
+| `wxr-import-execute` | Same as plan, explicit `confirm=true`, exact token; Live Content additionally for publish/allow-existing | Available in published v0.6.0+: **effectful** one-way official WordPress Importer call. No user creation or remote fetch. Durable claim, explicit status/unknown-effect fencing and no blind replay. |
 | `site-health` | Site Configuration + native view_site_health_checks | Discover native Core/provider Site Health tests; execute only reviewed Core direct or REST tests with current WordPress permissions and bounded results. |
 | `core-update-status` | Site Configuration + native administrator capability (network administrator on multisite) | Read only cached Core update offers, their age, and native policy signals. Never triggers an update check, download, or upgrade. Missing/stale cache is unknown. |
 | `cron-events-read` | Site Configuration + WordPress `manage_options`; multisite also `manage_network_options` | Read-only bounded WP-Cron inventory, exact event metadata without callback arguments, source-bound pagination and truthful unsupported external-trigger status. |
@@ -62,6 +72,14 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `source-file-preview-transfer` | Code & Extensions + Source Editing + native editor authority; authenticated MCP client | Validate and bind a verified source ingress lease to the exact installed target and preimage without writing. |
 | `source-file-apply-transfer` | Code & Extensions + Source Editing + native editor authority; authenticated MCP client | Apply only the verified, preview-bound private source lease through existing atomic CAS/recovery with a once-only durable effect claim. |
 | `source-file-recover` | Code & Extensions + Source Editing | Restore the Bridge-owned exact preimage only while current bytes still match the owned candidate. |
+| `snippets-read` | Site Read + installed Code Snippets provider capability | Inspect site-local managed snippets through the provider API when supported. |
+| `snippet-upsert` | Code & Extensions + provider capability | Create or update a managed Code Snippet using provider lifecycle; Bridge never evaluates submitted code directly. |
+| `snippet-lifecycle` | Code & Extensions + provider capability | Activate, deactivate, trash or restore an existing managed snippet. |
+| `snippet-delete` | Users & Destructive + provider capability | Permanently delete an already-trashed managed snippet. |
+| `gravity-forms-read` | Site Read + native `gravityforms_edit_forms` | List or inspect Gravity Forms through GFAPI when no suitable native public Ability is available. |
+| `gravity-form-upsert` | Builder Write + native Gravity Forms create/edit capability | Create or update a supported form, its fields and metadata through GFAPI. |
+| `gravity-form-status` | Builder Write + native `gravityforms_edit_forms` | Activate or deactivate one Gravity Form through GFAPI. |
+| `gravity-form-delete` | Users & Destructive + native `gravityforms_delete_forms` | Permanently delete one Gravity Form under its provider's authorization. |
 | `users-read` | Site Read | Read bounded user/role information without credential material. |
 | `user-upsert` | Users & Destructive | Create/update a user and assign an editable role. |
 | `user-remove` | Users & Destructive | Remove a user with explicit reassignment. |
@@ -156,6 +174,10 @@ For large content and transfer contracts, see [Large MCP payloads](./LARGE-PAYLO
 Before attempting a plugin/theme install, activation, update, deactivation or deletion, use `wp-ai-bridge/extension-authorization` with `{"kind":"plugin","action":"install"}` (or `"theme"`), and for public HTTPS ZIP installs also `"install_source":"public_https"`. This is **read-only** and requires Site Read plus current native WordPress `read`. It does not perform a lifecycle operation, fetch a package, evaluate a target or alter any setting.
 
 The bounded response names `required_groups`, current `group_grants`, the exact `native_capability` and its live boolean, and the result of the current Bridge-owned `extension-lifecycle` **permission callback** for that kind/action/source. Possible `status` values are `bridge_delegation_disabled`, `native_authority_denied`, `additional_authorization_denied`, and `permission_preflight_passed`. **All** return `execution_permission:"not_evaluated"`: a passing permission preflight is **not** proof the package/target exists, the filesystem/host/multisite policy permits changes, an installation will succeed, or that the caller can bypass native upgrader validation. Authorization is rechecked during actual execution. For unrelated provider/Core Abilities, do **not** assume the Bridge can safely evaluate a permission callback without an exact target and native contract; use `abilities-read` and its `execution_permission:not_evaluated`.
+
+## Registered WordPress REST settings
+
+The three `registered-settings-*`/`registered-setting-*` Abilities listed above reuse WordPress's actually registered REST setting contracts. Discovery is metadata-only; exact read/update are separately granted and inherit native schema, sanitization and provider permissions. For the bounds, sensitive-value exclusion, JSON value behavior and specialized Core-setting precedence, see the [registered settings contract](./REGISTERED-SETTINGS.md). There is no arbitrary `get_option`/`update_option` or private-options API.
 
 ## External package installation boundary
 
@@ -283,7 +305,7 @@ Import is not idempotent: importing the same URL again can create another attach
 
 ## Inline file-byte reads via ordinary MCP Ability (Issue #134; v0.6.0+)
 
-Merged PR #145 implements **wp-ai-bridge/file-bytes-read** in current main (not published v0.5.1), a read-only, source-neutral Ability with an initial media adapter. Its inspect step returns authorized source size/digest and a blog/user/OAuth-client-bound opaque identity. Its chunk step returns bounded Base64 with source-state checks, byte offsets and a stable digest for caller-side verification. Every call requires the enabled Site Read grant, a native attachment read_post capability and confinement to the site's canonical uploads directory. The inline source-size ceiling is operator-tunable and independent of the MCP encoded response ceiling. The legacy one-request Base64 Media upload ceiling is separately configurable with inline_media_upload_mib (20 MiB default; PHP-memory-derived operator maximum), intersected with native WordPress/transport limits, not an aggregate file transport limit.
+Published v0.6.0+ provides **wp-ai-bridge/file-bytes-read**, a read-only, source-neutral Ability with an initial media adapter. Its inspect step returns authorized source size/digest and a blog/user/OAuth-client-bound opaque identity. Its chunk step returns bounded Base64 with source-state checks, byte offsets and a stable digest for caller-side verification. Every call requires the enabled Site Read grant, a native attachment read_post capability and confinement to the site's canonical uploads directory. The inline source-size ceiling is operator-tunable and independent of the MCP encoded response ceiling. The legacy one-request Base64 Media upload ceiling is separately configurable with inline_media_upload_mib (20 MiB default; PHP-memory-derived operator maximum), intersected with native WordPress/transport limits, not an aggregate file transport limit.
 
 This is NOT a complete private binary ingress, file transport session, HTTP streaming protocol, WXR artifact export, downloadable model attachment, ChatGPT top-level fileParams extension, or verified Gateway compatibility. This WordPress-side file-byte Ability is included in published v0.6.0+ packages; that does not establish hosted-client native attachment delivery or Gateway interoperability. Do not expose server paths.
 
@@ -311,7 +333,7 @@ The four transfer Abilities are integrated into **main by merged PR #145**, but 
 
 ## Public Ability contract inspection
 
-**Direct MCP tool inventory versus WordPress operations:** the canonical direct server exposes only the three generic MCP Adapter tools in `tools/list`. Use `mcp-adapter-discover-abilities` to discover public WordPress operations, including `wp-ai-bridge/extension-lifecycle`; absence of that Ability name from `tools/list` alone does not mean it is unimplemented. For a site-specific diagnosis of build version, delegation, native authority and remaining administrator-parity gaps, see [administrator capability audit](POST-PARITY-AUDIT.md).
+**Direct MCP tool inventory versus WordPress operations:** the canonical direct server exposes only the three generic MCP Adapter tools in `tools/list`. Use `mcp-adapter-discover-abilities` to discover public WordPress operations, including `wp-ai-bridge/extension-lifecycle`; absence of that Ability name from `tools/list` alone does not mean it is unimplemented. For a site-specific diagnosis of build version, delegation, native authority and remaining administrator-parity gaps, see [historical administrator-coverage evidence](https://github.com/AChWorks/wp-ai-bridge/issues/99) (v0.5.1, not a current site snapshot).
 
 Use `wp-ai-bridge/abilities-read` with `action: "list"` (the default), optional exact `namespace`, case-insensitive `search` over public name/label/description, `page` (default 1) and `per_page` (default 25, maximum 100). Results sort by exact Ability name and report `total` and `total_pages`; all pages of the current registry are reachable. The registry is a live view, not an immutable snapshot across requests.
 

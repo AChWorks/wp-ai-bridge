@@ -1,6 +1,8 @@
 # Approved OAuth clients
 
-WP AI Bridge keeps **connection eligibility** separate from WordPress and Bridge operation authority. This is the AI-client layer: it is independent of the plugin/theme *operation providers* dynamically discovered within WordPress. ChatGPT is the currently tested built-in client; independent clients are admitted only through the supported, administrator-approved metadata contract, not merely by their vendor name or support for some form of MCP.
+WP AI Bridge keeps **connection eligibility** separate from WordPress and Bridge operation authority. This is the **consumer connection** layer (AI assistants, an approved Gateway client or another compatible application), independent of the plugin/theme *operation providers* dynamically discovered within WordPress. ChatGPT is the currently tested built-in client; independent clients are admitted only through the supported, administrator-approved metadata contract, not merely by their vendor name or support for some form of MCP.
+
+**Current authorization boundary:** the implemented OAuth flow binds each approved client to a real WordPress user/principal. A Gateway UI operated by a human can initiate a call using its separately approved connection, but its own UI role does not grant a WordPress permission. The accepted future model of an independently approved **service principal** with a separately revocable grant still needs dedicated implementation and security validation; no standalone machine identity or bypass is shipped.
 
 ## Built-in ChatGPT compatibility
 
