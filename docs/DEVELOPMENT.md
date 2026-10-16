@@ -194,7 +194,7 @@ docs/maintainer/ recovery map and preserved design references
 ### Latest published v0.6.5-to-candidate ZIP upgrade regression
 
 This fixture verifies an actual published-installation upgrade from the
-**immutable v0.6.5 release ZIP** (SHA-256 pinned in the runner) to the current
+**published v0.6.5 release ZIP, pinned by SHA-256** (the runner checks byte identity; GitHub does not enforce asset immutability) to the current
 candidate, using WordPress Core's normal replacement operation:
 
 ```bash
