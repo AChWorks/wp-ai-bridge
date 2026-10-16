@@ -70,6 +70,10 @@ The Bridge requires a compatible Code Snippets programmatic lifecycle in the cur
 
 If status remains unavailable, verify the installed version, plugin activation, and whether another plugin is altering Code Snippets loading/capabilities. Rescan the App after changing provider state.
 
+## Private transfer returns `transfer_storage_unsafe`
+
+The effective WordPress temporary directory may be within a statically served `wp-content` tree. Bridge rejects that unsafe path and **automatically tries another validated writable PHP/OS temp directory outside known served roots**; ordinary publishable Media and approved plugin/theme packages still reach their native final destinations without manual moves. `transfer_storage_unsafe` means *no safe private fallback was available*, for example when `open_basedir` excludes every safe candidate, not simply that `WP_TEMP_DIR` is served. Do not change global `WP_TEMP_DIR`, rely on a host-specific `.htaccess` to protect private bytes, or move a confidential file into public uploads. Unknown server aliases/CDNs still warrant site-specific inspection; see [Issue #134](https://github.com/AChWorks/wp-ai-bridge/issues/134).
+
 ## Media upload fails
 
 Check:
