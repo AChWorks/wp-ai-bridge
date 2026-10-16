@@ -155,7 +155,7 @@ final class Private_Transfer_Session {
 			if ( ! $this->secure_file( $file, $data ) ) {
 				fclose( $file );
 				$this->remove_file( $data );
-				return new WP_Error( 'transfer_storage_unsafe', 'Cannot enforce private transfer file permissions.' );
+				return new WP_Error( 'transfer_storage_unsafe', 'Cannot enforce private transfer file permissions.', array( 'storage_reason' => 'lease_file_mode' ) );
 			}
 			fclose( $file );
 			$handle = @fopen( $manifest, 'x+b' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Exclusive fixed-format manifest in private root.
@@ -956,15 +956,28 @@ final class Private_Transfer_Session {
 		foreach ( array( ABSPATH, defined( 'WP_CONTENT_DIR' ) ? WP_CONTENT_DIR : ABSPATH, $_SERVER['DOCUMENT_ROOT'] ?? '' ) as $webroot ) {
 			$real = is_string( $webroot ) ? realpath( $webroot ) : false;
 			if ( is_string( $real ) && 0 === strpos( wp_normalize_path( $root ) . '/', trailingslashit( wp_normalize_path( $real ) ) ) ) {
-				return new WP_Error( 'transfer_storage_unsafe', 'The private transfer root must be outside the WordPress web directory.' );
+				return new WP_Error( 'transfer_storage_unsafe', 'The private transfer root must be outside the WordPress web directory.', array( 'storage_reason' => 'root_web_served' ) );
 			}
 		}
 		if ( ! is_dir( $root ) && ! @mkdir( $root, 0700 ) && ! is_dir( $root ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir,WordPress.PHP.NoSilencedErrors.Discouraged -- Fixed site-secret directory, outside webroot.
 			return new WP_Error( 'transfer_storage_unavailable', 'Cannot create an owner-only private transfer directory.' );
 		}
-		if ( is_link( $root ) || realpath( $root ) !== $root || ! chmod( $root, 0700 ) ||
-			0700 !== ( fileperms( $root ) & 0777 ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- Enforce private root permission.
-			return new WP_Error( 'transfer_storage_unsafe', 'Cannot validate the private transfer directory.' );
+		if ( is_link( $root ) ) {
+			return new WP_Error( 'transfer_storage_unsafe', 'Private transfer directory cannot be a symbolic link.', array( 'storage_reason' => 'root_symlink' ) );
+		}
+		if ( realpath( $root ) !== $root ) {
+			return new WP_Error( 'transfer_storage_unsafe', 'Private transfer directory is not canonical.', array( 'storage_reason' => 'root_noncanonical' ) );
+		}
+		clearstatcache( true, $root );
+		$mode = fileperms( $root );
+		// A correct 0700 directory is already safe. Some managed hosts deny an
+		// unnecessary chmod, even when the existing owner-only mode is valid.
+		if ( false === $mode || ( 0700 !== ( $mode & 0777 ) && ! chmod( $root, 0700 ) ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- Only tighten an insecure existing directory.
+			return new WP_Error( 'transfer_storage_unsafe', 'Cannot enforce private transfer directory permissions.', array( 'storage_reason' => 'root_mode' ) );
+		}
+		clearstatcache( true, $root );
+		if ( 0700 !== ( fileperms( $root ) & 0777 ) ) {
+			return new WP_Error( 'transfer_storage_unsafe', 'Private transfer directory permissions remain unsafe.', array( 'storage_reason' => 'root_mode' ) );
 		}
 		return $root;
 	}
@@ -995,7 +1008,12 @@ final class Private_Transfer_Session {
 			0100000 !== ( $disk['mode'] & 0170000 ) ) {
 			return false;
 		}
-		return chmod( $path, 0600 ) && 0600 === ( fileperms( $path ) & 0777 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- Owner-only private stream.
+		$mode = fileperms( $path );
+		if ( false === $mode || ( 0600 !== ( $mode & 0777 ) && ! chmod( $path, 0600 ) ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- Tighten only when the inode is not already private.
+			return false;
+		}
+		clearstatcache( true, $path );
+		return 0600 === ( fileperms( $path ) & 0777 );
 	}
 
 	/**
