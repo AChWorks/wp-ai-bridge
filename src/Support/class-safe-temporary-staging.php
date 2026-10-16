@@ -17,10 +17,16 @@ use WP_Error;
  * trustworthy scratch directory can be identified.
  */
 final class Safe_Temporary_Staging {
+	/** One-shot files older than a day are considered abandoned. */
+	private const ORPHAN_SECONDS = 86400;
+
+	/** Bounded entries examined on each normal allocation. */
+	private const SWEEP_ENTRIES = 128;
+
 	/**
 	 * Create one empty owner-only file through WordPress's exclusive allocator.
 	 *
-	 * @param string $filename Already validated filename used only as a hint.
+	 * @param string $filename Validated original filename (not reused as a temp path).
 	 * @return string|WP_Error Absolute file path or a safe error.
 	 */
 	public static function create( $filename ) {
@@ -46,19 +52,26 @@ final class Safe_Temporary_Staging {
 				continue;
 			}
 			$attempted[ $root ] = true;
+			$staging            = self::one_shot_directory( $root );
+			if ( false === $staging ) {
+				continue;
+			}
+			// These one-shot inputs never share a directory with permanent
+			// transfer journals, claim fences or WordPress Media.
+			self::reap_orphans( $staging );
 
 			// WordPress creates the inode exclusively. No unverified payload is
 			// written to this path before all confinement checks succeed.
-			$file = wp_tempnam( $filename, rtrim( $root, '/\\' ) . DIRECTORY_SEPARATOR );
+			$file = wp_tempnam( 'wpai-native-stage', $staging . DIRECTORY_SEPARATOR );
 			if ( ! is_string( $file ) || '' === $file || is_link( $file ) || ! is_file( $file ) ) {
 				continue;
 			}
 			$real = realpath( $file );
 			clearstatcache( true, $file );
-			if ( ! is_string( $real ) || dirname( $real ) !== $root || self::is_served_path( $real ) ||
+			if ( ! is_string( $real ) || dirname( $real ) !== $staging || self::is_served_path( $real ) ||
 				0 !== filesize( $file ) ) {
 				// Never delete an unexpected path or nonempty file.
-				if ( is_string( $real ) && dirname( $real ) === $root && 0 === filesize( $file ) ) {
+				if ( is_string( $real ) && dirname( $real ) === $staging && 0 === filesize( $file ) ) {
 					wp_delete_file( $file );
 				}
 				continue;
@@ -79,6 +92,77 @@ final class Safe_Temporary_Staging {
 			'temporary_storage_unsafe',
 			__( 'A private temporary staging directory is unavailable; nothing was imported.', 'wp-ai-bridge' )
 		);
+	}
+
+	/**
+	 * Own an isolated 0700 directory, stable across worker restarts, for transient
+	 * Media/ZIP inputs only. Do not move private transfer journal roots here.
+	 *
+	 * @param string $base_directory Verified canonical PHP/OS temp path.
+	 * @return string|false Canonical private directory or failure.
+	 */
+	private static function one_shot_directory( $base_directory ) {
+		$identity = str_replace( '\\', '/', ABSPATH ) . "\0" .
+			( defined( 'DB_NAME' ) ? DB_NAME : '' ) . "\0" .
+			( function_exists( 'get_current_blog_id' ) ? (string) get_current_blog_id() : '1' );
+		$path     = rtrim( $base_directory, '/\\' ) . DIRECTORY_SEPARATOR .
+			'wpai-native-input-' . substr( hash( 'sha256', $identity ), 0, 32 );
+		if ( is_link( $path ) ) {
+			return false;
+		}
+		if ( ! is_dir( $path ) ) {
+			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Verify directory after concurrent mkdir below.
+			if ( ! @mkdir( $path, 0700 ) && ! is_dir( $path ) ) {
+				return false;
+			}
+		}
+		clearstatcache( true, $path );
+		$real = realpath( $path );
+		if ( ! is_string( $real ) || dirname( $real ) !== $base_directory || is_link( $path ) ||
+			! is_dir( $path ) || ! is_writable( $path ) || self::is_served_path( $real ) ||
+			0700 !== ( fileperms( $path ) & 0777 ) ) {
+			return false;
+		}
+		return $real;
+	}
+
+	/**
+	 * Opportunistically retire crashed one-shot input files on later safe use.
+	 * Each scan is bounded; idle sites do not promise wall-clock-time deletion.
+	 *
+	 * @param string $directory Canonical owner-only staging directory.
+	 * @return void
+	 */
+	private static function reap_orphans( $directory ) {
+		$cutoff = time() - self::ORPHAN_SECONDS;
+		$seen   = 0;
+		try {
+			foreach ( new \DirectoryIterator( $directory ) as $entry ) {
+				if ( $entry->isDot() ) {
+					continue;
+				}
+				if ( ++$seen > self::SWEEP_ENTRIES ) {
+					break;
+				}
+				$name = $entry->getFilename();
+				if ( ! str_starts_with( $name, 'wpai-native-stage' ) ||
+					$entry->isLink() || ! $entry->isFile() ) {
+					continue;
+				}
+				$path = $directory . DIRECTORY_SEPARATOR . $name;
+				// Recheck the inode and age; do not follow symlinks, delete hard
+				// links, or touch files other than this class's one-shot inputs.
+				// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Concurrent consumers may already have retired the inode.
+				$stat = @lstat( $path );
+				if ( ! is_array( $stat ) || 0100000 !== ( $stat['mode'] & 0170000 ) ||
+					1 !== $stat['nlink'] || $stat['mtime'] > $cutoff || is_link( $path ) ) {
+					continue;
+				}
+				wp_delete_file( $path );
+			}
+		} catch ( \UnexpectedValueException $error ) {
+			// Filesystem racing with allocation is not grounds to widen access.
+		}
 	}
 
 	/**
