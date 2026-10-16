@@ -143,7 +143,7 @@ $GLOBALS['wpai171']['transient'] = array(
 	'url'     => 'https://untrusted.invalid/details',
 	'package' => 'https://untrusted.invalid/archive.zip',
 );
-$cached_update = $updater->filter_update( false, $headers, 'wp-ai-bridge/wp-ai-bridge.php', array() );
+$cached_update                   = $updater->filter_update( false, $headers, 'wp-ai-bridge/wp-ai-bridge.php', array() );
 $assert( $update['url'] === $cached_update['url'], 'Untrusted cached release page replaced the canonical destination.' );
 $assert( $update['package'] === $cached_update['package'], 'Untrusted cached package replaced the official GitHub ZIP.' );
 $assert( 1 === $GLOBALS['wpai171']['calls'], 'Malformed cached metadata caused unnecessary network activity.' );
@@ -176,6 +176,20 @@ $bad_releases = array(
 	'wrong_tag'     => array_merge( $release, array( 'tag_name' => 'v0.6.8-rc1' ) ),
 	'missing_data'  => array( 'tag_name' => 'v0.6.8' ),
 );
+// Both GitHub stable-release state fields must exist and be Boolean false.
+// Empty/missing/type-coerced values do not prove a published stable release.
+foreach ( array( 'draft', 'prerelease' ) as $field ) {
+	$missing = $release;
+	unset( $missing[ $field ] );
+	$bad_releases[ 'missing_' . $field ] = $missing;
+	foreach ( array( null, 0, 0.0, '', 'false', array(), new stdClass() ) as $type_case => $invalid_value ) {
+		$bad_releases[ $field . '_invalid_' . $type_case ] = array_merge(
+			$release,
+			array( $field => $invalid_value )
+		);
+	}
+}
+
 foreach ( $bad_releases as $label => $payload ) {
 	$reset( $payload );
 	$assert( false === $updater->filter_update( false, $headers, 'wp-ai-bridge/wp-ai-bridge.php', array() ), 'Unsafe or incomplete GitHub release was accepted: ' . $label );

@@ -127,8 +127,10 @@ final class GitHub_Updates {
 	 */
 	private function validate_release( $release ) {
 		if ( ! is_array( $release )
-			|| ! empty( $release['draft'] )
-			|| ! empty( $release['prerelease'] )
+			|| ! array_key_exists( 'draft', $release )
+			|| false !== $release['draft']
+			|| ! array_key_exists( 'prerelease', $release )
+			|| false !== $release['prerelease']
 			|| ! isset( $release['tag_name'], $release['html_url'], $release['assets'] )
 			|| ! is_string( $release['tag_name'] )
 			|| ! is_array( $release['assets'] )
