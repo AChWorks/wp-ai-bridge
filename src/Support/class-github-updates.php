@@ -70,7 +70,18 @@ final class GitHub_Updates {
 	private function get_stable_release() {
 		$cached = get_site_transient( self::CACHE_KEY );
 		if ( is_array( $cached ) ) {
-			return isset( $cached['version'], $cached['url'], $cached['package'] ) ? $cached : false;
+			// Never trust cached package URLs: only the exact canonical GitHub
+			// paths derived from a strict version may reach Core's Upgrader.
+			$version = $cached['version'] ?? null;
+			if ( ! is_string( $version ) || ! preg_match( '/^[0-9]+\.[0-9]+\.[0-9]+$/D', $version ) ) {
+				return false;
+			}
+			$tag = 'v' . $version;
+			return array(
+				'version' => $version,
+				'url'     => self::UPDATE_URI . '/releases/tag/' . $tag,
+				'package' => self::UPDATE_URI . '/releases/download/' . $tag . '/wp-ai-bridge.zip',
+			);
 		}
 
 		$response = wp_safe_remote_get(

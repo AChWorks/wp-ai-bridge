@@ -136,6 +136,22 @@ $assert( 1 === $GLOBALS['wpai171']['calls'], 'Initial metadata check did not use
 $updater->filter_update( false, $headers, 'wp-ai-bridge/wp-ai-bridge.php', array() );
 $assert( 1 === $GLOBALS['wpai171']['calls'], 'Cached release caused another API request.' );
 
+// A stale/malformed WordPress transient is not a new authority to choose the
+// ZIP origin. Reconstruct canonical URLs even when the cached links differ.
+$GLOBALS['wpai171']['transient'] = array(
+	'version' => '0.6.8',
+	'url'     => 'https://untrusted.invalid/details',
+	'package' => 'https://untrusted.invalid/archive.zip',
+);
+$cached_update = $updater->filter_update( false, $headers, 'wp-ai-bridge/wp-ai-bridge.php', array() );
+$assert( $update['url'] === $cached_update['url'], 'Untrusted cached release page replaced the canonical destination.' );
+$assert( $update['package'] === $cached_update['package'], 'Untrusted cached package replaced the official GitHub ZIP.' );
+$assert( 1 === $GLOBALS['wpai171']['calls'], 'Malformed cached metadata caused unnecessary network activity.' );
+$GLOBALS['wpai171']['transient']['version'] = '../0.6.9';
+$assert( false === $updater->filter_update( false, $headers, 'wp-ai-bridge/wp-ai-bridge.php', array() ), 'Invalid cached release version was accepted.' );
+$GLOBALS['wpai171']['transient']['version'] = array( '0.6.8' );
+$assert( false === $updater->filter_update( false, $headers, 'wp-ai-bridge/wp-ai-bridge.php', array() ), 'Non-string cached release version was accepted.' );
+
 $bad_releases = array(
 	'draft'         => array_merge( $release, array( 'draft' => true ) ),
 	'prerelease'    => array_merge( $release, array( 'prerelease' => true ) ),
