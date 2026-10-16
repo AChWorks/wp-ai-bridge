@@ -191,10 +191,10 @@ bin/             development/build/test helpers
 docs/maintainer/ recovery map and preserved design references
 ```
 
-### Latest published v0.6.6-to-candidate ZIP upgrade regression
+### Pinned published-predecessor ZIP upgrade regression
 
-This fixture verifies an actual published-installation upgrade from the
-**published v0.6.6 release ZIP, pinned by SHA-256** (the runner checks byte identity; GitHub does not enforce asset immutability) to the current
+The currently checked-in fixture exercises the real **published v0.6.7 → v0.6.8** replacement path. It starts from the
+**published v0.6.7 release ZIP, pinned by SHA-256** (the runner checks byte identity; GitHub does not enforce asset immutability) to the current
 candidate, using WordPress Core's normal replacement operation:
 
 ```bash
@@ -211,16 +211,13 @@ must register `workspace-delete`, `diagnostics-read`, and the guarded exact pack
 default-off Users & Destructive authority; registration is not authorization.
 Fixture credentials remain confined to the disposable test environment.
 
-Both supported CI upgrade lanes use this runner. For each **later** public
-release, update the source version, published predecessor ZIP URL, immutable
-SHA-256 checksum and fixture version together. A historical predecessor's
-green result cannot substitute for the latest-published-to-candidate proof.
+Both supported CI upgrade lanes use this runner. Its frozen v0.6.7 predecessor is correct for the already-published **v0.6.8** candidate, **not** automatically the newest release for future work. Before validating the **next** plugin release, explicitly advance the predecessor ZIP URL, checksum, version and compatible fixture to the actual latest published predecessor. Do not label a historical predecessor run as newest-published-to-candidate proof.
 
 ## Canonical GitHub distribution and conditional WordPress.org directory eligibility
 
 Open acceptance and release-policy work is tracked in [WordPress.org directory readiness #171](https://github.com/AChWorks/wp-ai-bridge/issues/171); this section owns enduring maintainer guidance, not live submission status.
 
-**Owner direction (2026-10-16):** GitHub Releases is the maintained public distribution and update channel for the **full-feature plugin**. Do not remove, hide, or separate administrator-approved External Packages, installed plugin/theme Source Editing, or other legitimate features to satisfy Plugin Directory policy. The GitHub release ZIP keeps the canonical `wp-ai-bridge/wp-ai-bridge.php` identity. Starting with the first published version containing `Update URI: https://github.com/AChWorks/wp-ai-bridge`, Core's native `update_plugins_github.com` path discovers official published stable release assets; actual downloads/replacements still use WordPress Core. Existing v0.6.7 installations need one manual ZIP replacement to bootstrap this capability. Never claim an unreleased candidate is installed or published.
+**Owner direction (2026-10-16):** GitHub Releases is the maintained public distribution and update channel for the **full-feature plugin**. Do not remove, hide, or separate administrator-approved External Packages, installed plugin/theme Source Editing, or other legitimate features to satisfy Plugin Directory policy. The GitHub release ZIP keeps the canonical `wp-ai-bridge/wp-ai-bridge.php` identity. Starting with published **v0.6.8**, which contains `Update URI: https://github.com/AChWorks/wp-ai-bridge`, Core's native `update_plugins_github.com` path discovers official published stable release assets; actual downloads/replacements still use WordPress Core. Sites still running v0.6.7 or older need one manual ZIP replacement to bootstrap this capability; active v0.6.8+ installations can discover future stable releases natively. Never claim an unreleased candidate is installed or published.
 
 Official WordPress.org listing is a **separate, conditional eligibility/reviewer/submission outcome**: attempt only if the **same full-feature product** is acceptable. No code- or metadata-disguised directory-only variant and no reviewer contact without Owner approval. A Plugin Check `plugin_updater_detected` result is evidence about directory eligibility, not permission to remove the GitHub update channel.
 

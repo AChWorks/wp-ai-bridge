@@ -2,16 +2,16 @@
 
 ## Normative source and implementation boundary
 
-[`MASTER-SPEC.md`](../MASTER-SPEC.md) defines the product goal: full legitimate WordPress administration, discoverable and delegable through simple administrator-controlled settings. This document refines that specification and describes the actual component boundaries and outstanding coverage. Neither the current tool inventory nor a task's exclusions are a permanent product ceiling.
+[`MASTER-SPEC.md`](../MASTER-SPEC.md) defines the product goal: full legitimate WordPress administration available to approved AI clients, human-operated Gateway interfaces, applications and services through one administrator-controlled delegation model. This document refines that specification and describes the actual component boundaries and outstanding coverage. Neither the current tool inventory nor a task's exclusions are a permanent product ceiling.
 
 The architecture is deliberately small. Reuse WordPress identity/capabilities, registered Abilities, the official MCP Adapter, the existing Bridge settings and permission service, and thin public-API fallbacks. Do not create a second registry, policy language, per-provider permission engine, generic execution framework, or helper-plugin bundle. Bridge is a credential-like, scoped **connection and data-exchange boundary**; it must not reimplement feature-plugin business logic. Persistent Workspace is the intentional small Bridge-owned project-continuity exception, not a separate site-builder.
 
 ## Runtime ownership
 
 ```text
-AI / MCP client
-  -> authenticated Bridge HTTPS endpoint
-  -> official MCP Adapter transport and discovery/execution tools
+Approved AI, human-operated Gateway or application/service
+  -> compatible, authenticated Bridge connection
+  -> existing MCP Adapter transport today; additional approved interfaces only when implemented
   -> WordPress Abilities registry
        -> Core/provider-owned public contracts
        -> Bridge-owned typed fallback contracts
@@ -34,15 +34,19 @@ AI / MCP client
 
 Production requires the official Adapter and this Bridge, not Composer, Docker, Node.js, a daemon, another database, or an external identity platform. Build and integration tooling remain development-only.
 
-## AI clients versus WordPress providers
+## Consumers, authority and WordPress operation providers
 
-A **WordPress operation provider** is Core, a plugin or a theme registering operations. Its Abilities are discovered generically at runtime under WordPress and provider permission checks. An **AI/MCP client** is the external caller (ChatGPT, an independently operated Gateway, or another future compatible AI application) authenticated to this WordPress installation through the existing Bridge OAuth/MCP contract.
+A **WordPress operation provider** is Core, a plugin or a theme registering operations. Its Abilities are discovered generically at runtime under WordPress and provider permission checks. A **consumer** is an authenticated, administrator-approved actor using the Bridge: an AI client, an independently operated Gateway, a human-operated Gateway interface, an integration application or a future approved service. The consumer's origin does not change the WordPress operation's native behavior.
+
+**Implemented identity boundary:** direct ChatGPT and additional approved OAuth clients, including a Gateway acting as an OAuth client, bind their operation calls to a real WordPress principal. A Gateway may display its own human-facing publishing/control interface, but the Bridge currently authorizes the actual OAuth-bound WordPress principal, Bridge groups and provider permissions. A Gateway operator's UI role is not itself a WordPress capability, and a Gateway does not receive elevated rights merely because the request originated outside an AI.
+
+**Accepted future service model:** a service/automation can eventually have an independently approved identity and explicit service-specific delegated scope bound to a WordPress-recognized principal/authority. This must use the **same** WordPress-side operation, validation, permission, revocation and recovery paths as a user-delegated request. It requires a dedicated credential, identity/binding and lifecycle design with security tests before it can be described as available. Do not add an unbound machine superuser or let a service borrow user, ChatGPT or Gateway credentials. The target architecture accepts **user-delegated** and **service-delegated** requests, without inventing a deployed service-auth implementation in current documentation.
 
 Multiple approved clients must share the same administrator delegation and WordPress execution boundary, while keeping distinct client identities, grants and revocation. The existing built-in ChatGPT compatibility branch is intentional: do not rename its persisted token/client identity or assume other applications can authenticate as ChatGPT. Client-specific compatibility must be verified against its actual protocol; the Bridge is not a chat/model API proxy.
 
-See [Approved OAuth clients](./OAUTH-CLIENTS.md) for the currently implemented additional-client contract and `MASTER-SPEC.md` for future AI-client neutrality as a product requirement.
+See [Approved OAuth clients](./OAUTH-CLIENTS.md) for the implemented additional-client contract and [MASTER-SPEC](../MASTER-SPEC.md) for the consumer-neutral product goal and two delegation models.
 
-Direct AI-to-Bridge and AI-to-Gateway-to-Bridge remain independent supported topologies. The Gateway is its own approved OAuth client and cannot borrow the built-in ChatGPT identity; its user/Target scope further **narrows**, never widens, the WordPress principal and Bridge grants. Small bounded native Ability results may be routed through the existing Gateway discovery/read/execute contract. Separate file/binary transfer and new negotiated protocols require a Gateway-side capability and actual end-to-end proof; Gateway connector code belongs to `AChWorks/mcp-gateway`, not this repository.
+Direct compatible-client-to-Bridge and client-to-Gateway-to-Bridge are supported connection topologies today where their exact transport and OAuth contracts interoperate. A Gateway may originate human-operated calls using its existing approved client binding; a future separate service identity is not assumed to be shipped. The Gateway is its own approved OAuth client and cannot borrow the built-in ChatGPT identity; its user/Target scope further **narrows**, never widens, the WordPress principal and Bridge grants. Small bounded native Ability results may be routed through the existing Gateway discovery/read/execute contract. Separate file/binary transfer and new negotiated protocols require a Gateway-side capability and actual end-to-end proof; Gateway connector code belongs to `AChWorks/mcp-gateway`, not this repository.
 
 ## Discovery and reuse
 

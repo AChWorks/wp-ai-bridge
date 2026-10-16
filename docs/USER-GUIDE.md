@@ -81,11 +81,11 @@ Six existing Bridge create operations accept an optional client-provided, stable
 
 Receipt readback lasts 30 days; uncertain and expired IDs stay reserved against unsafe reuse. New `operation_id` receipts have a **separate administrator-configurable per-site admission budget** (default **2,048**, validated range **128–100,000**). Under **WP AI Bridge → Settings → Keyed create recovery capacity**, administrators can raise this finite generic limit without editing PHP, changing Bridge access grants or altering Workspace document/task quotas. Higher settings need actual WordPress database resources; counts can become slower as the receipt ledger grows. Lowering capacity blocks admission of new independent IDs above the new limit but never destroys stored receipts or prevents authorized recovery of an existing committed ID; canonical document-key reservations have their own finite budget derived from current Workspace count settings (minimum 2,048), without reducing generic admission. Historical untyped receipts retain their original database-unique identity and remain recoverable/reserved, but do not consume either new typed domain. At the relevant domain's capacity, new keyed creates fail closed and require explicit authorized reconciliation; Bridge never automatically deletes receipts or retries an uncertain effect.
 
-### Site Health and Core update status (PRs #142/#143 candidates)
+### Site Health and Core update status
 
 Dashboard and Settings show which local MCP/OAuth dependencies and HTTPS URL scheme are configured, but distinguish them from public network reachability and authenticated external AI-client connectivity, which are not verified by merely rendering a local URL. WordPress Tools > Site Health remains the complete native UI. The new Bridge site-health capability requires the default-off Site Configuration grant plus native view_site_health_checks, discovers native tests without running them, and executes only individually supported Core diagnostics on request; it does not expose raw server debug secrets. An internal Authorization-header check cannot verify public proxy header forwarding. The read-only core-update-status output uses cached, freshness-checked WordPress update offers and never triggers a Core upgrade.
 
-These are development candidates, not claims about an installed published release.
+These read-only diagnostics are included in published Bridge v0.6.0+ packages, subject to the exact installed version, Site Configuration grant and WordPress native permissions. They do **not** authorize WordPress Core upgrades through Bridge.
 
 ## Export and clear
 

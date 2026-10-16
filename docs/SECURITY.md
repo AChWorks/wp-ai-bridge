@@ -6,13 +6,13 @@ WP AI Bridge is designed as a bounded WordPress capability layer, not a general 
 
 Bridge-owned operations must satisfy every applicable layer:
 
-1. valid OAuth-authenticated WordPress identity for direct ChatGPT connections;
+1. a valid, independently approved OAuth client bound to the intended WordPress resource and authenticated WordPress principal (direct ChatGPT is one supported example);
 2. the relevant Bridge access group;
 3. the required WordPress capability or object-level/meta authorization rule;
 4. any provider-native permission check used by an integration;
 5. operation-specific live-state, destructive, and stale-state rules.
 
-OAuth never enables a Bridge access group and never grants a WordPress capability. Registered non-Bridge Core/provider Abilities executed through the WP AI Bridge MCP routes additionally require the default-off **Native Abilities** group; the target's own WordPress/provider permission callback remains independently authoritative. Bridge-owned operations keep their documented ability-specific groups.
+OAuth never enables a Bridge access group and never grants a WordPress capability. A human operating a Gateway UI and a Gateway-relayed AI request are governed by the **same** authenticated WordPress-side rules; the Gateway user's own local role is not a replacement for the principal's native WordPress authority. The accepted future model of an **independently approved service principal** also requires an exact WordPress-recognized authority, administrator-approved scope and independently revocable client identity. No machine-only superuser, borrowed OAuth client identity, or alternate unguarded execution path is authorized by that product direction. The current implementation still uses user-bound OAuth; do not present the service model as deployed. Registered non-Bridge Core/provider Abilities executed through the WP AI Bridge MCP routes additionally require the default-off **Native Abilities** group; the target's own WordPress/provider permission callback remains independently authoritative. Bridge-owned operations keep their documented ability-specific groups.
 
 ## Repository review and live-system boundary
 

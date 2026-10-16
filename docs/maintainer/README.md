@@ -66,7 +66,9 @@ When future development changes durable product behavior or architecture:
 - update `MASTER-SPEC.md` only when project-level intent, supported baseline, durable architecture boundaries, non-goals, or completion/success criteria change;
 - keep active task state in GitHub Issues/PRs instead of adding status snapshots here;
 - preserve important superseded design material under `reference/` only when it contains future-useful rationale that is no longer represented by a stronger current source;
-- keep public README content focused on the plugin and normal usage.
+- keep public `README.md` focused on practical installation, real currently supported features, administrator permissions, security warnings and troubleshooting navigation; it is **not** a second project specification or an engineering status digest;
+- put technical protocols, service-identity implementation design, detailed security/recovery invariants and release/CI instructions in the appropriate specialized `docs/` page instead of crowding `MASTER-SPEC.md` or the user README;
+- treat the accepted user-delegated and service-delegated identity models as long-term architecture; currently implemented OAuth is user-principal-bound until a separately validated service lifecycle exists.
 
 ## Branch lifecycle and recovery rule
 
