@@ -37,6 +37,37 @@ $assert( $log->record_transfer( 'begin', new WP_Error( 'private=/secret/bearer-k
 $read = $log->diagnostic_view( 1 );
 $assert( 1 === $read['returned'] && $read['has_more'] && 'transfer_error_unspecified' === $read['events'][0]['error_code'], 'Unknown errors must be redacted, never forwarded verbatim.' );
 $assert( ! array_key_exists( 'user_id', $read['events'][0] ) && ! array_key_exists( 'target_id', $read['events'][0] ), 'Remote diagnostics disclosed user or target identity.' );
+
+$assert( $log->record_transfer(
+	'begin',
+	new WP_Error( 'transfer_storage_unsafe', 'Do not expose path /private/root', array( 'storage_reason' => 'root_mode', 'path' => '/private/root' ) )
+), 'Storage failure diagnostic could not be recorded.' );
+$read = $log->diagnostic_view( 1 );
+$assert( 'transfer_storage_unsafe' === $read['events'][0]['error_code'] &&
+	'root_mode' === ( $read['events'][0]['storage_reason'] ?? '' ), 'Allowlisted private-root reason missing.' );
+$assert( false === strpos( wp_json_encode( $read ), '/private/root' ) &&
+	! array_key_exists( 'path', $read['events'][0] ), 'Private path or untrusted WP_Error data leaked into diagnostics.' );
+
+$assert( $log->record_transfer(
+	'begin',
+	new WP_Error( 'transfer_storage_unsafe', 'Do not expose bearer token', array( 'storage_reason' => 'bearer_secret_path' ) )
+), 'Unknown storage denial was not recorded.' );
+$read = $log->diagnostic_view( 1 );
+$assert( 'transfer_storage_unsafe' === $read['events'][0]['error_code'] &&
+	! isset( $read['events'][0]['storage_reason'] ), 'Unknown storage reason must not appear remotely.' );
+
+$assert( $log->record( 'wp-ai-bridge/media-upload', 'attachment', 0, false, 'media_temp_failed' ), 'Media staging failure logging failed.' );
+$read = $log->diagnostic_view( 1 );
+$assert( 'media-upload' === $read['events'][0]['operation'] &&
+	'media_temp_failed' === $read['events'][0]['error_code'] &&
+	! isset( $read['events'][0]['storage_reason'] ) &&
+	! isset( $read['events'][0]['target_id'] ), 'Media diagnostics must be bounded, allowlisted and not expose attachment identifiers.' );
+
+$assert( $log->record( 'wp-ai-bridge/media-upload', 'attachment', 0, false, 'private_token_injected' ), 'Ordinary unsafe-code Activity logging failed.' );
+$read = $log->diagnostic_view( 1 );
+$assert( 'media-upload' === $read['events'][0]['operation'] &&
+	! str_contains( wp_json_encode( $read ), 'private_token_injected' ), 'Arbitrary Media Activity error code reached sanitized diagnostics.' );
+
 $assert( $log->record_transfer( 'begin', array( 'state' => 'open' ) ), 'Successful begin should be recorded.' );
 $count = count( $log->recent( Mutation_Log::LIMIT ) );
 $assert( $log->record_transfer( 'append', array( 'state' => 'open' ) ) && $count === count( $log->recent( Mutation_Log::LIMIT ) ), 'Ordinary successful chunk traffic was logged.' );
