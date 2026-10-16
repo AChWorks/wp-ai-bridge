@@ -28,6 +28,14 @@ If a provider or tool restricts one review route, continue safe repository-scope
 
 Independent review and green CI remain evidence, not authorization. HIGH-risk integration, production deployment, live permission enablement, production credential lifecycle operations, and destructive or irreversible actions retain their separate current gates.
 
+## Public GitHub update metadata and package boundary
+
+Starting with the **published v0.6.8** build, **active** WP AI Bridge installations register the standard WordPress Core `Update URI` channel for `https://github.com/AChWorks/wp-ai-bridge`. During WordPress's normal update checks, the plugin may request **public** stable-release metadata at `https://api.github.com/repos/AChWorks/wp-ai-bridge/releases/latest`. It uses `wp_safe_remote_get` with a finite timeout, blocked HTTP redirects for the metadata request, a response-body limit, and positive/negative transient caching. The request needs no API key and carries **no** site content, Bridge Workspace body, OAuth credential, WordPress session cookie or provider credential. GitHub nevertheless observes ordinary network metadata such as the server IP and the dedicated update User-Agent.
+
+Only the exact published stable `vX.Y.Z` release with an uploaded `wp-ai-bridge.zip` asset at the canonical GitHub download URL can be advertised. Drafts, prereleases, alternate filenames, GitHub-generated source archives, cross-origin links, invalid release metadata and competing generic GitHub updater fallback packages fail closed. Cached release versions are validated again and the package URL is reconstructed from a fixed first-party origin rather than trusting persisted URLs.
+
+Actual confirmation, download, filesystem replacement and optional user-enabled automatic updates remain delegated to the normal WordPress Core Upgrader. No Bridge permission group is changed by checking for updates. A site administrator should treat a new executable plugin release as trusted code with ordinary WordPress runtime authority and take a routine site/database backup before updating. Historical v0.6.7 installs require one manual ZIP upgrade before this mechanism can advertise future Releases; an inactive Bridge cannot register the custom source callback. The WordPress.org directory's separate plugin-update policy is **not** bypassed or claimed as accepted by this GitHub distribution channel.
+
 ## Access groups
 
 - **Site Read** — read-only inspection surfaces.
