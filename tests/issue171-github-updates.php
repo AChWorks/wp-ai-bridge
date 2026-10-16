@@ -188,5 +188,15 @@ $assert( false === $updater->filter_update( false, $headers, 'wp-ai-bridge/wp-ai
 $assert( 15 * MINUTE_IN_SECONDS === $GLOBALS['wpai171']['expiration'], 'Unavailable API was not briefly cached.' );
 $reset( $release, 403 );
 $assert( false === $updater->filter_update( false, $headers, 'wp-ai-bridge/wp-ai-bridge.php', array() ), 'Rate-limited API was treated as success.' );
+// Only our canonical Github channel can supply Bridge updates; a separate
+// filter for another github.com plugin cannot become a fallback installer.
+$spoofed_prior = array(
+	'version' => '9.9.9',
+	'package' => 'https://other.invalid/bridge.zip',
+);
+$assert( false === $updater->filter_update( $spoofed_prior, $headers, 'wp-ai-bridge/wp-ai-bridge.php', array() ), 'Previously supplied host-filter package survived a failed official release check.' );
+$reset( $release );
+$assert( $update === $updater->filter_update( $spoofed_prior, $headers, 'wp-ai-bridge/wp-ai-bridge.php', array() ), 'Earlier host-filter package overrode a valid official stable release.' );
+$assert( $spoofed_prior === $updater->filter_update( $spoofed_prior, $headers, 'unrelated/plugin.php', array() ), 'Unrelated GitHub plugin update was changed.' );
 
 echo "PASS: #171 {$checks} GitHub-host update discovery, origin confinement, stable-only metadata, caching, and fail-closed assertions.\n";

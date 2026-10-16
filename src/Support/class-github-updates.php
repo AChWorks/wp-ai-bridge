@@ -50,7 +50,10 @@ final class GitHub_Updates {
 
 		$release = $this->get_stable_release();
 		if ( ! $release ) {
-			return $update;
+			// This plugin owns its canonical update identity. A previous
+			// github.com host-filter callback must not supply an unrelated
+			// package when the authenticated release check is unavailable.
+			return false;
 		}
 
 		return array(
