@@ -26,17 +26,25 @@ final class Mutation_Log {
 	 * @return bool Whether the option write was confirmed.
 	 */
 	public function record( $ability, $target_type = '', $target_id = 0, $success = true, $error_code = '' ) {
-		return $this->write(
-			array(
-				'timestamp'   => gmdate( 'c' ),
-				'user_id'     => get_current_user_id(),
-				'ability'     => substr( sanitize_text_field( (string) $ability ), 0, 160 ),
-				'target_type' => substr( sanitize_key( (string) $target_type ), 0, 64 ),
-				'target_id'   => absint( $target_id ),
-				'success'     => (bool) $success,
-				'error_code'  => substr( sanitize_key( (string) $error_code ), 0, 100 ),
-			)
+		$entry = array(
+			'timestamp'   => gmdate( 'c' ),
+			'user_id'     => get_current_user_id(),
+			'ability'     => substr( sanitize_text_field( (string) $ability ), 0, 160 ),
+			'target_type' => substr( sanitize_key( (string) $target_type ), 0, 64 ),
+			'target_id'   => absint( $target_id ),
+			'success'     => (bool) $success,
+			'error_code'  => substr( sanitize_key( (string) $error_code ), 0, 100 ),
 		);
+		// Reuse the existing bounded activity option for a few fixed, high-signal
+		// Media staging denials. No caller data, paths or filenames are recorded.
+		if ( 'wp-ai-bridge/media-upload' === $ability && ! $success &&
+			in_array( $error_code, array( 'media_temp_failed', 'media_temp_write_failed' ), true ) ) {
+			$entry['event_type'] = 'diagnostic';
+			$entry['operation']  = 'media-upload';
+			$entry['phase']      = 'provider';
+			$entry['event_ref']  = bin2hex( random_bytes( 8 ) );
+		}
+		return $this->write( $entry );
 	}
 
 	/**
@@ -59,28 +67,41 @@ final class Mutation_Log {
 		if ( $success && 'begin' !== $operation ) {
 			return true;
 		}
-		$code = '';
+		$code   = '';
+		$reason = '';
 		if ( ! $success ) {
 			$provided = (string) $result->get_error_code();
 			// Static provider-code allowlist. A plugin-supplied WP_Error code
 			// may contain sensitive text and must NEVER flow into this option.
 			$code = in_array( $provided, self::safe_error_codes(), true ) ? $provided : 'transfer_error_unspecified';
+			if ( 'transfer_storage_unsafe' === $code ) {
+				$data            = $result->get_error_data();
+				$provided_reason = is_array( $data ) ? ( $data['storage_reason'] ?? null ) : null;
+				$reason          = in_array( $provided_reason, self::safe_storage_reasons(), true ) ? $provided_reason : '';
+			}
 		}
-		return $this->write(
-			array(
-				'timestamp'   => gmdate( 'c' ),
-				'user_id'     => get_current_user_id(),
-				'ability'     => 'wp-ai-bridge/private-transfer',
-				'target_type' => '',
-				'target_id'   => 0,
-				'success'     => $success,
-				'error_code'  => $code,
-				'operation'   => $operation,
-				'phase'       => 'validation' === $phase ? 'validation' : 'provider',
-				'event_ref'   => bin2hex( random_bytes( 8 ) ),
-				'event_type'  => 'diagnostic',
-			)
+		$entry = array(
+			'timestamp'   => gmdate( 'c' ),
+			'user_id'     => get_current_user_id(),
+			'ability'     => 'wp-ai-bridge/private-transfer',
+			'target_type' => '',
+			'target_id'   => 0,
+			'success'     => $success,
+			'error_code'  => $code,
+			'operation'   => $operation,
+			'phase'       => 'validation' === $phase ? 'validation' : 'provider',
+			'event_ref'   => bin2hex( random_bytes( 8 ) ),
+			'event_type'  => 'diagnostic',
 		);
+		if ( '' !== $reason ) {
+			$entry['storage_reason'] = $reason;
+		}
+		return $this->write( $entry );
+	}
+
+	/** @return array<int,string> Static redacted storage denial reasons. */
+	private static function safe_storage_reasons() {
+		return array( 'root_web_served', 'root_symlink', 'root_noncanonical', 'root_mode', 'lease_file_mode' );
 	}
 
 	/** @return array<int,string> Canonical provider error-code allowlist. */
@@ -175,20 +196,26 @@ final class Mutation_Log {
 		$events = array();
 		$total  = 0;
 		foreach ( $this->retained() as $entry ) {
+			$is_transfer = 'wp-ai-bridge/private-transfer' === ( $entry['ability'] ?? '' ) &&
+				in_array( $entry['operation'] ?? '', array( 'begin', 'append', 'status', 'verify', 'cancel', 'read', 'release', 'admin_release' ), true ) &&
+				( '' === ( $entry['error_code'] ?? '' ) ||
+					in_array( $entry['error_code'] ?? null, self::safe_error_codes(), true ) );
+			$is_media    = 'wp-ai-bridge/media-upload' === ( $entry['ability'] ?? '' ) &&
+				'media-upload' === ( $entry['operation'] ?? '' ) &&
+				false === ( $entry['success'] ?? null ) &&
+				in_array( $entry['error_code'] ?? null, array( 'media_temp_failed', 'media_temp_write_failed' ), true );
 			if ( 'diagnostic' !== ( $entry['event_type'] ?? '' ) ||
-				'wp-ai-bridge/private-transfer' !== ( $entry['ability'] ?? '' ) ||
-				! in_array( $entry['operation'] ?? '', array( 'begin', 'append', 'status', 'verify', 'cancel', 'read', 'release', 'admin_release' ), true ) ||
+				( ! $is_transfer && ! $is_media ) ||
 				! in_array( $entry['phase'] ?? '', array( 'provider', 'validation' ), true ) ||
 				! isset( $entry['success'] ) || ! is_bool( $entry['success'] ) ||
 				! is_string( $entry['error_code'] ?? null ) ||
-				! in_array( $entry['error_code'], self::safe_error_codes(), true ) && '' !== $entry['error_code'] ||
 				! is_string( $entry['event_ref'] ?? null ) ||
 				1 !== preg_match( '/^[a-f0-9]{16}$/D', (string) ( $entry['event_ref'] ?? '' ) ) ) {
 				continue;
 			}
 			++$total;
 			if ( count( $events ) < $limit ) {
-				$events[] = array(
+				$event = array(
 					'timestamp'  => (string) $entry['timestamp'],
 					'operation'  => (string) $entry['operation'],
 					'phase'      => (string) $entry['phase'],
@@ -196,6 +223,11 @@ final class Mutation_Log {
 					'error_code' => (string) $entry['error_code'],
 					'event_ref'  => (string) $entry['event_ref'],
 				);
+				if ( $is_transfer && 'transfer_storage_unsafe' === $entry['error_code'] &&
+					in_array( $entry['storage_reason'] ?? null, self::safe_storage_reasons(), true ) ) {
+					$event['storage_reason'] = $entry['storage_reason'];
+				}
+				$events[] = $event;
 			}
 		}
 		return array(
