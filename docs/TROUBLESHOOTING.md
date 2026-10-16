@@ -72,7 +72,7 @@ If status remains unavailable, verify the installed version, plugin activation, 
 
 ## Private transfer returns `transfer_storage_unsafe`
 
-On some shared WordPress hosts, the effective native temporary directory is within the web-served WordPress content tree. The current filesystem-backed private-transfer storage intentionally rejects that location because static web servers and CDN/offload rules might expose private bytes. This is a privacy protection, **not** a request to change global `WP_TEMP_DIR`, add a host-specific `.htaccess` rule, or store private bytes in public uploads. If only explicitly publishable media is needed, the native Media Library upload or safe HTTPS URL import remains independent; confidential Media/WXR/source transfers must not be redirected into a public URL. The portable private-storage limitation is tracked in [Issue #134](https://github.com/AChWorks/wp-ai-bridge/issues/134).
+The effective WordPress temporary directory may be within a statically served `wp-content` tree. Bridge rejects that unsafe path and **automatically tries another validated writable PHP/OS temp directory outside known served roots**; ordinary publishable Media and approved plugin/theme packages still reach their native final destinations without manual moves. `transfer_storage_unsafe` means *no safe private fallback was available*, for example when `open_basedir` excludes every safe candidate, not simply that `WP_TEMP_DIR` is served. Do not change global `WP_TEMP_DIR`, rely on a host-specific `.htaccess` to protect private bytes, or move a confidential file into public uploads. Unknown server aliases/CDNs still warrant site-specific inspection; see [Issue #134](https://github.com/AChWorks/wp-ai-bridge/issues/134).
 
 ## Media upload fails
 
