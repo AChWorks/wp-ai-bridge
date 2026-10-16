@@ -27,7 +27,7 @@ function get_temp_dir() { return $GLOBALS['wpai173']['temp_dir']; }
 function wp_get_upload_dir() { return array( 'basedir' => $GLOBALS['wpai173']['uploads'] ); }
 function wp_tempnam( $filename, $directory = '' ) {
 	$target = '' === $directory ? get_temp_dir() : $directory;
-	$file = tempnam( $target, 'wpai173-' );
+	$file = tempnam( $target, 'wpai-native-stage-' );
 	$GLOBALS['wpai173']['created'][] = $file;
 	return $file;
 }
@@ -44,7 +44,9 @@ try {
 	wpai173_check( Safe_Temporary_Staging::directory() === realpath( sys_get_temp_dir() ), 'Private transfer root did not recover from publicly served WP temp.' );
 	$file = Safe_Temporary_Staging::create( 'untrusted-image.png' );
 	wpai173_check( is_string( $file ) && is_file( $file ), 'No safe scratch file was created.' );
-	wpai173_check( dirname( $file ) === realpath( sys_get_temp_dir() ), 'Staging did not leave the served content root.' );
+	wpai173_check( dirname( dirname( $file ) ) === realpath( sys_get_temp_dir() ), 'Staging did not leave the served content root.' );
+	wpai173_check( 0700 === ( fileperms( dirname( $file ) ) & 0777 ), 'Reusable staging directory not owner-only.' );
+	wpai173_check( str_starts_with( basename( dirname( $file ) ), 'wpai-native-input-' ), 'No dedicated stage directory.' );
 	wpai173_check( 0600 === ( fileperms( $file ) & 0777 ), 'Staging file not owner-only.' );
 	wpai173_check( 0 === filesize( $file ), 'Allocation wrote bytes before authorization.' );
 	wpai173_check( 1 === count( $GLOBALS['wpai173']['created'] ), 'Unsafe WordPress temp was allocated before selecting the safe alternative.' );
@@ -54,14 +56,14 @@ try {
 	$GLOBALS['wpai173']['temp_dir'] = $fixture . '/aliased-uploads';
 	$file = Safe_Temporary_Staging::create( 'untrusted-zip.zip' );
 	wpai173_check( is_string( $file ) && is_file( $file ), 'Alias fallback failed.' );
-	wpai173_check( dirname( $file ) === realpath( sys_get_temp_dir() ), 'Alias path was treated as private.' );
+	wpai173_check( dirname( dirname( $file ) ) === realpath( sys_get_temp_dir() ), 'Alias path was treated as private.' );
 	wp_delete_file( $file );
 
 	wpai173_check( symlink( WP_CONTENT_DIR, $fixture . '/linked-content' ), 'Fixture symlink unavailable.' );
 	$GLOBALS['wpai173']['temp_dir'] = $fixture . '/linked-content';
 	$file = Safe_Temporary_Staging::create( 'untrusted-source.zip' );
 	wpai173_check( is_string( $file ) && is_file( $file ), 'Symlink fallback failed.' );
-	wpai173_check( dirname( $file ) === realpath( sys_get_temp_dir() ), 'Symlink to served path accepted.' );
+	wpai173_check( dirname( dirname( $file ) ) === realpath( sys_get_temp_dir() ), 'Symlink to served path accepted.' );
 	wp_delete_file( $file );
 
 	// If every available directory is served, refuse before writing anything.
@@ -76,6 +78,13 @@ try {
 	foreach ( $GLOBALS['wpai173']['created'] as $candidate ) {
 		if ( is_string( $candidate ) && is_file( $candidate ) ) {
 			unlink( $candidate );
+		}
+	}
+	// Remove only fixture-created empty stage directories after deleting their
+	// own allocated files. Production leaves the reusable directory in place.
+	foreach ( array_unique( array_map( 'dirname', $GLOBALS['wpai173']['created'] ) ) as $stage ) {
+		if ( str_starts_with( basename( $stage ), 'wpai-native-input-' ) && is_dir( $stage ) ) {
+			rmdir( $stage );
 		}
 	}
 	if ( is_link( $fixture . '/linked-content' ) ) {
