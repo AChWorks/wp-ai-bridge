@@ -34,7 +34,7 @@ return array(
 	'Operation' => 'عملیات',
 	'Reference' => 'شناسهٔ ارجاع',
 	'Read Bridge Diagnostics' => 'خواندن عیب‌یابی Bridge',
-	'Administrator-only, recent sanitized WordPress-side transfer results. No payloads, private paths, or upstream Gateway errors.' => 'نتایج اخیر و پالایش‌شدهٔ انتقال در سمت وردپرس، فقط برای مدیر. بدون محتوای درخواست، مسیرهای خصوصی یا خطاهای سمت Gateway.',
+	'Administrator-only, recent sanitized WordPress-side transfer and Media staging results. No payloads, private paths, or upstream Gateway errors.' => 'نتایج اخیر و پالایش‌شدهٔ انتقال خصوصی و خطاهای موقت رسانه در وردپرس، فقط برای مدیر. بدون محتوای درخواست، مسیرهای خصوصی یا خطاهای سمت Gateway.',
 	'Authenticated site administrator and delegated Site Read are required.' => 'مدیر سایتِ احراز هویت‌شده و مجوز واگذارشدهٔ خواندن سایت لازم است.',
 	'The requested diagnostic limit is invalid.' => 'محدودیت درخواستی برای عیب‌یابی معتبر نیست.',
 );
