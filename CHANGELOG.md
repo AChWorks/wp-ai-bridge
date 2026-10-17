@@ -4,6 +4,13 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.6.10
+
+- Let authorized administrators and WordPress's scheduled Core updater discover the canonical WP AI Bridge release even when WordPress.org's general plugin-update request fails before the custom `update_plugins_github.com` hook. Keep only the already validated official GitHub stable-release package, leave unrelated plugins' offers unchanged, and retain Core's normal installation and consent (#184).
+- Honor WordPress's **Check Again** action for the separate Bridge metadata cache, with permission checks. Reduce the successful-cache window from six to one hour while retaining the bounded 15-minute failure retry interval and existing strict release-origin checks.
+- Test an actual WordPress.org update-API failure followed by authenticated Core plugin update, and pin the real published v0.6.9 ZIP by SHA-256 `3920e03ea296b7b7a927f1a8e85e672db03ccb138f76150886a246871195f88d` for the v0.6.9-to-v0.6.10 migration fixture. Preserve OAuth clients, Workspace and canonical plugin identity.
+- **Network limits:** this is not an alternate download transport. GitHub's Release API and official ZIP URL must still be reachable from the hosting network. The proposed second mirror for Iranian hosts is separately gated on measured access, owner-controlled infrastructure, authenticated release metadata and ZIP integrity. Do not use unverified third-party proxies or claim the candidate is published/installed before delivery.
+
 ## 0.6.9
 
 - Preserve the **actually observed** WordPress/Bridge MCP error code, message and useful bounded structured data with explicit `origin`, `stage` and `code_source`; never guess an upstream code or normalize unfamiliar provider errors into generic denials (PR #181). WordPress 7.1 Ability lifecycle observations retain codes when actually available; older supported WordPress/Adapter paths explicitly report when only Adapter text can be observed.

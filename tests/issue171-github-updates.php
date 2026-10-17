@@ -22,10 +22,30 @@ $GLOBALS['wpai171'] = array(
 	'transient'  => false,
 	'expiration' => null,
 	'filters'    => array(),
+	'admin'      => true,
+	'cron'       => false,
+	'cleared'    => 0,
 );
 
 function add_filter( $hook, $callback, $priority = 10, $accepted_args = 1 ) {
 	$GLOBALS['wpai171']['filters'][ $hook ] = array( $callback, $priority, $accepted_args );
+}
+
+function is_admin() {
+	return ! empty( $GLOBALS['wpai171']['admin'] );
+}
+
+function wp_doing_cron() {
+	return ! empty( $GLOBALS['wpai171']['cron'] );
+}
+
+function delete_site_transient( $key ) {
+	if ( GitHub_Updates::CACHE_KEY !== $key ) {
+		throw new RuntimeException( 'Unexpected transient deletion.' );
+	}
+	$GLOBALS['wpai171']['transient'] = false;
+	++$GLOBALS['wpai171']['cleared'];
+	return true;
 }
 
 function get_site_transient( $key ) {
@@ -100,10 +120,13 @@ $reset = static function ( $payload, $code = 200 ) {
 	$GLOBALS['wpai171']['calls']      = 0;
 };
 
+$GLOBALS['wpai_test']['capabilities']['update_plugins'] = true;
 $updater = new GitHub_Updates();
 $updater->boot();
 $assert( isset( $GLOBALS['wpai171']['filters']['update_plugins_github.com'] ), 'Native hostname filter was not registered.' );
 $assert( 4 === $GLOBALS['wpai171']['filters']['update_plugins_github.com'][2], 'Native update hook must receive the plugin identity.' );
+$assert( isset( $GLOBALS['wpai171']['filters']['site_transient_update_plugins'] ), 'Core-independent plugin update transient filter was not registered.' );
+$assert( isset( $GLOBALS['wpai_test']['actions']['load-update-core.php'] ), 'Check Again cache invalidation callback was not registered.' );
 $headers = array(
 	'UpdateURI' => GitHub_Updates::UPDATE_URI,
 	'Version'   => '0.6.7',
@@ -131,10 +154,72 @@ $assert( is_array( $update ) && '0.6.8' === $update['version'], 'Published stabl
 $assert( 'wp-ai-bridge' === $update['slug'] && GitHub_Updates::UPDATE_URI === $update['id'], 'Canonical WordPress identity changed.' );
 $assert( $release['assets'][0]['browser_download_url'] === $update['package'], 'Source archive replaced the installable ZIP.' );
 $assert( $release['html_url'] === $update['url'], 'Official release detail URL was not used.' );
-$assert( 6 * HOUR_IN_SECONDS === $GLOBALS['wpai171']['expiration'], 'Validated stable release was not cached with a bounded lifetime.' );
+$assert( HOUR_IN_SECONDS === $GLOBALS['wpai171']['expiration'], 'Validated stable release was not cached with a bounded lifetime.' );
 $assert( 1 === $GLOBALS['wpai171']['calls'], 'Initial metadata check did not use a single HTTP request.' );
 $updater->filter_update( false, $headers, 'wp-ai-bridge/wp-ai-bridge.php', array() );
 $assert( 1 === $GLOBALS['wpai171']['calls'], 'Cached release caused another API request.' );
+
+// Core can abandon ALL custom-host update hooks if WordPress.org is down.
+// Simulate the update transient read that the WordPress Plugins UI performs.
+// It must return the Bridge offer, without changing other plugins or the
+// original in-memory Core transient.
+$GLOBALS['wpai_test']['plugins'] = array(
+	'wp-ai-bridge/wp-ai-bridge.php' => $headers,
+	'other-plugin/other.php'     => array( 'UpdateURI' => '', 'Version' => '1.0.0' ),
+);
+$foreign_offer = (object) array( 'new_version' => '1.2.0', 'slug' => 'other-plugin' );
+$original      = (object) array(
+	'last_checked' => time(),
+	'response'     => array( 'other-plugin/other.php' => $foreign_offer ),
+	'no_update'    => array(),
+);
+$cached        = $updater->filter_site_transient( $original );
+$assert( is_object( $cached ) && $cached !== $original, 'Core transient must be cloned, not mutated.' );
+$assert( $cached->response['other-plugin/other.php'] === $foreign_offer, 'An unrelated plugin update was modified.' );
+$assert( ! isset( $original->response['wp-ai-bridge/wp-ai-bridge.php'] ), 'The original WordPress transient was modified.' );
+$assert( '0.6.8' === ( $cached->response['wp-ai-bridge/wp-ai-bridge.php']->new_version ?? '' ), 'A native Bridge update offer was not injected independently of WordPress.org.' );
+$assert( 1 === $GLOBALS['wpai171']['calls'], 'Cached release caused another HTTP request during update-transient fallback.' );
+$again = $updater->filter_site_transient( $cached );
+$assert( '0.6.8' === ( $again->response['wp-ai-bridge/wp-ai-bridge.php']->new_version ?? '' ), 'Repeated Core transient read lost the Bridge update.' );
+$assert( 1 === $GLOBALS['wpai171']['calls'], 'Repeated Core transient read hammered the GitHub API.' );
+unset( $GLOBALS['wpai_test']['plugins']['wp-ai-bridge/wp-ai-bridge.php'] );
+$assert( $original === $updater->filter_site_transient( $original ), 'Absent canonical plugin unexpectedly gained an update.' );
+$GLOBALS['wpai_test']['plugins']['wp-ai-bridge/wp-ai-bridge.php'] = $headers;
+
+$GLOBALS['wpai_test']['plugins']['wp-ai-bridge/wp-ai-bridge.php']['Version'] = '0.6.8';
+$installed = $updater->filter_site_transient( $cached );
+$assert( ! isset( $installed->response['wp-ai-bridge/wp-ai-bridge.php'] ), 'Already-installed stable version still appeared as a newer release.' );
+$assert( isset( $installed->no_update['wp-ai-bridge/wp-ai-bridge.php'] ), 'Equal current version lacked canonical no-update information.' );
+$GLOBALS['wpai_test']['plugins']['wp-ai-bridge/wp-ai-bridge.php']['Version'] = '0.6.7';
+
+$GLOBALS['wpai171']['admin'] = false;
+$GLOBALS['wpai171']['cron']  = false;
+$assert( $original === $updater->filter_site_transient( $original ), 'Frontend request caused unnecessary update lookup.' );
+$GLOBALS['wpai171']['cron'] = true;
+$cron_update = $updater->filter_site_transient( $original );
+$assert( '0.6.8' === ( $cron_update->response['wp-ai-bridge/wp-ai-bridge.php']->new_version ?? '' ), 'Scheduled Core updater could not receive the canonical Bridge offer.' );
+$GLOBALS['wpai171']['cron']  = false;
+$GLOBALS['wpai171']['admin'] = true;
+unset( $GLOBALS['wpai_test']['capabilities']['update_plugins'] );
+$assert( $original === $updater->filter_site_transient( $original ), 'An unauthorized administrator triggered plugin update discovery.' );
+$GLOBALS['wpai_test']['capabilities']['update_plugins'] = true;
+
+$reset( $release );
+$GLOBALS['wpai171']['transient'] = array( 'version' => '0.6.7' );
+unset( $GLOBALS['wpai_test']['capabilities']['update_plugins'] );
+$_GET['force-check']             = '1';
+$updater->clear_cache_on_force_check();
+$assert( 0 === $GLOBALS['wpai171']['cleared'], 'Unauthorized Check Again invalidated metadata cache.' );
+$GLOBALS['wpai_test']['capabilities']['update_plugins'] = true;
+$updater->clear_cache_on_force_check();
+$assert( 1 === $GLOBALS['wpai171']['cleared'], 'Authorized Check Again did not clear the independent GitHub release cache.' );
+$assert( false === $GLOBALS['wpai171']['transient'], 'Check Again left stale positive metadata cached.' );
+unset( $_GET['force-check'] );
+$refreshed = $updater->filter_site_transient( $original );
+$assert( '0.6.8' === ( $refreshed->response['wp-ai-bridge/wp-ai-bridge.php']->new_version ?? '' ), 'Check Again did not discover refreshed official release metadata.' );
+$assert( 1 === $GLOBALS['wpai171']['calls'], 'Metadata refresh after Check Again did not send exactly one canonical request.' );
+$reset( array( 'untrusted' => true ) );
+$assert( $original === $updater->filter_site_transient( $original ), 'Unavailable official release fabricated a Core update offer.' );
 
 // A stale/malformed WordPress transient is not a new authority to choose the
 // ZIP origin. Reconstruct canonical URLs even when the cached links differ.
