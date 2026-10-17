@@ -350,6 +350,7 @@ final class Site_Health_Abilities {
 			'plugin_theme_auto_updates' => array(
 				'get_plugins'                        => 'plugin.php',
 				'wp_is_auto_update_enabled_for_type' => 'update.php',
+				'wp_is_auto_update_forced_for_item'  => 'update.php',
 			),
 		);
 		foreach ( $dependencies[ $test ] ?? array() as $function => $file ) {
