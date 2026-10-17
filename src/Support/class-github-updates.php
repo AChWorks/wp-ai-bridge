@@ -26,6 +26,83 @@ final class GitHub_Updates {
 	 */
 	public function boot() {
 		add_filter( 'update_plugins_github.com', array( $this, 'filter_update' ), 10, 4 );
+		// Core returns before its custom-host filter when WordPress.org fails.
+		// Present our own bounded update offer through Core's normal transient.
+		add_filter( 'site_transient_update_plugins', array( $this, 'filter_site_transient' ) );
+		add_action( 'load-update-core.php', array( $this, 'clear_cache_on_force_check' ), 1 );
+	}
+
+	/**
+	 * Provide canonical Bridge update metadata even without a WordPress.org
+	 * response, without altering update offers for unrelated plugins.
+	 *
+	 * @param mixed $transient Existing WordPress update transient.
+	 * @return mixed
+	 */
+	public function filter_site_transient( $transient ) {
+		if ( ( ! is_admin() || ! current_user_can( 'update_plugins' ) ) && ! wp_doing_cron() && ! ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+			return $transient;
+		}
+		if ( false !== $transient && ! is_object( $transient ) ) {
+			return $transient;
+		}
+		if ( ! function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+		$plugins = get_plugins();
+		$file    = 'wp-ai-bridge/wp-ai-bridge.php';
+		$data    = is_array( $plugins ) ? ( $plugins[ $file ] ?? null ) : null;
+		if ( ! is_array( $data )
+			|| ! isset( $data['Version'] )
+			|| ! is_string( $data['Version'] )
+			|| ! preg_match( '/^[0-9]+\.[0-9]+\.[0-9]+$/D', $data['Version'] )
+		) {
+			return $transient;
+		}
+
+		$offer = $this->filter_update( false, $data, $file, array() );
+		if ( ! is_array( $offer ) ) {
+			return $transient;
+		}
+
+		$updates = false === $transient ? new \stdClass() : clone $transient;
+		if ( isset( $updates->response ) && ! is_array( $updates->response ) ) {
+			return $transient;
+		}
+		if ( isset( $updates->no_update ) && ! is_array( $updates->no_update ) ) {
+			return $transient;
+		}
+		$updates->response    = $updates->response ?? array();
+		$updates->no_update   = $updates->no_update ?? array();
+		$offer['plugin']      = $file;
+		$offer['new_version'] = $offer['version'];
+		$offer                = (object) $offer;
+
+		if ( version_compare( $offer->new_version, $data['Version'], '>' ) ) {
+			$updates->response[ $file ] = $offer;
+			unset( $updates->no_update[ $file ] );
+		} else {
+			unset( $updates->response[ $file ] );
+			$updates->no_update[ $file ] = $offer;
+		}
+
+		return $updates;
+	}
+
+	/**
+	 * The Core Check Again button must also refresh our separate release cache.
+	 *
+	 * @return void
+	 */
+	public function clear_cache_on_force_check() {
+		if ( ! current_user_can( 'update_plugins' ) ) {
+			return;
+		}
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- This only refreshes cached public version metadata for an update administrator.
+		if ( ! isset( $_GET['force-check'] ) || ! is_string( $_GET['force-check'] ) || '1' !== sanitize_text_field( wp_unslash( $_GET['force-check'] ) ) ) {
+			return;
+		}
+		delete_site_transient( self::CACHE_KEY );
 	}
 
 	/**
@@ -112,7 +189,7 @@ final class GitHub_Updates {
 			return false;
 		}
 
-		set_site_transient( self::CACHE_KEY, $valid, 6 * HOUR_IN_SECONDS );
+		set_site_transient( self::CACHE_KEY, $valid, HOUR_IN_SECONDS );
 		return $valid;
 	}
 

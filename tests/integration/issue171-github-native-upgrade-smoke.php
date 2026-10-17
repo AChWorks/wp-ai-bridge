@@ -91,8 +91,9 @@ $fake_api = array(
 	),
 );
 
-$github_checks = 0;
-$http_override = static function ( $preempt, $arguments, $url ) use ( $fake_api, &$github_checks ) {
+$github_checks   = 0;
+$wporg_available = true;
+$http_override = static function ( $preempt, $arguments, $url ) use ( $fake_api, &$github_checks, &$wporg_available ) {
 	if ( 'https://api.github.com/repos/AChWorks/wp-ai-bridge/releases/latest' === $url ) {
 		++$github_checks;
 		return array(
@@ -103,6 +104,9 @@ $http_override = static function ( $preempt, $arguments, $url ) use ( $fake_api,
 		);
 	}
 	if ( 0 === strpos( $url, 'https://api.wordpress.org/plugins/update-check/' ) ) {
+		if ( ! $wporg_available ) {
+			return array( 'response' => array( 'code' => 503, 'message' => 'Simulated unavailable WordPress.org' ) );
+		}
 		return array(
 			'response' => array( 'code' => 200, 'message' => 'OK' ),
 			'headers'  => array(),
@@ -125,6 +129,21 @@ add_filter( 'upgrader_pre_download', $download_override, 10, 3 );
 try {
 	update_option( 'wpai171_native_update_preservation_probe', 'must-survive-update', false );
 	delete_site_transient( 'wp_ai_bridge_github_stable_release' );
+	delete_site_transient( 'update_plugins' );
+	$wporg_available = false;
+	wp_update_plugins();
+	$offline_transient = get_site_transient( 'update_plugins' );
+	$offline_offer     = $offline_transient->response[ $plugin_file ] ?? null;
+	if ( ! is_object( $offline_offer )
+		|| $next !== ( $offline_offer->new_version ?? '' )
+		|| $package_url !== ( $offline_offer->package ?? '' )
+		|| 1 !== $github_checks
+	) {
+		throw new RuntimeException( 'Missing native Bridge update offer when the global WordPress.org update API returns 503.' );
+	}
+	echo "PASS: WordPress.org update API unavailable; Core still displays the official Bridge update offer.\n";
+
+	$wporg_available = true;
 	delete_site_transient( 'update_plugins' );
 	wp_update_plugins();
 	$transient = get_site_transient( 'update_plugins' );
