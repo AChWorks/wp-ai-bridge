@@ -548,6 +548,14 @@ final class Native_Ability_Delegation {
 			return $response;
 		}
 		$data = $response->get_data();
+		// WordPress/php-mcp-schema Record::jsonSerialize() emits stdClass
+		// for the outer JSON-RPC envelope as well as nested MCP records.
+		if ( $data instanceof \JsonSerializable ) {
+			$data = $data->jsonSerialize();
+		}
+		if ( $data instanceof \stdClass ) {
+			$data = (array) $data;
+		}
 		if ( ! is_array( $data ) || '2.0' !== ( $data['jsonrpc'] ?? null ) ||
 			( $data['id'] ?? null ) !== $params['id'] ) {
 			return $response;

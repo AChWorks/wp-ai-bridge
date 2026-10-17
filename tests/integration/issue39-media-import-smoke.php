@@ -194,7 +194,10 @@ try {
         wpnb39_integration_assert( $before_hooks === has_action( 'requests-requests.before_redirect' ), 'Import redirect guard was not removed after refusal.' );
         foreach ( $staging as $file ) { wpnb39_integration_assert( ! is_file( $file ), 'Rejected redirect retained staging.' ); }
     }
-    $redirect_target = 'https://wordpress.org/wpai-media-import-fixture';
+    // Deterministic public IPv4 target is checked by the actual WordPress
+    // safe-redirect validator. No external DNS lookup or outbound HTTP occurs
+    // in this intercepted fixture; reserved/private targets remain rejected.
+    $redirect_target = 'https://1.1.1.1/wpai-media-import-fixture';
     $redirect_forwarded = 0;
     $result = $ability->execute( $input );
     wpnb39_integration_assert( ! is_wp_error( $result ) && 1 === $redirect_forwarded, 'A public redirect failed the native hook validation.' );

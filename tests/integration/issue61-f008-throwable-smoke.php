@@ -163,9 +163,31 @@ try {
 	wpai_issue61_f008_assert( $stored_hash === ( $after['password'] ?? '' ), 'F-008 Throwable handling replaced the credential hash.' );
 	wpai_issue61_f008_assert( 1 === count( WP_Application_Passwords::get_user_application_passwords( $target_user ) ), 'F-008 delete/delete-all Throwable changed credential count.' );
 
-	$log_blob = wp_json_encode( ( new Mutation_Log() )->recent( 50 ) );
+	// The shared bounded log can contain unrelated principal-scoped MCP
+	// diagnostics from earlier smoke tests. A non-secret Throwable class name
+	// in one of those records is not an F-008 Application Password disclosure.
+	// Actual credential values must remain absent across ALL log records.
+	$recent   = ( new Mutation_Log() )->recent( 50 );
+	$log_blob = wp_json_encode( $recent );
+	foreach ( array( $marker, $secret, $chunked, $stored_hash, $fixture_uuid, $app_id ) as $unsafe ) {
+		wpai_issue61_f008_assert( '' === $unsafe || false === strpos( $log_blob, $unsafe ), 'F-008 mutation log leaked actual credential material.' );
+	}
+	// The operations exercised by F-008 must also never log a raw exception
+	// class or exception text, even if other unrelated diagnostics may do so.
+	$owned_operations = array(
+		'wp-ai-bridge/application-password-update',
+		'wp-ai-bridge/application-password-delete',
+		'wp-ai-bridge/application-passwords-delete-all',
+	);
+	$owned_records = array_values( array_filter( $recent, static function ( $event ) use ( $target_user, $owned_operations ) {
+		return is_array( $event ) && in_array( $event['ability'] ?? '', $owned_operations, true ) &&
+			'user' === ( $event['target_type'] ?? '' ) &&
+			(int) $target_user === ( $event['target_id'] ?? null );
+	} ) );
+	wpai_issue61_f008_assert( count( $owned_records ) >= 3, 'F-008 missing its own logged mutation denials.' );
+	$owned_blob = wp_json_encode( $owned_records );
 	foreach ( $unsafe_values as $unsafe ) {
-		wpai_issue61_f008_assert( '' === $unsafe || false === strpos( $log_blob, $unsafe ), 'F-008 mutation log leaked Throwable credential material.' );
+		wpai_issue61_f008_assert( '' === $unsafe || false === strpos( $owned_blob, $unsafe ), 'F-008 own mutation record disclosed Throwable or credential data.' );
 	}
 
 	echo "PASS: Issue #61 F-008 shared REST Throwable normalization and secret redaction.\n";

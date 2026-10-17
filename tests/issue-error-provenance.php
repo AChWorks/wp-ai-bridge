@@ -432,6 +432,37 @@ namespace {
 		str_contains( $serialized['content'][0]['text'] ?? '', 'Auth layer stopped' ),
 		'JsonSerializable MCP result was not preserved and selectively redacted.' );
 
+	// php-mcp-schema v0.2.0 Record::jsonSerialize() returns stdClass,
+	// including for the OUTER JSON-RPC response envelope.
+	$outer_object_params = $native_args;
+	$outer_object_params['id'] = 31;
+	$outer_object_route = $delegation->filter_rest_endpoints(
+		array( '/wp-ai-bridge/v1/mcp' => array(
+			array( 'callback' => static function () {
+				return new WP_REST_Response( (object) array(
+					'jsonrpc' => '2.0', 'id' => 31,
+					'result' => (object) array(
+						'isError' => true,
+						'content' => array(
+							(object) array( 'type' => 'text', 'text' => 'Storage failed: client_secret=OUTER_OBJECT_SECRET' ),
+						),
+					),
+				) );
+			} ),
+		) )
+	);
+	$outer_obj = $outer_object_route['/wp-ai-bridge/v1/mcp'][0]['callback'](
+		new WP_REST_Request( $outer_object_params )
+	)->get_data();
+	$outer_obj = is_object( $outer_obj ) ? (array) $outer_obj : $outer_obj;
+	$projected = is_object( $outer_obj['result'] ) ? (array) $outer_obj['result'] : $outer_obj['result'];
+	$outer_error = $projected['structuredContent']['error'] ?? array();
+	$assert( true === ( $projected['isError'] ?? false ) &&
+		! empty( $outer_error['redacted'] ) &&
+		! empty( $outer_error['diagnostic_reference'] ) &&
+		! str_contains( json_encode( $outer_obj ), 'OUTER_OBJECT_SECRET' ),
+		'StdClass top-level JSON-RPC envelope skipped selective error projection.' );
+
 	// Context is request-scoped, not leaked into successful or unrelated calls.
 	$success_route = $delegation->filter_rest_endpoints(
 		array( '/wp-ai-bridge/v1/mcp' => array( array( 'callback' => static function () {
