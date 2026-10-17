@@ -211,6 +211,8 @@ namespace {
 		'single-escaped-whole' => "Provider denied; cookieHeader='theme=it\\'s; wordpress_logged_in=R5_ESCAPED_SINGLE_SECRET'; response HTTP 403",
 		'escaped-first-value' => 'Provider denied; cookie_header=theme=\\"light\\"; wordpress_logged_in=R5_ESCAPED_FIRST_SECRET; response HTTP 403',
 		'status-cookie' => 'Provider denied; cookie_header=theme=light; status=403; response HTTP 403',
+		'opaque-legacy-value' => 'Provider denied; cookie_header=R5_OPAQUE_COOKIE_SECRET; response HTTP 403',
+		'opaque-legacy-multipair' => 'Provider denied; cookie_header=R5_OPAQUE_COOKIE_SECRET&dark; wordpress_logged_in=R5_OPAQUE_TRAILING_SECRET; response HTTP 403',
 	);
 	foreach ( $r5_cases as $name => $message ) {
 		$clean = Error_Details::from_adapter_message( $message );

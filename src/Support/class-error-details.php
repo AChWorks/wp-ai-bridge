@@ -115,15 +115,18 @@ final class Error_Details {
 		// Use the same cookie grammar for the first and later pairs.
 		// Quoted provider/JSON text can contain escaped quote characters:
 		// never treat an escaped quote as the end of a Cookie field.
-		$cookie_name          = '[^\s=;,\r\n"]+';
-		$quoted_double        = '"(?:\\\\.|[^"\\\\\r\n])*"';
-		$quoted_single        = '\x27(?:\\\\.|[^\x27\\\\\r\n])*\x27';
-		$unquoted_value       = '(?:\\\\.|[^\s;,\r\n"\\\\])*';
-		$cookie_value         = '(?:' . $quoted_double . '|' . $quoted_single . '|' . $unquoted_value . ')';
-		$cookie_pair          = $cookie_name . '\s*=\s*' . $cookie_value;
+		$cookie_name    = '[^\s=;,\r\n"]+';
+		$quoted_double  = '"(?:\\\\.|[^"\\\\\r\n])*"';
+		$quoted_single  = '\x27(?:\\\\.|[^\x27\\\\\r\n])*\x27';
+		$unquoted_value = '(?:\\\\.|[^\s;,\r\n"\\\\])*';
+		$cookie_value   = '(?:' . $quoted_double . '|' . $quoted_single . '|' . $unquoted_value . ')';
+		$cookie_pair    = $cookie_name . '\s*=\s*' . $cookie_value;
+		// Some providers emit opaque, non-RFC Cookie diagnostics; retain
+		// the earlier fail-closed masking behavior for those values too.
+		$opaque_cookie        = '[^\s,;\r\n"\x27]+(?:\s*;\s*' . $cookie_pair . ')*';
 		$cookie_assignment    = '/\b(' . $cookie_labels . ')(["\x27]?\s*[:=]\s*)'
 			. '(' . $quoted_double . '|' . $quoted_single . '|' . $cookie_pair
-			. '(?:\s*;\s*' . $cookie_pair . ')*)/i';
+			. '(?:\s*;\s*' . $cookie_pair . ')*|' . $opaque_cookie . ')/i';
 		$path_assignment      = '/\b(' . $path_labels . ')(["\x27]?\s*[:=]\s*)'
 			. '("[^"\r\n]*"|\x27[^\x27\r\n]*\x27|[^\s,;&\r\n"\x27}]+)/i';
 		$mask_assignment      = static function ( $matches ) {
