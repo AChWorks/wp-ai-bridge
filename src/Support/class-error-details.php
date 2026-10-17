@@ -109,11 +109,11 @@ final class Error_Details {
 		// Cover explicitly labeled cookie/private-path assignments embedded in
 		// provider or Adapter text. Keep ordinary status/context and the key
 		// name; mask only the complete quoted or unquoted sensitive value.
-		$labels = '(?:cookie[_-]?header|request[_-]?cookie|session[_-]?cookie|set[_-]?cookie|'
+		$labels     = '(?:cookie[_-]?header|request[_-]?cookie|session[_-]?cookie|set[_-]?cookie|'
 			. '(?:private|absolute|local|server|file[_-]?system|physical|full|secret)[_-]?(?:file[_-]?)?path|file[_-]?path)';
 		$assignment = '/\b(' . $labels . ')(["\x27]?\s*[:=]\s*)'
 			. '("[^"\r\n]*"|\x27[^\x27\r\n]*\x27|[^\s,;&\r\n"\x27}]+)/i';
-		$next = preg_replace_callback(
+		$next       = preg_replace_callback(
 			$assignment,
 			static function ( $matches ) {
 				$value = $matches[3];
