@@ -10,7 +10,7 @@ The plugin is free and self-hosted. A direct **ChatGPT** connection is tested; a
 ## Requirements
 
 - **WordPress 6.9 or newer**.
-- The separate official [WordPress MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) plugin, installed and active for MCP connections. Published integration tests cover Adapter 0.6.1 and 0.7.0.
+- The separate official [WordPress MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) plugin, installed and active for MCP connections. Published integration tests cover Adapter 0.6.1, 0.7.0 and 0.7.1.
 - HTTPS and a publicly reachable WordPress REST API for direct ChatGPT access.
 - A WordPress account with the capabilities needed for the operations you authorize.
 
