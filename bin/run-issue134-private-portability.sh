@@ -67,6 +67,7 @@ echo '== Safe off-webroot fallback and native WXR artifact =='
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue134-host-private-fallback-smoke.php --user=1 --allow-root
 echo '== Real WordPress native Media and plugin ZIP final placement =='
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue173-native-temp-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue173-provider-media-upload-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue173-native-package-smoke.php --user=1 --allow-root
 echo '== Restricted open_basedir, no private temp available, pre-write denial =='
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue134-restricted-temp-smoke.php --user=1 --allow-root

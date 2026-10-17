@@ -29,11 +29,15 @@ $media  = new Media_Abilities( new Permissions( new Settings() ), new Mutation_L
 $paths  = array();
 $ids    = array();
 $mode   = '';
-$hook   = static function ( $file ) use ( &$paths, &$mode ) {
+$hook   = static function ( $file ) use ( &$paths, &$mode, $payload ) {
 	$path = $file['tmp_name'] ?? '';
 	if ( is_string( $path ) && '' !== $path ) {
 		$paths[] = $path;
 		wpai173_provider_check( is_file( $path ) && 0600 === ( fileperms( $path ) & 0777 ), 'Provider staged an unprotected file.' );
+		// Core checks filesize(tmp_name), not the supplied file_array size.
+		wpai173_provider_check( strlen( $payload ) === filesize( $path ) &&
+			hash_equals( hash( 'sha256', $payload ), (string) hash_file( 'sha256', $path ) ),
+			'Native sideload saw a stale/incorrect staged size or payload.' );
 		wpai173_provider_check(
 			0 !== strpos( (string) realpath( $path ) . '/', rtrim( (string) realpath( ABSPATH ), '/' ) . '/' ),
 			'Provider staged data in served WordPress filesystem.'

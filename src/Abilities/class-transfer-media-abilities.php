@@ -162,6 +162,9 @@ final class Transfer_Media_Abilities {
 			}
 			// The per-lease coordinator remains held until Core returns:
 			// no concurrent scratch copies or duplicate effects are admitted.
+			// The exclusive scratch allocator/copy inspected the inode while
+			// empty; Core uses filesize() rather than the supplied size.
+			clearstatcache( true, $temp );
 			$result = media_handle_sideload(
 				array(
 					'name'     => $name,
