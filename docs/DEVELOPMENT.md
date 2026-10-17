@@ -196,8 +196,8 @@ docs/maintainer/ recovery map and preserved design references
 
 ### Pinned published-predecessor ZIP upgrade regression
 
-The currently checked-in fixture exercises the real **published v0.6.7 → v0.6.8** replacement path. It starts from the
-**published v0.6.7 release ZIP, pinned by SHA-256** (the runner checks byte identity; GitHub does not enforce asset immutability) to the current
+The currently checked-in fixture exercises the real **published v0.6.8 → v0.6.9** replacement path. It starts from the
+**published v0.6.8 release ZIP, pinned by SHA-256** (the runner checks byte identity; GitHub does not enforce asset immutability) to the current
 candidate, using WordPress Core's normal replacement operation:
 
 ```bash
@@ -214,7 +214,7 @@ must register `workspace-delete`, `diagnostics-read`, and the guarded exact pack
 default-off Users & Destructive authority; registration is not authorization.
 Fixture credentials remain confined to the disposable test environment.
 
-Both supported CI upgrade lanes use this runner. Its frozen v0.6.7 predecessor is correct for the already-published **v0.6.8** candidate, **not** automatically the newest release for future work. Before validating the **next** plugin release, explicitly advance the predecessor ZIP URL, checksum, version and compatible fixture to the actual latest published predecessor. Do not label a historical predecessor run as newest-published-to-candidate proof.
+Both supported CI upgrade lanes use this runner. Its pinned **published v0.6.8** predecessor is correct for the **v0.6.9** candidate, not automatically the latest predecessor for a future release. Before validating the next version, advance the pinned predecessor ZIP URL, checksum, expected version and compatible fixture to the actual latest published predecessor. Never label a historical predecessor run as newest-published-to-candidate proof.
 
 ## Canonical GitHub distribution and conditional WordPress.org directory eligibility
 

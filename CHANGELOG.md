@@ -4,6 +4,14 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.6.9
+
+- Preserve the **actually observed** WordPress/Bridge MCP error code, message and useful bounded structured data with explicit `origin`, `stage` and `code_source`; never guess an upstream code or normalize unfamiliar provider errors into generic denials (PR #181). WordPress 7.1 Ability lifecycle observations retain codes when actually available; older supported WordPress/Adapter paths explicitly report when only Adapter text can be observed.
+- Extend the **existing bounded Activity / Mutation_Log** with administrator-readable, redacted error diagnostics and opaque `diagnostic_reference` lookup. Detailed records are restricted to the originating WordPress administrator **and authenticated OAuth client**; fixed transfer/Media metadata retains its established administrator visibility. Gateway-only errors cannot be recovered by WordPress (`diagnostics-read`, PRs #181/#182).
+- Mask credentials, quoted/opaque Cookie fragments, private paths and sensitive nested diagnostic fields without discarding separately identifiable safe HTTP context or original WordPress error identities. Fail closed if a regex cannot safely complete; disclose truthful `redacted`/`truncated` flags. Bound serialized diagnostic JSON to 32768 bytes while preserving supported scalar, array and object semantics.
+- Preserve provider-owned permission checks, MCP wire shapes, successful responses, administrator grants, OAuth identities, Workspace and cautious unknown-effect/no-blind-retry behavior. Exact-head R9 CI for PR #181 passed 20/20 jobs, including WordPress 6.9.4/7.1.3 with MCP Adapter 0.6.1/0.7.0/0.7.1 and 118 provenance assertions; an independent security review returned `APPROVE` on the unchanged error-handling implementation.
+- **Delivery scope:** Publishing this stable GitHub ZIP does not itself upgrade a WordPress site or prove that a previously observed Gateway `downstream_rejected` transfer failure is resolved. Direct Bridge and Gateway-to-Bridge real-client acceptance, confidential file delivery and hosting-specific temporary-path exposure remain in separate existing Issues (#134, #173; Gateway #199). Active updater-equipped v0.6.8 installations can discover this published stable release through WordPress Core; updates and optional auto-updates remain under normal WordPress controls.
+
 ## 0.6.8
 
 - Advertise only the official stable GitHub Release `wp-ai-bridge.zip` asset through WordPress Core's native `Update URI` / `update_plugins_github.com` mechanism. WordPress Core continues to own update detection cadence, user confirmation, installs, activation and optional auto-update selection; no independent updater, background daemon or new privileged endpoint (#171, PR #179).
