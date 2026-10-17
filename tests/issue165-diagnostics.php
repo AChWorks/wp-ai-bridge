@@ -35,7 +35,10 @@ $assert( '' === $raw[0]['target_type'] && 0 === $raw[0]['target_id'] && 16 === s
 
 $assert( $log->record_transfer( 'begin', new WP_Error( 'private=/secret/bearer-key', 'NOPE' ) ), 'Unknown provider error failed to persist.' );
 $read = $log->diagnostic_view( 1 );
-$assert( 1 === $read['returned'] && $read['has_more'] && 'transfer_error_unspecified' === $read['events'][0]['error_code'], 'Unknown errors must be redacted, never forwarded verbatim.' );
+$assert( 1 === $read['returned'] && $read['has_more'] &&
+	'private=[REDACTED]' === $read['events'][0]['error_code'] &&
+	! str_contains( wp_json_encode( $read ), '/secret/bearer-key' ),
+	'Unknown codes must retain non-sensitive fragments, not collapse to unspecified.' );
 $assert( ! array_key_exists( 'user_id', $read['events'][0] ) && ! array_key_exists( 'target_id', $read['events'][0] ), 'Remote diagnostics disclosed user or target identity.' );
 
 $assert( $log->record_transfer(
@@ -108,10 +111,11 @@ $assert( is_wp_error( $denied ) && $before === count( $log->recent( Mutation_Log
 // Existing option data is not trusted by the remote diagnostic projection.
 $auth->setValue( null, 'test-authenticated-mcp-client' );
 $poison = $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ][0];
-$poison['error_code'] = 'transfer_token_secret_injected';
+$poison['error_code'] = 'token=TEST_PRIVATE_AUTH_VALUE';
 array_unshift( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ], $poison );
 $view = $log->diagnostic_view( 50 );
-$assert( ! in_array( 'transfer_token_secret_injected', array_column( $view['events'], 'error_code' ), true ), 'Poisoned option values leaked into remote diagnostic results.' );
+$assert( ! str_contains( wp_json_encode( $view ), 'TEST_PRIVATE_AUTH_VALUE' ),
+	'Poisoned option values leaked token-bearing diagnostic codes.' );
 $poisoned_time = $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ][0];
 $poisoned_time['timestamp'] = 'now';
 array_unshift( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ], $poisoned_time );

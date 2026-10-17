@@ -37,15 +37,21 @@ final class Diagnostics_Abilities {
 			'wp-ai-bridge/diagnostics-read',
 			array(
 				'label'               => __( 'Read Bridge Diagnostics', 'wp-ai-bridge' ),
-				'description'         => __( 'Administrator-only, recent sanitized WordPress-side transfer and Media staging results. No payloads, private paths, or upstream Gateway errors.', 'wp-ai-bridge' ),
+				'description'         => __( 'Administrator-only WordPress-side errors with observed codes, redacted messages/data and diagnostic references. Gateway-only failures are not visible.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
 					'properties'           => array(
-						'limit' => array(
+						'limit'     => array(
 							'type'    => 'integer',
 							'minimum' => 1,
 							'maximum' => Mutation_Log::LIMIT,
+						),
+						'reference' => array(
+							'type'      => 'string',
+							'minLength' => 16,
+							'maxLength' => 16,
+							'pattern'   => '^[a-f0-9]{16}$',
 						),
 					),
 					'additionalProperties' => false,
@@ -62,7 +68,14 @@ final class Diagnostics_Abilities {
 									'operation'      => array( 'type' => 'string' ),
 									'phase'          => array( 'type' => 'string' ),
 									'success'        => array( 'type' => 'boolean' ),
-									'error_code'     => array( 'type' => 'string' ),
+									'error_code'     => array( 'type' => array( 'string', 'null' ) ),
+									'message'        => array( 'type' => 'string' ),
+									'data'           => array( 'type' => array( 'object', 'array', 'string', 'integer', 'number', 'boolean', 'null' ) ),
+									'redacted'       => array( 'type' => 'boolean' ),
+									'truncated'      => array( 'type' => 'boolean' ),
+									'ability'        => array( 'type' => 'string' ),
+									'origin'         => array( 'type' => 'string' ),
+									'next_step'      => array( 'type' => 'string' ),
 									'event_ref'      => array( 'type' => 'string' ),
 									'storage_reason' => array(
 										'type' => 'string',
@@ -114,11 +127,18 @@ final class Diagnostics_Abilities {
 		if ( ! $this->can_read() ) {
 			return new WP_Error( 'diagnostics_denied', __( 'Authenticated site administrator and delegated Site Read are required.', 'wp-ai-bridge' ) );
 		}
-		if ( ! is_array( $input ) || array_diff( array_keys( $input ), array( 'limit' ) ) ||
+		if ( ! is_array( $input ) || array_diff( array_keys( $input ), array( 'limit', 'reference' ) ) ||
 			( isset( $input['limit'] ) &&
-				( ! is_int( $input['limit'] ) || $input['limit'] < 1 || $input['limit'] > Mutation_Log::LIMIT ) ) ) {
+				( ! is_int( $input['limit'] ) || $input['limit'] < 1 || $input['limit'] > Mutation_Log::LIMIT ) ) ||
+			( isset( $input['reference'] ) &&
+				( ! is_string( $input['reference'] ) || 1 !== preg_match( '/^[a-f0-9]{16}$/D', $input['reference'] ) ) ) ) {
 			return new WP_Error( 'diagnostics_invalid', __( 'The requested diagnostic limit is invalid.', 'wp-ai-bridge' ) );
 		}
-		return $this->log->diagnostic_view( $input['limit'] ?? 10 );
+		return $this->log->diagnostic_view(
+			$input['limit'] ?? 10,
+			$input['reference'] ?? '',
+			OAuth_Server::authenticated_mcp_client_id(),
+			get_current_user_id()
+		);
 	}
 }

@@ -18,6 +18,8 @@ class WP_Error {
 		return $this->code; }
 	public function get_error_message() {
 		return $this->message; }
+	public function get_error_data() {
+		return null; }
 }
 function __( $text, $domain = null ) {
 	return $text; }
@@ -38,6 +40,7 @@ function current_user_can( $capability ) {
 
 require dirname( __DIR__ ) . '/src/Support/class-settings.php';
 require dirname( __DIR__ ) . '/src/Support/class-metadata-key-policy.php';
+require dirname( __DIR__ ) . '/src/Support/class-error-details.php';
 require dirname( __DIR__ ) . '/src/Support/class-native-ability-delegation.php';
 require dirname( __DIR__ ) . '/src/Support/class-operation-content-limits.php';
 require dirname( __DIR__ ) . '/src/Support/class-permissions.php';
@@ -197,10 +200,10 @@ wpai_issue44_assert(
 $provider_allowed          = true;
 $provider_checks           = 0;
 $result_secret             = 'ISSUE82_SYNTHETIC_RESULT_SECRET';
-$error_secret              = 'ISSUE82_SYNTHETIC_ERROR_SECRET';
-$throw_secret              = 'ISSUE82_SYNTHETIC_THROW_SECRET';
-$permission_error_secret   = 'ISSUE82_SYNTHETIC_PERMISSION_ERROR_SECRET';
-$permission_throw_secret   = 'ISSUE82_SYNTHETIC_PERMISSION_THROW_SECRET';
+$error_secret              = 'api_key=ISSUE82_SYNTHETIC_ERROR_SECRET';
+$throw_secret              = 'token=ISSUE82_SYNTHETIC_THROW_SECRET';
+$permission_error_secret   = 'api_key=ISSUE82_SYNTHETIC_PERMISSION_ERROR_SECRET';
+$permission_throw_secret   = 'token=ISSUE82_SYNTHETIC_PERMISSION_THROW_SECRET';
 $bridge_owned_secret       = 'ISSUE82_SYNTHETIC_BRIDGE_OWNED_SECRET';
 $adapter_args              = $delegation->filter_ability_args(
 	array(
@@ -378,27 +381,27 @@ wpai_issue44_assert( false === ( $secret_result['success'] ?? true ), 'Sensitive
 wpai_issue44_assert( false === strpos( json_encode( $secret_result ), $result_secret ), 'Sensitive provider-native result leaked its sentinel.' );
 
 $error_result = $filter_execute_result( 'vendor/error-provider', $bridge_mcp_server );
-wpai_issue44_assert( false === ( $error_result['success'] ?? true ), 'Provider-native error was not normalized.' );
+wpai_issue44_assert( false === ( $error_result['success'] ?? true ), 'Provider-native error was not returned as a failure.' );
 wpai_issue44_assert( false === strpos( json_encode( $error_result ), $error_secret ), 'Provider-native error leaked its sentinel.' );
 
 $throw_result = $filter_execute_result( 'vendor/throw-provider', $bridge_mcp_server );
-wpai_issue44_assert( false === ( $throw_result['success'] ?? true ), 'Provider-native throwable was not normalized.' );
+wpai_issue44_assert( false === ( $throw_result['success'] ?? true ), 'Provider-native throwable was not returned as a failure.' );
 wpai_issue44_assert( false === strpos( json_encode( $throw_result ), $throw_secret ), 'Provider-native throwable leaked its sentinel.' );
 
 $permission_error = $invoke( '/wp-ai-bridge/v1/mcp', $adapter_permission, 'vendor/permission-error' );
 wpai_issue44_assert(
 	$permission_error instanceof WP_Error
-	&& 'wp_ai_bridge_native_ability_permission_denied' === $permission_error->get_error_code()
+	&& 'provider_permission_error' === $permission_error->get_error_code()
 	&& false === strpos( $permission_error->get_error_message(), $permission_error_secret ),
-	'Provider-native permission error was not replaced by a Bridge-owned bounded error.'
+	'Provider-native permission code was not preserved with safe redaction.'
 );
 
 $permission_throw = $invoke( '/wp-ai-bridge/v1/mcp', $adapter_permission, 'vendor/permission-throw' );
 wpai_issue44_assert(
 	$permission_throw instanceof WP_Error
-	&& 'wp_ai_bridge_native_ability_permission_failed' === $permission_throw->get_error_code()
+	&& 'native_permission_exception' === $permission_throw->get_error_code()
 	&& false === strpos( $permission_throw->get_error_message(), $permission_throw_secret ),
-	'Provider-native permission throwable was not replaced by a Bridge-owned bounded error.'
+	'Provider-native permission exception was not redacted with correct exception classification.'
 );
 
 $bridge_owned_result = $filter_execute_result( 'wp-ai-bridge/fixture', $bridge_mcp_server );
