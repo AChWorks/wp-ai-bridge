@@ -311,7 +311,7 @@ final class Media_Abilities {
 			// Our exclusive allocator inspected it while empty, so refresh the
 			// PHP stat cache after writing before handing it to WordPress Core.
 			clearstatcache( true, $tmp_name );
-			if ( ! is_file( $tmp_name ) || $written !== filesize( $tmp_name ) ) {
+			if ( ! is_file( $tmp_name ) || filesize( $tmp_name ) !== $written ) {
 				return $this->logged_error( $ability, 'media_temp_write_failed', __( 'WordPress could not write the temporary upload file.', 'wp-ai-bridge' ) );
 			}
 
