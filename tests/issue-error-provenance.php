@@ -281,6 +281,8 @@ namespace {
 		'opaque-whole-single' => "Provider denied; cookie_header='theme='foo'bar; wordpress_logged_in=R6_OPAQUE_WHOLE_SECRET'; response HTTP 403",
 		'quoted-prefix-brace' => 'Provider denied; cookie_header=theme="foo"}bar; session=R6_BRACE_SECRET; response HTTP 403',
 		'quoted-prefix-comma' => 'Provider denied; cookie_header=theme="foo",bar; session=R6_COMMA_SECRET; response HTTP 403',
+		'valid-leading-apostrophe-name' => "Provider denied; cookie_header='theme=foo'; wordpress_logged_in=R6_COOKIE_NAME_SECRET; response HTTP 403",
+		'opaque-whole-double-trailing-cookie' => 'Provider denied; cookie_header="theme=foo"; wordpress_logged_in=R6_DOUBLE_FIELD_SECRET; response HTTP 403',
 	);
 	foreach ( $r6_adapter_cases as $name => $message ) {
 		$clean = Error_Details::from_adapter_message( $message );

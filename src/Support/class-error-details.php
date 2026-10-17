@@ -123,13 +123,16 @@ final class Error_Details {
 		$pair_boundary  = '(?=[\s;]|$)';
 		$field_boundary = '(?=[\s,;}]|$)';
 		$cookie_pair    = $cookie_name . '\s*=\s*' . $cookie_value . $pair_boundary;
+		// A whole-field quote cannot terminate before another Cookie pair:
+		// apostrophes are permitted even in ordinary Cookie names.
+		$quoted_field_boundary = '(?!\s*;\s*' . $cookie_pair . ')' . $field_boundary;
 		// Commas/braces are not Cookie-pair boundaries. Only whole-field
 		// provider quotes may end at JSON-like separators; malformed or
 		// opaque first segments are masked through the next semicolon.
 		$opaque_cookie        = '[^\s;\r\n]+(?:\s*;\s*' . $cookie_pair . ')*';
 		$cookie_assignment    = '/\b(' . $cookie_labels . ')(["\x27]?\s*[:=]\s*)'
-			. '(' . $quoted_double . $field_boundary . '|'
-			. $quoted_single . $field_boundary . '|'
+			. '(' . $quoted_double . $quoted_field_boundary . '|'
+			. $quoted_single . $quoted_field_boundary . '|'
 			. $cookie_pair . '(?:\s*;\s*' . $cookie_pair . ')*|'
 			. $opaque_cookie . ')/i';
 		$path_assignment      = '/\b(' . $path_labels . ')(["\x27]?\s*[:=]\s*)'
