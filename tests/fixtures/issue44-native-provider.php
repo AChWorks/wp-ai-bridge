@@ -133,30 +133,70 @@ add_action(
 		$error_result = $base;
 		$error_result['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
 		$error_result['execute_callback']    = static function () {
-			return new WP_Error( 'issue82_provider_error', 'ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET' );
+			return new WP_Error(
+				'issue82_provider_error',
+				'Worker validation failed: request stage is incomplete; api_key=ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET; cookie_header=theme=\'foo\'bar; wordpress_logged_in=ISSUE82_SYNTHETIC_INTEGRATION_TEXT_COOKIE_SECRET; requestCookie="theme=light mode"; malformed; wordpress_logged_in=ISSUE82_R7_OPAQUE_TRAILING_COOKIE_SECRET,tail; sessionCookie=\'theme=dark mode\'; malformed; wordpress_logged_in=ISSUE82_R8_SINGLE_WHITESPACE_SECRET; status=403; private_path=/data/tenant/message-config.php; response HTTP 409',
+				array(
+					'private_path'  => '/data/tenant/ci-config.php',
+					'cookie_header' => 'wordpress_logged_in=ISSUE82_SYNTHETIC_INTEGRATION_COOKIE_SECRET',
+					'http_status'   => 409,
+					'safe_context'  => 'Provider validation checkpoint',
+					'nested'        => (object) array(
+						'privatePath'   => '/data/tenant/nested-ci-config.php',
+						'sessionCookie' => 'session=ISSUE82_SYNTHETIC_INTEGRATION_NESTED_COOKIE_SECRET',
+						'attempt'       => 2,
+					),
+				)
+			);
 		};
 		wp_register_ability( 'issue44/provider-error-result', $error_result );
 
 		$throw_result = $base;
 		$throw_result['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
 		$throw_result['execute_callback']    = static function () {
-			throw new RuntimeException( 'ISSUE82_SYNTHETIC_INTEGRATION_THROW_SECRET' );
+			throw new RuntimeException( 'Provider execution crashed during parsing; token=ISSUE82_SYNTHETIC_INTEGRATION_THROW_SECRET' );
 		};
 		wp_register_ability( 'issue44/provider-throw-result', $throw_result );
 
 		$permission_error = $base;
 		$permission_error['permission_callback'] = static function () {
-			return new WP_Error( 'issue82_provider_permission_error', 'ISSUE82_SYNTHETIC_INTEGRATION_PERMISSION_ERROR_SECRET' );
+			return new WP_Error( 'issue82_provider_permission_error', 'Permission provider denied the operation; refresh_token=ISSUE82_SYNTHETIC_INTEGRATION_PERMISSION_ERROR_SECRET' );
 		};
 		$permission_error['execute_callback'] = static function () { return array( 'executed' => true ); };
 		wp_register_ability( 'issue44/provider-permission-error', $permission_error );
 
 		$permission_throw = $base;
 		$permission_throw['permission_callback'] = static function () {
-			throw new RuntimeException( 'ISSUE82_SYNTHETIC_INTEGRATION_PERMISSION_THROW_SECRET' );
+			throw new RuntimeException( 'Permission provider crashed; client_secret=ISSUE82_SYNTHETIC_INTEGRATION_PERMISSION_THROW_SECRET' );
 		};
 		$permission_throw['execute_callback'] = static function () { return array( 'executed' => true ); };
 		wp_register_ability( 'issue44/provider-permission-throw', $permission_throw );
+
+		// Core short-circuits these before/after the actual execute
+		// callback. WordPress 7.1 lifecycle filters can observe their codes.
+		$invalid_input = $base;
+		$invalid_input['input_schema'] = array(
+			'type'                 => 'object',
+			'properties'           => array( 'count' => array( 'type' => 'integer' ) ),
+			'required'             => array( 'count' ),
+			'additionalProperties' => false,
+		);
+		$invalid_input['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
+		$invalid_input['execute_callback']    = static function () { return array( 'executed' => true ); };
+		wp_register_ability( 'issue44/provider-invalid-input', $invalid_input );
+
+		$invalid_output = $base;
+		$invalid_output['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
+		$invalid_output['execute_callback']    = static function () { return array( 'executed' => 42 ); };
+		wp_register_ability( 'issue44/provider-invalid-output', $invalid_output );
+
+		// Adapter 0.7.1 rejects hidden abilities at the exposure boundary.
+		$hidden = $base;
+		$hidden['meta']['public'] = false;
+		$hidden['meta']['mcp'] = array( 'public' => false, 'type' => 'tool' );
+		$hidden['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
+		$hidden['execute_callback']    = static function () { return array( 'executed' => true ); };
+		wp_register_ability( 'issue44/provider-hidden', $hidden );
 
 		$denied = $base;
 		$denied['permission_callback'] = static function () { return false; };

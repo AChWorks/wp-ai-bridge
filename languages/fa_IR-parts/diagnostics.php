@@ -35,6 +35,8 @@ return array(
 	'Reference' => 'شناسهٔ ارجاع',
 	'Read Bridge Diagnostics' => 'خواندن عیب‌یابی Bridge',
 	'Administrator-only, recent sanitized WordPress-side transfer and Media staging results. No payloads, private paths, or upstream Gateway errors.' => 'نتایج اخیر و پالایش‌شدهٔ انتقال خصوصی و خطاهای موقت رسانه در وردپرس، فقط برای مدیر. بدون محتوای درخواست، مسیرهای خصوصی یا خطاهای سمت Gateway.',
+	'Administrator-only WordPress diagnostics: site-wide fixed transfer/Media metadata; detailed messages/data scoped to the same WordPress user and OAuth client. Gateway-only errors are not visible.' => 'عیب‌یابی وردپرس ویژه مدیر مجاز: فراداده ثابت انتقال و رسانه در سطح سایت دیده می‌شود، اما پیام‌ها و داده‌های تفصیلی فقط برای همان کاربر وردپرس و کلاینت OAuth قابل مشاهده‌اند. خطاهای صرفاً سمت Gateway نمایش داده نمی‌شوند.',
+	'Bridge rejected an unsafe native Ability result shape.' => 'Bridge ساختار ناایمن نتیجهٔ یک قابلیت بومی را رد کرد.',
 	'Authenticated site administrator and delegated Site Read are required.' => 'مدیر سایتِ احراز هویت‌شده و مجوز واگذارشدهٔ خواندن سایت لازم است.',
 	'The requested diagnostic limit is invalid.' => 'محدودیت درخواستی برای عیب‌یابی معتبر نیست.',
 );

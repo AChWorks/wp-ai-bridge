@@ -499,7 +499,7 @@ $log->record( str_repeat( 'ability-', 40 ), str_repeat( 'target_', 20 ), 1, fals
 $bounded_entry = $log->recent( 1 )[0];
 wpai_assert( strlen( $bounded_entry['ability'] ) <= 160, 'Mutation log bounds the ability field length.' );
 wpai_assert( strlen( $bounded_entry['target_type'] ) <= 64, 'Mutation log bounds the target type field length.' );
-wpai_assert( strlen( $bounded_entry['error_code'] ) <= 100, 'Mutation log bounds the error code field length.' );
+wpai_assert( strlen( $bounded_entry['error_code'] ) <= \WP_AI_Bridge\Support\Error_Details::MAX_CODE, 'Mutation log bounds the error code field length.' );
 
 wpai_test_reset_state();
 $page = new Settings_Page( $environment, $settings );

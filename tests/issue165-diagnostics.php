@@ -7,6 +7,12 @@
 
 require __DIR__ . '/bootstrap.php';
 
+if ( ! function_exists( 'wp_salt' ) ) {
+	function wp_salt( $scheme = 'auth' ) {
+		return 'isolated-diagnostic-test-site-salt';
+	}
+}
+
 use WP_AI_Bridge\Abilities\Diagnostics_Abilities;
 use WP_AI_Bridge\Abilities\Transfer_Session_Abilities;
 use WP_AI_Bridge\Auth\OAuth_Server;
@@ -35,7 +41,10 @@ $assert( '' === $raw[0]['target_type'] && 0 === $raw[0]['target_id'] && 16 === s
 
 $assert( $log->record_transfer( 'begin', new WP_Error( 'private=/secret/bearer-key', 'NOPE' ) ), 'Unknown provider error failed to persist.' );
 $read = $log->diagnostic_view( 1 );
-$assert( 1 === $read['returned'] && $read['has_more'] && 'transfer_error_unspecified' === $read['events'][0]['error_code'], 'Unknown errors must be redacted, never forwarded verbatim.' );
+$assert( 1 === $read['returned'] && $read['has_more'] &&
+	'private=[REDACTED]' === $read['events'][0]['error_code'] &&
+	! str_contains( wp_json_encode( $read ), '/secret/bearer-key' ),
+	'Unknown codes must retain non-sensitive fragments, not collapse to unspecified.' );
 $assert( ! array_key_exists( 'user_id', $read['events'][0] ) && ! array_key_exists( 'target_id', $read['events'][0] ), 'Remote diagnostics disclosed user or target identity.' );
 
 $assert( $log->record_transfer(
@@ -100,6 +109,22 @@ $assert( is_wp_error( $bad ) && 'transfer_invalid' === $bad->get_error_code(), '
 $latest = $log->diagnostic_view( 1 )['events'][0];
 $assert( 'begin' === $latest['operation'] && 'validation' === $latest['phase'] &&
 	'transfer_invalid' === $latest['error_code'], 'Validly authenticated begin failure was not instrumented.' );
+$assert( $log->record_transfer(
+	'begin', new WP_Error( 'custom_transfer_state.v5', 'Checksum mismatch after transfer', array( 'expected_chunks' => 3 ) )
+), 'Detailed transfer diagnostic could not be persisted under an authenticated principal.' );
+$same_client = $log->diagnostic_view( 1, '', 'test-authenticated-mcp-client', get_current_user_id() )['events'][0];
+$assert( 'custom_transfer_state.v5' === $same_client['error_code'] &&
+	'Checksum mismatch after transfer' === ( $same_client['message'] ?? '' ) &&
+	3 === ( $same_client['data']['expected_chunks'] ?? 0 ),
+	'Original safe transfer failure details were lost for their authorized client.' );
+$other_client = $log->diagnostic_view( 1, '', 'other-authorized-client', get_current_user_id() )['events'][0];
+$assert( 'custom_transfer_state.v5' === $other_client['error_code'] &&
+	! isset( $other_client['message'] ) && ! isset( $other_client['data'] ),
+	'Site-wide transfer metadata exposed principal-scoped error data.' );
+$other_user = $log->diagnostic_view( 1, '', 'test-authenticated-mcp-client', get_current_user_id() + 1 )['events'][0];
+$assert( ! isset( $other_user['message'] ) && ! isset( $other_user['data'] ),
+	'Another WordPress principal could read scoped transfer detail.' );
+
 $auth->setValue( null, '' );
 $before = count( $log->recent( Mutation_Log::LIMIT ) );
 $denied = $transfer->execute( array( 'action' => 'begin', 'purpose' => 'text', 'total_bytes' => -1, 'sha256' => str_repeat( '0', 64 ) ) );
@@ -108,10 +133,11 @@ $assert( is_wp_error( $denied ) && $before === count( $log->recent( Mutation_Log
 // Existing option data is not trusted by the remote diagnostic projection.
 $auth->setValue( null, 'test-authenticated-mcp-client' );
 $poison = $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ][0];
-$poison['error_code'] = 'transfer_token_secret_injected';
+$poison['error_code'] = 'token=TEST_PRIVATE_AUTH_VALUE';
 array_unshift( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ], $poison );
 $view = $log->diagnostic_view( 50 );
-$assert( ! in_array( 'transfer_token_secret_injected', array_column( $view['events'], 'error_code' ), true ), 'Poisoned option values leaked into remote diagnostic results.' );
+$assert( ! str_contains( wp_json_encode( $view ), 'TEST_PRIVATE_AUTH_VALUE' ),
+	'Poisoned option values leaked token-bearing diagnostic codes.' );
 $poisoned_time = $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ][0];
 $poisoned_time['timestamp'] = 'now';
 array_unshift( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ], $poisoned_time );

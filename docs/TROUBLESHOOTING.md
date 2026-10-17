@@ -24,6 +24,14 @@ Start a fresh connection attempt rather than reusing an old consent page. OAuth 
 
 Also check browser/network security layers for blocked redirects to ChatGPT and ensure the site/canonical WordPress URLs are correctly configured for HTTPS.
 
+## An MCP Ability returns an unhelpful error
+
+First check the exact **installed** Bridge, WordPress, MCP Adapter and Gateway versions; an updated GitHub branch is not installed functionality. For clients using the Bridge MCP endpoint, newer Bridge builds preserve an observed WP_Error code, useful message and structured data instead of mapping unfamiliar codes to a catch-all. Sensitive fragments (for example credentials, private filesystem paths and authorization headers) are redacted individually; redacted and truncated report any loss. An isError response is not proof that a potentially mutating operation was rolled back. Inspect its effect before replaying it.
+
+When the result includes a diagnostic_reference, a currently authorized site administrator and the same authenticated OAuth client can query wp-ai-bridge/diagnostics-read with a reference selector. The lookup is bounded: detailed MCP and private-transfer failure data is scoped to the originating WordPress user and authenticated OAuth client; legacy transfer/Media fixed metadata remains site-wide for authorized administrators. It reflects only WordPress-side evidence actually persisted. It cannot inspect Gateway/transport failures that never reached WordPress; a Gateway reference is **not automatically** a Bridge reference.
+
+The origin/stage fields identify the boundary actually observed (wordpress_core for lifecycle validation and permission filters; native_ability only for a native callback-result observation); code_source distinguishes observed_wordpress, observed_at_adapter, bridge_generated, and unavailable. An observed WordPress permission result may differ from the later generic permission error emitted by Core. The official MCP Adapter currently drops some original WP_Error codes and data before emitting a response ([upstream #298](https://github.com/WordPress/mcp-adapter/issues/298)). On WordPress 7.1+, errors observed at the native callback and other WordPress Ability lifecycle hooks can retain their original code/data on the Bridge route. On older compatible WordPress versions, the Adapter fallback may provide only its original error text: in that case code=null and code_available=false explicitly mean **not observed**, not that a specific provider root cause was proven. Do not reconstruct codes by parsing translated text. After identifying the failing layer, inspect relevant Gateway diagnostics under [mcp-gateway#199](https://github.com/AChWorks/mcp-gateway/issues/199) or the plugin/provider without changing unrelated settings.
+
 ## The App connects but a write is denied
 
 A successful OAuth connection is not write authorization. Check both:
