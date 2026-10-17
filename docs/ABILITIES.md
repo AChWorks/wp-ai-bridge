@@ -96,7 +96,7 @@ The baseline installation registers the core Bridge surfaces below. Optional Gra
 | `workspace-document` | Site Read / Builder Write | Project-bound canonical documents, small summary pages, guarded UTF-8 field windows and archive/unarchive. |
 | `workspace-task` | Site Read / Builder Write | Project-bound tasks, next_action/blocker, small summary pages, guarded notes, version/hash CAS. |
 | `workspace-delete` | Builder Write + Users & Destructive, authenticated MCP admin and WordPress `delete_post` | Permanently delete one exact project-bound private document or task only after blog/record identity, CAS, confirmation, and readback; never a bulk delete. |
-| `diagnostics-read` | Site Read + authenticated MCP WordPress admin | Read up to 50 allowlisted, metadata-only private-transfer events from existing Activity; cannot see pre-WordPress Gateway failures. |
+| `diagnostics-read` | Site Read + authenticated MCP WordPress admin | Read up to 50 retained Activity diagnostics. Fixed transfer/Media metadata remain site-wide for administrators; detailed redacted MCP/private-transfer failures require the originating WordPress user and OAuth client (optionally filtered by diagnostic reference). Cannot inspect Gateway-only failures that never reached WordPress. |
 
 
 ### Exact private Workspace deletion and safe recovery (#126)
