@@ -549,17 +549,49 @@ final class Native_Ability_Delegation {
 		}
 		$data = $response->get_data();
 		if ( ! is_array( $data ) || '2.0' !== ( $data['jsonrpc'] ?? null ) ||
-			( $data['id'] ?? null ) !== $params['id'] || ! is_array( $data['result'] ?? null ) ||
-			true !== ( $data['result']['isError'] ?? null ) ||
-			! is_array( $data['result']['content'] ?? null ) ) {
+			( $data['id'] ?? null ) !== $params['id'] ) {
 			return $response;
 		}
-		$captured = $this->pending_mcp_error;
+
+		// The official Adapter hydrates JSON-RPC records. During an actual
+		// REST call the nested CallToolResult can be a stdClass or a protocol
+		// JsonSerializable Record, whereas isolated callback fixtures commonly
+		// return plain PHP arrays. Inspect only this already-rejected result.
+		$result = $data['result'] ?? null;
+		if ( $result instanceof \JsonSerializable ) {
+			$result = $result->jsonSerialize();
+		}
+		if ( $result instanceof \stdClass ) {
+			$result = (array) $result;
+		}
+		if ( ! is_array( $result ) || true !== ( $result['isError'] ?? null ) ) {
+			return $response;
+		}
+		$content = $result['content'] ?? null;
+		if ( $content instanceof \JsonSerializable ) {
+			$content = $content->jsonSerialize();
+		}
+		if ( $content instanceof \stdClass ) {
+			$content = (array) $content;
+		}
+		if ( ! is_array( $content ) ) {
+			return $response;
+		}
+		$first = $content[0] ?? null;
+		if ( $first instanceof \JsonSerializable ) {
+			$first = $first->jsonSerialize();
+		}
+		if ( $first instanceof \stdClass ) {
+			$first = (array) $first;
+		}
+		$original_text = is_array( $first ) && is_string( $first['text'] ?? null ) ? $first['text'] : '';
+		$captured      = $this->pending_mcp_error;
 		if ( ! is_array( $captured ) || $captured['ability'] !== $this->current_mcp_ability ) {
 			// WordPress 6.9 and early Adapter permission failures may expose no
 			// original WP_Error. Do not invent provider codes or stages.
-			$text    = $data['result']['content'][0]['text'] ?? '';
-			$details = Error_Details::from_adapter_message( is_string( $text ) ? $text : 'MCP Adapter returned a tool error without text.' );
+			$details = Error_Details::from_adapter_message(
+				'' !== $original_text ? $original_text : 'MCP Adapter returned a tool error without text.'
+			);
 			$this->capture_mcp_error( $this->current_mcp_ability, $details, 'adapter_boundary', 'adapter_execute', 'unavailable' );
 			$captured = $this->pending_mcp_error;
 			if ( ! is_array( $captured ) ) {
@@ -583,16 +615,17 @@ final class Native_Ability_Delegation {
 		}
 		// Show observed, selectively redacted error context while preserving
 		// the Adapter's original isError outcome and the JSON-RPC request id.
-		$data['result']['content']           = array(
+		$result['content']           = array(
 			array(
 				'type' => 'text',
 				'text' => $captured['message'],
 			),
 		);
-		$data['result']['structuredContent'] = array(
+		$result['structuredContent'] = array(
 			'schema_version' => 1,
 			'error'          => $captured,
 		);
+		$data['result']              = $result;
 		$response->set_data( $data );
 		return $response;
 	}

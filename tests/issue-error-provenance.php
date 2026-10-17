@@ -370,6 +370,68 @@ namespace {
 			'Core lifecycle error source/stage was lost or fabricated.' );
 	}
 
+	// The real MCP wire layer can hand REST a JsonSerializable/Record result,
+	// not just the plain PHP arrays used by the older mock callbacks.
+	$record_params = $native_args;
+	$record_params['id'] = 28;
+	$record_route = $delegation->filter_rest_endpoints(
+		array( '/wp-ai-bridge/v1/mcp' => array(
+			array( 'callback' => static function () {
+				return new WP_REST_Response( array(
+					'jsonrpc' => '2.0', 'id' => 28,
+					'result' => (object) array(
+						'isError' => true,
+						'content' => array(
+							(object) array( 'type' => 'text', 'text' => 'Provider refused request; token=REDACT_RECORD_SECRET' ),
+						),
+					),
+				) );
+			} ),
+		) )
+	);
+	$record_result = $record_route['/wp-ai-bridge/v1/mcp'][0]['callback'](
+		new WP_REST_Request( $record_params )
+	)->get_data()['result'];
+	$record_result = is_object( $record_result ) ? (array) $record_result : $record_result;
+	$record_error = $record_result['structuredContent']['error'] ?? array();
+	$assert( true === ( $record_result['isError'] ?? false ) &&
+		null === ( $record_error['code'] ?? null ) &&
+		! empty( $record_error['diagnostic_reference'] ) &&
+		true === ( $record_error['redacted'] ?? false ) &&
+		! str_contains( json_encode( $record_result ), 'REDACT_RECORD_SECRET' ),
+		'Wire-layer object-shaped MCP errors bypassed Bridge diagnostics/redaction.' );
+
+	$serializable_params = $native_args;
+	$serializable_params['id'] = 29;
+	$serializable_route = $delegation->filter_rest_endpoints(
+		array( '/wp-ai-bridge/v1/mcp' => array(
+			array( 'callback' => static function () {
+				$record = new class implements \JsonSerializable {
+					public function jsonSerialize(): mixed {
+						return (object) array( 'isError' => true, 'content' => array(
+							new class implements \JsonSerializable {
+								public function jsonSerialize(): mixed {
+									return (object) array( 'type' => 'text', 'text' => 'Auth layer stopped: password=NO_LEAK_JSON_RECORD' );
+								}
+							},
+						) );
+					}
+				};
+				return new WP_REST_Response( array( 'jsonrpc' => '2.0', 'id' => 29, 'result' => $record ) );
+			} ),
+		) )
+	);
+	$serialized = $serializable_route['/wp-ai-bridge/v1/mcp'][0]['callback'](
+		new WP_REST_Request( $serializable_params )
+	)->get_data()['result'];
+	$serialized_error = $serialized['structuredContent']['error'] ?? array();
+	$assert( true === ( $serialized['isError'] ?? false ) &&
+		! empty( $serialized_error['redacted'] ) &&
+		! empty( $serialized_error['diagnostic_reference'] ) &&
+		! str_contains( json_encode( $serialized ), 'NO_LEAK_JSON_RECORD' ) &&
+		str_contains( $serialized['content'][0]['text'] ?? '', 'Auth layer stopped' ),
+		'JsonSerializable MCP result was not preserved and selectively redacted.' );
+
 	// Context is request-scoped, not leaked into successful or unrelated calls.
 	$success_route = $delegation->filter_rest_endpoints(
 		array( '/wp-ai-bridge/v1/mcp' => array( array( 'callback' => static function () {

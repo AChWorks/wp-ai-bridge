@@ -220,8 +220,19 @@ foreach ( $resources as $route => $resource ) {
 	);
 	$error_details = $error_result['result']['structuredContent']['error'] ?? array();
 	wpai_issue44_live_assert(
-		! empty( $error_details['redacted'] ) && ! empty( $error_details['diagnostic_reference'] ),
-		'Real MCP tool error did not expose redaction evidence and a persisted reference.'
+		isset( $error_result['result']['structuredContent']['error'] ) &&
+		is_array( $error_result['result']['structuredContent']['error'] ),
+		'Real MCP tool error did not expose structuredContent.error (wire result shape mismatch).'
+	);
+	wpai_issue44_live_assert(
+		true === ( $error_details['redacted'] ?? null ),
+		'Real MCP tool error did not report selective redaction after masking a labeled credential.'
+	);
+	wpai_issue44_live_assert(
+		true === ( $error_details['diagnostics_persisted'] ?? null ) &&
+		is_string( $error_details['diagnostic_reference'] ?? null ) &&
+		1 === preg_match( '/^[a-f0-9]{16}$/D', $error_details['diagnostic_reference'] ),
+		'Real MCP tool error did not include a verified persisted WordPress diagnostic reference.'
 	);
 	if ( version_compare( get_bloginfo( 'version' ), '7.1', '>=' ) ) {
 		wpai_issue44_live_assert(
