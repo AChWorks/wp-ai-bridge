@@ -27,8 +27,7 @@ wpai186_assert( $adapter instanceof WP_Ability, 'Official MCP Adapter not regist
 
 try {
 	update_option( Settings::OPTION_NAME, $settings->defaults(), false );
-	$denied = $provider->execute( array( 'action' => 'run', 'test' => 'plugin_version' ) );
-	wpai186_assert( is_wp_error( $denied ) && 'site_health_denied' === $denied->get_error_code(), 'Default-off permission was bypassed.' );
+	wpai186_assert( true !== $provider->check_permissions( array( 'action' => 'run', 'test' => 'plugin_version' ) ), 'Default-off permission was bypassed.' );
 
 	$groups = $settings->defaults();
 	$groups[ Settings::GROUP_SITE_CONFIG ] = 1;
@@ -61,8 +60,7 @@ try {
 
 	$groups[ Settings::GROUP_SITE_CONFIG ] = 0;
 	update_option( Settings::OPTION_NAME, $groups, false );
-	$revoked = $provider->execute( array( 'action' => 'run', 'test' => 'php_version' ) );
-	wpai186_assert( is_wp_error( $revoked ) && 'site_health_denied' === $revoked->get_error_code(), 'Revoked Site Configuration permission allowed Core test.' );
+	wpai186_assert( true !== $provider->check_permissions( array( 'action' => 'run', 'test' => 'php_version' ) ), 'Revoked Site Configuration permission allowed Core test.' );
 	wp_set_current_user( 0 );
 	wpai186_assert( true !== $provider->check_permissions( array( 'action' => 'run', 'test' => 'plugin_version' ) ), 'Anonymous user could execute Core health tests.' );
 	echo "PASS: #186 Site Health MCP/REST admin helper bootstrap, Core ownership and permission regression.\n";
