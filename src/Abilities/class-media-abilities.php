@@ -307,6 +307,14 @@ final class Media_Abilities {
 			}
 			unset( $bytes );
 
+			// Core's sideload path checks filesize() on this temporary inode.
+			// Our exclusive allocator inspected it while empty, so refresh the
+			// PHP stat cache after writing before handing it to WordPress Core.
+			clearstatcache( true, $tmp_name );
+			if ( ! is_file( $tmp_name ) || $written !== filesize( $tmp_name ) ) {
+				return $this->logged_error( $ability, 'media_temp_write_failed', __( 'WordPress could not write the temporary upload file.', 'wp-ai-bridge' ) );
+			}
+
 			$post_data = array();
 			if ( array_key_exists( 'title', $input ) ) {
 				$post_data['post_title'] = (string) $input['title'];
