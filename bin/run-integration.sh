@@ -67,6 +67,17 @@ if [[ -n "${MCP_ADAPTER_EXPECTED_VERSION:-}" && "$actual_adapter" != "$MCP_ADAPT
 fi
 echo "Integration baseline: WordPress ${actual_wp}; PHP ${actual_php}; MCP Adapter ${actual_adapter}; image ${wordpress_tag}"
 
+# Bare wp-load.php reproduces authenticated MCP/REST bootstrap rather than
+# WP-CLI's preloaded wp-admin/includes helpers; no production site is touched.
+for core_test in plugin_version php_version theme_version wordpress_version plugin_theme_auto_updates; do
+    echo "== issue186 fresh bare WordPress bootstrap / ${core_test} =="
+    "${compose[@]}" exec -T -e "WPAI186_TEST=${core_test}" wordpress php -r '
+    require "/var/www/html/wp-load.php";
+    wp_set_current_user( 1 );
+    require "/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue186-site-health-admin-dependencies-smoke.php";
+    '
+done
+
 for test in \
     foundation-smoke.php \
     issue39-media-import-smoke.php \

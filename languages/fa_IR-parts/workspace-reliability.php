@@ -54,6 +54,7 @@ return array(
 	'Site Configuration and native Site Health permission are required.' => 'مجوز پیکربندی سایت و دسترسی بومی سلامت سایت لازم است.',
 	'Invalid Site Health selector.' => 'انتخاب‌گر سلامت سایت نامعتبر است.',
 	'Native Site Health is unavailable in this WordPress runtime.' => 'سلامت سایت بومی در محیط فعلی وردپرس در دسترس نیست.',
+	'Required native Site Health helpers are unavailable.' => 'توابع کمکی موردنیاز برای سلامت سایت بومی در محیط فعلی وردپرس در دسترس نیستند.',
 	'This Site Health test has no verified safe Core execution contract. Open Tools Site Health instead.' => 'این تست سلامت سایت مسیر اجرای ایمن و تأییدشده‌ای در هسته ندارد. آن را از بخش ابزارها ← سلامت سایت اجرا کنید.',
 	'The requested native Site Health test is not registered.' => 'تست سلامت سایت انتخابی در وردپرس ثبت نشده است.',
 	'Native Site Health returned an invalid result.' => 'سلامت سایت وردپرس نتیجه‌ای نامعتبر برگرداند.',

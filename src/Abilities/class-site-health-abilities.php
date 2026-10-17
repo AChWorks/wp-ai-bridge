@@ -273,6 +273,10 @@ final class Site_Health_Abilities {
 	/** @param array<string,mixed> $entry Registry entry. @return array<string,mixed>|WP_Error */
 	private function run_core_test( $entry ) {
 		if ( 'core_direct' === $entry['source'] ) {
+			$prepared = $this->prepare_core_admin_helpers( $entry['test'] );
+			if ( is_wp_error( $prepared ) ) {
+				return $prepared;
+			}
 			$health  = WP_Site_Health::get_instance();
 			$aliases = array( 'debug_enabled' => 'is_in_debug_mode' );
 			$method  = 'get_test_' . ( $aliases[ $entry['test'] ] ?? $entry['test'] );
@@ -324,6 +328,47 @@ final class Site_Health_Abilities {
 		}
 		$data = $result->get_data();
 		return is_array( $data ) ? $data : new WP_Error( 'site_health_unavailable', __( 'Native Site Health returned an invalid result.', 'wp-ai-bridge' ) );
+	}
+
+	/**
+	 * Load only the WordPress Core admin helpers required by the selected
+	 * allowlisted direct test. Unlike the Site Health admin screen, authenticated
+	 * MCP/REST requests do not bootstrap every wp-admin/includes dependency.
+	 *
+	 * @param string $test Trusted Core test identifier.
+	 * @return true|WP_Error
+	 */
+	private function prepare_core_admin_helpers( $test ) {
+		$dependencies = array(
+			'wordpress_version'         => array( 'get_core_updates' => 'update.php' ),
+			'plugin_version'            => array(
+				'get_plugins'        => 'plugin.php',
+				'get_plugin_updates' => 'update.php',
+			),
+			'theme_version'             => array( 'get_theme_updates' => 'update.php' ),
+			'php_version'               => array( 'wp_check_php_version' => 'misc.php' ),
+			'plugin_theme_auto_updates' => array(
+				'get_plugins'                        => 'plugin.php',
+				'wp_is_auto_update_enabled_for_type' => 'update.php',
+				'wp_is_auto_update_forced_for_item'  => 'update.php',
+			),
+		);
+		foreach ( $dependencies[ $test ] ?? array() as $function => $file ) {
+			if ( function_exists( $function ) ) {
+				continue;
+			}
+			// Only fixed, WordPress-owned files are eligible; callers cannot
+			// influence the path, function name or Core method.
+			$path = ABSPATH . 'wp-admin/includes/' . $file;
+			if ( ! is_file( $path ) || ! is_readable( $path ) ) {
+				return new WP_Error( 'site_health_unavailable', __( 'Required native Site Health helpers are unavailable.', 'wp-ai-bridge' ) );
+			}
+			require_once $path;
+			if ( ! function_exists( $function ) ) {
+				return new WP_Error( 'site_health_unavailable', __( 'Required native Site Health helpers are unavailable.', 'wp-ai-bridge' ) );
+			}
+		}
+		return true;
 	}
 
 	/** @param mixed $label Label. @return string */

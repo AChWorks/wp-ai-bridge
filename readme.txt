@@ -68,6 +68,7 @@ WP AI Bridge retains private Workspace data and bounded activity metadata on the
 == Changelog ==
 
 = 0.6.10 =
+* Fix selected WordPress Site Health checks invoked over MCP when WordPress admin helper functions are not yet loaded; retain native permission checks and real Core results.
 * Keep the official Bridge update offer visible through WordPress Core even if the site's WordPress.org plugin update request fails.
 * Honor an administrator's Check Again action for the independently cached GitHub release metadata, retaining bounded network use and the canonical installer.
 * No executable-code mirror is enabled: a trusted and tested alternate channel requires separate validation and approval.
