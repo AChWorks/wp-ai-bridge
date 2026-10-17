@@ -100,7 +100,13 @@ final class Error_Details {
 		);
 		foreach ( $patterns as $pattern => $replacement ) {
 			$next = preg_replace( $pattern, $replacement, $text );
-			if ( null !== $next && $next !== $text ) {
+			if ( null === $next ) {
+				// Never return unprocessed credentials after regex failure.
+				$redacted  = true;
+				$truncated = true;
+				return '[REDACTED]';
+			}
+			if ( $next !== $text ) {
 				$redacted = true;
 				$text     = $next;
 			}
@@ -121,19 +127,31 @@ final class Error_Details {
 		$quoted_single = '\x27(?:\\\\.|[^\x27\\\\\r\n])*\x27';
 		$cookie_value  = '(?:' . $quoted_double . '|[^\s;,\r\n]*)';
 		// Whitespace inside an opaque quoted value is not a Cookie boundary.
-		$pair_boundary  = '(?=\s*(?:;|$))';
-		$field_boundary = '(?=[\s,;}]|$)';
+		$pair_boundary = '(?=\s*(?:;|$))';
+		// Bare whitespace, commas and braces can occur in malformed Cookie
+		// fragments. Trust only an actual field end or a JSON-style key.
+		$field_boundary = '(?=\s*(?:;|$|,\s*["\x27][^"\x27\r\n]+["\x27]\s*:'
+			. '|}\s*(?:[,;}]|$)))';
 		$cookie_pair    = $cookie_name . '\s*=\s*' . $cookie_value . $pair_boundary;
 		// A semicolon-delimited Cookie fragment may be malformed, opaque
 		// or contain punctuation. Its next complete fragment can still
 		// carry a credential. Never stop at a provider's quoted prefix
 		// merely because the immediately following fragment is not RFC.
-		$opaque_fragment       = '[^\s;\r\n]+(?=\s*(?:;|$))';
-		$before_pair           = '(?!response\s+HTTP\b)[^;\r\n]+'
+		$opaque_fragment = '[^\s;\r\n]+(?=\s*(?:;|$))';
+		$before_pair     = '(?!response\s+HTTP\b)[^;\r\n]+'
 			. '(?=(?:\s*;\s*[^;\r\n]+)*\s*;\s*' . $cookie_name . '\s*=)';
-		$cookie_fragment       = '(?:' . $opaque_fragment . '|' . $before_pair . ')';
-		$cookie_tail           = '(?:\s*;\s*' . $cookie_fragment . ')*';
-		$quoted_field_boundary = '(?!\s*;\s*' . $cookie_fragment . ')' . $field_boundary;
+		// A blank semicolon component is still part of the Cookie sequence
+		// if another Cookie assignment follows before independent HTTP prose.
+		$future_cookie   = '(?:(?!\bresponse\s+HTTP\b)[^\r\n])*;\s*'
+			. $cookie_name . '\s*=';
+		$cookie_fragment = '(?:' . $opaque_fragment . '|' . $before_pair
+			. '|(?=' . $future_cookie . '))';
+		$cookie_tail     = '(?:\s*;\s*' . $cookie_fragment . ')*';
+		// Even a plausible JSON/field boundary is ambiguous if a later
+		// semicolon component carries another Cookie before independent
+		// HTTP response prose. Keep the entire chain in the masked field.
+		$quoted_field_boundary = '(?!' . $future_cookie . ')'
+			. '(?!\s*;\s*' . $cookie_fragment . ')' . $field_boundary;
 		// Independent multiword diagnostic prose is outside the Cookie
 		// sequence; commas and braces alone are not trusted boundaries.
 		// A rejected quoted field must fall back to a complete initial
@@ -177,7 +195,12 @@ final class Error_Details {
 		);
 		foreach ( $assignment_callbacks as $assignment => $callback ) {
 			$next = preg_replace_callback( $assignment, $callback, $text );
-			if ( null !== $next && $next !== $text ) {
+			if ( null === $next ) {
+				$redacted  = true;
+				$truncated = true;
+				return '[REDACTED]';
+			}
+			if ( $next !== $text ) {
 				$redacted = true;
 				$text     = $next;
 			}

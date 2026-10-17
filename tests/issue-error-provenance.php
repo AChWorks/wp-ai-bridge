@@ -404,6 +404,16 @@ namespace {
 		'quoted-first-pair-whitespace' => 'Provider denied; cookie_header=theme="light mode"; malformed; wordpress_logged_in=R8_FIRST_PAIR_SECRET; response HTTP 403',
 		'double-interleaved-private-path' => 'Provider denied; cookie_header="theme=light mode"; invalid; private_path=/data/tenant/r8-opaque.php; wordpress_logged_in=R8_PATH_SECRET; response HTTP 403',
 		'single-multiple-opaque-fragments' => "Provider denied; cookie_header='theme=light mode'; malformed segment; opaque fragment; wordpress_logged_in=R8_OPAQUE_SECRET; response HTTP 403",
+		'double-whitespace-trailing-opaque' => 'Provider denied; cookie_header="theme=light mode" invalid; wordpress_logged_in=R8_QUOTED_TRAILING_SECRET; response HTTP 403',
+		'single-whitespace-trailing-opaque' => "Provider denied; cookie_header='theme=light mode' invalid; wordpress_logged_in=R8_SINGLE_TRAILING_SECRET; response HTTP 403",
+		'double-whitespace-trailing-multiword' => 'Provider denied; cookie_header="theme=light mode" invalid fragment; malformed; wordpress_logged_in=R8_MULTI_TRAILING_SECRET; response HTTP 403',
+		'quoted-comma-opaque-suffix' => 'Provider denied; cookie_header="theme=light mode",opaque; session=R8_QUOTED_COMMA_SECRET; response HTTP 403',
+		'quoted-brace-opaque-suffix' => 'Provider denied; cookie_header="theme=light mode"}opaque; session=R8_QUOTED_BRACE_SECRET; response HTTP 403',
+		'json-like-status-before-cookie' => 'Provider denied; cookie_header="theme=light mode","status":503; wordpress_logged_in=R8_JSON_TRAILING_SECRET; response HTTP 403',
+		'json-like-brace-before-cookie' => 'Provider denied; cookie_header="theme=light mode"}; wordpress_logged_in=R8_JSON_BRACE_SECRET; response HTTP 403',
+		'empty-cookie-fragment' => 'Provider denied; cookie_header="theme=light mode"};; wordpress_logged_in=R8_EMPTY_GAP_SECRET; response HTTP 403',
+		'multiple-empty-cookie-fragments' => "Provider denied; cookie_header='theme=light mode'; ; ; wordpress_logged_in=R8_EMPTY_MULTI_SECRET; response HTTP 403",
+		'empty-before-opaque-gap' => 'Provider denied; requestCookie="theme=light mode"; ; invalid fragment; session=R8_EMPTY_OPAQUE_SECRET; response HTTP 403',
 	);
 	foreach ( $r8_whitespace_cases as $name => $message ) {
 		$clean = Error_Details::from_adapter_message( $message );
@@ -414,6 +424,28 @@ namespace {
 			! str_contains( $clean['message'], '/data/tenant/r8-opaque.php' ),
 			'R8-01: whitespace-bearing quoted Cookie prefix leaked later credentials: ' . $name );
 	}
+	$r8_json_status = Error_Details::from_adapter_message(
+		'Provider payload {"cookieHeader":"theme=light mode","status":503}; response HTTP 403'
+	);
+	$assert( $r8_json_status['redacted'] && ! $r8_json_status['truncated'] &&
+		str_contains( $r8_json_status['message'], '"cookieHeader":"[REDACTED]"' ) &&
+		str_contains( $r8_json_status['message'], '"status":503' ) &&
+		str_contains( $r8_json_status['message'], 'response HTTP 403' ),
+		'R8-01: tightening quoted-field boundaries removed an independent JSON status.' );
+	// If a bounded redaction regex cannot complete on an unusually long
+	// diagnostic, never return the original text with early credentials.
+	$r8_large_cookie = Error_Details::from_adapter_message(
+		'Provider denied; cookie_header="theme=light mode"; wordpress_logged_in=R8_LONG_SECRET;'
+		. str_repeat( ' malformed fragment;', 1200 ) . ' response HTTP 403'
+	);
+	$assert( $r8_large_cookie['redacted'] && $r8_large_cookie['truncated'] &&
+		! str_contains( $r8_large_cookie['message'], 'R8_LONG_SECRET' ),
+		'R8-01: regex processing failure leaked an early credential from a long diagnostic.' );
+	$r8_long_safe = Error_Details::from_adapter_message( str_repeat( 'validation checkpoint ', 600 ) );
+	$assert( $r8_long_safe['truncated'] &&
+		str_contains( $r8_long_safe['message'], 'validation checkpoint' ) &&
+		! $r8_long_safe['redacted'],
+		'R8-01: ordinary long diagnostics were discarded without a sanitizer failure.' );
 	$r8_wp = Error_Details::from_wp_error( new WP_Error(
 		'r8_original_error_identity',
 		"Provider denied; cookie_header='theme=light mode'; malformed; wordpress_logged_in=R8_WP_COOKIE_SECRET; status=403; private_path=/data/tenant/r8-config.php; response HTTP 403; اعتبارسنجی",
