@@ -75,7 +75,7 @@ function wpai_issue44_live_session( $route, $token, $user_id ) {
 	wpai_issue44_live_assert( 202 === $notification->get_status(), 'Issue #44 initialized notification failed.' );
 	return $session;
 }
-function wpai_issue44_live_call( $route, $token, $session, $ability_name, $id ) {
+function wpai_issue44_live_call( $route, $token, $session, $ability_name, $id, $parameters = array() ) {
 	$response = wpai_issue44_live_request(
 		$route,
 		'POST',
@@ -86,7 +86,7 @@ function wpai_issue44_live_call( $route, $token, $session, $ability_name, $id ) 
 			'method'  => 'tools/call',
 			'params'  => array(
 				'name'      => 'mcp-adapter-execute-ability',
-				'arguments' => array( 'ability_name' => $ability_name, 'parameters' => (object) array() ),
+				'arguments' => array( 'ability_name' => $ability_name, 'parameters' => (object) $parameters ),
 			),
 		),
 		$session
@@ -110,6 +110,7 @@ $settings        = new Settings();
 $before_settings = get_option( Settings::OPTION_NAME, array() );
 $current         = is_array( $before_settings ) ? $before_settings : array();
 $current[ Settings::GROUP_NATIVE_ABILITIES ] = 0;
+$current[ Settings::GROUP_SITE_READ ] = 1;
 update_option( Settings::OPTION_NAME, $current, false );
 
 $provider          = wp_get_ability( 'issue44/provider-allowed' );
@@ -212,14 +213,74 @@ foreach ( $resources as $route => $resource ) {
 		false === strpos( wp_json_encode( $error_result ), 'ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET' ),
 		'Provider WP_Error sentinel leaked through the Bridge MCP response.'
 	);
-	wpai_issue44_live_assert( true === ( $error_result['result']['isError'] ?? false ), 'Provider WP_Error was not normalized to a bounded MCP tool error.' );
+	wpai_issue44_live_assert( true === ( $error_result['result']['isError'] ?? false ), 'Provider WP_Error did not remain an MCP tool error.' );
+	wpai_issue44_live_assert(
+		false !== strpos( wpai_issue44_live_error_text( $error_result ), 'request stage is incomplete' ),
+		'Non-secret provider error context was lost from the real MCP response.'
+	);
+	$error_details = $error_result['result']['structuredContent']['error'] ?? array();
+	wpai_issue44_live_assert(
+		! empty( $error_details['redacted'] ) && ! empty( $error_details['diagnostic_reference'] ),
+		'Real MCP tool error did not expose redaction evidence and a persisted reference.'
+	);
+	if ( version_compare( get_bloginfo( 'version' ), '7.1', '>=' ) ) {
+		wpai_issue44_live_assert(
+			'issue82_provider_error' === ( $error_details['code'] ?? null ) &&
+			'observed_wordpress' === ( $error_details['code_source'] ?? null ),
+			'WordPress 7.1 callback error lost the exact observed WP_Error identifier.'
+		);
+	} else {
+		wpai_issue44_live_assert(
+			null === ( $error_details['code'] ?? null ) &&
+			'unavailable' === ( $error_details['code_source'] ?? '' ),
+			'WordPress 6.9 reconstructed a provider code already lost by MCP Adapter.'
+		);
+	}
+	$reference = $error_details['diagnostic_reference'];
+	$lookup = wpai_issue44_live_call(
+		$route, $token, $session, 'wp-ai-bridge/diagnostics-read', ++$id,
+		array( 'reference' => $reference )
+	);
+	wpai_issue44_live_assert(
+		false === ( $lookup['result']['isError'] ?? true ),
+		'Current authenticated OAuth client could not read its WordPress diagnostic reference.'
+	);
+	$lookup_data = wpai_issue44_live_structured( $lookup );
+	$lookup_event = $lookup_data['data']['events'][0] ?? array();
+	wpai_issue44_live_assert(
+		$reference === ( $lookup_event['event_ref'] ?? '' ) &&
+		false !== strpos( $lookup_event['message'] ?? '', 'request stage is incomplete' ) &&
+		false === strpos( wp_json_encode( $lookup_data ), 'ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET' ),
+		'Authenticated diagnostic lookup lost safe context or exposed a secret.'
+	);
+
+	$invalid_input = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-invalid-input', ++$id );
+	wpai_issue44_live_assert( true === ( $invalid_input['result']['isError'] ?? false ),
+		'WordPress did not reject invalid Ability input.' );
+	$invalid_output = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-invalid-output', ++$id );
+	wpai_issue44_live_assert( true === ( $invalid_output['result']['isError'] ?? false ),
+		'WordPress did not reject invalid Ability output.' );
+	if ( version_compare( get_bloginfo( 'version' ), '7.1', '>=' ) ) {
+		wpai_issue44_live_assert(
+			'input_validation' === ( $invalid_input['result']['structuredContent']['error']['stage'] ?? '' ) &&
+			'ability_invalid_input' === ( $invalid_input['result']['structuredContent']['error']['code'] ?? '' ) &&
+			'wordpress_core' === ( $invalid_input['result']['structuredContent']['error']['origin'] ?? '' ),
+			'Core input-validation failure was not observed before MCP Adapter discarded the code.'
+		);
+		wpai_issue44_live_assert(
+			'output_validation' === ( $invalid_output['result']['structuredContent']['error']['stage'] ?? '' ) &&
+			'ability_invalid_output' === ( $invalid_output['result']['structuredContent']['error']['code'] ?? '' ) &&
+			'wordpress_core' === ( $invalid_output['result']['structuredContent']['error']['origin'] ?? '' ),
+			'Core output-validation failure was not observed before MCP Adapter discarded the code.'
+		);
+	}
 
 	$throw_result = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-throw-result', ++$id );
 	wpai_issue44_live_assert(
 		false === strpos( wp_json_encode( $throw_result ), 'ISSUE82_SYNTHETIC_INTEGRATION_THROW_SECRET' ),
 		'Provider throwable sentinel leaked through the Bridge MCP response.'
 	);
-	wpai_issue44_live_assert( true === ( $throw_result['result']['isError'] ?? false ), 'Provider throwable was not normalized to a bounded MCP tool error.' );
+	wpai_issue44_live_assert( true === ( $throw_result['result']['isError'] ?? false ), 'Provider throwable did not remain an MCP tool error.' );
 
 	$permission_error_result = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-permission-error', ++$id );
 	wpai_issue44_live_assert( true === ( $permission_error_result['result']['isError'] ?? false ), 'Provider permission WP_Error was not denied.' );
@@ -258,6 +319,40 @@ foreach ( $resources as $route => $resource ) {
 
 	$provider_denied = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-denied', ++$id );
 	wpai_issue44_live_assert( true === ( $provider_denied['result']['isError'] ?? false ), 'Bridge widened provider-native permission denial.' );
+	if ( version_compare( get_bloginfo( 'version' ), '7.1', '>=' ) ) {
+		wpai_issue44_live_assert(
+			'authorization' === ( $provider_denied['result']['structuredContent']['error']['stage'] ?? '' ) &&
+			false === ( $provider_denied['result']['structuredContent']['error']['code_available'] ?? true ),
+			'Core boolean permission rejection was assigned a fabricated provider code.'
+		);
+	}
+
+	if ( defined( 'WP_MCP_VERSION' ) && version_compare( WP_MCP_VERSION, '0.7.1', '>=' ) ) {
+		// This named capability is synthetic and never granted by WordPress.
+		$deny_capability = static function () {
+			return 'wpai_issue44_ungranted_synthetic_capability';
+		};
+		add_filter( 'mcp_adapter_execute_ability_capability', $deny_capability, 99 );
+		try {
+			$adapter_denied = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-allowed', ++$id );
+		} finally {
+			remove_filter( 'mcp_adapter_execute_ability_capability', $deny_capability, 99 );
+		}
+		wpai_issue44_live_assert(
+			true === ( $adapter_denied['result']['isError'] ?? false ) &&
+			'insufficient_capability' === ( $adapter_denied['result']['structuredContent']['error']['code'] ?? '' ) &&
+			'adapter_boundary' === ( $adapter_denied['result']['structuredContent']['error']['origin'] ?? '' ) &&
+			'observed_at_adapter' === ( $adapter_denied['result']['structuredContent']['error']['code_source'] ?? '' ),
+			'Adapter capability denial was incorrectly attributed to the native provider.'
+		);
+		$hidden_response = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-hidden', ++$id );
+		wpai_issue44_live_assert(
+			true === ( $hidden_response['result']['isError'] ?? false ) &&
+			'ability_not_found' === ( $hidden_response['result']['structuredContent']['error']['code'] ?? '' ) &&
+			'adapter_boundary' === ( $hidden_response['result']['structuredContent']['error']['origin'] ?? '' ),
+			'Adapter exposure rejection was incorrectly attributed to the provider.'
+		);
+	}
 
 	$current[ Settings::GROUP_NATIVE_ABILITIES ] = 0;
 	update_option( Settings::OPTION_NAME, $current, false );

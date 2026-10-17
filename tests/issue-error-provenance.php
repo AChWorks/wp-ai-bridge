@@ -102,6 +102,40 @@ namespace {
 		'Non-sensitive header/status information was removed or sensitive Authorization leaked.' );
 
 
+	$only_values = Error_Details::from_adapter_message(
+		'upstream rejected: Authorization: Bearer TOKEN_PRIVATE_X; response HTTP 403; api_key=SECRET_VALUE'
+	);
+	$assert( $only_values['redacted'] &&
+		str_contains( $only_values['message'], 'Authorization: Bearer [REDACTED]' ) &&
+		str_contains( $only_values['message'], 'response HTTP 403' ) &&
+		str_contains( $only_values['message'], 'api_key=[REDACTED]' ) &&
+		! str_contains( $only_values['message'], 'TOKEN_PRIVATE_X' ) &&
+		! str_contains( $only_values['message'], 'SECRET_VALUE' ),
+		'Credential redaction hid error context or leaked a token value.' );
+
+	$control = Error_Details::from_adapter_message( "Disk quota exceeded\x00; retry after cleanup" );
+	$assert( true === $control['redacted'] && false === $control['truncated'] &&
+		'Disk quota exceeded; retry after cleanup' === $control['message'],
+		'Control-byte removal was not reported or modified ordinary error context.' );
+	$normal = Error_Details::from_wp_error(
+		new WP_Error( 'resource_unavailable', 'Operation failed: timeout at step 3',
+			(object) array( 'status' => 503, 'nested' => (object) array(), 'list' => array() ) )
+	);
+	$assert( 'resource_unavailable' === $normal['code'] && ! $normal['redacted'] &&
+		! $normal['truncated'] && 'Operation failed: timeout at step 3' === $normal['message'] &&
+		$normal['data'] instanceof \stdClass && $normal['data']->nested instanceof \stdClass &&
+		'{"status":503,"nested":{},"list":[]}' === json_encode( $normal['data'] ),
+		'Clean text and JSON object/array semantics were modified.' );
+	$uri = Error_Details::from_adapter_message(
+		'GET https://user:INTERNAL_URI_CREDENTIAL@backend.example/api failed; path=/var/private/file.log'
+	);
+	$assert( $uri['redacted'] && ! str_contains( json_encode( $uri ), 'INTERNAL_URI_CREDENTIAL' ) &&
+		! str_contains( json_encode( $uri ), '/var/private/file.log' ),
+		'URI userinfo/private path redaction failed.' );
+	$long = Error_Details::from_adapter_message( str_repeat( 'x', Error_Details::MAX_MESSAGE + 50 ) );
+	$assert( $long['truncated'] && ! $long['redacted'] &&
+		str_contains( $long['message'], '[TRUNCATED]' ), 'Truncation was not disclosed.' );
+
 	$params = array(
 		'jsonrpc' => '2.0',
 		'id' => 17,
@@ -240,6 +274,101 @@ namespace {
 	$assert( str_contains( $legacy_error['message'], 'Unsupported provider state' ) &&
 		! str_contains( json_encode( $legacy_response ), 'DO_NOT_LEAK' ),
 		'Adapter fallback discarded useful message or leaked secret.' );
+
+	// Adapter check_permission() may deny before the provider callback runs.
+	// Never attribute its identity/capability/exposure checks to native_ability.
+	$GLOBALS['wpai_test']['options'][ Settings::OPTION_NAME ][ Settings::GROUP_NATIVE_ABILITIES ] = 1;
+	$adapter_cases = array(
+		array( 'code' => 'insufficient_capability', 'source' => 'observed_at_adapter' ),
+		array( 'code' => 'ability_not_found', 'source' => 'observed_at_adapter' ),
+		array( 'code' => null, 'source' => 'unavailable' ),
+		array( 'code' => 'wp_ai_bridge_adapter_permission_exception', 'source' => 'bridge_generated' ),
+	);
+	foreach ( $adapter_cases as $idx => $case ) {
+		$outer = $delegation->filter_ability_args(
+			array( 'permission_callback' => static function () use ( $idx, $case ) {
+				if ( 3 === $idx ) {
+					throw new \RuntimeException( 'Adapter permission execution crashed; token=SECRET_DO_NOT_LEAK' );
+				}
+				return 2 === $idx ? false :
+					new WP_Error( $case['code'], 'Adapter denied the operation; client_secret=SECRET_DO_NOT_LEAK' );
+			} ),
+			Native_Ability_Delegation::ADAPTER_EXECUTE_ABILITY
+		);
+		$case_request = $native_args;
+		$case_request['id'] = 30 + $idx;
+		$case_route = $delegation->filter_rest_endpoints(
+			array( '/wp-ai-bridge/v1/mcp' => array(
+				array( 'callback' => static function () use ( $outer, $native_name, $case_request ) {
+					$permission_result = $outer['permission_callback']( array( 'ability_name' => $native_name ) );
+					$message = is_wp_error( $permission_result ) ?
+						$permission_result->get_error_message() : 'Adapter returned a boolean denial.';
+					return new WP_REST_Response( array(
+						'jsonrpc' => '2.0', 'id' => $case_request['id'],
+						'result' => array( 'isError' => true, 'content' => array(
+							array( 'type' => 'text', 'text' => $message ),
+						) ),
+					) );
+				} ),
+			) )
+		);
+		$case_response = $case_route['/wp-ai-bridge/v1/mcp'][0]['callback'](
+			new WP_REST_Request( $case_request )
+		)->get_data()['result'];
+		$case_error = $case_response['structuredContent']['error'] ?? array();
+		$assert( $case['code'] === ( $case_error['code'] ?? null ) &&
+			'adapter_boundary' === ( $case_error['origin'] ?? '' ) &&
+			'authorization' === ( $case_error['stage'] ?? '' ) &&
+			$case['source'] === ( $case_error['code_source'] ?? '' ) &&
+			! str_contains( json_encode( $case_response ), 'SECRET_DO_NOT_LEAK' ),
+			'Adapter error was mislabeled as provider, fabricated, or leaked a credential.' );
+	}
+
+	// These WP7.1 Core hook observations are not execute-callback outcomes.
+	$core_stage_cases = array(
+		array( 'method' => 'observe_ability_validate_input', 'stage' => 'input_validation' ),
+		array( 'method' => 'observe_ability_validate_output', 'stage' => 'output_validation' ),
+		array( 'method' => 'observe_ability_normalize_input', 'stage' => 'normalization' ),
+		array( 'method' => 'observe_ability_pre_execute', 'stage' => 'pre_execution' ),
+	);
+	foreach ( $core_stage_cases as $i => $case ) {
+		$err = new WP_Error( 'native_stage_' . $i, 'A native validation stage rejected input' );
+		$request_args = $native_args;
+		$request_args['id'] = 40 + $i;
+		$stage_route = $delegation->filter_rest_endpoints(
+			array( '/wp-ai-bridge/v1/mcp' => array(
+				array( 'callback' => static function () use ( $delegation, $native, $native_name, $err, $case, $request_args ) {
+					if ( 'pre_execution' === $case['stage'] ) {
+						$actual = $delegation->{$case['method']}( $err, $native_name, array(), $native );
+					} elseif ( 'normalization' === $case['stage'] ) {
+						$actual = $delegation->{$case['method']}( $err, $native_name, $native );
+					} else {
+						$actual = $delegation->{$case['method']}( $err, array(), $native_name );
+					}
+					$delegation->filter_tool_call_result(
+						array( 'success' => false, 'error' => $actual->get_error_message() ),
+						array( 'ability_name' => $native_name ),
+						Native_Ability_Delegation::ADAPTER_EXECUTE_TOOL,
+						new \stdClass(), new WP_AI_Test_MCP_Server()
+					);
+					return new WP_REST_Response( array(
+						'jsonrpc' => '2.0', 'id' => $request_args['id'],
+						'result' => array( 'isError' => true, 'content' => array(
+							array( 'type' => 'text', 'text' => $actual->get_error_message() ),
+						) ),
+					) );
+				} ),
+			) )
+		);
+		$stage_error = $stage_route['/wp-ai-bridge/v1/mcp'][0]['callback'](
+			new WP_REST_Request( $request_args )
+		)->get_data()['result']['structuredContent']['error'] ?? array();
+		$assert( 'native_stage_' . $i === ( $stage_error['code'] ?? '' ) &&
+			$case['stage'] === ( $stage_error['stage'] ?? '' ) &&
+			'observed_wordpress' === ( $stage_error['code_source'] ?? '' ) &&
+			'wordpress_core' === ( $stage_error['origin'] ?? '' ),
+			'Core lifecycle error source/stage was lost or fabricated.' );
+	}
 
 	// Context is request-scoped, not leaked into successful or unrelated calls.
 	$success_route = $delegation->filter_rest_endpoints(

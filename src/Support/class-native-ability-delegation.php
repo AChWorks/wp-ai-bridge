@@ -34,6 +34,9 @@ final class Native_Ability_Delegation {
 	/** @var \SplObjectStorage<object,mixed> */
 	private $bridge_owned_abilities;
 
+	/** @var string|null Exact WordPress Ability named by the current Bridge tools/call. */
+	private $current_mcp_ability = null;
+
 	/** @var array<string,mixed>|null One sanitized error captured inside the current request. */
 	private $pending_mcp_error = null;
 
@@ -52,7 +55,14 @@ final class Native_Ability_Delegation {
 	public function boot() {
 		add_filter( 'wp_register_ability_args', array( $this, 'filter_ability_args' ), PHP_INT_MAX, 2 );
 		add_filter( 'mcp_adapter_tool_call_result', array( $this, 'filter_tool_call_result' ), PHP_INT_MAX, 5 );
+		// WordPress 7.1+ exposes each lifecycle boundary; these filters only
+		// observe results and return the unmodified input/result.
+		add_filter( 'wp_pre_execute_ability', array( $this, 'observe_ability_pre_execute' ), PHP_INT_MAX, 4 );
+		add_filter( 'wp_ability_normalize_input', array( $this, 'observe_ability_normalize_input' ), PHP_INT_MAX, 3 );
+		add_filter( 'wp_ability_validate_input', array( $this, 'observe_ability_validate_input' ), PHP_INT_MAX, 3 );
+		add_filter( 'wp_ability_permission_result', array( $this, 'observe_ability_permission_result' ), PHP_INT_MAX, 4 );
 		add_filter( 'wp_ability_execute_result', array( $this, 'observe_ability_execute_result' ), PHP_INT_MAX, 4 );
+		add_filter( 'wp_ability_validate_output', array( $this, 'observe_ability_validate_output' ), PHP_INT_MAX, 3 );
 		add_filter( 'rest_endpoints', array( $this, 'filter_rest_endpoints' ), PHP_INT_MAX );
 	}
 
@@ -173,7 +183,7 @@ final class Native_Ability_Delegation {
 					'wp_ai_bridge_native_abilities_disabled',
 					__( 'Native Abilities access is disabled in WP AI Bridge settings.', 'wp-ai-bridge' )
 				);
-				$this->capture_mcp_error( $input['ability_name'], $denied, 'bridge_policy', 'authorization' );
+				$this->capture_mcp_error( $input['ability_name'], $denied, 'bridge_policy', 'authorization', 'bridge_generated' );
 				return $denied;
 			}
 
@@ -183,14 +193,16 @@ final class Native_Ability_Delegation {
 				// Throwable is not a WP_Error and has no original WP error code.
 				$details = Error_Details::from_adapter_message( $throwable->getMessage() );
 				$safe    = new WP_Error(
-					'native_permission_exception',
+					'wp_ai_bridge_adapter_permission_exception',
 					$details['message'],
 					array(
 						'exception_class' => get_class( $throwable ),
 						'exception_code'  => $throwable->getCode(),
 					)
 				);
-				$this->capture_mcp_error( $input['ability_name'], $safe, 'native_ability', 'authorization' );
+				// Only the Adapter wrapper boundary is proven; a Throwable is not
+				// an original provider WP_Error. Mark the Bridge-generated code.
+				$this->capture_mcp_error( $input['ability_name'], $safe, 'adapter_boundary', 'authorization', 'bridge_generated' );
 				return $safe;
 			}
 
@@ -199,7 +211,7 @@ final class Native_Ability_Delegation {
 				// information instead of replacing it with a generic denial.
 				$details = Error_Details::from_wp_error( $result );
 				$safe    = new WP_Error( $details['code'] ?? '', $details['message'], $details['data'] );
-				$this->capture_mcp_error( $input['ability_name'], $safe, 'native_ability', 'authorization' );
+				$this->capture_mcp_error( $input['ability_name'], $safe, 'adapter_boundary', 'authorization', 'observed_at_adapter' );
 				return $safe;
 			}
 
@@ -207,8 +219,9 @@ final class Native_Ability_Delegation {
 				$this->capture_mcp_error(
 					$input['ability_name'],
 					Error_Details::from_adapter_message( 'Native Ability permission callback returned false.' ),
-					'native_ability',
-					'authorization'
+					'adapter_boundary',
+					'authorization',
+					'unavailable'
 				);
 			}
 			return $result;
@@ -244,8 +257,12 @@ final class Native_Ability_Delegation {
 			return $result;
 		}
 
-		$target = function_exists( 'wp_get_ability' ) ? wp_get_ability( $args['ability_name'] ) : null;
-		if ( $target && $this->is_bridge_owned_ability( $target ) ) {
+		$target       = function_exists( 'wp_get_ability' ) ? wp_get_ability( $args['ability_name'] ) : null;
+		$bridge_owned = $target && $this->is_bridge_owned_ability( $target );
+		// Success responses retain their purpose-specific Bridge contracts;
+		// Bridge-owned failures are subject to the same secret masking as
+		// native provider failures, including errors originating in Core.
+		if ( $bridge_owned && ( ! is_array( $result ) || false !== ( $result['success'] ?? null ) ) ) {
 			return $result;
 		}
 
@@ -262,14 +279,16 @@ final class Native_Ability_Delegation {
 						$args['ability_name'],
 						Error_Details::from_adapter_message( $result['error'] ),
 						'adapter_boundary',
-						'adapter_execute'
+						'adapter_execute',
+						'unavailable'
 					);
 				} else {
 					$this->capture_mcp_error(
 						$args['ability_name'],
 						new WP_Error( 'bridge_native_result_blocked', __( 'Bridge rejected an unsafe native Ability result shape.', 'wp-ai-bridge' ) ),
 						'bridge_policy',
-						'native_result'
+						'native_result',
+						'bridge_generated'
 					);
 				}
 			}
@@ -362,24 +381,75 @@ final class Native_Ability_Delegation {
 	}
 
 	/**
-	 * Observe an actual WordPress 7.1+ callback WP_Error before Adapter v0.7.1
-	 * loses its code and data. Earlier supported WordPress retains the honest
-	 * message-only Adapter fallback. This hook never changes execution outcomes.
+	 * Observe Core 7.1+ lifecycle failures without changing what WordPress
+	 * ultimately returns. A hook that only names an Ability is verified
+	 * against the registry and the current authorized MCP tool target.
+	 * Provider callbacks, Core validation and Adapter checks remain distinct.
 	 *
-	 * @param mixed $result Callback result.
-	 * @param string $ability_name Executed Ability.
-	 * @param mixed $input Normalized input (never persisted).
-	 * @param mixed $ability Exact WordPress Ability object.
+	 * @param mixed $value Actual hook value, returned unmodified.
+	 * @param string $ability_name Core Ability name.
+	 * @param object|null $ability Core Ability instance if supplied.
+	 * @param string $stage Proven Core phase.
 	 * @return mixed
 	 */
-	public function observe_ability_execute_result( $result, $ability_name, $input, $ability ) {
-		if ( ! $this->in_bridge_request() || ! is_wp_error( $result ) ||
-			! is_string( $ability_name ) || ! is_object( $ability ) ||
-			$this->is_bridge_owned_ability( $ability ) ) {
-			return $result;
+	private function observe_core_boundary( $value, $ability_name, $ability, $stage ) {
+		if ( ! $this->in_bridge_request() || ! is_string( $ability_name ) ||
+			$ability_name !== $this->current_mcp_ability ||
+			self::ADAPTER_EXECUTE_ABILITY === $ability_name || ! function_exists( 'wp_get_ability' ) ) {
+			return $value;
 		}
-		$this->capture_mcp_error( $ability_name, $result, 'native_ability', 'ability_execution' );
-		return $result;
+		$registered = wp_get_ability( $ability_name );
+		if ( ! is_object( $registered ) ||
+			( null !== $ability && $registered !== $ability ) ) {
+			return $value;
+		}
+		// Core's normalization, validation and permission filters establish a
+		// Core lifecycle observation, not proof of a provider callback cause.
+		$origin = 'ability_execution' === $stage ?
+			( $this->is_bridge_owned_ability( $registered ) ? 'bridge_ability' : 'native_ability' ) :
+			'wordpress_core';
+		if ( is_wp_error( $value ) ) {
+			$this->capture_mcp_error( $ability_name, $value, $origin, $stage, 'observed_wordpress' );
+		} elseif ( 'authorization' === $stage && false === $value ) {
+			$this->capture_mcp_error(
+				$ability_name,
+				Error_Details::from_adapter_message( 'WordPress Ability permission check returned false.' ),
+				$origin,
+				$stage,
+				'unavailable'
+			);
+		}
+		return $value;
+	}
+
+	/** @return mixed Unmodified short-circuit sentinel/value. */
+	public function observe_ability_pre_execute( $value, $name, $input, $ability ) {
+		return $this->observe_core_boundary( $value, $name, $ability, 'pre_execution' );
+	}
+
+	/** @return mixed Unmodified normalized input. */
+	public function observe_ability_normalize_input( $value, $name, $ability ) {
+		return $this->observe_core_boundary( $value, $name, $ability, 'normalization' );
+	}
+
+	/** @return mixed Unmodified input validation result. */
+	public function observe_ability_validate_input( $value, $input, $name ) {
+		return $this->observe_core_boundary( $value, $name, null, 'input_validation' );
+	}
+
+	/** @return mixed Unmodified provider permission result. */
+	public function observe_ability_permission_result( $value, $name, $input, $ability ) {
+		return $this->observe_core_boundary( $value, $name, $ability, 'authorization' );
+	}
+
+	/** @return mixed Unmodified callback result. */
+	public function observe_ability_execute_result( $value, $name, $input, $ability ) {
+		return $this->observe_core_boundary( $value, $name, $ability, 'ability_execution' );
+	}
+
+	/** @return mixed Unmodified output validation result. */
+	public function observe_ability_validate_output( $value, $output, $name ) {
+		return $this->observe_core_boundary( $value, $name, null, 'output_validation' );
 	}
 
 	/**
@@ -392,9 +462,10 @@ final class Native_Ability_Delegation {
 	 * @param mixed $error WP_Error or observed Adapter message details.
 	 * @param string $origin Proven observation boundary.
 	 * @param string $stage Proven execution stage.
+	 * @param string $code_source Proven provenance of the error code.
 	 * @return void
 	 */
-	private function capture_mcp_error( $ability, $error, $origin, $stage ) {
+	private function capture_mcp_error( $ability, $error, $origin, $stage, $code_source = 'observed_wordpress' ) {
 		if ( ! $this->in_bridge_request() || ! function_exists( 'get_current_user_id' ) ||
 			get_current_user_id() < 1 || ! is_string( $ability ) ) {
 			return;
@@ -412,8 +483,9 @@ final class Native_Ability_Delegation {
 		if ( ! is_array( $details ) || ! is_string( $details['message'] ?? null ) ) {
 			return;
 		}
-		$code = $details['code'] ?? null;
-		$hint = 'inspect_provider_diagnostics';
+		$code        = $details['code'] ?? null;
+		$code_source = null === $code ? 'unavailable' : $code_source;
+		$hint        = 'inspect_provider_diagnostics';
 		if ( 'authorization' === $stage ) {
 			$hint = 'inspect_permissions';
 		} elseif ( 'bridge_policy' === $origin ) {
@@ -426,7 +498,7 @@ final class Native_Ability_Delegation {
 		if ( null === $this->diagnostic_log ) {
 			$this->diagnostic_log = new Mutation_Log();
 		}
-		$ref                     = $this->diagnostic_log->record_mcp_failure( $ability, $details, $origin, $stage, $hint, $client_id );
+		$ref                     = $this->diagnostic_log->record_mcp_failure( $ability, $details, $origin, $stage, $hint, $client_id, $code_source );
 		$this->pending_mcp_error = array(
 			'ability'               => $ability,
 			'code'                  => $code,
@@ -438,6 +510,7 @@ final class Native_Ability_Delegation {
 			'stage'                 => $stage,
 			'next_step'             => $hint,
 			'code_available'        => null !== $code,
+			'code_source'           => $code_source,
 			'diagnostics_persisted' => '' !== $ref,
 			'outcome'               => 'unknown',
 			'retry_safe'            => false,
@@ -459,8 +532,7 @@ final class Native_Ability_Delegation {
 	 * @return mixed
 	 */
 	private function project_mcp_error( $response, $request ) {
-		$captured = $this->pending_mcp_error;
-		if ( ! is_array( $captured ) || ! $request instanceof \WP_REST_Request ||
+		if ( ! $request instanceof \WP_REST_Request ||
 			! $response instanceof \WP_REST_Response || 'POST' !== $request->get_method() ||
 			'/wp-ai-bridge/v1/mcp' !== $request->get_route() ) {
 			return $response;
@@ -469,8 +541,9 @@ final class Native_Ability_Delegation {
 		if ( ! is_array( $params ) || '2.0' !== ( $params['jsonrpc'] ?? null ) ||
 			'tools/call' !== ( $params['method'] ?? null ) ||
 			'mcp-adapter-execute-ability' !== ( $params['params']['name'] ?? null ) ||
+			! is_string( $this->current_mcp_ability ) ||
 			( $params['params']['arguments']['ability_name'] ??
-				$params['params']['arguments']['input']['ability_name'] ?? null ) !== $captured['ability'] ||
+				$params['params']['arguments']['input']['ability_name'] ?? null ) !== $this->current_mcp_ability ||
 			! isset( $params['id'] ) || ( ! is_int( $params['id'] ) && ! is_string( $params['id'] ) ) ) {
 			return $response;
 		}
@@ -481,8 +554,35 @@ final class Native_Ability_Delegation {
 			! is_array( $data['result']['content'] ?? null ) ) {
 			return $response;
 		}
-		// The captured message is preserved with only sensitive fragments masked;
-		// never reflect arbitrary raw Adapter text or an untrusted request payload.
+		$captured = $this->pending_mcp_error;
+		if ( ! is_array( $captured ) || $captured['ability'] !== $this->current_mcp_ability ) {
+			// WordPress 6.9 and early Adapter permission failures may expose no
+			// original WP_Error. Do not invent provider codes or stages.
+			$text    = $data['result']['content'][0]['text'] ?? '';
+			$details = Error_Details::from_adapter_message( is_string( $text ) ? $text : 'MCP Adapter returned a tool error without text.' );
+			$this->capture_mcp_error( $this->current_mcp_ability, $details, 'adapter_boundary', 'adapter_execute', 'unavailable' );
+			$captured = $this->pending_mcp_error;
+			if ( ! is_array( $captured ) ) {
+				$captured = array(
+					'ability'               => $this->current_mcp_ability,
+					'code'                  => null,
+					'message'               => $details['message'],
+					'data'                  => null,
+					'redacted'              => $details['redacted'],
+					'truncated'             => $details['truncated'],
+					'origin'                => 'adapter_boundary',
+					'stage'                 => 'adapter_execute',
+					'next_step'             => 'inspect_provider_diagnostics',
+					'code_available'        => false,
+					'code_source'           => 'unavailable',
+					'diagnostics_persisted' => false,
+					'outcome'               => 'unknown',
+					'retry_safe'            => false,
+				);
+			}
+		}
+		// Show observed, selectively redacted error context while preserving
+		// the Adapter's original isError outcome and the JSON-RPC request id.
 		$data['result']['content']           = array(
 			array(
 				'type' => 'text',
@@ -523,7 +623,19 @@ final class Native_Ability_Delegation {
 				$callback                                  = $handler['callback'];
 				$endpoints[ $route ][ $index ]['callback'] = function ( $request ) use ( $callback ) {
 					if ( 0 === $this->bridge_request_depth ) {
-						$this->pending_mcp_error = null;
+						$this->pending_mcp_error   = null;
+						$this->current_mcp_ability = null;
+						if ( $request instanceof \WP_REST_Request &&
+							'POST' === $request->get_method() ) {
+							$params = $request->get_json_params();
+							$name   = $params['params']['arguments']['ability_name'] ??
+								$params['params']['arguments']['input']['ability_name'] ?? null;
+							if ( is_array( $params ) && 'tools/call' === ( $params['method'] ?? null ) &&
+								'mcp-adapter-execute-ability' === ( $params['params']['name'] ?? null ) &&
+								is_string( $name ) && 1 === preg_match( '/^[a-z0-9_-]+\/[a-z0-9_-]+$/D', $name ) ) {
+								$this->current_mcp_ability = $name;
+							}
+						}
 					}
 					++$this->bridge_request_depth;
 					try {
@@ -533,7 +645,8 @@ final class Native_Ability_Delegation {
 					} finally {
 						$this->bridge_request_depth = max( 0, $this->bridge_request_depth - 1 );
 						if ( 0 === $this->bridge_request_depth ) {
-							$this->pending_mcp_error = null;
+							$this->pending_mcp_error   = null;
+							$this->current_mcp_ability = null;
 						}
 					}
 				};

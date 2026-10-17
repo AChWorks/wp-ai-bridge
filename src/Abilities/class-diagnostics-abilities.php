@@ -37,7 +37,7 @@ final class Diagnostics_Abilities {
 			'wp-ai-bridge/diagnostics-read',
 			array(
 				'label'               => __( 'Read Bridge Diagnostics', 'wp-ai-bridge' ),
-				'description'         => __( 'Administrator-only WordPress-side errors with observed codes, redacted messages/data and diagnostic references. Gateway-only failures are not visible.', 'wp-ai-bridge' ),
+				'description'         => __( 'Administrator-only WordPress diagnostics: site-wide fixed transfer/Media metadata; detailed messages/data scoped to the same WordPress user and OAuth client. Gateway-only errors are not visible.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => array(
 					'type'                 => 'object',
@@ -75,6 +75,10 @@ final class Diagnostics_Abilities {
 									'truncated'      => array( 'type' => 'boolean' ),
 									'ability'        => array( 'type' => 'string' ),
 									'origin'         => array( 'type' => 'string' ),
+									'code_source'    => array(
+										'type' => 'string',
+										'enum' => array( 'observed_wordpress', 'observed_at_adapter', 'bridge_generated', 'unavailable' ),
+									),
 									'next_step'      => array( 'type' => 'string' ),
 									'event_ref'      => array( 'type' => 'string' ),
 									'storage_reason' => array(

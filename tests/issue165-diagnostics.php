@@ -7,6 +7,12 @@
 
 require __DIR__ . '/bootstrap.php';
 
+if ( ! function_exists( 'wp_salt' ) ) {
+	function wp_salt( $scheme = 'auth' ) {
+		return 'isolated-diagnostic-test-site-salt';
+	}
+}
+
 use WP_AI_Bridge\Abilities\Diagnostics_Abilities;
 use WP_AI_Bridge\Abilities\Transfer_Session_Abilities;
 use WP_AI_Bridge\Auth\OAuth_Server;
@@ -103,6 +109,22 @@ $assert( is_wp_error( $bad ) && 'transfer_invalid' === $bad->get_error_code(), '
 $latest = $log->diagnostic_view( 1 )['events'][0];
 $assert( 'begin' === $latest['operation'] && 'validation' === $latest['phase'] &&
 	'transfer_invalid' === $latest['error_code'], 'Validly authenticated begin failure was not instrumented.' );
+$assert( $log->record_transfer(
+	'begin', new WP_Error( 'custom_transfer_state.v5', 'Checksum mismatch after transfer', array( 'expected_chunks' => 3 ) )
+), 'Detailed transfer diagnostic could not be persisted under an authenticated principal.' );
+$same_client = $log->diagnostic_view( 1, '', 'test-authenticated-mcp-client', get_current_user_id() )['events'][0];
+$assert( 'custom_transfer_state.v5' === $same_client['error_code'] &&
+	'Checksum mismatch after transfer' === ( $same_client['message'] ?? '' ) &&
+	3 === ( $same_client['data']['expected_chunks'] ?? 0 ),
+	'Original safe transfer failure details were lost for their authorized client.' );
+$other_client = $log->diagnostic_view( 1, '', 'other-authorized-client', get_current_user_id() )['events'][0];
+$assert( 'custom_transfer_state.v5' === $other_client['error_code'] &&
+	! isset( $other_client['message'] ) && ! isset( $other_client['data'] ),
+	'Site-wide transfer metadata exposed principal-scoped error data.' );
+$other_user = $log->diagnostic_view( 1, '', 'test-authenticated-mcp-client', get_current_user_id() + 1 )['events'][0];
+$assert( ! isset( $other_user['message'] ) && ! isset( $other_user['data'] ),
+	'Another WordPress principal could read scoped transfer detail.' );
+
 $auth->setValue( null, '' );
 $before = count( $log->recent( Mutation_Log::LIMIT ) );
 $denied = $transfer->execute( array( 'action' => 'begin', 'purpose' => 'text', 'total_bytes' => -1, 'sha256' => str_repeat( '0', 64 ) ) );

@@ -7,6 +7,8 @@
 
 namespace WP_AI_Bridge\Support;
 
+use WP_AI_Bridge\Auth\OAuth_Server;
+
 /**
  * One existing per-blog, non-autoload option; never stores request payloads.
  */
@@ -92,7 +94,12 @@ final class Mutation_Log {
 			'event_ref'   => bin2hex( random_bytes( 8 ) ),
 			'event_type'  => 'diagnostic',
 		);
-		if ( is_array( $details ) ) {
+		// Legacy transfer/Media diagnostics are intentionally site-wide and
+		// remain metadata-only. New detailed failure diagnostics belong to the
+		// exact authenticated WordPress user + OAuth client.
+		$client_id = OAuth_Server::authenticated_mcp_client_id();
+		if ( is_array( $details ) && get_current_user_id() > 0 && '' !== $client_id ) {
+			$entry['client_hash']   = self::client_identity_hash( $client_id );
 			$entry['error_message'] = $details['message'];
 			$entry['error_data']    = $details['data'];
 			$entry['redacted']      = $details['redacted'];
@@ -115,9 +122,10 @@ final class Mutation_Log {
 	 * @param string $stage Proven phase, not an inferred root cause.
 	 * @param string $hint Actionable next-step identifier.
 	 * @param string $client_id Authenticated MCP client (stored as keyed digest only).
+	 * @param string $code_source WordPress-observed, Adapter-observed, Bridge-generated or unavailable.
 	 * @return string
 	 */
-	public function record_mcp_failure( $ability, $details, $origin, $stage, $hint, $client_id ) {
+	public function record_mcp_failure( $ability, $details, $origin, $stage, $hint, $client_id, $code_source = 'observed_wordpress' ) {
 		$uid = get_current_user_id();
 		if ( $uid < 1 || ! is_string( $client_id ) || '' === $client_id ||
 			! is_string( $ability ) || 1 !== preg_match( '/^[a-z0-9_-]+\/[a-z0-9_-]+$/D', $ability ) ||
@@ -127,8 +135,9 @@ final class Mutation_Log {
 			! is_string( $details['message'] ?? null ) ||
 			strlen( $details['message'] ) > Error_Details::MAX_MESSAGE ||
 			! is_bool( $details['redacted'] ?? null ) || ! is_bool( $details['truncated'] ?? null ) ||
-			! in_array( $origin, array( 'bridge_ability', 'native_ability', 'adapter_boundary', 'bridge_policy' ), true ) ||
-			! in_array( $stage, array( 'ability_execution', 'authorization', 'native_result', 'adapter_execute' ), true ) ||
+			! in_array( $origin, array( 'bridge_ability', 'native_ability', 'wordpress_core', 'adapter_boundary', 'bridge_policy' ), true ) ||
+			! in_array( $stage, array( 'normalization', 'input_validation', 'authorization', 'ability_execution', 'output_validation', 'pre_execution', 'native_result', 'adapter_execute' ), true ) ||
+			! in_array( $code_source, array( 'observed_wordpress', 'observed_at_adapter', 'bridge_generated', 'unavailable' ), true ) ||
 			! in_array( $hint, array( 'inspect_request', 'inspect_permissions', 'inspect_private_storage', 'inspect_provider_diagnostics', 'inspect_native_result' ), true )
 		) {
 			return '';
@@ -149,6 +158,7 @@ final class Mutation_Log {
 			'operation'     => 'mcp_error',
 			'phase'         => $stage,
 			'origin'        => $origin,
+			'code_source'   => $code_source,
 			'next_step'     => $hint,
 			'event_ref'     => $reference,
 			'event_type'    => 'mcp_diagnostic',
@@ -245,8 +255,9 @@ final class Mutation_Log {
 				is_string( $entry['error_message'] ?? null ) &&
 				strlen( $entry['error_message'] ) <= Error_Details::MAX_MESSAGE &&
 				is_bool( $entry['redacted'] ?? null ) && is_bool( $entry['truncated'] ?? null ) &&
-				in_array( $entry['origin'] ?? '', array( 'bridge_ability', 'native_ability', 'adapter_boundary', 'bridge_policy' ), true ) &&
-				in_array( $entry['phase'] ?? '', array( 'ability_execution', 'authorization', 'native_result', 'adapter_execute' ), true ) &&
+				in_array( $entry['origin'] ?? '', array( 'bridge_ability', 'native_ability', 'wordpress_core', 'adapter_boundary', 'bridge_policy' ), true ) &&
+				in_array( $entry['phase'] ?? '', array( 'normalization', 'input_validation', 'authorization', 'ability_execution', 'output_validation', 'pre_execution', 'native_result', 'adapter_execute' ), true ) &&
+				in_array( $entry['code_source'] ?? '', array( 'observed_wordpress', 'observed_at_adapter', 'bridge_generated', 'unavailable' ), true ) &&
 				in_array( $entry['next_step'] ?? '', array( 'inspect_request', 'inspect_permissions', 'inspect_private_storage', 'inspect_provider_diagnostics', 'inspect_native_result' ), true );
 			$is_transfer = 'wp-ai-bridge/private-transfer' === ( $entry['ability'] ?? '' ) &&
 				in_array( $entry['operation'] ?? '', array( 'begin', 'append', 'status', 'verify', 'cancel', 'read', 'release', 'admin_release' ), true ) &&
@@ -277,19 +288,27 @@ final class Mutation_Log {
 					'event_ref'  => (string) $entry['event_ref'],
 				);
 				if ( $is_mcp ) {
-					$event['ability']    = $entry['ability'];
-					$event['origin']     = $entry['origin'];
-					$event['next_step']  = $entry['next_step'];
-					$event['message']    = Error_Details::from_adapter_message( $entry['error_message'] )['message'];
-					$bounded_data        = Error_Details::from_wp_error(
+					$event['ability']     = $entry['ability'];
+					$event['origin']      = $entry['origin'];
+					$event['code_source'] = $entry['code_source'];
+					$event['next_step']   = $entry['next_step'];
+					$event['message']     = Error_Details::from_adapter_message( $entry['error_message'] )['message'];
+					$bounded_data         = Error_Details::from_wp_error(
 						new \WP_Error( (string) ( $entry['error_code'] ?? '' ), $entry['error_message'], $entry['error_data'] ?? null )
 					);
-					$event['error_code'] = $bounded_data['code'];
-					$event['data']       = $bounded_data['data'];
-					$event['redacted']   = $entry['redacted'] || $bounded_data['redacted'];
-					$event['truncated']  = $entry['truncated'] || $bounded_data['truncated'];
+					$event['error_code']  = $bounded_data['code'];
+					$event['data']        = $bounded_data['data'];
+					$event['redacted']    = $entry['redacted'] || $bounded_data['redacted'];
+					$event['truncated']   = $entry['truncated'] || $bounded_data['truncated'];
 				}
-				if ( $is_transfer && ! empty( $entry['error_message'] ) && is_string( $entry['error_message'] ) ) {
+				$can_see_transfer_details = $is_transfer &&
+					is_int( $entry['user_id'] ?? null ) && $entry['user_id'] > 0 &&
+					$entry['user_id'] === $user_id &&
+					is_string( $client_id ) && '' !== $client_id &&
+					is_string( $entry['client_hash'] ?? null ) &&
+					hash_equals( self::client_identity_hash( $client_id ), $entry['client_hash'] );
+				if ( $can_see_transfer_details && ! empty( $entry['error_message'] ) &&
+					is_string( $entry['error_message'] ) ) {
 					$safe               = Error_Details::from_wp_error(
 						new \WP_Error( (string) $entry['error_code'], $entry['error_message'], $entry['error_data'] ?? null )
 					);

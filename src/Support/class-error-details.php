@@ -66,21 +66,35 @@ final class Error_Details {
 			$redacted = true;
 		}
 		// Strip non-printing control characters, not ordinary Unicode diagnostics.
-		$text = (string) preg_replace( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $text );
+		$printable = (string) preg_replace( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $text );
+		if ( $printable !== $text ) {
+			$redacted = true;
+			$text     = $printable;
+		}
 
+		// Keep the useful header/key/scheme labels, and replace only values
+		// confirmed to carry secrets. Private paths are masked as path values.
 		$patterns = array(
-			// Credentials in HTTP headers and URI userinfo.
-			'/\b(Authorization|Proxy-Authorization|Cookie|Set-Cookie)\s*:\s*[^\r\n]+/i',
-			'/\bBearer\s+[A-Za-z0-9._~+\/=-]+/i',
-			'~(https?://)[^\s/@:]+:[^\s/@]+@~i',
-			// Keyed assignments in free-form exceptions and log messages.
-			'/\b(?:[A-Za-z0-9]+_)*(?:password|passwd|pwd|access_token|refresh_token|client_secret|api_key|private_key|authorization|session_token|nonce|secret|token)\s*["\x27]?\s*[:=]\s*["\x27]?[^\s,;&\r\n"\x27}]+/i',
-			// Absolute private filesystem paths. HTTP routes /wp-json/... stay visible.
-			'~(?<![A-Za-z0-9])/(?:home|root|srv|var|etc|tmp|private|secret|opt|mnt|Users|www)/[^\s,;&"\x27<>)]*~i',
-			'~\b[A-Z]:\\\\(?:[^\\\s]+\\\\)+[^\\\s]+~i',
+			'/\b(Authorization|Proxy-Authorization)\s*:\s*((?:[A-Za-z]+\s+)?)[^\s,;&\r\n]+/i'
+				=> '$1: $2[REDACTED]',
+			'/\b(Cookie|Set-Cookie)\s*:\s*[^\r\n]+/i'
+				=> '$1: [REDACTED]',
+			// Quoted authorization keys in JSON-like error text.
+			'/(["\x27](?:authorization|proxy-authorization)["\x27]\s*[:=]\s*["\x27]?)(?:[A-Za-z]+\s+)?[^\s,;&\r\n"\x27}]+/i'
+				=> '$1[REDACTED]',
+			'/\b(Bearer)\s+[A-Za-z0-9._~+\/=\-]+/i'
+				=> '$1 [REDACTED]',
+			'~(https?://)[^\s/@:]+:[^\s/@]+@~i'
+				=> '$1[REDACTED]@',
+			'/\b((?:[A-Za-z0-9]+_)*(?:password|passwd|pwd|access_token|refresh_token|client_secret|api_key|private_key|session_token|nonce|secret|token)\s*["\x27]?\s*[:=]\s*["\x27]?)[^\s,;&\r\n"\x27}]+/i'
+				=> '$1[REDACTED]',
+			'~(?<![A-Za-z0-9])/(?:home|root|srv|var|etc|tmp|private|secret|opt|mnt|Users|www)/[^\s,;&"\x27<>)]*~i'
+				=> '[REDACTED]',
+			'~\b[A-Z]:\\\\(?:[^\\\s]+\\\\)+[^\\\s]+~i'
+				=> '[REDACTED]',
 		);
-		foreach ( $patterns as $pattern ) {
-			$next = preg_replace( $pattern, '[REDACTED]', $text );
+		foreach ( $patterns as $pattern => $replacement ) {
+			$next = preg_replace( $pattern, $replacement, $text );
 			if ( null !== $next && $next !== $text ) {
 				$redacted = true;
 				$text     = $next;
@@ -130,7 +144,7 @@ final class Error_Details {
 			$truncated = true;
 			return '[TRUNCATED]';
 		}
-		$output = array();
+		$output = $value instanceof \stdClass ? new \stdClass() : array();
 		$count  = 0;
 		foreach ( (array) $value as $key => $child ) {
 			if ( ++$count > self::MAX_ITEMS || $budget <= 0 ) {
@@ -141,10 +155,15 @@ final class Error_Details {
 			$budget  -= is_int( $key_text ) ? 1 : strlen( $key_text );
 			if ( is_string( $key ) && ( Metadata_Key_Policy::is_sensitive( $key ) ||
 				1 === preg_match( '/^(?:path|file_path|absolute_path|cookie|set.cookie|authorization|credentials|private_key|dsn)$/i', $key ) ) ) {
-				$output[ $key_text ] = '[REDACTED]';
-				$redacted            = true;
+				$clean    = '[REDACTED]';
+				$redacted = true;
 			} else {
-				$output[ $key_text ] = self::clean_data( $child, $budget, $depth + 1, $redacted, $truncated );
+				$clean = self::clean_data( $child, $budget, $depth + 1, $redacted, $truncated );
+			}
+			if ( $output instanceof \stdClass ) {
+				$output->{ (string) $key_text} = $clean;
+			} else {
+				$output[ $key_text ] = $clean;
 			}
 		}
 		return $output;

@@ -399,7 +399,7 @@ wpai_issue44_assert(
 $permission_throw = $invoke( '/wp-ai-bridge/v1/mcp', $adapter_permission, 'vendor/permission-throw' );
 wpai_issue44_assert(
 	$permission_throw instanceof WP_Error
-	&& 'native_permission_exception' === $permission_throw->get_error_code()
+	&& 'wp_ai_bridge_adapter_permission_exception' === $permission_throw->get_error_code()
 	&& false === strpos( $permission_throw->get_error_message(), $permission_throw_secret ),
 	'Provider-native permission exception was not redacted with correct exception classification.'
 );
