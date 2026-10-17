@@ -85,6 +85,7 @@ for test in \
     issue36-term-meta-security-smoke.php \
     issue36-primary-identity-smoke.php \
     issue42-ability-catalog-smoke.php \
+    issue81-core-ability-parity-smoke.php \
     issue110-site-context-smoke.php \
     issue99-extension-authorization-smoke.php \
     issue130-141-diagnostics-smoke.php \
