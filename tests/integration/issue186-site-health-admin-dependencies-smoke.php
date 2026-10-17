@@ -25,6 +25,12 @@ $adapter  = wp_get_ability( 'mcp-adapter/execute-ability' );
 wpai186_assert( $provider instanceof WP_Ability, 'Native Site Health provider not registered.' );
 wpai186_assert( $adapter instanceof WP_Ability, 'Official MCP Adapter not registered.' );
 
+// The previous WP-CLI-based fixture preloaded every affected helper and
+// could not prove the real, separately observed MCP/REST bootstrap defect.
+wpai186_assert( ! ( defined( 'WP_CLI' ) && WP_CLI ), 'Site Health missing-helper acceptance cannot run through WP-CLI.' );
+wpai186_assert( ! function_exists( 'get_plugin_updates' ), 'Discriminating fixture must start without the Core plugin update helper.' );
+wpai186_assert( ! function_exists( 'wp_check_php_version' ), 'Discriminating fixture must start without the Core PHP version helper.' );
+
 try {
 	update_option( Settings::OPTION_NAME, $settings->defaults(), false );
 	wpai186_assert( true !== $provider->check_permissions( array( 'action' => 'run', 'test' => 'plugin_version' ) ), 'Default-off permission was bypassed.' );
