@@ -100,6 +100,60 @@ namespace {
 		503 === $header_error['data']['http_status'] &&
 		'[REDACTED]' === $header_error['data']['headers']['Authorization'],
 		'Non-sensitive header/status information was removed or sensitive Authorization leaked.' );
+	// R3 B-01: free-text diagnostic assignment keys must receive the same
+	// selective secret protection as structured error fields.
+	$free_text_error = Error_Details::from_wp_error( new WP_Error(
+		'provider_text_failure',
+		'Backend rejected request; cookie_header=wordpress_logged_in=FREE_TEXT_COOKIE_SECRET; private_path=/data/tenant/text-config.php; response HTTP 403; retry after review',
+		array( 'status' => 403, 'safe_hint' => 'inspect request' )
+	) );
+	$assert( $free_text_error['redacted'] && ! $free_text_error['truncated'] &&
+		'provider_text_failure' === $free_text_error['code'] &&
+		str_contains( $free_text_error['message'], 'cookie_header=[REDACTED]' ) &&
+		str_contains( $free_text_error['message'], 'private_path=[REDACTED]' ) &&
+		str_contains( $free_text_error['message'], 'response HTTP 403; retry after review' ) &&
+		403 === $free_text_error['data']['status'] &&
+		! str_contains( json_encode( $free_text_error ), 'FREE_TEXT_COOKIE_SECRET' ) &&
+		! str_contains( json_encode( $free_text_error ), '/data/tenant/text-config.php' ),
+		'WP_Error free-text cookie/private-path assignment escaped redaction or useful context was discarded.' );
+	$free_adapter = Error_Details::from_adapter_message(
+		'Adapter denied: requestCookie=session=FREE_REQUEST_COOKIE_SECRET; absoluteFilePath=/data/tenant/adapter-config.php; status 429'
+	);
+	$assert( null === $free_adapter['code'] && $free_adapter['redacted'] && ! $free_adapter['truncated'] &&
+		str_contains( $free_adapter['message'], 'requestCookie=[REDACTED]' ) &&
+		str_contains( $free_adapter['message'], 'absoluteFilePath=[REDACTED]' ) &&
+		str_contains( $free_adapter['message'], 'status 429' ) &&
+		! str_contains( json_encode( $free_adapter ), 'FREE_REQUEST_COOKIE_SECRET' ) &&
+		! str_contains( json_encode( $free_adapter ), '/data/tenant/adapter-config.php' ),
+		'Adapter free-text camelCase credential or private path leaked.' );
+	$quoted_adapter = Error_Details::from_adapter_message(
+		'Provider payload {"cookieHeader":"session=FREE_QUOTED_COOKIE_SECRET","privatePath":"/data/tenant/quoted.php","status":503}'
+	);
+	$assert( $quoted_adapter['redacted'] &&
+		str_contains( $quoted_adapter['message'], '"cookieHeader":"[REDACTED]"' ) &&
+		str_contains( $quoted_adapter['message'], '"privatePath":"[REDACTED]"' ) &&
+		str_contains( $quoted_adapter['message'], '"status":503' ) &&
+		! str_contains( $quoted_adapter['message'], 'FREE_QUOTED_COOKIE_SECRET' ) &&
+		! str_contains( $quoted_adapter['message'], '/data/tenant/quoted.php' ),
+		'Quoted free-text diagnostic keys were not selectively sanitized.' );
+	$free_ref = $log->record_mcp_failure(
+		'wp-ai-bridge/site-health', $free_text_error, 'bridge_ability',
+		'ability_execution', 'inspect_provider_diagnostics', 'authorized-client-A'
+	);
+	$free_log = json_encode( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ] );
+	$free_view = $log->diagnostic_view(
+		1, $free_ref, 'authorized-client-A', get_current_user_id()
+	)['events'][0] ?? array();
+	$assert( '' !== $free_ref &&
+		! str_contains( $free_log, 'FREE_TEXT_COOKIE_SECRET' ) &&
+		! str_contains( $free_log, '/data/tenant/text-config.php' ) &&
+		! str_contains( json_encode( $free_view ), 'FREE_TEXT_COOKIE_SECRET' ) &&
+		! str_contains( json_encode( $free_view ), '/data/tenant/text-config.php' ) &&
+		str_contains( $free_view['message'] ?? '', 'response HTTP 403' ) &&
+		'provider_text_failure' === ( $free_view['error_code'] ?? '' ),
+		'Persisted or authorized diagnostic free-text fields leaked secret/path information.' );
+
+
 
 
 	// R-01: diagnostic-specific structured keys must not leak opaque cookies
@@ -181,6 +235,75 @@ namespace {
 		'[NON_FINITE_NUMBER]' === ( $odd_numbers['data']['positive_inf'] ?? null ) &&
 		'[NON_FINITE_NUMBER]' === ( $odd_numbers['data']['negative_inf'] ?? null ),
 		'Non-finite floats made JSON invalid or valid numeric types were lost.' );
+	// R3 R-02: an originally non-list numeric map must never become a JSON
+	// array merely because MAX_ITEMS or MAX_DATA drops its sparse tail.
+	$sparse_map = array_fill( 0, 100, 7 );
+	$sparse_map[101] = 9;
+	$assert( '{' === substr( json_encode( $sparse_map ), 0, 1 ), 'Sparse-map test fixture must be a JSON object.' );
+	$sparse_result = Error_Details::from_wp_error( new WP_Error( 'sparse_map', 'Safe numeric map', $sparse_map ) );
+	$sparse_json = json_encode( $sparse_result['data'] );
+	$sparse_decoded = json_decode( $sparse_json );
+	$assert( $sparse_result['truncated'] && ! $sparse_result['redacted'] &&
+		false !== $sparse_json && strlen( $sparse_json ) <= Error_Details::MAX_DATA &&
+		$sparse_decoded instanceof \stdClass &&
+		100 === count( (array) $sparse_decoded ) &&
+		7 === ( $sparse_decoded->{'0'} ?? null ) &&
+		7 === ( $sparse_decoded->{'99'} ?? null ) &&
+		! isset( $sparse_decoded->{'101'} ),
+		'MAX_ITEMS truncation converted the original sparse JSON object to an array.' );
+	$budget_sparse = array(
+		'pad' => array_fill( 0, 4, str_repeat( 'p', 8182 ) ),
+		'map' => array( 0 => 7, 101 => 8 ),
+	);
+	$budget_result = Error_Details::from_wp_error( new WP_Error( 'budget_map', 'Safe map', $budget_sparse ) );
+	$budget_decoded = json_decode( json_encode( $budget_result['data'] ) );
+	$assert( $budget_result['truncated'] &&
+		false !== json_encode( $budget_result['data'] ) &&
+		strlen( json_encode( $budget_result['data'] ) ) <= Error_Details::MAX_DATA &&
+		$budget_decoded instanceof \stdClass &&
+		( $budget_decoded->map ?? null ) instanceof \stdClass &&
+		7 === ( $budget_decoded->map->{'0'} ?? null ) &&
+		! isset( $budget_decoded->map->{'101'} ),
+		'Byte-budget truncation converted a sparse nested JSON map into a list.' );
+	$empty_sparse = array(
+		'pad' => array_fill( 0, 4, str_repeat( 'p', 8184 ) ),
+		'map' => array( 0 => 7, 101 => 8 ),
+	);
+	$empty_result = Error_Details::from_wp_error( new WP_Error( 'empty_sparse', 'Safe map', $empty_sparse ) );
+	$empty_json = json_encode( $empty_result['data'] );
+	$empty_decoded = json_decode( $empty_json );
+	$assert( $empty_result['truncated'] && false !== $empty_json &&
+		strlen( $empty_json ) <= Error_Details::MAX_DATA &&
+		$empty_decoded instanceof \stdClass &&
+		( $empty_decoded->map ?? null ) instanceof \stdClass &&
+		0 === count( (array) $empty_decoded->map ),
+		'An empty truncated JSON object was encoded as an array.' );
+	$nested_shape = Error_Details::from_wp_error( new WP_Error(
+		'nested_shapes', 'Safe nested map', (object) array(
+			'map' => $sparse_map,
+			'list' => array( 1, 2, 3 ),
+			'empty_object' => new \stdClass(),
+			'status' => 422,
+		)
+	) );
+	$assert( $nested_shape['truncated'] &&
+		$nested_shape['data'] instanceof \stdClass &&
+		$nested_shape['data']->map instanceof \stdClass &&
+		is_array( $nested_shape['data']->list ) &&
+		'[1,2,3]' === json_encode( $nested_shape['data']->list ) &&
+		$nested_shape['data']->empty_object instanceof \stdClass &&
+		422 === $nested_shape['data']->status &&
+		false !== json_encode( $nested_shape['data'] ) &&
+		strlen( json_encode( $nested_shape['data'] ) ) <= Error_Details::MAX_DATA,
+		'Nested stdClass/object/list identities or finite numeric values were corrupted.' );
+	$untouched_map = Error_Details::from_wp_error( new WP_Error(
+		'small_assoc', 'Safe small map', array( 'status' => 503, 'attempt' => 2 )
+	) );
+	$assert( is_array( $untouched_map['data'] ) && ! $untouched_map['truncated'] &&
+		503 === $untouched_map['data']['status'] && 2 === $untouched_map['data']['attempt'],
+		'An intact associative PHP array was unnecessarily converted or altered.' );
+
+
 
 	$only_values = Error_Details::from_adapter_message(
 		'upstream rejected: Authorization: Bearer TOKEN_PRIVATE_X; response HTTP 403; api_key=SECRET_VALUE'
@@ -363,6 +486,49 @@ namespace {
 		$wire_ref === ( $stored_numeric['event_ref'] ?? null ) &&
 		false !== json_encode( $numeric_wire ),
 		'Numeric error bypassed JSON byte budget or corrupted MCP/Mutation_Log persistence.' );
+	// R3 R-02: preserve numeric-map JSON identity through MCP structured
+	// projection, persisted Mutation_Log and same-client diagnostic lookup.
+	$sparse_args = $native_args;
+	$sparse_args['id'] = 25;
+	$sparse_error = new WP_Error( 'sparse_map', 'Native sparse numeric map', $sparse_map );
+	$sparse_route = $delegation->filter_rest_endpoints( array(
+		'/wp-ai-bridge/v1/mcp' => array(
+			array( 'callback' => static function () use ( $delegation, $native, $native_name, $sparse_error ) {
+				$delegation->observe_ability_execute_result( $sparse_error, $native_name, array(), $native );
+				$filtered = $delegation->filter_tool_call_result(
+					array( 'success' => false, 'error' => $sparse_error->get_error_message() ),
+					array( 'ability_name' => $native_name ),
+					Native_Ability_Delegation::ADAPTER_EXECUTE_TOOL,
+					new \stdClass(), new WP_AI_Test_MCP_Server()
+				);
+				return new WP_REST_Response( array(
+					'jsonrpc' => '2.0', 'id' => 25,
+					'result' => array( 'isError' => true, 'content' => array(
+						array( 'type' => 'text', 'text' => $filtered['error'] ),
+					) ),
+				) );
+			} ),
+		),
+	) );
+	$sparse_wire = $sparse_route['/wp-ai-bridge/v1/mcp'][0]['callback']( new WP_REST_Request( $sparse_args ) )->get_data();
+	$sparse_wire_error = $sparse_wire['result']['structuredContent']['error'] ?? array();
+	$sparse_wire_data = json_encode( $sparse_wire_error['data'] ?? null );
+	$sparse_ref = $sparse_wire_error['diagnostic_reference'] ?? '';
+	$stored_sparse = $log->diagnostic_view( 1, $sparse_ref, 'authorized-client-A', get_current_user_id() )['events'][0] ?? array();
+	$stored_sparse_data = json_encode( $stored_sparse['data'] ?? null );
+	$assert( true === ( $sparse_wire['result']['isError'] ?? false ) &&
+		'sparse_map' === ( $sparse_wire_error['code'] ?? null ) &&
+		! empty( $sparse_wire_error['truncated'] ) &&
+		! empty( $sparse_wire_error['diagnostics_persisted'] ) &&
+		is_string( $sparse_ref ) && '' !== $sparse_ref &&
+		false !== $sparse_wire_data && '{' === substr( $sparse_wire_data, 0, 1 ) &&
+		strlen( $sparse_wire_data ) <= Error_Details::MAX_DATA &&
+		false !== $stored_sparse_data && '{' === substr( $stored_sparse_data, 0, 1 ) &&
+		strlen( $stored_sparse_data ) <= Error_Details::MAX_DATA &&
+		$sparse_ref === ( $stored_sparse['event_ref'] ?? '' ) &&
+		false !== json_encode( $sparse_wire ),
+		'Sparse map object/list identity was lost across MCP projection or persisted diagnostics.' );
+
 
 
 	// Supported older runtime: Adapter has *already* stripped the WP_Error code.

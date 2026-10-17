@@ -106,6 +106,28 @@ final class Error_Details {
 			}
 		}
 
+		// Cover explicitly labeled cookie/private-path assignments embedded in
+		// provider or Adapter text. Keep ordinary status/context and the key
+		// name; mask only the complete quoted or unquoted sensitive value.
+		$labels = '(?:cookie[_-]?header|request[_-]?cookie|session[_-]?cookie|set[_-]?cookie|'
+			. '(?:private|absolute|local|server|file[_-]?system|physical|full|secret)[_-]?(?:file[_-]?)?path|file[_-]?path)';
+		$assignment = '/\b(' . $labels . ')(["\x27]?\s*[:=]\s*)'
+			. '("[^"\r\n]*"|\x27[^\x27\r\n]*\x27|[^\s,;&\r\n"\x27}]+)/i';
+		$next = preg_replace_callback(
+			$assignment,
+			static function ( $matches ) {
+				$value = $matches[3];
+				$first = substr( $value, 0, 1 );
+				$quote = '"' === $first || "'" === $first ? $first : '';
+				return $matches[1] . $matches[2] . $quote . '[REDACTED]' . $quote;
+			},
+			$text
+		);
+		if ( null !== $next && $next !== $text ) {
+			$redacted = true;
+			$text     = $next;
+		}
+
 		if ( strlen( $text ) > $limit ) {
 			$truncated = true;
 			$text      = substr( $text, 0, max( 0, $limit - 13 ) );
@@ -228,6 +250,20 @@ final class Error_Details {
 		return self::reserve_scalar( $clean, $budget, $fits );
 	}
 
+	/** @param array<mixed> $value PHP array. @return bool Whether JSON encodes it as a list. */
+	private static function is_list_array( $value ) {
+		if ( function_exists( 'array_is_list' ) ) {
+			return array_is_list( $value );
+		}
+		$expected = 0;
+		foreach ( $value as $key => $ignored ) {
+			if ( $key !== $expected++ ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/**
 	 * Preserve JSON-safe types and diagnostic facts within an exact global
 	 * serialized-data byte cap, including keys, separators, numbers and braces.
@@ -267,17 +303,7 @@ final class Error_Details {
 		}
 		$budget -= 2;
 		$output  = $value instanceof \stdClass ? new \stdClass() : array();
-		$is_list = is_array( $value ) && function_exists( 'array_is_list' ) && array_is_list( $value );
-		if ( is_array( $value ) && ! function_exists( 'array_is_list' ) ) {
-			$is_list  = true;
-			$expected = 0;
-			foreach ( $value as $key => $ignored ) {
-				if ( $key !== $expected++ ) {
-					$is_list = false;
-					break;
-				}
-			}
-		}
+		$is_list = is_array( $value ) && self::is_list_array( $value );
 
 		$count = 0;
 		foreach ( (array) $value as $key => $child ) {
@@ -313,6 +339,12 @@ final class Error_Details {
 				$output[ $key_text ] = $clean;
 			}
 			++$count;
+		}
+		// An original numeric-key map is JSON {}, not []. Dropping its
+		// sparse tail must not turn it into a sequential PHP array on the
+		// wire, including when no entries could be retained.
+		if ( is_array( $value ) && ! $is_list && self::is_list_array( $output ) ) {
+			return (object) $output;
 		}
 		return $output;
 	}

@@ -228,6 +228,18 @@ foreach ( $resources as $route => $resource ) {
 		true === ( $error_details['redacted'] ?? null ),
 		'Real MCP tool error did not report selective redaction after masking a labeled credential.'
 	);
+	// R3 B-01: real authenticated MCP must redact secrets in free-text
+	// assignments, not only structured WP_Error data.
+	foreach ( array(
+		'ISSUE82_SYNTHETIC_INTEGRATION_TEXT_COOKIE_SECRET',
+		'/data/tenant/message-config.php',
+	) as $sensitive_marker ) {
+		wpai_issue44_live_assert(
+			false === strpos( wp_json_encode( $error_result ), $sensitive_marker ),
+			'Free-text WP_Error assignment leaked through authenticated MCP response.'
+		);
+	}
+
 	// R-01: no structured private path or cookie may reach an authenticated
 	// MCP caller on any supported WordPress/MCP Adapter combination.
 	foreach ( array(
@@ -253,6 +265,13 @@ foreach ( $resources as $route => $resource ) {
 			'observed_wordpress' === ( $error_details['code_source'] ?? null ),
 			'WordPress 7.1 callback error lost the exact observed WP_Error identifier.'
 		);
+		wpai_issue44_live_assert(
+			false !== strpos( $error_details['message'] ?? '', 'cookie_header=[REDACTED]' ) &&
+			false !== strpos( $error_details['message'] ?? '', 'private_path=[REDACTED]' ) &&
+			false !== strpos( $error_details['message'] ?? '', 'response HTTP 409' ),
+			'Native structured MCP error lost free-text masking or safe context.'
+		);
+
 		$native_data = $error_details['data'] ?? array();
 		wpai_issue44_live_assert(
 			'[REDACTED]' === ( $native_data['private_path'] ?? null ) &&
@@ -288,6 +307,12 @@ foreach ( $resources as $route => $resource ) {
 		false === strpos( wp_json_encode( $lookup_data ), 'ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET' ),
 		'Authenticated diagnostic lookup lost safe context or exposed a secret.'
 	);
+	wpai_issue44_live_assert(
+		false === strpos( wp_json_encode( $lookup_data ), 'ISSUE82_SYNTHETIC_INTEGRATION_TEXT_COOKIE_SECRET' ) &&
+		false === strpos( wp_json_encode( $lookup_data ), '/data/tenant/message-config.php' ),
+		'Free-text WP_Error secrets leaked via authorized diagnostic lookup.'
+	);
+
 	foreach ( array(
 		'ISSUE82_SYNTHETIC_INTEGRATION_COOKIE_SECRET',
 		'ISSUE82_SYNTHETIC_INTEGRATION_NESTED_COOKIE_SECRET',
@@ -357,6 +382,8 @@ foreach ( $resources as $route => $resource ) {
 			'ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET',
 			'ISSUE82_SYNTHETIC_INTEGRATION_COOKIE_SECRET',
 			'ISSUE82_SYNTHETIC_INTEGRATION_NESTED_COOKIE_SECRET',
+			'ISSUE82_SYNTHETIC_INTEGRATION_TEXT_COOKIE_SECRET',
+			'/data/tenant/message-config.php',
 			'/data/tenant/ci-config.php',
 			'/data/tenant/nested-ci-config.php',
 			'ISSUE82_SYNTHETIC_INTEGRATION_THROW_SECRET',
