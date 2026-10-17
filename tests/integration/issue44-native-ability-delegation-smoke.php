@@ -220,6 +220,12 @@ foreach ( $resources as $route => $resource ) {
 	);
 	$error_details = $error_result['result']['structuredContent']['error'] ?? array();
 	wpai_issue44_live_assert(
+		false !== strpos( wpai_issue44_live_error_text( $error_result ), 'response HTTP 409' ) &&
+		false === strpos( wpai_issue44_live_error_text( $error_result ), 'ISSUE82_SYNTHETIC_INTEGRATION_TEXT_COOKIE_SECRET' ),
+		'Real authenticated MCP error text leaked a later cookie or removed safe response status.'
+	);
+
+	wpai_issue44_live_assert(
 		isset( $error_result['result']['structuredContent']['error'] ) &&
 		is_array( $error_result['result']['structuredContent']['error'] ),
 		'Real MCP tool error did not expose structuredContent.error (wire result shape mismatch).'
@@ -228,8 +234,8 @@ foreach ( $resources as $route => $resource ) {
 		true === ( $error_details['redacted'] ?? null ),
 		'Real MCP tool error did not report selective redaction after masking a labeled credential.'
 	);
-	// R3 B-01: real authenticated MCP must redact secrets in free-text
-	// assignments, not only structured WP_Error data.
+	// R3/R4 B-01: real authenticated MCP must redact every cookie pair in
+	// free-text assignments, not only structured WP_Error data.
 	foreach ( array(
 		'ISSUE82_SYNTHETIC_INTEGRATION_TEXT_COOKIE_SECRET',
 		'/data/tenant/message-config.php',

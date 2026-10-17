@@ -136,6 +136,86 @@ namespace {
 		! str_contains( $quoted_adapter['message'], 'FREE_QUOTED_COOKIE_SECRET' ) &&
 		! str_contains( $quoted_adapter['message'], '/data/tenant/quoted.php' ),
 		'Quoted free-text diagnostic keys were not selectively sanitized.' );
+	// R4 B-01: every semicolon-separated cookie pair must be masked,
+	// without consuming subsequent independent diagnostics or status text.
+	$multi_cookie = Error_Details::from_wp_error( new WP_Error(
+		'provider_multi_cookie_failure',
+		'Backend denied; cookie_header=theme=light; wordpress_logged_in=R4_SECOND_COOKIE_SECRET; session_id_other=R4_THIRD_COOKIE_SECRET; private_path=/data/tenant/private-config.php; response HTTP 403',
+		array( 'status' => 403, 'safe_context' => 'request validation' )
+	) );
+	$multi_json = json_encode( $multi_cookie );
+	$assert( 'provider_multi_cookie_failure' === $multi_cookie['code'] &&
+		$multi_cookie['redacted'] && ! $multi_cookie['truncated'] &&
+		str_contains( $multi_cookie['message'], 'cookie_header=[REDACTED]' ) &&
+		str_contains( $multi_cookie['message'], 'private_path=[REDACTED]' ) &&
+		str_contains( $multi_cookie['message'], 'response HTTP 403' ) &&
+		403 === $multi_cookie['data']['status'] &&
+		'request validation' === $multi_cookie['data']['safe_context'] &&
+		! str_contains( $multi_json, 'R4_SECOND_COOKIE_SECRET' ) &&
+		! str_contains( $multi_json, 'R4_THIRD_COOKIE_SECRET' ) &&
+		! str_contains( $multi_json, '/data/tenant/private-config.php' ),
+		'Unquoted multiple-cookie WP_Error leaked a later cookie or removed safe context.' );
+	$multi_adapter = Error_Details::from_adapter_message(
+		'Adapter rejected: requestCookie=locale=fa;wordpress_sec_opaque=R4_ADAPTER_COOKIE_SECRET; absoluteFilePath=/data/tenant/adapter-config.php; response HTTP 429'
+	);
+	$assert( null === $multi_adapter['code'] && $multi_adapter['redacted'] && ! $multi_adapter['truncated'] &&
+		str_contains( $multi_adapter['message'], 'requestCookie=[REDACTED]' ) &&
+		str_contains( $multi_adapter['message'], 'absoluteFilePath=[REDACTED]' ) &&
+		str_contains( $multi_adapter['message'], 'response HTTP 429' ) &&
+		! str_contains( json_encode( $multi_adapter ), 'R4_ADAPTER_COOKIE_SECRET' ) &&
+		! str_contains( json_encode( $multi_adapter ), '/data/tenant/adapter-config.php' ),
+		'Adapter fallback leaked a later unquoted session cookie or lost safe status.' );
+	$multi_quoted = Error_Details::from_adapter_message(
+		'Provider payload {"cookieHeader":"theme=light; wordpress_logged_in=R4_QUOTED_COOKIE_SECRET","status":503}; اعتبارسنجی'
+	);
+	$assert( $multi_quoted['redacted'] && ! $multi_quoted['truncated'] &&
+		str_contains( $multi_quoted['message'], '"cookieHeader":"[REDACTED]"' ) &&
+		str_contains( $multi_quoted['message'], '"status":503' ) &&
+		str_contains( $multi_quoted['message'], 'اعتبارسنجی' ) &&
+		! str_contains( $multi_quoted['message'], 'R4_QUOTED_COOKIE_SECRET' ),
+		'Quoted multi-cookie value, JSON-like status or Unicode handling regressed.' );
+	// An independently labeled path may appear between cookie pairs in
+	// free-text diagnostics. It must not open a leak for later cookie pairs.
+	$interleaved = Error_Details::from_adapter_message(
+		'Backend denied; cookie_header=theme=light; wordpress_logged_in=R4_FIRST_INTERLEAVED_SECRET; private_path=/data/tenant/interleaved.php; session=R4_SECOND_INTERLEAVED_SECRET; status=403; response HTTP 403'
+	);
+	$assert( $interleaved['redacted'] && ! $interleaved['truncated'] &&
+		str_contains( $interleaved['message'], 'cookie_header=[REDACTED]' ) &&
+		str_contains( $interleaved['message'], 'private_path=[REDACTED]' ) &&
+		str_contains( $interleaved['message'], 'status=403' ) &&
+		str_contains( $interleaved['message'], 'response HTTP 403' ) &&
+		! str_contains( json_encode( $interleaved ), 'R4_FIRST_INTERLEAVED_SECRET' ) &&
+		! str_contains( json_encode( $interleaved ), 'R4_SECOND_INTERLEAVED_SECRET' ) &&
+		! str_contains( json_encode( $interleaved ), '/data/tenant/interleaved.php' ),
+		'Interleaved private-path diagnostic broke complete cookie redaction.' );
+	// RFC cookie-octet permits apostrophes and braces, and cookie-value may
+	// be empty; none may terminate redaction before a later session cookie.
+	$cookie_octets = Error_Details::from_adapter_message(
+		"Adapter failure; cookie_header=theme=light; empty_cookie=; wordpress_logged_in=R4_APOSTROPHE'COOKIE}SECRET; response HTTP 403"
+	);
+	$assert( $cookie_octets['redacted'] && ! $cookie_octets['truncated'] &&
+		str_contains( $cookie_octets['message'], 'cookie_header=[REDACTED]' ) &&
+		str_contains( $cookie_octets['message'], 'response HTTP 403' ) &&
+		! str_contains( $cookie_octets['message'], 'R4_APOSTROPHE' ) &&
+		! str_contains( $cookie_octets['message'], 'COOKIE}SECRET' ),
+		'Valid cookie-octet or empty preceding cookie exposed part of a later credential.' );
+	$multi_ref = $log->record_mcp_failure(
+		'wp-ai-bridge/site-health', $multi_cookie, 'bridge_ability', 'ability_execution',
+		'inspect_provider_diagnostics', 'authorized-client-A'
+	);
+	$multi_log = json_encode( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ] );
+	$multi_event = $log->diagnostic_view(
+		1, $multi_ref, 'authorized-client-A', get_current_user_id()
+	)['events'][0] ?? array();
+	$assert( '' !== $multi_ref &&
+		! str_contains( $multi_log, 'R4_SECOND_COOKIE_SECRET' ) &&
+		! str_contains( $multi_log, 'R4_THIRD_COOKIE_SECRET' ) &&
+		! str_contains( json_encode( $multi_event ), 'R4_SECOND_COOKIE_SECRET' ) &&
+		! str_contains( json_encode( $multi_event ), 'R4_THIRD_COOKIE_SECRET' ) &&
+		str_contains( $multi_event['message'] ?? '', 'response HTTP 403' ) &&
+		'provider_multi_cookie_failure' === ( $multi_event['error_code'] ?? '' ),
+		'Shared Mutation_Log or authorized diagnostic lookup leaked later cookie pairs.' );
+
 	$free_ref = $log->record_mcp_failure(
 		'wp-ai-bridge/site-health', $free_text_error, 'bridge_ability',
 		'ability_execution', 'inspect_provider_diagnostics', 'authorized-client-A'
