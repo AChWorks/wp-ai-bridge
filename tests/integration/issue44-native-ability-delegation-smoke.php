@@ -219,8 +219,9 @@ foreach ( $resources as $route => $resource ) {
 		'Non-secret provider error context was lost from the real MCP response.'
 	);
 	$error_details = $error_result['result']['structuredContent']['error'] ?? array();
-	// The first Cookie value is RFC-valid and quoted; a Cookie named
-	// "status" is ambiguous and must not be restored as diagnostic status.
+	// An RFC-valid leading apostrophe inside the first Cookie value may
+	// not terminate the complete header; a Cookie named "status" also
+	// must not be restored as independent diagnostic status.
 	wpai_issue44_live_assert(
 		false === strpos( wpai_issue44_live_error_text( $error_result ), 'status=403' ) &&
 		false !== strpos( wpai_issue44_live_error_text( $error_result ), 'response HTTP 409' ),
@@ -238,8 +239,9 @@ foreach ( $resources as $route => $resource ) {
 		'Real MCP tool error did not expose structuredContent.error (wire result shape mismatch).'
 	);
 	wpai_issue44_live_assert(
-		true === ( $error_details['redacted'] ?? null ),
-		'Real MCP tool error did not report selective redaction after masking a labeled credential.'
+		true === ( $error_details['redacted'] ?? null ) &&
+		false === ( $error_details['truncated'] ?? null ),
+		'Real MCP tool error incorrectly reported redaction or truncation after masking a labeled credential.'
 	);
 	// R3/R4 B-01: real authenticated MCP must redact every cookie pair in
 	// free-text assignments, not only structured WP_Error data.

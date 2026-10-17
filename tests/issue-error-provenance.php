@@ -271,6 +271,57 @@ namespace {
 	}
 	$assert( $r5_octets_safe, 'R5 B-01: RFC 6265 first-pair cookie-octet terminated masking.' );
 
+	// R6 B-01: a leading apostrophe is an ordinary RFC cookie-octet.
+	// A later quote in that same value must never stop masking before the
+	// remaining Cookie pairs, even when "status" is a Cookie name.
+	$r6_adapter_cases = array(
+		'leading-apostrophe' => "Provider denied; cookie_header=theme='foo'bar; wordpress_logged_in=R6_ADAPTER_COOKIE_SECRET; status=403; response HTTP 403",
+		'multiple-apostrophes' => "Provider denied; requestCookie=theme='foo'bar'baz; session=R6_ADAPTER_SESSION_SECRET; response HTTP 403",
+		'opaque-double-quote' => 'Provider denied; cookie_header=theme="foo"bar; wordpress_logged_in=R6_OPAQUE_DOUBLE_SECRET; response HTTP 403',
+		'opaque-whole-single' => "Provider denied; cookie_header='theme='foo'bar; wordpress_logged_in=R6_OPAQUE_WHOLE_SECRET'; response HTTP 403",
+		'quoted-prefix-brace' => 'Provider denied; cookie_header=theme="foo"}bar; session=R6_BRACE_SECRET; response HTTP 403',
+		'quoted-prefix-comma' => 'Provider denied; cookie_header=theme="foo",bar; session=R6_COMMA_SECRET; response HTTP 403',
+	);
+	foreach ( $r6_adapter_cases as $name => $message ) {
+		$clean = Error_Details::from_adapter_message( $message );
+		$assert( null === $clean['code'] && $clean['redacted'] && ! $clean['truncated'] &&
+			str_contains( $clean['message'], 'response HTTP 403' ) &&
+			! str_contains( $clean['message'], 'R6_' ) &&
+			! str_contains( $clean['message'], 'status=403' ),
+			'R6 B-01: a first Cookie value beginning with an apostrophe exposed later cookies: ' . $name );
+	}
+	$r6_wp = Error_Details::from_wp_error( new WP_Error(
+		'r6_original_provider_code',
+		"Provider denied; cookie_header=theme='foo'bar; wordpress_logged_in=R6_WP_COOKIE_SECRET; session=R6_WP_SESSION_SECRET; status=403; private_path=/data/tenant/r6-config.php; response HTTP 403; اعتبارسنجی",
+		array( 'http_status' => 403, 'safe_hint' => 'inspect provider message' )
+	) );
+	$assert( 'r6_original_provider_code' === $r6_wp['code'] && $r6_wp['redacted'] && ! $r6_wp['truncated'] &&
+		str_contains( $r6_wp['message'], 'cookie_header=[REDACTED]' ) &&
+		str_contains( $r6_wp['message'], 'private_path=[REDACTED]' ) &&
+		str_contains( $r6_wp['message'], 'response HTTP 403; اعتبارسنجی' ) &&
+		! str_contains( $r6_wp['message'], 'status=403' ) &&
+		403 === $r6_wp['data']['http_status'] &&
+		'inspect provider message' === $r6_wp['data']['safe_hint'] &&
+		! str_contains( json_encode( $r6_wp ), 'R6_' ) &&
+		! str_contains( json_encode( $r6_wp ), '/data/tenant/r6-config.php' ),
+		'R6 B-01: WP_Error apostrophe-first Cookie leaked or lost provenance and safe context.' );
+	$r6_ref = $log->record_mcp_failure(
+		'wp-ai-bridge/site-health', $r6_wp, 'bridge_ability',
+		'ability_execution', 'inspect_provider_diagnostics', 'authorized-client-A'
+	);
+	$r6_stored = json_encode( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ] );
+	$r6_event  = $log->diagnostic_view(
+		1, $r6_ref, 'authorized-client-A', get_current_user_id()
+	)['events'][0] ?? array();
+	$assert( '' !== $r6_ref &&
+		! str_contains( $r6_stored, 'R6_WP_COOKIE_SECRET' ) &&
+		! str_contains( $r6_stored, 'R6_WP_SESSION_SECRET' ) &&
+		! str_contains( json_encode( $r6_event ), 'R6_WP_COOKIE_SECRET' ) &&
+		! str_contains( json_encode( $r6_event ), 'R6_WP_SESSION_SECRET' ) &&
+		'r6_original_provider_code' === ( $r6_event['error_code'] ?? '' ) &&
+		str_contains( $r6_event['message'] ?? '', 'response HTTP 403' ),
+		'R6 B-01: Mutation_Log or authorized diagnostic lookup disclosed a later Cookie.' );
+
 	$multi_ref = $log->record_mcp_failure(
 		'wp-ai-bridge/site-health', $multi_cookie, 'bridge_ability', 'ability_execution',
 		'inspect_provider_diagnostics', 'authorized-client-A'

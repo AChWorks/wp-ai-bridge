@@ -112,21 +112,26 @@ final class Error_Details {
 		$cookie_labels = '(?:cookie[_-]?header|request[_-]?cookie|session[_-]?cookie|set[_-]?cookie)';
 		$path_labels   = '(?:(?:private|absolute|local|server|file[_-]?system|physical|full|secret)'
 			. '[_-]?(?:file[_-]?)?path|file[_-]?path)';
-		// Use the same cookie grammar for the first and later pairs.
-		// Quoted provider/JSON text can contain escaped quote characters:
-		// never treat an escaped quote as the end of a Cookie field.
+		// Apostrophes are ordinary RFC cookie-octets, not per-Cookie quote
+		// delimiters. Reserve single quotes for whole-field provider text.
+		// Accept opaque value punctuation conservatively rather than
+		// leaving later credentials visible after a partial quoted match.
 		$cookie_name    = '[^\s=;,\r\n"]+';
 		$quoted_double  = '"(?:\\\\.|[^"\\\\\r\n])*"';
 		$quoted_single  = '\x27(?:\\\\.|[^\x27\\\\\r\n])*\x27';
-		$unquoted_value = '(?:\\\\.|[^\s;,\r\n"\\\\])*';
-		$cookie_value   = '(?:' . $quoted_double . '|' . $quoted_single . '|' . $unquoted_value . ')';
-		$cookie_pair    = $cookie_name . '\s*=\s*' . $cookie_value;
-		// Some providers emit opaque, non-RFC Cookie diagnostics; retain
-		// the earlier fail-closed masking behavior for those values too.
-		$opaque_cookie        = '[^\s,;\r\n"\x27]+(?:\s*;\s*' . $cookie_pair . ')*';
+		$cookie_value   = '(?:' . $quoted_double . '|[^\s;,\r\n]*)';
+		$pair_boundary  = '(?=[\s;]|$)';
+		$field_boundary = '(?=[\s,;}]|$)';
+		$cookie_pair    = $cookie_name . '\s*=\s*' . $cookie_value . $pair_boundary;
+		// Commas/braces are not Cookie-pair boundaries. Only whole-field
+		// provider quotes may end at JSON-like separators; malformed or
+		// opaque first segments are masked through the next semicolon.
+		$opaque_cookie        = '[^\s;\r\n]+(?:\s*;\s*' . $cookie_pair . ')*';
 		$cookie_assignment    = '/\b(' . $cookie_labels . ')(["\x27]?\s*[:=]\s*)'
-			. '(' . $quoted_double . '|' . $quoted_single . '|' . $cookie_pair
-			. '(?:\s*;\s*' . $cookie_pair . ')*|' . $opaque_cookie . ')/i';
+			. '(' . $quoted_double . $field_boundary . '|'
+			. $quoted_single . $field_boundary . '|'
+			. $cookie_pair . '(?:\s*;\s*' . $cookie_pair . ')*|'
+			. $opaque_cookie . ')/i';
 		$path_assignment      = '/\b(' . $path_labels . ')(["\x27]?\s*[:=]\s*)'
 			. '("[^"\r\n]*"|\x27[^\x27\r\n]*\x27|[^\s,;&\r\n"\x27}]+)/i';
 		$mask_assignment      = static function ( $matches ) {
