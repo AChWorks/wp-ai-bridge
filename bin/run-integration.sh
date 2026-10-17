@@ -77,6 +77,7 @@ for test in \
     issue110-site-context-smoke.php \
     issue99-extension-authorization-smoke.php \
     issue130-141-diagnostics-smoke.php \
+    issue186-site-health-admin-dependencies-smoke.php \
     issue140-site-health-smoke.php \
     issue138-native-cron-smoke.php \
     issue138-native-cron-mutation-smoke.php \

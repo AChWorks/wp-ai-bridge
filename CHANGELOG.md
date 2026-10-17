@@ -6,6 +6,7 @@ All notable public changes are documented here.
 
 ## 0.6.10
 
+- Restore selected native WordPress Site Health checks in authenticated MCP/REST requests by lazily loading only the fixed WordPress Core admin helpers required by the selected allowlisted test (#186). This addresses observed `get_plugin_updates()` and `wp_check_php_version()` PHP callback exceptions without weakening permissions, Core method/REST identity checks or fabricating healthy status; dedicated disposable WordPress/official MCP Adapter regressions cover the affected calls.
 - Let authorized administrators and WordPress's scheduled Core updater discover the canonical WP AI Bridge release even when WordPress.org's general plugin-update request fails before the custom `update_plugins_github.com` hook. Keep only the already validated official GitHub stable-release package, leave unrelated plugins' offers unchanged, and retain Core's normal installation and consent (#184).
 - Honor WordPress's **Check Again** action for the separate Bridge metadata cache, with permission checks. Reduce the successful-cache window from six to one hour while retaining the bounded 15-minute failure retry interval and existing strict release-origin checks.
 - Test an actual WordPress.org update-API failure followed by authenticated Core plugin update, and pin the real published v0.6.9 ZIP by SHA-256 `3920e03ea296b7b7a927f1a8e85e672db03ccb138f76150886a246871195f88d` for the v0.6.9-to-v0.6.10 migration fixture. Preserve OAuth clients, Workspace and canonical plugin identity.
