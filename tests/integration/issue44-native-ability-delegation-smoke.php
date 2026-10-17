@@ -228,6 +228,19 @@ foreach ( $resources as $route => $resource ) {
 		true === ( $error_details['redacted'] ?? null ),
 		'Real MCP tool error did not report selective redaction after masking a labeled credential.'
 	);
+	// R-01: no structured private path or cookie may reach an authenticated
+	// MCP caller on any supported WordPress/MCP Adapter combination.
+	foreach ( array(
+		'ISSUE82_SYNTHETIC_INTEGRATION_COOKIE_SECRET',
+		'ISSUE82_SYNTHETIC_INTEGRATION_NESTED_COOKIE_SECRET',
+		'/data/tenant/ci-config.php',
+		'/data/tenant/nested-ci-config.php',
+	) as $sensitive_marker ) {
+		wpai_issue44_live_assert(
+			false === strpos( wp_json_encode( $error_result ), $sensitive_marker ),
+			'Real MCP error exposed a private structured diagnostic value.'
+		);
+	}
 	wpai_issue44_live_assert(
 		true === ( $error_details['diagnostics_persisted'] ?? null ) &&
 		is_string( $error_details['diagnostic_reference'] ?? null ) &&
@@ -239,6 +252,17 @@ foreach ( $resources as $route => $resource ) {
 			'issue82_provider_error' === ( $error_details['code'] ?? null ) &&
 			'observed_wordpress' === ( $error_details['code_source'] ?? null ),
 			'WordPress 7.1 callback error lost the exact observed WP_Error identifier.'
+		);
+		$native_data = $error_details['data'] ?? array();
+		wpai_issue44_live_assert(
+			'[REDACTED]' === ( $native_data['private_path'] ?? null ) &&
+			'[REDACTED]' === ( $native_data['cookie_header'] ?? null ) &&
+			'[REDACTED]' === ( $native_data['nested']['privatePath'] ?? null ) &&
+			'[REDACTED]' === ( $native_data['nested']['sessionCookie'] ?? null ) &&
+			409 === ( $native_data['http_status'] ?? null ) &&
+			2 === ( $native_data['nested']['attempt'] ?? null ) &&
+			'Provider validation checkpoint' === ( $native_data['safe_context'] ?? null ),
+			'Native structured MCP error lost safe data or exposed private path/cookie material.'
 		);
 	} else {
 		wpai_issue44_live_assert(
@@ -264,6 +288,25 @@ foreach ( $resources as $route => $resource ) {
 		false === strpos( wp_json_encode( $lookup_data ), 'ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET' ),
 		'Authenticated diagnostic lookup lost safe context or exposed a secret.'
 	);
+	foreach ( array(
+		'ISSUE82_SYNTHETIC_INTEGRATION_COOKIE_SECRET',
+		'ISSUE82_SYNTHETIC_INTEGRATION_NESTED_COOKIE_SECRET',
+		'/data/tenant/ci-config.php',
+		'/data/tenant/nested-ci-config.php',
+	) as $sensitive_marker ) {
+		wpai_issue44_live_assert(
+			false === strpos( wp_json_encode( $lookup_data ), $sensitive_marker ),
+			'diagnostics-read disclosed a private path or cookie from a persisted event.'
+		);
+	}
+	if ( version_compare( get_bloginfo( 'version' ), '7.1', '>=' ) ) {
+		wpai_issue44_live_assert(
+			'[REDACTED]' === ( $lookup_event['data']['private_path'] ?? null ) &&
+			'[REDACTED]' === ( $lookup_event['data']['cookie_header'] ?? null ) &&
+			409 === ( $lookup_event['data']['http_status'] ?? null ),
+			'Persisted diagnostic lost selective redaction or useful safe metadata.'
+		);
+	}
 
 	$invalid_input = wpai_issue44_live_call( $route, $token, $session, 'issue44/provider-invalid-input', ++$id );
 	wpai_issue44_live_assert( true === ( $invalid_input['result']['isError'] ?? false ),
@@ -312,6 +355,10 @@ foreach ( $resources as $route => $resource ) {
 		array(
 			'ISSUE82_SYNTHETIC_INTEGRATION_RESULT_SECRET',
 			'ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET',
+			'ISSUE82_SYNTHETIC_INTEGRATION_COOKIE_SECRET',
+			'ISSUE82_SYNTHETIC_INTEGRATION_NESTED_COOKIE_SECRET',
+			'/data/tenant/ci-config.php',
+			'/data/tenant/nested-ci-config.php',
 			'ISSUE82_SYNTHETIC_INTEGRATION_THROW_SECRET',
 			'ISSUE82_SYNTHETIC_INTEGRATION_PERMISSION_ERROR_SECRET',
 			'ISSUE82_SYNTHETIC_INTEGRATION_PERMISSION_THROW_SECRET',

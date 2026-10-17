@@ -133,7 +133,21 @@ add_action(
 		$error_result = $base;
 		$error_result['permission_callback'] = static function () { return current_user_can( 'manage_options' ); };
 		$error_result['execute_callback']    = static function () {
-			return new WP_Error( 'issue82_provider_error', 'Worker validation failed: request stage is incomplete; api_key=ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET' );
+			return new WP_Error(
+				'issue82_provider_error',
+				'Worker validation failed: request stage is incomplete; api_key=ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET',
+				array(
+					'private_path'  => '/data/tenant/ci-config.php',
+					'cookie_header' => 'wordpress_logged_in=ISSUE82_SYNTHETIC_INTEGRATION_COOKIE_SECRET',
+					'http_status'   => 409,
+					'safe_context'  => 'Provider validation checkpoint',
+					'nested'        => (object) array(
+						'privatePath'   => '/data/tenant/nested-ci-config.php',
+						'sessionCookie' => 'session=ISSUE82_SYNTHETIC_INTEGRATION_NESTED_COOKIE_SECRET',
+						'attempt'       => 2,
+					),
+				)
+			);
 		};
 		wp_register_ability( 'issue44/provider-error-result', $error_result );
 

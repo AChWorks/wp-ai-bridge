@@ -25,7 +25,12 @@ final class Error_Details {
 		$budget    = self::MAX_DATA;
 		$code      = self::clean_string( (string) $error->get_error_code(), self::MAX_CODE, $redacted, $truncated );
 		$message   = self::clean_string( (string) $error->get_error_message(), self::MAX_MESSAGE, $redacted, $truncated );
-		$data      = self::clean_data( $error->get_error_data(), $budget, 0, $redacted, $truncated );
+		$fits      = true;
+		$data      = self::clean_data( $error->get_error_data(), $budget, 0, $redacted, $truncated, $fits );
+		if ( ! $fits ) {
+			$truncated = true;
+			$data      = null;
+		}
 
 		return array(
 			'code'      => '' === $code ? null : $code,
@@ -113,58 +118,201 @@ final class Error_Details {
 	}
 
 	/**
-	 * Preserve JSON data types and safe provider detail fields. Reject dangerous
-	 * objects/resources rather than invoking third-party serializers.
+	 * Identify only diagnostic-specific credentials, cookie material and
+	 * explicitly private filesystem path fields. Do not widen the shared
+	 * Metadata_Key_Policy used by normal provider metadata operations.
 	 *
-	 * @param mixed $value WordPress error data.
-	 * @param int $budget Overall textual byte budget.
-	 * @param int $depth Current recursion depth.
-	 * @param bool $redacted Flag.
-	 * @param bool $truncated Flag.
+	 * @param string $key Original structured error field name.
+	 * @return bool
+	 */
+	private static function is_sensitive_diagnostic_key( $key ) {
+		if ( Metadata_Key_Policy::is_sensitive( $key ) ) {
+			return true;
+		}
+		$bounded    = preg_replace( '/(?<=[a-z0-9])(?=[A-Z])/', '_', (string) $key );
+		$normalized = trim( strtolower( (string) preg_replace( '/[^A-Za-z0-9]+/', '_', (string) $bounded ) ), '_' );
+
+		$exact_sensitive = array(
+			'path',
+			'file_path',
+			'absolute_path',
+			'cookie',
+			'set_cookie',
+			'authorization',
+			'credentials',
+			'private_key',
+			'dsn',
+			'token',
+			'nonce',
+			'bearer',
+			'session_id',
+			'session_key',
+			'oauth_code',
+			'authorization_code',
+		);
+		if ( in_array( $normalized, $exact_sensitive, true ) ) {
+			return true;
+		}
+		return 1 === preg_match( '/(?:^|_)(?:cookie|cookies)(?:_header|_value|_values|_string|_jar)?$/', $normalized ) ||
+			1 === preg_match( '/^(?:private|absolute|local|server|filesystem|file_system|physical|full|secret)_(?:file_)?path$/', $normalized ) ||
+			1 === preg_match( '/(?:^|_)(?:authorization|proxy_authorization|auth)_header$/', $normalized );
+	}
+
+	/**
+	 * Reserve the exact JSON bytes of a scalar; never invoke serializers on
+	 * provider objects or inspect beyond the already bounded data tree.
+	 *
+	 * @param mixed $value Safe JSON scalar.
+	 * @param int $budget Remaining JSON bytes.
+	 * @param bool $fits Whether the value fits.
 	 * @return mixed
 	 */
-	private static function clean_data( $value, &$budget, $depth, &$redacted, &$truncated ) {
+	private static function reserve_scalar( $value, &$budget, &$fits ) {
+		$json = wp_json_encode( $value );
+		if ( false === $json || strlen( $json ) > $budget ) {
+			$fits = false;
+			return null;
+		}
+		$budget -= strlen( $json );
+		return $value;
+	}
+
+	/**
+	 * Preserve safe text by clipping only as much as is needed for the actual
+	 * JSON-escaped bytes. A short budget can omit this field; the caller then
+	 * marks the data incomplete and retains a valid JSON container.
+	 *
+	 * @param string $value Original string.
+	 * @param int $budget Remaining JSON bytes.
+	 * @param bool $redacted Sensitive or invalid fragments removed.
+	 * @param bool $truncated Size-related loss.
+	 * @param bool $fits Whether the value fits.
+	 * @return string|null
+	 */
+	private static function bounded_data_string( $value, &$budget, &$redacted, &$truncated, &$fits ) {
+		$clean   = self::clean_string( $value, self::MAX_MESSAGE, $redacted, $truncated );
+		$encoded = wp_json_encode( $clean );
+		if ( false === $encoded ) {
+			$redacted = true;
+			$clean    = '[REDACTED_INVALID_UTF8]';
+			$encoded  = wp_json_encode( $clean );
+		}
+		if ( strlen( $encoded ) > $budget ) {
+			$truncated = true;
+			$suffix    = '[TRUNCATED]';
+			if ( strlen( wp_json_encode( $suffix ) ) > $budget ) {
+				$fits = false;
+				return null;
+			}
+			// Binary-search the longest UTF-8-safe prefix whose encoded JSON
+			// representation plus the explicit marker fits the remaining cap.
+			$low  = 0;
+			$high = strlen( $clean );
+			$best = $suffix;
+			while ( $low <= $high ) {
+				$mid    = (int) floor( ( $low + $high ) / 2 );
+				$prefix = substr( $clean, 0, $mid );
+				while ( '' !== $prefix && 1 !== preg_match( '//u', $prefix ) ) {
+					$prefix = substr( $prefix, 0, -1 );
+				}
+				$candidate = $prefix . $suffix;
+				if ( strlen( wp_json_encode( $candidate ) ) <= $budget ) {
+					$best = $candidate;
+					$low  = $mid + 1;
+				} else {
+					$high = $mid - 1;
+				}
+			}
+			$clean = $best;
+		}
+		return self::reserve_scalar( $clean, $budget, $fits );
+	}
+
+	/**
+	 * Preserve JSON-safe types and diagnostic facts within an exact global
+	 * serialized-data byte cap, including keys, separators, numbers and braces.
+	 * Truncation drops only the unfittable tail; any loss is signaled.
+	 *
+	 * @param mixed $value WordPress error data.
+	 * @param int $budget Remaining JSON bytes.
+	 * @param int $depth Current recursion depth.
+	 * @param bool $redacted Sensitive or unsupported fragments removed.
+	 * @param bool $truncated Size-related loss or non-JSON number conversion.
+	 * @param bool $fits Whether this subtree fits.
+	 * @return mixed
+	 */
+	private static function clean_data( $value, &$budget, $depth, &$redacted, &$truncated, &$fits ) {
+		if ( is_float( $value ) && ! is_finite( $value ) ) {
+			$truncated = true;
+			return self::reserve_scalar( '[NON_FINITE_NUMBER]', $budget, $fits );
+		}
 		if ( null === $value || is_bool( $value ) || is_int( $value ) || is_float( $value ) ) {
-			return $value;
+			return self::reserve_scalar( $value, $budget, $fits );
 		}
 		if ( is_string( $value ) ) {
-			if ( $budget <= 0 ) {
-				$truncated = true;
-				return '[TRUNCATED]';
-			}
-			$clean   = self::clean_string( $value, min( $budget, self::MAX_MESSAGE ), $redacted, $truncated );
-			$budget -= strlen( $clean );
-			return $clean;
+			return self::bounded_data_string( $value, $budget, $redacted, $truncated, $fits );
 		}
 		if ( ! is_array( $value ) && ! $value instanceof \stdClass ) {
 			$redacted = true;
-			return '[REDACTED_UNSUPPORTED_TYPE]';
+			return self::reserve_scalar( '[REDACTED_UNSUPPORTED_TYPE]', $budget, $fits );
 		}
 		if ( $depth >= self::MAX_DEPTH ) {
 			$truncated = true;
-			return '[TRUNCATED]';
+			return self::reserve_scalar( '[TRUNCATED]', $budget, $fits );
 		}
-		$output = $value instanceof \stdClass ? new \stdClass() : array();
-		$count  = 0;
+		// Every JSON object/array costs exactly two enclosing bytes.
+		if ( $budget < 2 ) {
+			$fits = false;
+			return null;
+		}
+		$budget -= 2;
+		$output  = $value instanceof \stdClass ? new \stdClass() : array();
+		$is_list = is_array( $value ) && function_exists( 'array_is_list' ) && array_is_list( $value );
+		if ( is_array( $value ) && ! function_exists( 'array_is_list' ) ) {
+			$is_list  = true;
+			$expected = 0;
+			foreach ( $value as $key => $ignored ) {
+				if ( $key !== $expected++ ) {
+					$is_list = false;
+					break;
+				}
+			}
+		}
+
+		$count = 0;
 		foreach ( (array) $value as $key => $child ) {
-			if ( ++$count > self::MAX_ITEMS || $budget <= 0 ) {
+			if ( $count >= self::MAX_ITEMS ) {
 				$truncated = true;
 				break;
 			}
 			$key_text = is_int( $key ) ? $key : self::clean_string( $key, 128, $redacted, $truncated );
-			$budget  -= is_int( $key_text ) ? 1 : strlen( $key_text );
-			if ( is_string( $key ) && ( Metadata_Key_Policy::is_sensitive( $key ) ||
-				1 === preg_match( '/^(?:path|file_path|absolute_path|cookie|set.cookie|authorization|credentials|private_key|dsn)$/i', $key ) ) ) {
-				$clean    = '[REDACTED]';
-				$redacted = true;
-			} else {
-				$clean = self::clean_data( $child, $budget, $depth + 1, $redacted, $truncated );
+			$overhead = 0 === $count ? 0 : 1; // JSON comma.
+			if ( ! $is_list ) {
+				$overhead += strlen( wp_json_encode( (string) $key_text ) ) + 1; // Key and colon.
 			}
+			if ( $budget < $overhead + 2 ) {
+				$truncated = true;
+				break;
+			}
+			$child_budget = $budget - $overhead;
+			$child_fits   = true;
+			if ( is_string( $key ) && self::is_sensitive_diagnostic_key( $key ) ) {
+				$redacted = true;
+				$clean    = self::reserve_scalar( '[REDACTED]', $child_budget, $child_fits );
+			} else {
+				$clean = self::clean_data( $child, $child_budget, $depth + 1, $redacted, $truncated, $child_fits );
+			}
+			if ( ! $child_fits ) {
+				$truncated = true;
+				break;
+			}
+			$budget = $child_budget;
 			if ( $output instanceof \stdClass ) {
 				$output->{ (string) $key_text} = $clean;
 			} else {
 				$output[ $key_text ] = $clean;
 			}
+			++$count;
 		}
 		return $output;
 	}

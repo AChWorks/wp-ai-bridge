@@ -102,6 +102,86 @@ namespace {
 		'Non-sensitive header/status information was removed or sensitive Authorization leaked.' );
 
 
+	// R-01: diagnostic-specific structured keys must not leak opaque cookies
+	// or private paths outside the free-text directory-prefix heuristics.
+	$private_data = array(
+		'private_path' => '/data/tenant/config.php',
+		'cookie_header' => 'wordpress_logged_in=TEST_OPAQUE_COOKIE_SECRET',
+		'token' => 'TEST_OPAQUE_TOKEN_SECRET',
+		'nonce' => 'TEST_WORDPRESS_NONCE_SECRET',
+		'token_count' => 7,
+		'status' => 409,
+		'public_hint' => 'retry only after reviewing the request',
+		'nested' => (object) array(
+			'privatePath' => '/data/tenant/nested.php',
+			'requestCookie' => 'session=TEST_NESTED_COOKIE_SECRET',
+			'attempt' => 2,
+			'array' => array( 'absoluteFilePath' => '/data/tenant/config.local.php', 'ok' => true ),
+		),
+	);
+	$structured = Error_Details::from_wp_error( new WP_Error( 'custom_provider_denial', 'Validation failed at stage 2', $private_data ) );
+	$structured_json = json_encode( $structured );
+	$assert( $structured['redacted'] && ! $structured['truncated'] &&
+		'custom_provider_denial' === $structured['code'] && 'Validation failed at stage 2' === $structured['message'] &&
+		'[REDACTED]' === ( $structured['data']['private_path'] ?? null ) &&
+		'[REDACTED]' === ( $structured['data']['cookie_header'] ?? null ) &&
+		'[REDACTED]' === ( $structured['data']['token'] ?? null ) &&
+		'[REDACTED]' === ( $structured['data']['nonce'] ?? null ) &&
+		7 === ( $structured['data']['token_count'] ?? null ) &&
+		$structured['data']['nested'] instanceof \stdClass &&
+		'[REDACTED]' === ( $structured['data']['nested']->privatePath ?? null ) &&
+		'[REDACTED]' === ( $structured['data']['nested']->requestCookie ?? null ) &&
+		'[REDACTED]' === ( $structured['data']['nested']->array['absoluteFilePath'] ?? null ) &&
+		409 === ( $structured['data']['status'] ?? null ) &&
+		2 === ( $structured['data']['nested']->attempt ?? null ) &&
+		true === ( $structured['data']['nested']->array['ok'] ?? null ) &&
+		false !== strpos( $structured_json, 'retry only after reviewing the request' ) &&
+		false === strpos( $structured_json, 'TEST_OPAQUE_COOKIE_SECRET' ) &&
+		false === strpos( $structured_json, 'TEST_OPAQUE_TOKEN_SECRET' ) &&
+		false === strpos( $structured_json, 'TEST_WORDPRESS_NONCE_SECRET' ) &&
+		false === strpos( $structured_json, 'TEST_NESTED_COOKIE_SECRET' ) &&
+		false === strpos( $structured_json, '/data/tenant/' ),
+		'Structured diagnostic secret-key variants leaked or safe context was lost.' );
+	$structured_ref = $log->record_mcp_failure(
+		'wp-ai-bridge/site-health', $structured, 'bridge_ability', 'ability_execution',
+		'inspect_provider_diagnostics', 'authorized-client-A'
+	);
+	$persisted_json = json_encode( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ] ?? array() );
+	$persisted_event = $log->diagnostic_view( 1, $structured_ref, 'authorized-client-A', get_current_user_id() )['events'][0] ?? array();
+	$assert( '' !== $structured_ref && ! str_contains( $persisted_json, 'TEST_OPAQUE_COOKIE_SECRET' ) &&
+		! str_contains( $persisted_json, 'TEST_NESTED_COOKIE_SECRET' ) &&
+		! str_contains( $persisted_json, 'TEST_OPAQUE_TOKEN_SECRET' ) &&
+		! str_contains( $persisted_json, 'TEST_WORDPRESS_NONCE_SECRET' ) &&
+		! str_contains( $persisted_json, '/data/tenant/' ) &&
+		'[REDACTED]' === ( $persisted_event['data']['private_path'] ?? null ) &&
+		'[REDACTED]' === ( $persisted_event['data']['cookie_header'] ?? null ) &&
+		409 === ( $persisted_event['data']['status'] ?? null ),
+		'Scoped Mutation_Log retained or returned sensitive structured data.' );
+
+	// R-02: MAX_DATA is a bound on final JSON bytes, not only string payloads.
+	$huge_numbers = array_fill( 0, 100, array_fill( 0, 100, 1.2345678901234567e+300 ) );
+	$numeric = Error_Details::from_wp_error( new WP_Error( 'large_numeric_data', 'Numeric provider data', $huge_numbers ) );
+	$numeric_json = json_encode( $numeric['data'] );
+	$assert( false !== $numeric_json && strlen( $numeric_json ) <= Error_Details::MAX_DATA &&
+		true === $numeric['truncated'] && false === $numeric['redacted'] &&
+		is_float( $numeric['data'][0][0] ?? null ) &&
+		1.2345678901234567e+300 === ( $numeric['data'][0][0] ?? null ),
+		'Nested numeric data bypassed the global JSON byte budget or changed valid scalar types.' );
+	$odd_numbers = Error_Details::from_wp_error( new WP_Error(
+		'non_finite', 'Provider returned unrepresentable numbers',
+		array( 'finite' => 12.25, 'integer' => 42, 'boolean' => false, 'nil' => null, 'nan' => NAN, 'positive_inf' => INF, 'negative_inf' => -INF )
+	) );
+	$odd_json = json_encode( $odd_numbers['data'] );
+	$assert( false !== $odd_json && $odd_numbers['truncated'] && ! $odd_numbers['redacted'] &&
+		12.25 === ( $odd_numbers['data']['finite'] ?? null ) &&
+		42 === ( $odd_numbers['data']['integer'] ?? null ) &&
+		false === ( $odd_numbers['data']['boolean'] ?? null ) &&
+		array_key_exists( 'nil', $odd_numbers['data'] ) &&
+		'[NON_FINITE_NUMBER]' === ( $odd_numbers['data']['nan'] ?? null ) &&
+		'[NON_FINITE_NUMBER]' === ( $odd_numbers['data']['positive_inf'] ?? null ) &&
+		'[NON_FINITE_NUMBER]' === ( $odd_numbers['data']['negative_inf'] ?? null ),
+		'Non-finite floats made JSON invalid or valid numeric types were lost.' );
+
 	$only_values = Error_Details::from_adapter_message(
 		'upstream rejected: Authorization: Bearer TOKEN_PRIVATE_X; response HTTP 403; api_key=SECRET_VALUE'
 	);
@@ -242,6 +322,48 @@ namespace {
 	$assert( 'provider_custom_failure.v3' === ( $observed['code'] ?? null ) &&
 		'native_ability' === ( $observed['origin'] ?? null ) &&
 		422 === ( $observed['data']['status'] ?? null ), 'WordPress 7.1 hook lost native code/data.' );
+	// R-02: ensure global numeric data caps persist through the projected MCP
+	// reply and same-client diagnostic lookup, not just standalone sanitizing.
+	$numeric_args = $native_args;
+	$numeric_args['id'] = 24;
+	$numeric_error = new WP_Error( 'large_numeric_data', 'Numeric provider data', $huge_numbers );
+	$numeric_route = $delegation->filter_rest_endpoints( array(
+		'/wp-ai-bridge/v1/mcp' => array(
+			array( 'callback' => static function () use ( $delegation, $native, $native_name, $numeric_error ) {
+				$delegation->observe_ability_execute_result( $numeric_error, $native_name, array(), $native );
+				$filtered = $delegation->filter_tool_call_result(
+					array( 'success' => false, 'error' => $numeric_error->get_error_message() ),
+					array( 'ability_name' => $native_name ),
+					Native_Ability_Delegation::ADAPTER_EXECUTE_TOOL,
+					new \stdClass(), new WP_AI_Test_MCP_Server()
+				);
+				return new WP_REST_Response( array(
+					'jsonrpc' => '2.0', 'id' => 24,
+					'result' => array( 'isError' => true, 'content' => array(
+						array( 'type' => 'text', 'text' => $filtered['error'] ),
+					) ),
+				) );
+			} ),
+		),
+	) );
+	$numeric_wire = $numeric_route['/wp-ai-bridge/v1/mcp'][0]['callback']( new WP_REST_Request( $numeric_args ) )->get_data();
+	$wire_error = $numeric_wire['result']['structuredContent']['error'] ?? array();
+	$wire_data = json_encode( $wire_error['data'] ?? null );
+	$wire_ref = $wire_error['diagnostic_reference'] ?? '';
+	$stored_numeric = $log->diagnostic_view( 1, $wire_ref, 'authorized-client-A', get_current_user_id() )['events'][0] ?? array();
+	$stored_numeric_data = json_encode( $stored_numeric['data'] ?? null );
+	$assert( true === ( $numeric_wire['result']['isError'] ?? false ) &&
+		'large_numeric_data' === ( $wire_error['code'] ?? null ) &&
+		true === ( $wire_error['truncated'] ?? null ) &&
+		true === ( $wire_error['diagnostics_persisted'] ?? null ) &&
+		is_float( $wire_error['data'][0][0] ?? null ) &&
+		false !== $wire_data && strlen( $wire_data ) <= Error_Details::MAX_DATA &&
+		false !== $stored_numeric_data && strlen( $stored_numeric_data ) <= Error_Details::MAX_DATA &&
+		true === ( $stored_numeric['truncated'] ?? false ) &&
+		$wire_ref === ( $stored_numeric['event_ref'] ?? null ) &&
+		false !== json_encode( $numeric_wire ),
+		'Numeric error bypassed JSON byte budget or corrupted MCP/Mutation_Log persistence.' );
+
 
 	// Supported older runtime: Adapter has *already* stripped the WP_Error code.
 	$legacy_params = $native_args;

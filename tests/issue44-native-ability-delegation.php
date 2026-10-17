@@ -23,6 +23,8 @@ class WP_Error {
 }
 function __( $text, $domain = null ) {
 	return $text; }
+function wp_json_encode( $value, $flags = 0, $depth = 512 ) {
+	return json_encode( $value, $flags, $depth ); }
 function is_wp_error( $value ) {
 	return $value instanceof WP_Error; }
 function get_option( $name, $default = false ) {
