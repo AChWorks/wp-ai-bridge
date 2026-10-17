@@ -136,8 +136,17 @@ final class Native_Ability_Delegation {
 				$original_permission         = $args['permission_callback'];
 				$args['permission_callback'] = function ( $input = null ) use ( $original_permission, $name ) {
 					$result = call_user_func( $original_permission, $input );
-					if ( is_wp_error( $result ) && $this->in_bridge_request() ) {
-						$this->capture_mcp_error( $name, $result, 'bridge_ability', 'authorization' );
+					if ( $this->in_bridge_request() ) {
+						if ( is_wp_error( $result ) ) {
+							$this->capture_mcp_error( $name, $result, 'bridge_ability', 'authorization' );
+						} elseif ( false === $result ) {
+							$this->capture_mcp_error(
+								$name,
+								Error_Details::from_adapter_message( 'WordPress Ability permission callback returned false.' ),
+								'bridge_ability',
+								'authorization'
+							);
+						}
 					}
 					return $result;
 				};
@@ -160,10 +169,12 @@ final class Native_Ability_Delegation {
 			}
 
 			if ( ! $this->settings->is_enabled( Settings::GROUP_NATIVE_ABILITIES ) ) {
-				return new WP_Error(
+				$denied = new WP_Error(
 					'wp_ai_bridge_native_abilities_disabled',
 					__( 'Native Abilities access is disabled in WP AI Bridge settings.', 'wp-ai-bridge' )
 				);
+				$this->capture_mcp_error( $input['ability_name'], $denied, 'bridge_policy', 'authorization' );
+				return $denied;
 			}
 
 			try {
@@ -192,6 +203,14 @@ final class Native_Ability_Delegation {
 				return $safe;
 			}
 
+			if ( false === $result ) {
+				$this->capture_mcp_error(
+					$input['ability_name'],
+					Error_Details::from_adapter_message( 'Native Ability permission callback returned false.' ),
+					'native_ability',
+					'authorization'
+				);
+			}
 			return $result;
 		};
 
@@ -395,10 +414,10 @@ final class Native_Ability_Delegation {
 		}
 		$code = $details['code'] ?? null;
 		$hint = 'inspect_provider_diagnostics';
-		if ( 'bridge_policy' === $origin ) {
-			$hint = 'inspect_native_result';
-		} elseif ( 'authorization' === $stage ) {
+		if ( 'authorization' === $stage ) {
 			$hint = 'inspect_permissions';
+		} elseif ( 'bridge_policy' === $origin ) {
+			$hint = 'inspect_native_result';
 		} elseif ( 'bridge_ability' === $origin && in_array( $code, array( 'invalid_media_payload', 'invalid_media_filename', 'media_too_large', 'transfer_invalid', 'site_health_invalid_input' ), true ) ) {
 			$hint = 'inspect_request';
 		} elseif ( 'bridge_ability' === $origin && in_array( $code, array( 'media_temp_failed', 'media_temp_write_failed', 'transfer_storage_unsafe', 'transfer_storage_unavailable', 'transfer_disk_unknown', 'transfer_disk_insufficient' ), true ) ) {

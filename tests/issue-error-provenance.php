@@ -252,6 +252,32 @@ namespace {
 	$success_params['id'] = 20;
 	$success = $success_route['/wp-ai-bridge/v1/mcp'][0]['callback']( new WP_REST_Request( $success_params ) )->get_data();
 	$assert( ! isset( $success['result']['structuredContent'] ), 'Previous error leaked into later successful request.' );
+	// A Bridge capability returning boolean false is an observed denial,
+	// never a fabricated WordPress WP_Error code or guessed root cause.
+	$permission_params = $params;
+	$permission_params['id'] = 21;
+	$permission_route = $delegation->filter_rest_endpoints(
+		array( '/wp-ai-bridge/v1/mcp' => array(
+			array( 'callback' => static function () use ( $args ) {
+				$allow = $args['permission_callback']( array() );
+				return new WP_REST_Response( array(
+					'jsonrpc' => '2.0', 'id' => 21,
+					'result' => array( 'isError' => true, 'content' => array(
+						array( 'type' => 'text', 'text' => $allow ? 'allowed' : 'Permission denied' ),
+					) ),
+				) );
+			} ),
+		) )
+	);
+	$permission_result = $permission_route['/wp-ai-bridge/v1/mcp'][0]['callback'](
+		new WP_REST_Request( $permission_params )
+	)->get_data()['result']['structuredContent']['error'] ?? array();
+	$assert( null === ( $permission_result['code'] ?? null ) &&
+		'bridge_ability' === ( $permission_result['origin'] ?? '' ) &&
+		'authorization' === ( $permission_result['stage'] ?? '' ) &&
+		'inspect_permissions' === ( $permission_result['next_step'] ?? '' ),
+		'Boolean permission rejection fabricated a code or lost observed stage.' );
+
 	$authenticated_client->setValue( null, '' );
 
 	echo "PASS: faithful Bridge/Adapter errors, scoped diagnostics and selective redaction ({$checks} assertions).\n";
