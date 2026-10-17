@@ -393,6 +393,58 @@ namespace {
 		str_contains( $r7_event['message'] ?? '', 'response HTTP 403' ),
 		'R7-01: persisted or authorized diagnostic leaked a later opaque Cookie.' );
 
+	// R8-01: when a whole-field quoted Cookie prefix contains spaces,
+	// rejecting its early boundary must not fall back to masking only the
+	// text before the first space and expose subsequent credentials.
+	$r8_whitespace_cases = array(
+		'double-whitespace-prefix' => 'Provider denied; cookie_header="theme=light mode"; malformed; wordpress_logged_in=R8_DOUBLE_SECRET; response HTTP 403',
+		'single-whitespace-prefix' => "Provider denied; cookie_header='theme=light mode'; malformed; wordpress_logged_in=R8_SINGLE_SECRET; response HTTP 403",
+		'double-multiword-gap' => 'Provider denied; requestCookie="theme=light mode"; invalid opaque segment; malformed; session=R8_MULTIWORD_SECRET,tail; response HTTP 403',
+		'single-comma-status' => "Provider denied; cookie_header='theme=dark mode'; malformed; status=403; wordpress_logged_in=R8_COMMA_STATUS_SECRET,tail; response HTTP 403",
+		'quoted-first-pair-whitespace' => 'Provider denied; cookie_header=theme="light mode"; malformed; wordpress_logged_in=R8_FIRST_PAIR_SECRET; response HTTP 403',
+		'double-interleaved-private-path' => 'Provider denied; cookie_header="theme=light mode"; invalid; private_path=/data/tenant/r8-opaque.php; wordpress_logged_in=R8_PATH_SECRET; response HTTP 403',
+		'single-multiple-opaque-fragments' => "Provider denied; cookie_header='theme=light mode'; malformed segment; opaque fragment; wordpress_logged_in=R8_OPAQUE_SECRET; response HTTP 403",
+	);
+	foreach ( $r8_whitespace_cases as $name => $message ) {
+		$clean = Error_Details::from_adapter_message( $message );
+		$assert( null === $clean['code'] && $clean['redacted'] && ! $clean['truncated'] &&
+			str_contains( $clean['message'], 'response HTTP 403' ) &&
+			! str_contains( json_encode( $clean ), 'R8_' ) &&
+			! str_contains( $clean['message'], 'status=403' ) &&
+			! str_contains( $clean['message'], '/data/tenant/r8-opaque.php' ),
+			'R8-01: whitespace-bearing quoted Cookie prefix leaked later credentials: ' . $name );
+	}
+	$r8_wp = Error_Details::from_wp_error( new WP_Error(
+		'r8_original_error_identity',
+		"Provider denied; cookie_header='theme=light mode'; malformed; wordpress_logged_in=R8_WP_COOKIE_SECRET; status=403; private_path=/data/tenant/r8-config.php; response HTTP 403; اعتبارسنجی",
+		array( 'http_status' => 403, 'safe_hint' => 'inspect provider output' )
+	) );
+	$assert( 'r8_original_error_identity' === $r8_wp['code'] &&
+		$r8_wp['redacted'] && ! $r8_wp['truncated'] &&
+		str_contains( $r8_wp['message'], 'cookie_header=' ) &&
+		str_contains( $r8_wp['message'], 'private_path=[REDACTED]' ) &&
+		str_contains( $r8_wp['message'], 'response HTTP 403; اعتبارسنجی' ) &&
+		403 === $r8_wp['data']['http_status'] &&
+		'inspect provider output' === $r8_wp['data']['safe_hint'] &&
+		! str_contains( $r8_wp['message'], 'status=403' ) &&
+		! str_contains( json_encode( $r8_wp ), 'R8_WP_COOKIE_SECRET' ) &&
+		! str_contains( json_encode( $r8_wp ), '/data/tenant/r8-config.php' ),
+		'R8-01: original WP_Error context or quoted opaque Cookie confidentiality regressed.' );
+	$r8_ref = $log->record_mcp_failure(
+		'wp-ai-bridge/site-health', $r8_wp, 'bridge_ability',
+		'ability_execution', 'inspect_provider_diagnostics', 'authorized-client-A'
+	);
+	$r8_stored = json_encode( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ] );
+	$r8_event  = $log->diagnostic_view(
+		1, $r8_ref, 'authorized-client-A', get_current_user_id()
+	)['events'][0] ?? array();
+	$assert( '' !== $r8_ref &&
+		! str_contains( $r8_stored, 'R8_WP_COOKIE_SECRET' ) &&
+		! str_contains( json_encode( $r8_event ), 'R8_WP_COOKIE_SECRET' ) &&
+		'r8_original_error_identity' === ( $r8_event['error_code'] ?? '' ) &&
+		str_contains( $r8_event['message'] ?? '', 'response HTTP 403' ),
+		'R8-01: authorized Mutation_Log view leaked a quoted opaque Cookie.' );
+
 	$multi_ref = $log->record_mcp_failure(
 		'wp-ai-bridge/site-health', $multi_cookie, 'bridge_ability', 'ability_execution',
 		'inspect_provider_diagnostics', 'authorized-client-A'

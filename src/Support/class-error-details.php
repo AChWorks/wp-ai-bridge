@@ -116,11 +116,12 @@ final class Error_Details {
 		// delimiters. Reserve single quotes for whole-field provider text.
 		// Accept opaque value punctuation conservatively rather than
 		// leaving later credentials visible after a partial quoted match.
-		$cookie_name    = '[^\s=;,\r\n"]+';
-		$quoted_double  = '"(?:\\\\.|[^"\\\\\r\n])*"';
-		$quoted_single  = '\x27(?:\\\\.|[^\x27\\\\\r\n])*\x27';
-		$cookie_value   = '(?:' . $quoted_double . '|[^\s;,\r\n]*)';
-		$pair_boundary  = '(?=[\s;]|$)';
+		$cookie_name   = '[^\s=;,\r\n"]+';
+		$quoted_double = '"(?:\\\\.|[^"\\\\\r\n])*"';
+		$quoted_single = '\x27(?:\\\\.|[^\x27\\\\\r\n])*\x27';
+		$cookie_value  = '(?:' . $quoted_double . '|[^\s;,\r\n]*)';
+		// Whitespace inside an opaque quoted value is not a Cookie boundary.
+		$pair_boundary  = '(?=\s*(?:;|$))';
 		$field_boundary = '(?=[\s,;}]|$)';
 		$cookie_pair    = $cookie_name . '\s*=\s*' . $cookie_value . $pair_boundary;
 		// A semicolon-delimited Cookie fragment may be malformed, opaque
@@ -135,7 +136,9 @@ final class Error_Details {
 		$quoted_field_boundary = '(?!\s*;\s*' . $cookie_fragment . ')' . $field_boundary;
 		// Independent multiword diagnostic prose is outside the Cookie
 		// sequence; commas and braces alone are not trusted boundaries.
-		$opaque_cookie        = '[^\s;\r\n]+' . $cookie_tail;
+		// A rejected quoted field must fall back to a complete initial
+		// semicolon-delimited fragment, even when it contains whitespace.
+		$opaque_cookie        = '[^;\r\n]+' . $cookie_tail;
 		$cookie_assignment    = '/\b(' . $cookie_labels . ')(["\x27]?\s*[:=]\s*)'
 			. '(' . $quoted_double . $quoted_field_boundary . '|'
 			. $quoted_single . $quoted_field_boundary . '|'

@@ -248,6 +248,7 @@ foreach ( $resources as $route => $resource ) {
 	foreach ( array(
 		'ISSUE82_SYNTHETIC_INTEGRATION_TEXT_COOKIE_SECRET',
 		'ISSUE82_R7_OPAQUE_TRAILING_COOKIE_SECRET',
+		'ISSUE82_R8_SINGLE_WHITESPACE_SECRET',
 		'/data/tenant/message-config.php',
 	) as $sensitive_marker ) {
 		wpai_issue44_live_assert(
@@ -326,6 +327,7 @@ foreach ( $resources as $route => $resource ) {
 	wpai_issue44_live_assert(
 		false === strpos( wp_json_encode( $lookup_data ), 'ISSUE82_SYNTHETIC_INTEGRATION_TEXT_COOKIE_SECRET' ) &&
 		false === strpos( wp_json_encode( $lookup_data ), 'ISSUE82_R7_OPAQUE_TRAILING_COOKIE_SECRET' ) &&
+		false === strpos( wp_json_encode( $lookup_data ), 'ISSUE82_R8_SINGLE_WHITESPACE_SECRET' ) &&
 		false === strpos( wp_json_encode( $lookup_data ), '/data/tenant/message-config.php' ) &&
 		false === strpos( $lookup_event['message'] ?? '', 'status=403' ),
 		'Free-text WP_Error secrets leaked via authorized diagnostic lookup.'
