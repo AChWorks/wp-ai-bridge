@@ -135,7 +135,7 @@ add_action(
 		$error_result['execute_callback']    = static function () {
 			return new WP_Error(
 				'issue82_provider_error',
-				'Worker validation failed: request stage is incomplete; api_key=ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET; cookie_header=theme=light; wordpress_logged_in=ISSUE82_SYNTHETIC_INTEGRATION_TEXT_COOKIE_SECRET; private_path=/data/tenant/message-config.php; response HTTP 409',
+				'Worker validation failed: request stage is incomplete; api_key=ISSUE82_SYNTHETIC_INTEGRATION_ERROR_SECRET; cookie_header=theme="light&dark"; wordpress_logged_in=ISSUE82_SYNTHETIC_INTEGRATION_TEXT_COOKIE_SECRET; status=403; private_path=/data/tenant/message-config.php; response HTTP 409',
 				array(
 					'private_path'  => '/data/tenant/ci-config.php',
 					'cookie_header' => 'wordpress_logged_in=ISSUE82_SYNTHETIC_INTEGRATION_COOKIE_SECRET',

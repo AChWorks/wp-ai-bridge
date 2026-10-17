@@ -219,6 +219,13 @@ foreach ( $resources as $route => $resource ) {
 		'Non-secret provider error context was lost from the real MCP response.'
 	);
 	$error_details = $error_result['result']['structuredContent']['error'] ?? array();
+	// The first Cookie value is RFC-valid and quoted; a Cookie named
+	// "status" is ambiguous and must not be restored as diagnostic status.
+	wpai_issue44_live_assert(
+		false === strpos( wpai_issue44_live_error_text( $error_result ), 'status=403' ) &&
+		false !== strpos( wpai_issue44_live_error_text( $error_result ), 'response HTTP 409' ),
+		'Authenticated MCP exposed a status-cookie value or removed independent HTTP context.'
+	);
 	wpai_issue44_live_assert(
 		false !== strpos( wpai_issue44_live_error_text( $error_result ), 'response HTTP 409' ) &&
 		false === strpos( wpai_issue44_live_error_text( $error_result ), 'ISSUE82_SYNTHETIC_INTEGRATION_TEXT_COOKIE_SECRET' ),
@@ -315,7 +322,8 @@ foreach ( $resources as $route => $resource ) {
 	);
 	wpai_issue44_live_assert(
 		false === strpos( wp_json_encode( $lookup_data ), 'ISSUE82_SYNTHETIC_INTEGRATION_TEXT_COOKIE_SECRET' ) &&
-		false === strpos( wp_json_encode( $lookup_data ), '/data/tenant/message-config.php' ),
+		false === strpos( wp_json_encode( $lookup_data ), '/data/tenant/message-config.php' ) &&
+		false === strpos( $lookup_event['message'] ?? '', 'status=403' ),
 		'Free-text WP_Error secrets leaked via authorized diagnostic lookup.'
 	);
 

@@ -182,7 +182,7 @@ namespace {
 	$assert( $interleaved['redacted'] && ! $interleaved['truncated'] &&
 		str_contains( $interleaved['message'], 'cookie_header=[REDACTED]' ) &&
 		str_contains( $interleaved['message'], 'private_path=[REDACTED]' ) &&
-		str_contains( $interleaved['message'], 'status=403' ) &&
+		! str_contains( $interleaved['message'], 'status=403' ) &&
 		str_contains( $interleaved['message'], 'response HTTP 403' ) &&
 		! str_contains( json_encode( $interleaved ), 'R4_FIRST_INTERLEAVED_SECRET' ) &&
 		! str_contains( json_encode( $interleaved ), 'R4_SECOND_INTERLEAVED_SECRET' ) &&
@@ -199,6 +199,76 @@ namespace {
 		! str_contains( $cookie_octets['message'], 'R4_APOSTROPHE' ) &&
 		! str_contains( $cookie_octets['message'], 'COOKIE}SECRET' ),
 		'Valid cookie-octet or empty preceding cookie exposed part of a later credential.' );
+	// R5 B-01: the *first* cookie pair uses RFC 6265 cookie-value grammar,
+	// including ampersands and quoted first values. A subsequent session
+	// cookie must not escape the complete Cookie assignment.
+	$r5_cases = array(
+		'ampersand-first' => 'Provider denied; cookie_header=theme=light&dark; wordpress_logged_in=R5_AMP_COOKIE_SECRET; response HTTP 403',
+		'quoted-first' => 'Provider denied; cookie_header=theme="light"; wordpress_logged_in=R5_QUOTED_FIRST_COOKIE_SECRET; response HTTP 403',
+		'empty-first' => 'Provider denied; requestCookie=theme=; wordpress_logged_in=R5_EMPTY_FIRST_COOKIE_SECRET; response HTTP 403',
+		'whole-header-quoted' => 'Provider denied; cookieHeader:"theme=light&dark; wordpress_logged_in=R5_WHOLE_QUOTED_SECRET"; response HTTP 403',
+		'json-escaped-whole' => 'Provider denied; {"cookieHeader":"theme=\\"light\\"; wordpress_logged_in=R5_ESCAPED_JSON_SECRET","status":503}; response HTTP 403',
+		'single-escaped-whole' => "Provider denied; cookieHeader='theme=it\\'s; wordpress_logged_in=R5_ESCAPED_SINGLE_SECRET'; response HTTP 403",
+		'escaped-first-value' => 'Provider denied; cookie_header=theme=\\"light\\"; wordpress_logged_in=R5_ESCAPED_FIRST_SECRET; response HTTP 403',
+		'status-cookie' => 'Provider denied; cookie_header=theme=light; status=403; response HTTP 403',
+	);
+	foreach ( $r5_cases as $name => $message ) {
+		$clean = Error_Details::from_adapter_message( $message );
+		$assert( $clean['redacted'] && ! $clean['truncated'] &&
+			null === $clean['code'] &&
+			str_contains( $clean['message'], 'response HTTP 403' ) &&
+			! str_contains( $clean['message'], 'R5_' ) &&
+			! str_contains( $clean['message'], 'status=403' ),
+			'R5 B-01: first Cookie grammar or ambiguous status-cookie escaped masking: ' . $name );
+	}
+	$r5_wp = Error_Details::from_wp_error( new WP_Error(
+		'observed_cookie_pair_failure',
+		'Provider denied; cookie_header=theme=light&dark; wordpress_logged_in=R5_WP_FIRST_COOKIE_SECRET; private_path=/data/tenant/r5-config.php; response HTTP 403; اعتبارسنجی',
+		array( 'status' => 403, 'safe_hint' => 'inspect provider output' )
+	) );
+	$assert( $r5_wp['redacted'] && ! $r5_wp['truncated'] &&
+		'observed_cookie_pair_failure' === $r5_wp['code'] &&
+		str_contains( $r5_wp['message'], 'cookie_header=[REDACTED]' ) &&
+		str_contains( $r5_wp['message'], 'private_path=[REDACTED]' ) &&
+		str_contains( $r5_wp['message'], 'response HTTP 403; اعتبارسنجی' ) &&
+		403 === $r5_wp['data']['status'] &&
+		'inspect provider output' === $r5_wp['data']['safe_hint'] &&
+		! str_contains( json_encode( $r5_wp ), 'R5_WP_FIRST_COOKIE_SECRET' ) &&
+		! str_contains( json_encode( $r5_wp ), '/data/tenant/r5-config.php' ),
+		'R5 B-01: WP_Error first Cookie pair leaked or lost safe code/status/Unicode.' );
+	$r5_ref = $log->record_mcp_failure(
+		'wp-ai-bridge/site-health', $r5_wp, 'bridge_ability',
+		'ability_execution', 'inspect_provider_diagnostics', 'authorized-client-A'
+	);
+	$r5_saved = json_encode( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ] );
+	$r5_event = $log->diagnostic_view(
+		1, $r5_ref, 'authorized-client-A', get_current_user_id()
+	)['events'][0] ?? array();
+	$assert( '' !== $r5_ref &&
+		! str_contains( $r5_saved, 'R5_WP_FIRST_COOKIE_SECRET' ) &&
+		! str_contains( json_encode( $r5_event ), 'R5_WP_FIRST_COOKIE_SECRET' ) &&
+		'observed_cookie_pair_failure' === ( $r5_event['error_code'] ?? '' ) &&
+		str_contains( $r5_event['message'] ?? '', 'response HTTP 403' ),
+		'R5 B-01: persisted/authorized diagnostic leaked a later cookie.' );
+	// Exercise every RFC 6265 cookie-octet at the first-pair position and
+	// prevent a valid punctuation character from ending the redaction early.
+	$r5_octets_safe = true;
+	foreach ( range( 0x21, 0x7e ) as $byte ) {
+		if ( 0x22 === $byte || 0x2c === $byte || 0x3b === $byte || 0x5c === $byte ) {
+			continue;
+		}
+		$marker   = 'R5_OCTET_' . $byte . '_SECRET';
+		$pair     = 'cookie_header=theme=pre' . chr( $byte ) . 'post; wordpress_logged_in=' . $marker;
+		$clean    = Error_Details::from_adapter_message( 'Provider denied; ' . $pair . '; response HTTP 403' );
+		if ( ! $clean['redacted'] || $clean['truncated'] ||
+			str_contains( $clean['message'], $marker ) ||
+			! str_contains( $clean['message'], 'response HTTP 403' ) ) {
+			$r5_octets_safe = false;
+			break;
+		}
+	}
+	$assert( $r5_octets_safe, 'R5 B-01: RFC 6265 first-pair cookie-octet terminated masking.' );
+
 	$multi_ref = $log->record_mcp_failure(
 		'wp-ai-bridge/site-health', $multi_cookie, 'bridge_ability', 'ability_execution',
 		'inspect_provider_diagnostics', 'authorized-client-A'

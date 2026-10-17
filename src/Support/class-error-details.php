@@ -107,14 +107,22 @@ final class Error_Details {
 		}
 
 		// Diagnostic-only assignments: mask a full semicolon-separated Cookie
-		// sequence. Retain explicit private-path labels (masked), HTTP status
-		// codes and independent free-text diagnostics.
-		$cookie_labels        = '(?:cookie[_-]?header|request[_-]?cookie|session[_-]?cookie|set[_-]?cookie)';
-		$path_labels          = '(?:(?:private|absolute|local|server|file[_-]?system|physical|full|secret)'
+		// sequence. Retain private-path labels (masked) and independently
+		// identifiable HTTP status prose without trusting Cookie pairs.
+		$cookie_labels = '(?:cookie[_-]?header|request[_-]?cookie|session[_-]?cookie|set[_-]?cookie)';
+		$path_labels   = '(?:(?:private|absolute|local|server|file[_-]?system|physical|full|secret)'
 			. '[_-]?(?:file[_-]?)?path|file[_-]?path)';
-		$cookie_pair          = '[^\s=;,\r\n"]+\s*=\s*(?:"[^"\r\n]*"|\x27[^\x27\r\n]*\x27|[^\s;,\r\n"]*)';
+		// Use the same cookie grammar for the first and later pairs.
+		// Quoted provider/JSON text can contain escaped quote characters:
+		// never treat an escaped quote as the end of a Cookie field.
+		$cookie_name          = '[^\s=;,\r\n"]+';
+		$quoted_double        = '"(?:\\\\.|[^"\\\\\r\n])*"';
+		$quoted_single        = '\x27(?:\\\\.|[^\x27\\\\\r\n])*\x27';
+		$unquoted_value       = '(?:\\\\.|[^\s;,\r\n"\\\\])*';
+		$cookie_value         = '(?:' . $quoted_double . '|' . $quoted_single . '|' . $unquoted_value . ')';
+		$cookie_pair          = $cookie_name . '\s*=\s*' . $cookie_value;
 		$cookie_assignment    = '/\b(' . $cookie_labels . ')(["\x27]?\s*[:=]\s*)'
-			. '("[^"\r\n]*"|\x27[^\x27\r\n]*\x27|[^\s,;&\r\n"]+'
+			. '(' . $quoted_double . '|' . $quoted_single . '|' . $cookie_pair
 			. '(?:\s*;\s*' . $cookie_pair . ')*)/i';
 		$path_assignment      = '/\b(' . $path_labels . ')(["\x27]?\s*[:=]\s*)'
 			. '("[^"\r\n]*"|\x27[^\x27\r\n]*\x27|[^\s,;&\r\n"\x27}]+)/i';
@@ -130,21 +138,19 @@ final class Error_Details {
 			if ( '"' === substr( $value, 0, 1 ) || "'" === substr( $value, 0, 1 ) ) {
 				return $masked;
 			}
-			// Cookie grammar cannot distinguish subsequent name=value fields.
-			// Keep only known diagnostic labels (masked) and HTTP status codes.
+			// The cookie protocol cannot distinguish a cookie named "status"
+			// from an independent status field. Never restore ambiguous
+			// cookie values; only retain diagnostic private-path labels
+			// with their values masked. Separate "response HTTP 403"
+			// prose remains outside the matched cookie assignment.
 			preg_match_all(
-				'/;\s*(' . $path_labels . '|(?:http_)?status)\s*[:=]\s*([^;\s,]+)/i',
+				'/;\s*(' . $path_labels . ')\s*[:=]\s*([^;\s,]+)/i',
 				$value,
 				$fields,
 				PREG_SET_ORDER
 			);
 			foreach ( $fields as $field ) {
-				$name = $field[1];
-				if ( 1 === preg_match( '/^(?:http_)?status$/i', $name ) && 1 === preg_match( '/^[1-5][0-9]{2}$/D', $field[2] ) ) {
-					$masked .= '; ' . $name . '=' . $field[2];
-				} else {
-					$masked .= '; ' . $name . '=[REDACTED]';
-				}
+				$masked .= '; ' . $field[1] . '=[REDACTED]';
 			}
 			return $masked;
 		};
