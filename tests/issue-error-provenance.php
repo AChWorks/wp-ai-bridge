@@ -324,6 +324,75 @@ namespace {
 		str_contains( $r6_event['message'] ?? '', 'response HTTP 403' ),
 		'R6 B-01: Mutation_Log or authorized diagnostic lookup disclosed a later Cookie.' );
 
+	// R7-01: a provider may emit a complete-looking quoted prefix followed
+	// by malformed/opaque Cookie fragments. All later credentials still
+	// belong to the labeled Cookie diagnostic, even with commas or gaps.
+	$r7_opaque_cases = array(
+		'single-quoted-gap' => "Provider denied; cookie_header='theme=foo'; malformed; wordpress_logged_in=R7_OPAQUE_A_SECRET; response HTTP 403",
+		'double-quoted-gap' => 'Provider denied; requestCookie="theme=foo"; malformed; session=R7_OPAQUE_B_SECRET; response HTTP 403',
+		'comma-after-quoted' => "Provider denied; cookie_header='theme=foo'; wordpress_logged_in=R7_COMMA_SECRET,tail; response HTTP 403",
+		'opaque-status' => "Provider denied; cookie_header='theme=foo'; malformed; status=403; wordpress_logged_in=R7_OPAQUE_STATUS_SECRET; response HTTP 403",
+		'two-opaque-gaps' => "Provider denied; cookie_header='theme=foo'; opaque; malformed; session=R7_TWO_GAPS_SECRET; response HTTP 403",
+		'multiword-gap' => "Provider denied; cookie_header='theme=foo'; malformed segment; wordpress_logged_in=R7_MULTIWORD_SECRET; response HTTP 403",
+		'multiword-two-gaps' => "Provider denied; cookie_header='theme=foo'; malformed fragment; opaque; wordpress_logged_in=R7_MULTIGAP_SECRET; response HTTP 403",
+		'double-prefix-multiword-gaps' => 'Provider denied; requestCookie="theme=foo"; invalid chunk; opaque; session=R7_DOUBLE_MULTIGAP_SECRET,tail; response HTTP 403',
+		'opaque-interleaved-path' => "Provider denied; cookie_header='theme=foo'; malformed; private_path=/data/tenant/r7-opaque.php; wordpress_logged_in=R7_PATH_COOKIE_SECRET; response HTTP 403",
+		'first-opaque-then-cookie' => 'Provider denied; cookie_header=malformed; wordpress_logged_in=R7_FIRST_OPAQUE_SECRET; response HTTP 403',
+		'comma-first' => 'Provider denied; cookie_header=theme=light,dark; wordpress_logged_in=R7_FIRST_COMMA_SECRET; response HTTP 403',
+	);
+	foreach ( $r7_opaque_cases as $name => $message ) {
+		$clean = Error_Details::from_adapter_message( $message );
+		$assert( null === $clean['code'] && $clean['redacted'] && ! $clean['truncated'] &&
+			str_contains( $clean['message'], 'response HTTP 403' ) &&
+			str_contains( $clean['message'], 'cookie_header=' ) === str_contains( $message, 'cookie_header=' ) &&
+			! str_contains( json_encode( $clean ), 'R7_' ) &&
+			! str_contains( $clean['message'], 'status=403' ) &&
+			! str_contains( $clean['message'], '/data/tenant/r7-opaque.php' ),
+			'R7-01: opaque/quoted-prefix Cookie fragment exposed a later secret or lost safe status: ' . $name );
+	}
+	$r7_no_cookie = Error_Details::from_adapter_message(
+		'Provider denied; cookieHeader="theme=light"; response HTTP 403; retry after review'
+	);
+	$assert( $r7_no_cookie['redacted'] && ! $r7_no_cookie['truncated'] &&
+		str_contains( $r7_no_cookie['message'], 'cookieHeader="[REDACTED]"' ) &&
+		str_contains( $r7_no_cookie['message'], 'response HTTP 403; retry after review' ),
+		'R7-01: independent HTTP context was swallowed by Cookie redaction.' );
+	$r7_status_prose = Error_Details::from_adapter_message(
+		"Provider denied; cookie_header='theme=foo'; response HTTP 403; status 429"
+	);
+	$assert( $r7_status_prose['redacted'] && ! $r7_status_prose['truncated'] &&
+		str_contains( $r7_status_prose['message'], 'response HTTP 403; status 429' ),
+		'R7-01: safe response HTTP and independent numeric status context were discarded.' );
+	$r7_wp = Error_Details::from_wp_error( new WP_Error(
+		'r7_native_provider_denial',
+		"Provider denied; cookie_header='theme=foo'; opaque fragment; wordpress_logged_in=R7_WP_TRAILING_SECRET,tail; status=403; private_path=/data/tenant/r7-config.php; response HTTP 403; اعتبارسنجی",
+		array( 'http_status' => 403, 'safe_hint' => 'examine original error' )
+	) );
+	$assert( 'r7_native_provider_denial' === $r7_wp['code'] &&
+		$r7_wp['redacted'] && ! $r7_wp['truncated'] &&
+		str_contains( $r7_wp['message'], 'response HTTP 403; اعتبارسنجی' ) &&
+		str_contains( $r7_wp['message'], 'private_path=[REDACTED]' ) &&
+		403 === $r7_wp['data']['http_status'] &&
+		'examine original error' === $r7_wp['data']['safe_hint'] &&
+		! str_contains( json_encode( $r7_wp ), 'R7_WP_TRAILING_SECRET' ) &&
+		! str_contains( $r7_wp['message'], 'status=403' ) &&
+		! str_contains( json_encode( $r7_wp ), '/data/tenant/r7-config.php' ),
+		'R7-01: WP_Error opaque Cookie leak or useful code/status/Unicode regression.' );
+	$r7_ref = $log->record_mcp_failure(
+		'wp-ai-bridge/site-health', $r7_wp, 'bridge_ability',
+		'ability_execution', 'inspect_provider_diagnostics', 'authorized-client-A'
+	);
+	$r7_stored = json_encode( $GLOBALS['wpai_test']['options'][ Mutation_Log::OPTION_NAME ] );
+	$r7_event  = $log->diagnostic_view(
+		1, $r7_ref, 'authorized-client-A', get_current_user_id()
+	)['events'][0] ?? array();
+	$assert( '' !== $r7_ref &&
+		! str_contains( $r7_stored, 'R7_WP_TRAILING_SECRET' ) &&
+		! str_contains( json_encode( $r7_event ), 'R7_WP_TRAILING_SECRET' ) &&
+		'r7_native_provider_denial' === ( $r7_event['error_code'] ?? '' ) &&
+		str_contains( $r7_event['message'] ?? '', 'response HTTP 403' ),
+		'R7-01: persisted or authorized diagnostic leaked a later opaque Cookie.' );
+
 	$multi_ref = $log->record_mcp_failure(
 		'wp-ai-bridge/site-health', $multi_cookie, 'bridge_ability', 'ability_execution',
 		'inspect_provider_diagnostics', 'authorized-client-A'

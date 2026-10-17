@@ -123,17 +123,23 @@ final class Error_Details {
 		$pair_boundary  = '(?=[\s;]|$)';
 		$field_boundary = '(?=[\s,;}]|$)';
 		$cookie_pair    = $cookie_name . '\s*=\s*' . $cookie_value . $pair_boundary;
-		// A whole-field quote cannot terminate before another Cookie pair:
-		// apostrophes are permitted even in ordinary Cookie names.
-		$quoted_field_boundary = '(?!\s*;\s*' . $cookie_pair . ')' . $field_boundary;
-		// Commas/braces are not Cookie-pair boundaries. Only whole-field
-		// provider quotes may end at JSON-like separators; malformed or
-		// opaque first segments are masked through the next semicolon.
-		$opaque_cookie        = '[^\s;\r\n]+(?:\s*;\s*' . $cookie_pair . ')*';
+		// A semicolon-delimited Cookie fragment may be malformed, opaque
+		// or contain punctuation. Its next complete fragment can still
+		// carry a credential. Never stop at a provider's quoted prefix
+		// merely because the immediately following fragment is not RFC.
+		$opaque_fragment       = '[^\s;\r\n]+(?=\s*(?:;|$))';
+		$before_pair           = '(?!response\s+HTTP\b)[^;\r\n]+'
+			. '(?=(?:\s*;\s*[^;\r\n]+)*\s*;\s*' . $cookie_name . '\s*=)';
+		$cookie_fragment       = '(?:' . $opaque_fragment . '|' . $before_pair . ')';
+		$cookie_tail           = '(?:\s*;\s*' . $cookie_fragment . ')*';
+		$quoted_field_boundary = '(?!\s*;\s*' . $cookie_fragment . ')' . $field_boundary;
+		// Independent multiword diagnostic prose is outside the Cookie
+		// sequence; commas and braces alone are not trusted boundaries.
+		$opaque_cookie        = '[^\s;\r\n]+' . $cookie_tail;
 		$cookie_assignment    = '/\b(' . $cookie_labels . ')(["\x27]?\s*[:=]\s*)'
 			. '(' . $quoted_double . $quoted_field_boundary . '|'
 			. $quoted_single . $quoted_field_boundary . '|'
-			. $cookie_pair . '(?:\s*;\s*' . $cookie_pair . ')*|'
+			. $cookie_pair . $cookie_tail . '|'
 			. $opaque_cookie . ')/i';
 		$path_assignment      = '/\b(' . $path_labels . ')(["\x27]?\s*[:=]\s*)'
 			. '("[^"\r\n]*"|\x27[^\x27\r\n]*\x27|[^\s,;&\r\n"\x27}]+)/i';
@@ -146,9 +152,6 @@ final class Error_Details {
 		$mask_cookie          = static function ( $matches ) use ( $mask_assignment, $path_labels ) {
 			$masked = $mask_assignment( $matches );
 			$value  = $matches[3];
-			if ( '"' === substr( $value, 0, 1 ) || "'" === substr( $value, 0, 1 ) ) {
-				return $masked;
-			}
 			// The cookie protocol cannot distinguish a cookie named "status"
 			// from an independent status field. Never restore ambiguous
 			// cookie values; only retain diagnostic private-path labels
