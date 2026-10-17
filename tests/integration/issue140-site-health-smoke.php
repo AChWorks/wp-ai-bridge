@@ -88,6 +88,18 @@ try {
 		'parameters' => array( 'action' => 'run', 'test' => 'php_default_timezone' ),
 	) );
 	wpai140_assert( ! is_wp_error( $through_adapter ) && true === ( $through_adapter['success'] ?? false ), 'Official Adapter rejected authorized Site Health inspection.' );
+	// The separate bare wp-load.php fixture verifies missing Core helpers.
+	// Here WP-CLI is allowed to preload helpers while Adapter routing remains
+	// under the normal authenticated ability dispatch contract.
+	foreach ( array( 'plugin_version', 'php_version', 'theme_version', 'wordpress_version', 'plugin_theme_auto_updates' ) as $test ) {
+		$through_adapter = $adapter->execute(
+			array(
+				'ability_name' => 'wp-ai-bridge/site-health',
+				'parameters'   => array( 'action' => 'run', 'test' => $test ),
+			)
+		);
+		wpai140_assert( ! is_wp_error( $through_adapter ) && true === ( $through_adapter['success'] ?? false ), 'Official Adapter did not execute the Core admin-helper test: ' . $test );
+	}
 
 	wp_set_current_user( 0 );
 	wpai140_assert( true !== $provider->check_permissions( array( 'action' => 'list' ) ), 'Anonymous principal could inspect native health.' );
