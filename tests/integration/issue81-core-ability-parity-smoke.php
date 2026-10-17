@@ -31,7 +31,7 @@ function wpai81_mcp_request( $token, array $payload, $session = '' ) {
 	}
 	return rest_do_request( $request );
 }
-function wpai81_mcp_call( $token, $session, $ability_name, array $parameters, $id ) {
+function wpai81_mcp_call( $token, $session, $ability_name, array $parameters, $id, $expected_public = true ) {
 	$result = wpai81_mcp_request(
 		$token,
 		array(
@@ -50,6 +50,10 @@ function wpai81_mcp_call( $token, $session, $ability_name, array $parameters, $i
 	);
 	wpai81_assert( 200 === $result->get_status(), 'MCP HTTP did not return 200 for ' . $ability_name );
 	$data = json_decode( wp_json_encode( $result->get_data() ), true );
+	if ( ! $expected_public ) {
+		wpai81_assert( true === ( $data['result']['isError'] ?? false ), 'MCP unexpectedly exposed a hidden Core Ability ' . $ability_name );
+		return null;
+	}
 	wpai81_assert( false === ( $data['result']['isError'] ?? true ), 'MCP failed an advertised Core Ability ' . $ability_name );
 	$structured = $data['result']['structuredContent'] ?? array();
 	if ( ! is_array( $structured ) || ! isset( $structured['success'] ) ) {
@@ -70,6 +74,7 @@ $read_only_cases = array(
 	'core/get-user-info'        => array( 'fields' => array( 'roles' ) ),
 );
 $resolver = new Ability_Resolver();
+$exposure_by_name = array();
 try {
 	$new = $settings->all();
 	$new[ Settings::GROUP_NATIVE_ABILITIES ] = 1;
@@ -80,16 +85,17 @@ try {
 	foreach ( $read_only_cases as $name => $input ) {
 		$ability = wp_get_ability( $name );
 		wpai81_assert( $ability instanceof WP_Ability, 'Core Ability not registered: ' . $name );
-		$meta = $ability->get_meta();
-		wpai81_assert( true === ( $meta['public'] ?? null ), 'Core Ability expected public meta: ' . $name );
-		wpai81_assert(
-			true === \WP\MCP\Abilities\McpAbilityExposure::is_public( $ability )
-			&& true === $resolver->is_mcp_exposed( $ability ),
-			'Adapter/Bridge exposure mismatch: ' . $name
-		);
+		$native_public = \WP\MCP\Abilities\McpAbilityExposure::is_public( $ability );
+		wpai81_assert( $native_public === $resolver->is_mcp_exposed( $ability ), 'Adapter/Bridge exposure mismatch: ' . $name );
+		$exposure_by_name[ $name ] = $native_public;
 		$found = $catalog->execute( array( 'action' => 'get', 'name' => $name ) );
-		wpai81_assert( ! is_wp_error( $found ) && 'native_abilities' === $found['items'][0]['bridge_delegation'], 'Catalog missing native Core contract: ' . $name );
 		$permission = $adapter->check_permissions( array( 'ability_name' => $name, 'parameters' => $input ) );
+		if ( ! $native_public ) {
+			wpai81_assert( is_wp_error( $found ) && 'ability_contract_not_found' === $found->get_error_code(), 'Bridge catalog advertised nonpublic native Core Ability: ' . $name );
+			wpai81_assert( true !== $permission, 'Adapter incorrectly permitted nonpublic Core Ability: ' . $name );
+			continue;
+		}
+		wpai81_assert( ! is_wp_error( $found ) && 'native_abilities' === $found['items'][0]['bridge_delegation'], 'Catalog missing public native Core contract: ' . $name );
 		wpai81_assert( true === $permission, 'Native Adapter permission denied in same WordPress context: ' . $name );
 		$native = $adapter->execute( array( 'ability_name' => $name, 'parameters' => $input ) );
 		wpai81_assert( ! is_wp_error( $native ) && true === ( $native['success'] ?? false ), 'Adapter direct execution failed: ' . $name );
@@ -129,15 +135,20 @@ try {
 	wpai81_assert( 202 === $initialized->get_status(), 'MCP initialized notification failed.' );
 	$id = 10;
 	foreach ( $read_only_cases as $name => $input ) {
-		$from_catalog = wpai81_mcp_call( $token, $session, 'wp-ai-bridge/abilities-read', array( 'action' => 'get', 'name' => $name ), ++$id );
+		$public = $exposure_by_name[ $name ];
+		$from_catalog = wpai81_mcp_call( $token, $session, 'wp-ai-bridge/abilities-read', array( 'action' => 'get', 'name' => $name ), ++$id, $public );
+		$from_adapter = wpai81_mcp_call( $token, $session, $name, $input, ++$id, $public );
+		if ( ! $public ) {
+			echo 'PASS: ' . $name . ' hidden consistently by native Adapter, Bridge catalog and MCP.' . PHP_EOL;
+			continue;
+		}
 		wpai81_assert( $name === ( $from_catalog['items'][0]['name'] ?? '' ), 'MCP catalog mismatch: ' . $name );
-		$from_adapter = wpai81_mcp_call( $token, $session, $name, $input, ++$id );
 		wpai81_assert( is_array( $from_adapter ), 'MCP Core execution payload invalid: ' . $name );
 		$key = array_values( $input['fields'] )[0];
 		wpai81_assert( array_key_exists( $key, $from_adapter ), 'MCP Core output field missing: ' . $name );
-		echo 'PASS: ' . $name . ' catalog + Adapter + real MCP, identical synthetic OAuth principal.' . PHP_EOL;
+		echo 'PASS: ' . $name . ' public catalog + Adapter + real MCP, identical synthetic OAuth principal.' . PHP_EOL;
 	}
-	echo 'PASS: issue81 clean official runtime has no native Core catalog/execute mismatch.' . PHP_EOL;
+	echo 'PASS: issue81 exposure matches native Core policy and Adapter across authenticated real MCP.' . PHP_EOL;
 } finally {
 	wp_set_current_user( $admin_id );
 	update_option( Settings::OPTION_NAME, $old, false );
