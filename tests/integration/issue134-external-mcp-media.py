@@ -210,7 +210,18 @@ with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as 
 archive = zip_buffer.getvalue()
 assert 440 * 1024 < len(archive) < 512 * 1024
 
-for filename, source in (("wpai134-disposable.png", png), ("wpai134-disposable.zip", archive)):
+# A real text/plain Media object is still an opaque **byte** source. The
+# 1+ MiB payload proves that neither UTF-8 multi-byte code points nor total
+# object capacity get truncated by smaller per-message HTTPS/MCP windows.
+utf8_line = "سلام وردپرس 🌍 — independent UTF-8 file delivery\n".encode("utf-8")
+utf8_document = utf8_line * (1 + (1150 * 1024) // len(utf8_line))
+assert 1024 * 1024 < len(utf8_document) < 2 * 1024 * 1024
+
+for filename, source in (
+    ("wpai134-disposable.png", png),
+    ("wpai134-disposable.zip", archive),
+    ("wpai134-disposable.txt", utf8_document),
+):
     inbound, digest, sent_windows = stage(source)
     ability("wp-ai-bridge/transfer-media-import", {
         "transfer_id": inbound, "filename": "wpai134-not-executable.php",
@@ -237,4 +248,4 @@ for filename, source in (("wpai134-disposable.png", png), ("wpai134-disposable.z
     print("PASS: external HTTPS Bridge Media %s bytes=%d upload_windows=%d private_export_windows=%d inline_read_windows=%d SHA256=matched native_nonreplay=yes." % (
         filename.rsplit(".", 1)[-1], len(source), sent_windows, windows, inline_windows))
 
-print("PASS: #134 true separate-process HTTPS/OAuth/MCP Bridge Media PNG+ZIP ingress, native publication, exact full-byte egress, no Gateway; max_MCP_response_bytes=%d." % max_wire)
+print("PASS: #134 true separate-process HTTPS/OAuth/MCP Bridge Media PNG+ZIP+UTF8 document ingress, native publication, exact full-byte egress, no Gateway; max_MCP_response_bytes=%d." % max_wire)

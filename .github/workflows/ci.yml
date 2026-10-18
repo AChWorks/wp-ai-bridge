@@ -203,6 +203,9 @@ jobs:
           - name: Issue 134 external HTTPS Media byte exchange
             runner: bin/run-issue134-external-media.sh
             wordpress_tag: 6.9-php8.4-apache
+          - name: Issue 134/139 external HTTPS native WXR import and export
+            runner: bin/run-issue139-external-wxr.sh
+            wordpress_tag: 6.9-php8.4-apache
           - name: Canonical identity
             runner: bin/run-canonical-identity.sh
             wordpress_tag: 6.9-php8.4-apache
