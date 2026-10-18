@@ -48,6 +48,16 @@ fi
 "${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge.zip
 
+# WP-CLI setup runs as root while actual HTTPS/MCP requests run as Apache
+# www-data. Match the shipped external Cron fixture's native uploads owner,
+# rather than silently allowing only root to create published Media files.
+# This is a fresh disposable WordPress volume, never a hosted-site chmod.
+"${compose[@]}" exec -T wordpress bash -ec '
+    install -d -o www-data -g www-data -m 0775 /var/www/html/wp-content/uploads
+    chown -R www-data:www-data /var/www/html/wp-content/uploads
+'
+"${compose[@]}" exec -u www-data -T wordpress sh -ec 'test -w /var/www/html/wp-content/uploads'
+
 # Disposable, localhost-only TLS fixture. Real-world TLS validation remains mandatory.
 "${compose[@]}" exec -T wordpress bash -ec '
     a2enmod ssl >/dev/null
