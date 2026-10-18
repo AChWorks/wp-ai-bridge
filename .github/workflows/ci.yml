@@ -200,6 +200,9 @@ jobs:
           - name: Issue 46 multisite
             runner: bin/run-issue46-multisite.sh
             wordpress_tag: php8.4-apache
+          - name: Issue 134 external HTTPS Media byte exchange
+            runner: bin/run-issue134-external-media.sh
+            wordpress_tag: 6.9-php8.4-apache
           - name: Canonical identity
             runner: bin/run-canonical-identity.sh
             wordpress_tag: 6.9-php8.4-apache
