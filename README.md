@@ -100,4 +100,6 @@ GitHub Releases is the maintained distribution channel. WordPress.org Plugin Dir
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)
 - [Release history](./CHANGELOG.md)
 
+**For maintainers:** Start with the [canonical product specification](./MASTER-SPEC.md), [architecture](./docs/ARCHITECTURE.md) and [development/testing guide](./docs/DEVELOPMENT.md). Recover unfinished acceptance from [GitHub Issues](https://github.com/AChWorks/wp-ai-bridge/issues), candidate changes from [Pull Requests](https://github.com/AChWorks/wp-ai-bridge/pulls) and shipped artifacts from [Releases](https://github.com/AChWorks/wp-ai-bridge/releases). A merged source PR is not proof of a live-site installation; an Owner-parked Issue is not permission to start development.
+
 **License:** GPL-2.0-or-later — [LICENSE](./LICENSE) · **Author:** [ACh](https://ach.li)

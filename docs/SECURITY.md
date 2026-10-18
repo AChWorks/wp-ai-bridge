@@ -160,7 +160,7 @@ Generic content/Gutenberg operations remain limited to their existing eligible e
 
 Media upload accepts bytes and a filename, writes only to a WordPress-generated temporary path, and hands the result to WordPress media/sideload handling. The caller cannot specify a server filesystem path.
 
-The payload cap is the smaller of the WordPress upload limit and 20 MiB.
+The one-request Base64 `wp-ai-bridge/media-upload` byte limit is the smaller of native `wp_max_upload_size()` and the validated per-site `inline_media_upload_mib` setting (**20 MiB default**, administrator-adjustable up to a finite PHP-memory-derived policy maximum). PHP memory, actual MCP client/HTTP request capacities and WordPress upload handling can impose tighter limits. This inline upload budget does **not** impose a common 20 MiB aggregate limit on separately authorized, purpose-bound `private-transfer` files, which have independent finite resource and security policies.
 
 ## Remote media boundary
 
