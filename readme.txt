@@ -2,7 +2,7 @@
 Tags: ai, mcp, abilities, oauth, administration
 Requires at least: 6.9
 Tested up to: 7.1
-Stable tag: 0.6.10
+Stable tag: 0.6.11
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,10 @@ WordPress.org may be contacted by WordPress Core for its own routine plugin/them
 WP AI Bridge retains private Workspace data and bounded activity metadata on the WordPress installation. OAuth tokens, connection approvals and revocation remain WordPress-controlled. See the project's Security and OAuth documentation for retention, revocation and advanced permissions.
 
 == Changelog ==
+
+= 0.6.11 =
+* Refresh PHP file-stat metadata after private Media staging so native WordPress sideload receives the actual written byte count; retain source SHA-256 checks and private-file cleanup (#134, #173).
+* Retain native WordPress Media destinations and existing scoped security controls. Real LiteSpeed/PHP 8.1 acceptance and native client attachment handoff require separate verification.
 
 = 0.6.10 =
 * Fix selected WordPress Site Health checks invoked over MCP when WordPress admin helper functions are not yet loaded; retain native permission checks and real Core results.
