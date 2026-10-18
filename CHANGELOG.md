@@ -4,6 +4,12 @@ All notable public changes are documented here.
 
 ## Unreleased
 
+## 0.6.11
+
+- Refresh PHP's stat cache after writing owner-only Media sideload input and confirm actual filesize before WordPress Core's native importer; also refresh verified confidential-transfer Media staging metadata. This addresses a reproducible `upload_error` / "File is empty" failure path observed on LiteSpeed/PHP 8.1 (#134, #173; [PR #191](https://github.com/AChWorks/wp-ai-bridge/pull/191)). Preserve the existing authorized Media Library destination, exact-byte integrity, private staging and rejection/exception cleanup. Isolated Core integration and exact-head review/CI passed, but the **installed LiteSpeed fix remains unverified** until this release is installed and tested.
+- Advance the disposable native Core-upgrade continuity regression from the genuine published **v0.6.10** ZIP, pinned by SHA-256 `763542b6e843cd8acfe13e140815656d219464d43b4095964b2d080fefdd5043`, to the current candidate. Verify preservation of canonical OAuth/Workspace/permissions without changing existing runtime upgrade semantics.
+- This is a WordPress-side patch, not a new Gateway binary/attachment transport or universal webserver/CDN-alias privacy claim. Existing Gateway #147/#154 and Bridge #134/#173 end-to-end acceptance remain separate.
+
 ## 0.6.10
 
 - Restore selected native WordPress Site Health checks in authenticated MCP/REST requests by lazily loading only the fixed WordPress Core admin helpers required by the selected allowlisted test (#186). This addresses observed `get_plugin_updates()` and `wp_check_php_version()` PHP callback exceptions without weakening permissions, Core method/REST identity checks or fabricating healthy status; separate bare WordPress bootstrap and official MCP Adapter regressions cover the affected calls.

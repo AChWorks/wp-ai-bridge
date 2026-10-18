@@ -4,7 +4,7 @@
  * Plugin URI: https://github.com/AChWorks/wp-ai-bridge
  * Update URI: https://github.com/AChWorks/wp-ai-bridge
  * Description: Connects compatible AI/MCP clients to WordPress through OAuth and permission-checked WordPress Abilities.
- * Version: 0.6.10
+ * Version: 0.6.11
  * Requires at least: 6.9
  * Author: ACh
  * Author URI: https://ach.li
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WP_AI_BRIDGE_VERSION', '0.6.10' );
+define( 'WP_AI_BRIDGE_VERSION', '0.6.11' );
 define( 'WP_AI_BRIDGE_FILE', __FILE__ );
 define( 'WP_AI_BRIDGE_DIR', __DIR__ );
 
