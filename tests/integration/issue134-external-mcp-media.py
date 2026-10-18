@@ -76,7 +76,19 @@ def ability(name, params, expect_success=True):
     structured = envelope.get("structuredContent", {})
     success = not envelope.get("isError") and structured.get("success") is True
     if expect_success:
-        assert success, "Bridge refused expected authenticated operation %s" % name
+        if not success:
+            # Synthetic localhost-only fixture: show only the bounded native
+            # WordPress diagnostic text, never credentials or source bytes.
+            import re
+            entries = envelope.get("content", [])
+            first = entries[0] if isinstance(entries, list) and entries else {}
+            summary = first.get("text", "unspecified") if isinstance(first, dict) else "unspecified"
+            summary = re.sub(r"https?://\S+", "[URL]", str(summary))
+            summary = re.sub(r"(?:/var|/home|/tmp|/srv)/\S+", "[PATH]", summary)
+            summary = re.sub(r"Bearer\s+\S+", "Bearer [REDACTED]", summary, flags=re.I)
+            summary = summary[:240]
+            raise AssertionError("Bridge refused %s: isError=%s; native_result=%s" % (
+                name, bool(envelope.get("isError")), summary))
         assert isinstance(structured.get("data"), dict), "Bridge returned an unexpected non-object contract"
         return structured["data"]
     assert not success, "Bridge accepted an explicitly disallowed %s operation" % name
