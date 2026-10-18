@@ -24,6 +24,14 @@ Start a fresh connection attempt rather than reusing an old consent page. OAuth 
 
 Also check browser/network security layers for blocked redirects to ChatGPT and ensure the site/canonical WordPress URLs are correctly configured for HTTPS.
 
+## Gateway Target shows connected, but authenticated WordPress operations fail
+
+Gateway's **Targets → Target Details → Connection and recovery** separates public WordPress metadata reachability, a **locally stored OAuth authorization**, and any pending disconnect/refresh. A successful public metadata check or `Locally Connected` status is **not** a live authenticated heartbeat. Conversely, historical failure records do not prove the connection is still broken.
+
+If the **current** recovery panel reports an unresolved refresh or disconnect, do not press Refresh, Reauthorize or Disconnect to experiment, and do not reuse/revoke the old refresh token blindly. A remote rotating-token operation may already have succeeded while its response was lost. Stop the affected calls and follow the **installed Gateway version's Owner-only reconciliation** procedure with its exact Target identity and warning about revoking other approved clients. The maintained [Gateway recovery guide](https://github.com/AChWorks/mcp-gateway/blob/main/docs/TARGET-DISCONNECT-RECOVERY.md) is a reference; verify which procedure the installed Gateway actually supports. Removing a WordPress-approved additional client is a consequential revocation, **not** an ordinary connection health check.
+
+If the current panel shows **no pending operation** and the Owner has approved a live read-only check, make **one serialized** authenticated `wp-ai-bridge/bridge-info` request. Its success verifies the actual Bridge/Gateway/WordPress path for that request; it does not prove long-idle OAuth durability or that Gateway performed no in-band refresh while serving it. Follow with the separately authorized, read-only Site Health, Core information, Media list or Workspace resume only when useful. Even WordPress read-only operations may trigger due credential renewal in a client. If `refresh_pending` returns again, stop and reconcile the uncertain state before any retry or simultaneous requests. Record only safe diagnostic references and actual outcomes in [OAuth Issue #92](https://github.com/AChWorks/wp-ai-bridge/issues/92); **never** copy tokens into Issues or logs.
+
 ## An MCP Ability returns an unhelpful error
 
 First check the exact **installed** Bridge, WordPress, MCP Adapter and Gateway versions; an updated GitHub branch is not installed functionality. For clients using the Bridge MCP endpoint, newer Bridge builds preserve an observed WP_Error code, useful message and structured data instead of mapping unfamiliar codes to a catch-all. Sensitive fragments (for example credentials, private filesystem paths and authorization headers) are redacted individually; redacted and truncated report any loss. An isError response is not proof that a potentially mutating operation was rolled back. Inspect its effect before replaying it.
@@ -90,7 +98,7 @@ Check:
 - **Builder Write** is enabled;
 - the connected WordPress user has `upload_files`;
 - WordPress accepts the MIME type;
-- file size does not exceed either the WordPress upload limit or the Bridge 20 MiB cap.
+- file size fits WordPress/PHP upload limits, the current site's `inline_media_upload_mib` setting (**20 MiB default**, administrator-adjustable), and the actual MCP client/request envelope. This one-request inline limit does **not** cap aggregate private-transfer files.
 
 The Bridge does not accept server filesystem paths.
 

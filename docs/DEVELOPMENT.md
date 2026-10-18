@@ -192,7 +192,7 @@ src/Workspace/   private durable Workspace storage
 languages/       bundled WordPress translation catalog
 tests/           fast and integration tests
 bin/             development/build/test helpers
-docs/maintainer/ recovery map and preserved design references
+docs/           architecture, security, operation contracts and developer guides
 ```
 
 ### Pinned published-predecessor ZIP upgrade regression
