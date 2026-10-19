@@ -54,7 +54,7 @@ The actual operations available depend on your site's WordPress/plugins/themes, 
 - **Supported data transfer:** exchange bounded text and file content through authenticated private-transfer workflows and native Media/WXR operations, where the client/hosting transport supports them.
 - **Optional providers:** reuse applicable Abilities/APIs from installed integrations such as Astra, Code Snippets and Gravity Forms.
 
-The Bridge's WordPress-side file-transfer capabilities do **not** prove that every AI client or optional Gateway can send or receive native attachments. Check the specific client/transport before relying on a file workflow. See the [Ability reference](./docs/ABILITIES.md), [data exchange guide](./docs/LARGE-PAYLOADS.md) and [integrations](./docs/INTEGRATIONS.md).
+The Bridge's WordPress-side file-transfer capabilities do **not** prove that every AI client or optional Gateway can send or receive native attachments. Check the specific client/transport before relying on a file workflow. Native ChatGPT `fileParams` attachment ingress via the optional Gateway is **PARKED / currently unsupported** as of Gateway v2.3.6; its host-to-MCP handoff has not been reliably verified. This does not disable existing authenticated private-transfer, Media or WXR operations or other supported file-transfer routes, nor mean native file delivery is universally impossible. See the [Ability reference](./docs/ABILITIES.md), [data exchange guide](./docs/LARGE-PAYLOADS.md) and [integrations](./docs/INTEGRATIONS.md).
 
 ## Permissions you control
 
