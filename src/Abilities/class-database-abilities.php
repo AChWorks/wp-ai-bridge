@@ -73,7 +73,7 @@ final class Database_Abilities {
 		$properties = array(
 			'action' => array(
 				'type' => 'string',
-				'enum' => $raw ? array( 'rows', 'cell' ) : array( 'tables', 'schema' ),
+				'enum' => $raw ? array( 'rows', 'cell' ) : array( 'tables', 'schema', 'column_type' ),
 			),
 			'table'  => $identifier,
 			'limit'  => array(
@@ -97,6 +97,7 @@ final class Database_Abilities {
 				'column'          => $identifier,
 				'filters'         => $key,
 				'key'             => $key,
+				'row_offset'      => $natural,
 				'key_hashes'      => array(
 					'type'                 => 'object',
 					'additionalProperties' => array(
@@ -119,13 +120,22 @@ final class Database_Abilities {
 			);
 		} else {
 			$properties += array(
-				'after_table' => array(
+				'after_table'     => array(
 					'type'      => 'string',
 					'maxLength' => 64,
 				),
-				'section'     => array(
+				'section'         => array(
 					'type' => 'string',
 					'enum' => array( 'columns', 'indexes' ),
+				),
+				'column'          => $identifier,
+				'length'          => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+				),
+				'expected_sha256' => array(
+					'type'    => 'string',
+					'pattern' => '^[a-f0-9]{64}$',
 				),
 			);
 		}
@@ -174,7 +184,8 @@ final class Database_Abilities {
 		if ( ! is_wp_error( $result ) ) {
 			$result['elapsed_ms'] = round( ( microtime( true ) - $started ) * 1000, 3 );
 			if ( ! Bounded_Payload::fits( $result ) ) {
-				$result = new WP_Error( 'database_response_budget', __( 'This page exceeds the configured response budget. Request fewer records/columns or a shorter cell window, or adjust the response policy in WP AI Bridge Settings.', 'wp-ai-bridge' ) );
+				$result = in_array( $validated['action'], array( 'cell', 'column_type' ), true ) ?
+					$this->fit_cell_window( $result ) : $this->response_budget_error();
 			}
 		}
 		if ( $raw && ! $this->log->record(
@@ -193,27 +204,30 @@ final class Database_Abilities {
 	private function validate( $input, $raw ) {
 		$actions = $raw ? array(
 			'rows' => array( 'action', 'table', 'columns', 'limit', 'offset', 'after_id', 'filters' ),
-			'cell' => array( 'action', 'table', 'column', 'key', 'key_hashes', 'offset', 'length', 'expected_sha256' ),
+			'cell' => array( 'action', 'table', 'column', 'key', 'key_hashes', 'row_offset', 'filters', 'offset', 'length', 'expected_sha256' ),
 		) : array(
-			'tables' => array( 'action', 'limit', 'after_table' ),
-			'schema' => array( 'action', 'table', 'section', 'limit', 'offset' ),
+			'tables'      => array( 'action', 'limit', 'after_table' ),
+			'schema'      => array( 'action', 'table', 'section', 'limit', 'offset' ),
+			'column_type' => array( 'action', 'table', 'column', 'offset', 'length', 'expected_sha256' ),
 		);
 		if ( ! is_array( $input ) || ! isset( $input['action'] ) || ! is_string( $input['action'] ) ||
 			! isset( $actions[ $input['action'] ] ) || array_diff( array_keys( $input ), $actions[ $input['action'] ] ) ) {
 			return $this->invalid();
 		}
 		$max = max( 1, intdiv( Bounded_Payload::response_limit(), 2048 ) );
-		foreach ( array( 'offset', 'length', 'limit' ) as $name ) {
-			if ( array_key_exists( $name, $input ) && ( ! is_int( $input[ $name ] ) || $input[ $name ] < ( 'offset' === $name ? 0 : 1 ) ||
-				$input[ $name ] > ( 'offset' === $name ? PHP_INT_MAX - $max : ( 'limit' === $name ? $max : intdiv( Bounded_Payload::response_limit(), 16 ) ) ) ) ) {
+		foreach ( array( 'offset', 'row_offset', 'length', 'limit' ) as $name ) {
+			if ( array_key_exists( $name, $input ) && ( ! is_int( $input[ $name ] ) || $input[ $name ] < ( in_array( $name, array( 'offset', 'row_offset' ), true ) ? 0 : 1 ) ||
+				$input[ $name ] > ( in_array( $name, array( 'offset', 'row_offset' ), true ) ? PHP_INT_MAX - $max : ( 'limit' === $name ? $max : intdiv( Bounded_Payload::response_limit(), 4 ) ) ) ) ) {
 				return $this->invalid();
 			}
 		}
-		if ( 'cell' !== $input['action'] ) {
+		if ( in_array( $input['action'], array( 'tables', 'schema', 'rows' ), true ) ) {
 			$input['limit'] = $input['limit'] ?? min( 25, $max );
+		} else {
+			$input['length'] = $input['length'] ?? max( 1, intdiv( Bounded_Payload::response_limit(), 4 ) );
 		}
 		foreach ( array( 'table', 'column' ) as $name ) {
-			if ( ( 'table' === $name && 'tables' !== $input['action'] ) || ( 'column' === $name && 'cell' === $input['action'] ) ) {
+			if ( ( 'table' === $name && 'tables' !== $input['action'] ) || ( 'column' === $name && in_array( $input['action'], array( 'cell', 'column_type' ), true ) ) ) {
 				if ( ! isset( $input[ $name ] ) || ! $this->identifier( $input[ $name ] ) ) {
 					return $this->invalid();
 				}
@@ -245,8 +259,15 @@ final class Database_Abilities {
 				return new WP_Error( 'database_response_budget', __( 'This page exceeds the configured response budget. Request fewer records/columns or a shorter cell window, or adjust the response policy in WP AI Bridge Settings.', 'wp-ai-bridge' ) );
 			}
 		}
-		if ( 'cell' === $input['action'] && empty( $input['key'] ) && empty( $input['key_hashes'] ) ) {
-			return $this->invalid();
+		if ( 'cell' === $input['action'] ) {
+			$row_position = array_key_exists( 'row_offset', $input );
+			if ( $row_position ) {
+				if ( array_key_exists( 'key', $input ) || array_key_exists( 'key_hashes', $input ) || ! isset( $input['expected_sha256'] ) ) {
+					return $this->invalid();
+				}
+			} elseif ( ( empty( $input['key'] ) && empty( $input['key_hashes'] ) ) || array_key_exists( 'filters', $input ) ) {
+				return $this->invalid();
+			}
 		}
 		$total_key_bytes = 0;
 		foreach ( array( 'filters', 'key' ) as $name ) {
@@ -284,10 +305,62 @@ final class Database_Abilities {
 		if ( array_key_exists( 'expected_sha256', $input ) && ( ! is_string( $input['expected_sha256'] ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $input['expected_sha256'] ) ) ) {
 			return $this->invalid();
 		}
-		if ( 'cell' === $input['action'] && ! empty( $input['offset'] ) && ! isset( $input['expected_sha256'] ) ) {
+		if ( in_array( $input['action'], array( 'cell', 'column_type' ), true ) && ! empty( $input['offset'] ) && ! isset( $input['expected_sha256'] ) ) {
 			return $this->invalid();
 		}
 		return $input;
+	}
+
+	/**
+	 * Fit actual MCP encoding without another SQL query/full-value hash.
+	 *
+	 * Base64 prefixes at three-byte boundaries are monotonic complete quartets,
+	 * including slash escaping in the Adapter's duplicate JSON representation.
+	 *
+	 * @param array $result Bounded SQL window and its integrity metadata.
+	 * @return array|WP_Error
+	 */
+	private function fit_cell_window( array $result ) {
+		$bytes = base64_decode( $result['cell']['data'], true );
+		if ( ! is_string( $bytes ) || '' === $bytes ) {
+			return $this->response_budget_error();
+		}
+		$prefix = static function ( $length ) use ( $result, $bytes ) {
+			$next                        = $result;
+			$next['cell']['data']        = base64_encode( substr( $bytes, 0, $length ) );
+			$next['cell']['bytes']       = $length;
+			$end                         = $next['cell']['offset'] + $length;
+			$next['cell']['next_offset'] = $end < $next['cell']['total_bytes'] ? $end : null;
+			return $next;
+		};
+		$low    = 0;
+		$high   = intdiv( strlen( $bytes ), 3 );
+		$best   = null;
+		while ( $low <= $high ) {
+			$middle    = intdiv( $low + $high, 2 );
+			$candidate = $prefix( $middle * 3 );
+			if ( Bounded_Payload::fits( $candidate ) ) {
+				$best = $candidate;
+				$low  = $middle + 1;
+			} else {
+				$high = $middle - 1;
+			}
+		}
+		if ( null === $best || 0 === $best['cell']['bytes'] ) {
+			foreach ( array( min( 2, strlen( $bytes ) ), 1 ) as $length ) {
+				$candidate = $prefix( $length );
+				if ( Bounded_Payload::fits( $candidate ) ) {
+					return $candidate;
+				}
+			}
+			return $this->response_budget_error();
+		}
+		return Bounded_Payload::fits( $best ) ? $best : $this->response_budget_error();
+	}
+
+	/** @return WP_Error */
+	private function response_budget_error() {
+		return new WP_Error( 'database_response_budget', __( 'This page exceeds the configured response budget. Request fewer records/columns or a shorter cell window, or adjust the response policy in WP AI Bridge Settings.', 'wp-ai-bridge' ) );
 	}
 
 	/** @param mixed $value Exact native identifier. @return bool */

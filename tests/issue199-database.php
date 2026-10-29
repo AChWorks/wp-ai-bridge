@@ -116,7 +116,7 @@ $bad = array(
 	array( 'action' => 'cell', 'table' => 'wp_fixture', 'column' => 'payload', 'key' => array() ),
 	array( 'action' => 'cell', 'table' => 'wp_fixture', 'column' => 'payload', 'key' => array( 'id' => base64_encode( '1' ) ), 'offset' => 1 ),
 	array( 'action' => 'cell', 'table' => 'wp_fixture', 'column' => 'payload', 'key' => array( 'id' => base64_encode( '1' ) ), 'expected_sha256' => null ),
-	array( 'action' => 'cell', 'table' => 'wp_fixture', 'column' => 'payload', 'key' => array( 'id' => base64_encode( '1' ) ), 'length' => intdiv( Bounded_Payload::response_limit(), 16 ) + 1 ),
+	array( 'action' => 'cell', 'table' => 'wp_fixture', 'column' => 'payload', 'key' => array( 'id' => base64_encode( '1' ) ), 'length' => intdiv( Bounded_Payload::response_limit(), 4 ) + 1 ),
 );
 $oversized = base64_encode( str_repeat( 'x', intdiv( Bounded_Payload::response_limit(), 2 ) ) );
 $bad[] = $rows + array( 'filters' => array( 'id' => $oversized, 'value' => $oversized ) );
@@ -124,11 +124,32 @@ $bad[] = array_replace( $rows, array( 'limit' => intdiv( Bounded_Payload::respon
 $bad[] = array( 'action' => 'cell', 'table' => 'wp_fixture', 'column' => 'payload', 'key_hashes' => array( 'id' => null ) );
 $bad[] = array( 'action' => 'cell', 'table' => 'wp_fixture', 'column' => 'payload', 'key_hashes' => array( 'id' => 'not-a-sha256' ) );
 $bad[] = array( 'action' => 'cell', 'table' => 'wp_fixture', 'column' => 'payload', 'key_hashes' => array() );
+$positional = array( 'action' => 'cell', 'table' => 'wp_fixture', 'column' => 'payload', 'row_offset' => 0, 'expected_sha256' => hash( 'sha256', 'value' ) );
+$assert( ! is_wp_error( $validate->invoke( $provider, $positional, true ) ), 'Position zero with an exact expected hash was rejected.' );
+$assert( ! is_wp_error( $validate->invoke( $provider, $positional + array( 'filters' => array( 'id' => base64_encode( '1' ) ) ), true ) ), 'A typed filter on positional cell reads was rejected.' );
+foreach ( array( null, -1, 0.5, '0', PHP_INT_MAX ) as $bad_position ) {
+	$bad[] = array_replace( $positional, array( 'row_offset' => $bad_position ) );
+}
+$without_hash = $positional;
+unset( $without_hash['expected_sha256'] );
+$bad[] = $without_hash;
+$bad[] = $positional + array( 'key' => array( 'id' => base64_encode( '1' ) ) );
+$bad[] = $positional + array( 'key_hashes' => array( 'id' => hash( 'sha256', '1' ) ) );
+$bad[] = array( 'action' => 'cell', 'table' => 'wp_fixture', 'column' => 'payload', 'key' => array( 'id' => base64_encode( '1' ) ), 'filters' => array( 'id' => base64_encode( '1' ) ) );
+$type_request = array( 'action' => 'column_type', 'table' => 'wp_fixture', 'column' => 'payload' );
+$assert( ! is_wp_error( $validate->invoke( $provider, $type_request, false ) ), 'Named schema-type continuation was rejected.' );
+$assert( ! is_wp_error( $validate->invoke( $provider, $type_request + array( 'offset' => 1, 'expected_sha256' => hash( 'sha256', 'type' ), 'length' => intdiv( Bounded_Payload::response_limit(), 4 ) ), false ) ), 'Hash-bound finite schema-type continuation was rejected.' );
+$bad[] = $type_request + array( 'offset' => 1 );
+$bad[] = $type_request + array( 'expected_sha256' => null );
+$bad[] = $type_request + array( 'length' => intdiv( Bounded_Payload::response_limit(), 4 ) + 1 );
+$bad[] = array_replace( $type_request, array( 'column' => null ) );
+$bad[] = $type_request + array( 'row_offset' => 0 );
+
 $hash_key = array( 'action' => 'cell', 'table' => 'wp_fixture', 'column' => 'payload', 'key_hashes' => array( 'id' => hash( 'sha256', 'exact value' ) ) );
 $assert( ! is_wp_error( $validate->invoke( $provider, $hash_key, true ) ), 'An exact hash-only cell selector was rejected.' );
 
 foreach ( $bad as $input ) {
-	$raw = ! is_array( $input ) || ! isset( $input['action'] ) || ! in_array( $input['action'], array( 'tables', 'schema' ), true );
+	$raw = ! is_array( $input ) || ! isset( $input['action'] ) || ! in_array( $input['action'], array( 'tables', 'schema', 'column_type' ), true );
 	$assert( is_wp_error( $validate->invoke( $provider, $input, $raw ) ), 'Malformed/oversized database input passed the boundary.' );
 }
 

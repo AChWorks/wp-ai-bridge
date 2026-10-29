@@ -9,6 +9,7 @@
 
 use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Bounded_Payload;
 use WP_AI_Bridge\Support\Settings;
 
 require_once __DIR__ . '/issue134-review-helper.php';
@@ -49,7 +50,7 @@ try {
 	wpai199mcp_assert( current_user_can( 'manage_options' ), 'Synthetic MCP fixture requires its administrator.' );
 	wpai199mcp_assert( false !== $wpdb->query( $wpdb->prepare( 'CREATE TABLE %i (id bigint unsigned NOT NULL PRIMARY KEY, payload longblob NOT NULL) ENGINE=InnoDB', $table ) ), 'Cannot create private MCP fixture table.' );
 	$created = true;
-	$bytes = str_repeat( "\x00\xffDatabase-MCP-سلام", 1200 );
+	$bytes = str_repeat( chr( 255 ), 70000 ) . str_repeat( "Database-MCP-سلام", 1200 );
 	wpai199mcp_assert( 1 === $wpdb->insert( $table, array( 'id' => '1', 'payload' => $bytes ), array( '%s', '%s' ) ), 'Cannot populate private MCP fixture.' );
 	$settings = new Settings();
 	$grants = $settings->defaults();
@@ -60,6 +61,9 @@ try {
 
 	$schema = wpai199mcp_data( wpai199mcp_call( $token, $session, 'database-inspect', array( 'action' => 'schema', 'table' => $table, 'limit' => 10 ) ) );
 	wpai199mcp_assert( 2 === count( $schema['items'] ), 'Native Bridge-owned database inspection did not cross the authenticated Adapter with Native Abilities disabled.' );
+	$type_definition = wpai199mcp_data( wpai199mcp_call( $token, $session, 'database-inspect', array( 'action' => 'column_type', 'table' => $table, 'column' => 'id' ) ) );
+	wpai199mcp_assert( 'bigint' === $type_definition['data_type'] && 'column_type_definition' === $type_definition['cell']['sql_type'] && null === $type_definition['cell']['next_offset'], 'Metadata-only type continuation was not exposed through authenticated MCP.' );
+
 	$rows_request = array( 'action' => 'rows', 'table' => $table, 'columns' => array( 'id', 'payload' ), 'limit' => 1 );
 	$no_sensitive = wpai199mcp_call( $token, $session, 'database-read', $rows_request );
 	wpai199mcp_assert( true === ( $no_sensitive['result']['isError'] ?? false ), 'Metadata-only OAuth connection read sensitive database values.' );
@@ -73,16 +77,27 @@ try {
 	$hash = hash( 'sha256', $bytes );
 	$assembled = '';
 	$offset = 0;
+	$requested_window = intdiv( Bounded_Payload::response_limit(), 4 );
 	do {
-		$window = wpai199mcp_data( wpai199mcp_call( $token, $session, 'database-read', array(
+		$response = wpai199mcp_call( $token, $session, 'database-read', array(
 			'action' => 'cell', 'table' => $table, 'column' => 'payload', 'key' => array( 'id' => base64_encode( '1' ) ),
-			'offset' => $offset, 'length' => 2048, 'expected_sha256' => $hash,
-		) ) );
+			'offset' => $offset, 'length' => $requested_window, 'expected_sha256' => $hash,
+		) );
+		$window = wpai199mcp_data( $response );
+		wpai199mcp_assert( strlen( wp_json_encode( $response ) ) <= Bounded_Payload::response_limit() && Bounded_Payload::fits( $window ), 'Actual duplicated MCP result exceeded the response policy after adaptive byte sizing.' );
+		wpai199mcp_assert( $window['cell']['bytes'] > 0 && $window['cell']['bytes'] <= $requested_window, 'Adaptive MCP bytes did not respect the requested SQL window.' );
+		if ( 0 === $offset ) {
+			wpai199mcp_assert( $window['cell']['bytes'] < $requested_window, 'Worst-case slash-base64 MCP reply did not adapt to the encoded envelope.' );
+		}
+		wpai199mcp_assert( null === $window['cell']['next_offset'] || $offset + $window['cell']['bytes'] === $window['cell']['next_offset'], 'Adaptive MCP continuation skipped or repeated bytes.' );
 		wpai199mcp_assert( $hash === $window['cell']['sha256'] && $offset === $window['cell']['offset'], 'Authenticated MCP cell window identity changed.' );
 		$assembled .= base64_decode( $window['cell']['data'], true );
 		$offset = $window['cell']['next_offset'];
 	} while ( null !== $offset );
 	wpai199mcp_assert( $bytes === $assembled && $hash === hash( 'sha256', $assembled ), 'Authenticated MCP byte reconstruction failed.' );
+	$position = wpai199mcp_data( wpai199mcp_call( $token, $session, 'database-read', array( 'action' => 'cell', 'table' => $table, 'column' => 'payload', 'row_offset' => 0, 'filters' => array( 'id' => base64_encode( '1' ) ), 'expected_sha256' => $hash, 'length' => 32 ) ) );
+	wpai199mcp_assert( 0 === $position['row_offset'] && 'live_row_position_not_identity' === $position['consistency'] && substr( $bytes, 0, 32 ) === base64_decode( $position['cell']['data'], true ), 'Authenticated MCP positional cell input/output did not preserve its declared contract.' );
+
 
 	wp_set_current_user( $actor );
 	$grants[ Settings::GROUP_DATABASE_READ ] = 0;

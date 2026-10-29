@@ -34,7 +34,7 @@ final class Database_Reader {
 			! $wpdb->has_cap( 'identifier_placeholders' ) ) {
 			return new WP_Error( 'database_unavailable', __( 'The WordPress connection needs a nonempty installation prefix and identifier-placeholder support.', 'wp-ai-bridge' ) );
 		}
-		if ( ! isset( $input['action'] ) || ! in_array( $input['action'], array( 'tables', 'schema', 'rows', 'cell' ), true ) ) {
+		if ( ! isset( $input['action'] ) || ! in_array( $input['action'], array( 'tables', 'schema', 'column_type', 'rows', 'cell' ), true ) ) {
 			return new WP_Error( 'database_input_invalid', __( 'Select a supported database read action.', 'wp-ai-bridge' ) );
 		}
 		if ( 'tables' === $input['action'] ) {
@@ -55,6 +55,9 @@ final class Database_Reader {
 		}
 		if ( ! $found ) {
 			return new WP_Error( 'database_table_unavailable', __( 'The exact base table is unavailable to the WordPress database account. Views and other databases are not supported.', 'wp-ai-bridge' ) );
+		}
+		if ( 'column_type' === $input['action'] ) {
+			return $this->column_type( $input );
 		}
 		return 'schema' === $input['action'] ? $this->schema( $input ) : $this->values( $input );
 	}
@@ -117,6 +120,14 @@ final class Database_Reader {
 		if ( 'columns' === $section ) {
 			foreach ( $items as &$item ) {
 				$item['sql_type_truncated'] = strlen( $item['sql_type'] ) < (int) $item['sql_type_bytes'];
+				if ( $item['sql_type_truncated'] ) {
+					$item['sql_type_continuation'] = array(
+						'action' => 'column_type',
+						'table'  => $input['table'],
+						'column' => $item['name'],
+						'offset' => 0,
+					);
+				}
 			}
 			unset( $item );
 		}
@@ -130,14 +141,58 @@ final class Database_Reader {
 		);
 	}
 
+	/**
+	 * Return a lossless byte window of one native column type definition.
+	 *
+	 * @param array $input Validated named-column request.
+	 * @return array|WP_Error
+	 */
+	private function column_type( array $input ) {
+		global $wpdb;
+		$start = $input['offset'] ?? 0;
+		$rows  = $this->read(
+			$wpdb->prepare(
+				'SELECT SUBSTRING(CAST(COLUMN_TYPE AS BINARY), %d, %d) AS v0, OCTET_LENGTH(COLUMN_TYPE) AS n0, SHA2(CAST(COLUMN_TYPE AS BINARY), 256) AS h0, DATA_TYPE AS data_type FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND BINARY TABLE_NAME = BINARY %s AND BINARY COLUMN_NAME = BINARY %s LIMIT 1',
+				$start + 1,
+				$input['length'] ?? min( 8192, $this->budget ),
+				$input['table'],
+				$input['column']
+			)
+		);
+		if ( is_wp_error( $rows ) ) {
+			return $rows;
+		}
+		if ( 1 !== count( $rows ) ) {
+			return new WP_Error( 'database_column_unavailable', __( 'Select exact columns from the current table schema.', 'wp-ai-bridge' ) );
+		}
+		if ( null !== $rows[0]['n0'] && ! $this->valid_digest( $rows[0]['h0'] ) ) {
+			return $this->digest_error();
+		}
+		if ( isset( $input['expected_sha256'] ) && $input['expected_sha256'] !== $rows[0]['h0'] ) {
+			return new WP_Error( 'database_cell_stale', __( 'The database value changed. Restart with its current hash; do not concatenate windows from different values.', 'wp-ai-bridge' ) );
+		}
+		$cell = $this->cell( $rows[0], 0, $start, 'column_type_definition' );
+		if ( is_wp_error( $cell ) ) {
+			return $cell;
+		}
+		return array(
+			'table'       => $input['table'],
+			'column'      => $input['column'],
+			'cell'        => $cell,
+			'data_type'   => $rows[0]['data_type'],
+			'consistency' => 'live_schema_not_snapshot',
+		);
+	}
+
 	/** @param array $input Validated request. @return array|WP_Error */
 	private function values( array $input ) {
 		global $wpdb;
-		$is_cell = 'cell' === $input['action'];
-		$columns = $is_cell ? array( $input['column'] ) : $input['columns'];
-		$filters = $input['key'] ?? $input['filters'] ?? array();
-		$hashes  = $input['key_hashes'] ?? array();
-		$named   = array_values( array_unique( array_merge( $columns, array_keys( $filters ), array_keys( $hashes ) ) ) );
+		$is_cell     = 'cell' === $input['action'];
+		$by_position = $is_cell && array_key_exists( 'row_offset', $input );
+		$columns     = $is_cell ? array( $input['column'] ) : $input['columns'];
+		$filters     = $input['key'] ?? $input['filters'] ?? array();
+		$hashes      = $input['key_hashes'] ?? array();
+		$named       = array_values( array_unique( array_merge( $columns, array_keys( $filters ), array_keys( $hashes ) ) ) );
 		// Inspect only named columns, never values or all provider tables.
 		$column_sql = $wpdb->prepare(
 			'SELECT COLUMN_NAME AS name, DATA_TYPE AS data_type FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND BINARY TABLE_NAME = BINARY %s AND BINARY COLUMN_NAME IN (' . implode( ', ', array_fill( 0, count( $named ), '%s' ) ) . ')',
@@ -164,7 +219,7 @@ final class Database_Reader {
 		if ( isset( $input['after_id'] ) && ( ! $numeric || ! empty( $input['offset'] ) ) ) {
 			return new WP_Error( 'database_cursor_invalid', __( 'after_id requires one integer primary key and cannot be combined with an offset.', 'wp-ai-bridge' ) );
 		}
-		$limit      = $is_cell ? 2 : $input['limit'] + 1;
+		$limit      = $is_cell ? ( $by_position ? 1 : 2 ) : $input['limit'] + 1;
 		$key_window = $numeric ? 21 : max( 1, intdiv( $this->budget, $limit * ( count( $columns ) + count( $keys ) ) ) );
 		$key_bytes  = $is_cell ? 0 : $limit * count( $keys ) * $key_window;
 		$available  = $this->budget - $key_bytes;
@@ -212,12 +267,18 @@ final class Database_Reader {
 		$sql  = 'SELECT ' . implode( ', ', $select ) . $wpdb->prepare( ' FROM %i', $input['table'] );
 		$sql .= $where ? ' WHERE ' . implode( ' AND ', $where ) : '';
 		$sql .= $order ? ' ORDER BY ' . implode( ', ', $order ) : '';
-		$sql .= $wpdb->prepare( ' LIMIT %d OFFSET %d', $limit, $is_cell ? 0 : ( $input['offset'] ?? 0 ) );
-		$rows = $this->read( $sql );
+		// Positional reads select the filtered ordinal first. The expected cell
+		// hash must be checked afterward; filtering by it would shift ordinals.
+		$row_offset = $by_position ? $input['row_offset'] : ( $is_cell ? 0 : ( $input['offset'] ?? 0 ) );
+		$sql       .= $wpdb->prepare( ' LIMIT %d OFFSET %d', $limit, $row_offset );
+		$rows       = $this->read( $sql );
 		if ( is_wp_error( $rows ) ) {
 			return $rows;
 		}
 		if ( $is_cell ) {
+			if ( $by_position && ! $rows ) {
+				return new WP_Error( 'database_record_unavailable', __( 'The selected live row position is no longer available. Refresh the filtered row page before continuing.', 'wp-ai-bridge' ) );
+			}
 			if ( 1 !== count( $rows ) ) {
 				return new WP_Error( 'database_record_not_unique', __( 'The exact key must match one current record. Refresh the key; absent or duplicate records cannot supply a cell window.', 'wp-ai-bridge' ) );
 			}
@@ -231,22 +292,29 @@ final class Database_Reader {
 			if ( is_wp_error( $cell ) ) {
 				return $cell;
 			}
-			return array(
+			$result = array(
 				'table'       => $input['table'],
 				'column'      => $columns[0],
 				'cell'        => $cell,
-				'consistency' => 'single_statement_value',
+				'consistency' => $by_position ? 'live_row_position_not_identity' : 'single_statement_value',
 			);
+			if ( $by_position ) {
+				$result['row_offset'] = $input['row_offset'];
+			}
+			return $result;
 		}
 		$more  = count( $rows ) > $input['limit'];
 		$items = array();
-		foreach ( array_slice( $rows, 0, $input['limit'] ) as $row ) {
+		foreach ( array_slice( $rows, 0, $input['limit'] ) as $row_index => $row ) {
 			$item = array(
 				'key'          => array(),
 				'key_complete' => ! empty( $keys ),
 				'key_hashes'   => array(),
 				'cells'        => array(),
 			);
+			if ( ! $numeric ) {
+				$item['row_offset'] = ( $input['offset'] ?? 0 ) + $row_index;
+			}
 			foreach ( $keys as $index => $key ) {
 				if ( null === $row[ 'kn' . $index ] || ! $this->valid_digest( $row[ 'kh' . $index ] ) ) {
 					return $this->digest_error();

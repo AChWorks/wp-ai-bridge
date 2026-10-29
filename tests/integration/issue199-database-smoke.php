@@ -37,6 +37,7 @@ $suffix = bin2hex( random_bytes( 4 ) );
 $table = $wpdb->prefix . 'wpai199_deliveries_' . $suffix;
 $heap = $wpdb->prefix . 'wpai199_heap_' . $suffix;
 $giant = $wpdb->prefix . 'wpai199_giant_' . $suffix;
+$enum = $wpdb->prefix . 'wpai199_enum_' . $suffix;
 $view = $wpdb->prefix . 'wpai199_view_' . $suffix;
 $outside = 'outside_wpai199_' . $suffix;
 $subscriber = 0;
@@ -75,6 +76,15 @@ try {
 	$tables[] = $giant;
 	$large_key = 'giant-prefix-key-' . str_repeat( 'K', 40000 );
 	wpai199_assert( 1 === $wpdb->insert( $giant, array( 'large_key' => $large_key, 'id' => 1 ), array( '%s', '%d' ) ), 'Cannot populate large primary-key fixture.' );
+	$enum_values = array();
+	for ( $i = 0; $i < 1500; ++$i ) {
+		$enum_values[] = 'value' . str_pad( (string) $i, 4, '0', STR_PAD_LEFT ) . str_repeat( 'x', 25 );
+	}
+	$enum_sql = 'CREATE TABLE %i (choice ENUM(' . implode( ',', array_fill( 0, count( $enum_values ), '%s' ) ) . ') NOT NULL) ENGINE=InnoDB';
+	wpai199_assert( false !== $wpdb->query( $wpdb->prepare( $enum_sql, array_merge( array( $enum ), $enum_values ) ) ), 'Cannot create oversized schema-type fixture.' );
+	$tables[] = $enum;
+	$full_type = (string) $wpdb->get_var( $wpdb->prepare( 'SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND BINARY TABLE_NAME = BINARY %s AND COLUMN_NAME = %s', $enum, 'choice' ) );
+	wpai199_assert( strlen( $full_type ) > intdiv( Bounded_Payload::response_limit(), 4 ), 'Schema-type fixture does not exceed one requested window.' );
 	$marker = 'wpai199-synthetic-sensitive-data-' . $suffix;
 	$amount = '12345678901234567890.0123456789';
 	$serialized = 'O:24:"WPAI199_NeverInstantiate":1:{s:5:"value";s:6:"opaque";}';
@@ -119,6 +129,23 @@ try {
 	wpai199_assert( str_contains( $schema_json, 'bigint' ) && str_contains( $schema_json, 'decimal' ), 'SQL type metadata was lost.' );
 	$indexes = wpai199_execute( 'database-inspect', array( 'action' => 'schema', 'section' => 'indexes', 'table' => $table, 'limit' => 1 ) );
 	wpai199_assert( ! is_wp_error( $indexes ) && 1 === count( $indexes['items'] ) && $indexes['has_more'] && 1 === $indexes['next_offset'], 'Index pagination failed.' );
+	$enum_schema = wpai199_execute( 'database-inspect', array( 'action' => 'schema', 'table' => $enum, 'limit' => 1 ) );
+	wpai199_assert( ! is_wp_error( $enum_schema ) && true === $enum_schema['items'][0]['sql_type_truncated'], 'Oversized type definition was not marked for continuation.' );
+	$type_offset = 0;
+	$type_bytes = '';
+	$type_hash = hash( 'sha256', $full_type );
+	do {
+		$type_args = array( 'action' => 'column_type', 'table' => $enum, 'column' => 'choice', 'offset' => $type_offset, 'length' => intdiv( Bounded_Payload::response_limit(), 4 ), 'expected_sha256' => $type_hash );
+		$type_window = wpai199_execute( 'database-inspect', $type_args );
+		wpai199_assert( ! is_wp_error( $type_window ) && Bounded_Payload::fits( $type_window ), 'Metadata-only oversized type window failed.' );
+		wpai199_assert( 'column_type_definition' === $type_window['cell']['sql_type'] && 'live_schema_not_snapshot' === $type_window['consistency'] && 'enum' === $type_window['data_type'], 'Schema continuation did not preserve its exact contract.' );
+		wpai199_assert( $type_offset === $type_window['cell']['offset'] && $type_hash === $type_window['cell']['sha256'], 'Schema type window identity changed.' );
+		$type_bytes .= base64_decode( $type_window['cell']['data'], true );
+		$type_offset = $type_window['cell']['next_offset'];
+	} while ( null !== $type_offset );
+	wpai199_assert( $full_type === $type_bytes && $type_hash === hash( 'sha256', $type_bytes ), 'Complete oversized ENUM definition could not be reconstructed without sensitive-read authority.' );
+	$wrong_type = wpai199_execute( 'database-inspect', array( 'action' => 'column_type', 'table' => $enum, 'column' => 'choice', 'offset' => 1, 'expected_sha256' => hash( 'sha256', 'older type' ) ) );
+	wpai199_assert( is_wp_error( $wrong_type ), 'A mismatched schema-type hash was accepted.' );
 	$request = array( 'action' => 'rows', 'table' => $table, 'columns' => array( 'id', 'private_value' ), 'limit' => 1 );
 	wpai199_assert( is_wp_error( wpai199_execute( 'database-read', $request ) ), 'Metadata consent disclosed private raw values.' );
 	$grants[ Settings::GROUP_DATABASE_READ ] = 1;
@@ -177,6 +204,51 @@ try {
 	wpai199_assert( is_wp_error( wpai199_execute( 'database-read', array( 'action' => 'cell', 'table' => $table, 'column' => 'payload', 'key' => array( 'id' => base64_encode( '999999' ) ) ) ) ), 'Absent record was reported as a complete cell.' );
 	$unique = wpai199_execute( 'database-read', array( 'action' => 'cell', 'table' => $heap, 'column' => 'payload', 'key' => array( 'tag' => base64_encode( 'unique' ) ) ) );
 	wpai199_assert( ! is_wp_error( $unique ) && 'third' === base64_decode( $unique['cell']['data'], true ), 'Unique keyless-table record could not be read.' );
+
+	$duplicate_large = str_repeat( chr( 255 ), 70000 );
+	wpai199_assert( 2 === $wpdb->update( $heap, array( 'payload' => $duplicate_large ), array( 'tag' => 'same' ) ), 'Cannot establish duplicated oversized keyless values.' );
+	$filtered_heap = wpai199_execute( 'database-read', array( 'action' => 'rows', 'table' => $heap, 'columns' => array( 'tag', 'payload' ), 'filters' => array( 'tag' => base64_encode( 'same' ) ), 'limit' => 1 ) );
+	wpai199_assert( ! is_wp_error( $filtered_heap ) && 0 === $filtered_heap['items'][0]['row_offset'] && null !== $filtered_heap['items'][0]['cells']['payload']['next_offset'], 'Offset-live row did not expose its bounded positional continuation.' );
+	$filtered_second = wpai199_execute( 'database-read', array( 'action' => 'rows', 'table' => $heap, 'columns' => array( 'payload' ), 'filters' => array( 'tag' => base64_encode( 'same' ) ), 'offset' => 1, 'limit' => 1 ) );
+	wpai199_assert( ! is_wp_error( $filtered_second ) && 1 === $filtered_second['items'][0]['row_offset'], 'Filtered row position was not the absolute input offset.' );
+	$duplicate_hash = hash( 'sha256', $duplicate_large );
+	$duplicate_bytes = '';
+	$duplicate_offset = 0;
+	$requested_window = intdiv( Bounded_Payload::response_limit(), 4 );
+	do {
+		$position_window = wpai199_execute( 'database-read', array( 'action' => 'cell', 'table' => $heap, 'column' => 'payload', 'row_offset' => 0, 'filters' => array( 'tag' => base64_encode( 'same' ) ), 'offset' => $duplicate_offset, 'length' => $requested_window, 'expected_sha256' => $duplicate_hash ) );
+		wpai199_assert( ! is_wp_error( $position_window ) && Bounded_Payload::fits( $position_window ), 'Duplicated keyless value could not supply a bounded positional window.' );
+		$piece = base64_decode( $position_window['cell']['data'], true );
+		wpai199_assert( '' !== $piece && strlen( $piece ) <= $requested_window && $duplicate_offset === $position_window['cell']['offset'], 'Adaptive positional bytes exceeded or lost their requested window.' );
+		wpai199_assert( 0 === $position_window['row_offset'] && 'live_row_position_not_identity' === $position_window['consistency'], 'Positional cell was advertised as a stable row identity.' );
+		if ( 0 === $duplicate_offset ) {
+			wpai199_assert( strlen( $piece ) < $requested_window, 'Worst-case slash-base64 response did not adapt to its encoded MCP envelope.' );
+		}
+		$duplicate_bytes .= $piece;
+		$next = $position_window['cell']['next_offset'];
+		wpai199_assert( null === $next || $duplicate_offset + strlen( $piece ) === $next, 'Adaptive positional continuation skipped/repeated bytes.' );
+		$duplicate_offset = $next;
+	} while ( null !== $duplicate_offset );
+	wpai199_assert( $duplicate_large === $duplicate_bytes, 'Duplicated keyless value reconstruction lost original bytes.' );
+	wpai199_assert( 1 === $wpdb->query( $wpdb->prepare( 'UPDATE %i SET payload = %s WHERE tag = %s LIMIT 1', $heap, 'newer positional value', 'same' ) ), 'Cannot change the selected keyless row.' );
+	$wrong_ordinal = wpai199_execute( 'database-read', array( 'action' => 'cell', 'table' => $heap, 'column' => 'payload', 'row_offset' => 0, 'filters' => array( 'tag' => base64_encode( 'same' ) ), 'expected_sha256' => $duplicate_hash ) );
+	wpai199_assert( is_wp_error( $wrong_ordinal ) && 'database_cell_stale' === $wrong_ordinal->get_error_code(), 'Expected hash silently selected a different duplicate instead of rejecting the changed ordinal.' );
+	$unchanged_ordinal = wpai199_execute( 'database-read', array( 'action' => 'cell', 'table' => $heap, 'column' => 'payload', 'row_offset' => 1, 'filters' => array( 'tag' => base64_encode( 'same' ) ), 'length' => 32, 'expected_sha256' => $duplicate_hash ) );
+	wpai199_assert( ! is_wp_error( $unchanged_ordinal ) && 1 === $unchanged_ordinal['row_offset'], 'A valid unchanged second ordinal was shifted by hash filtering.' );
+	$utf8 = str_repeat( 'سلام/WordPress ', 5000 );
+	wpai199_assert( 1 === $wpdb->insert( $heap, array( 'tag' => 'utf8', 'payload' => $utf8 ) ), 'Cannot insert normal UTF-8 window fixture.' );
+	$utf8_bytes = '';
+	$utf8_offset = 0;
+	do {
+		$utf8_window = wpai199_execute( 'database-read', array( 'action' => 'cell', 'table' => $heap, 'column' => 'payload', 'key' => array( 'tag' => base64_encode( 'utf8' ) ), 'offset' => $utf8_offset, 'expected_sha256' => hash( 'sha256', $utf8 ) ) );
+		wpai199_assert( ! is_wp_error( $utf8_window ) && Bounded_Payload::fits( $utf8_window ) && $utf8_window['cell']['bytes'] <= $requested_window, 'Default normal UTF-8 window exceeded its bounded envelope.' );
+		if ( 0 === $utf8_offset ) {
+			wpai199_assert( $utf8_window['cell']['bytes'] > intdiv( Bounded_Payload::response_limit(), 16 ), 'Default window retained the obsolete small response allowance.' );
+		}
+		$utf8_bytes .= base64_decode( $utf8_window['cell']['data'], true );
+		$utf8_offset = $utf8_window['cell']['next_offset'];
+	} while ( null !== $utf8_offset );
+	wpai199_assert( $utf8 === $utf8_bytes, 'Normal UTF-8 bytes were not reconstructed after adaptive windows.' );
 
 	$giant_rows = wpai199_execute( 'database-read', array( 'action' => 'rows', 'table' => $giant, 'columns' => array( 'id', 'large_key' ), 'limit' => 1 ) );
 	wpai199_assert( ! is_wp_error( $giant_rows ) && Bounded_Payload::fits( $giant_rows ), 'Large prefix-primary-key row exceeded the response budget.' );
