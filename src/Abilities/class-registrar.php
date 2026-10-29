@@ -214,6 +214,7 @@ final class Registrar {
 			new File_Transfer_Abilities( $this->permissions ),
 			new Transfer_Session_Abilities( $this->permissions, $this->mutation_log ),
 			new Diagnostics_Abilities( $this->permissions, $this->mutation_log ),
+			new Database_Abilities( $this->permissions, $this->mutation_log ),
 			new Transfer_Media_Abilities( $this->permissions ),
 			new Transfer_Media_Export_Abilities( $this->permissions ),
 			new Transfer_Content_Abilities( $this->permissions ),

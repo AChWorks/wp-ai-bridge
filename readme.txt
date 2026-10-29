@@ -22,6 +22,8 @@ The plugin has no required SaaS subscription. The official MCP Adapter is instal
 
 For setup, supported operations and troubleshooting, see https://github.com/AChWorks/wp-ai-bridge.
 
+Optional Database Inspection and Sensitive Database Read groups expose installation/plugin schema and exact raw values, including possible credentials, with bounded pagination and byte windows. Both default off; multisite requires actual Super Admin. Database writes, arbitrary SQL and full backup/restore are not provided by these read-only tools.
+
 == Installation ==
 
 1. Install WordPress 6.9 or newer.

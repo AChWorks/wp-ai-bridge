@@ -60,7 +60,7 @@ The following are **coverage families**, not release promises or an exhaustive t
 - Site administration: registered settings, appearance, navigation, taxonomies, metadata and WordPress site-health diagnostics.
 - Extensions: plugins, themes, installation, activation, updates, removal, administrator-approved package sources, managed code and authorized installed-source editing.
 - Accounts: users, roles, capabilities, authentication and credentials through the appropriate native lifecycle and authority.
-- Operations: comments, scheduled tasks, supported maintenance, backups/restores where a native/provider contract supplies them, and other legitimate admin workflows.
+- Operations: comments, scheduled tasks, supported maintenance, full database/filesystem backups and verified restores, and other legitimate admin workflows.
 - Installed providers: discover and invoke applicable operations from plugins and themes without a Bridge patch for each new compatible target.
 - Multisite: respect the real distinction between site-level and network-level authority.
 - Workspace: project documents, tasks, state and recoverable history for authorized consumers.
@@ -68,6 +68,14 @@ The following are **coverage families**, not release promises or an exhaustive t
 **Established product exception:** WordPress **Core upgrades** are a read-only Bridge status/detection capability, not an executable upgrade workflow through Bridge. Initiation and execution of Core upgrades remain with WordPress's own administration/hosting channels. This narrow decision does **not** prohibit authorized plugin/theme update workflows or redefine the general administrator-coverage goal.
 
 A built-in WordPress admin screen is not, by itself, a stable external execution API. Do not invent a callable or claim support when no defensible Core/provider/authorized extension interface exists. Such gaps remain visible without silently shrinking the product objective.
+
+### Database, settings, diagnostics and recovery coverage
+
+Database administration uses the existing WordPress connection, dynamically discovers installation tables and schema, supports bounded exact reads and separately delegated mutations/advanced SQL, and respects the database account’s actual privileges. It must not become an unauthenticated database proxy, silently cross into another installation, or infer multisite tenant ownership from a prefix alone.
+
+Administrative coverage also includes unregistered/structured site and network options, separately delegated sensitive settings, accessible WordPress/PHP/provider logs, and scheduler/queue discovery and lifecycle administration. Reuse native/provider APIs and report unavailable private business contracts honestly. Configuration and filesystem access need explicit administrator-controlled scope; lack of hosting/OS permission remains a real boundary.
+
+Full backups cover approved schema/data and installation files, with integrity metadata, resumable processing and a disposable backup-to-restore round trip. WXR alone is content interchange, not a full backup. Raw-data inspection alone does not imply provider workflow or visual-editor parity. Implement these families incrementally without advertising unimplemented settings or weakening existing contracts.
 
 ## 5. Administrator control, security and trust
 
@@ -82,7 +90,7 @@ Effective access is the intersection of:
 
 Recheck authority at execution time. Read permission, discovery, an old token, a previously issued grant, or a Gateway user's own role must not silently authorize a new write or elevated operation. Sensitive account, credentials, executable source, external package and destructive actions require appropriate independent trust and recovery treatment. New high-trust functionality must not silently inherit an old unrelated opt-in after upgrades.
 
-Security and integrity belong **inside working administrative paths**, not in blanket feature bans. Use controlled inputs and destinations, exact target identification, native/provider checks, safe file handling, stale-write protection, verified outcomes, and explicit recovery for uncertain effects. Executable plugin/theme code is an elevated, administrator-authorized trust boundary, **not a PHP sandbox**. Reject raw unrestricted shell/PHP/SQL execution, unchecked proxying and bulk credential exposure as shortcuts, while preserving legitimate administrative alternatives.
+Security and integrity belong **inside working administrative paths**, not in blanket feature bans. Use controlled inputs and destinations, exact target identification, native/provider checks, safe file handling, stale-write protection, verified outcomes, and explicit recovery for uncertain effects. Executable plugin/theme code is an elevated, administrator-authorized trust boundary, **not a PHP sandbox**. Reject unchecked shell/PHP execution, proxying and accidental credential exposure as shortcuts. Explicit database administration is a separate accepted high-trust family, including native-connection SQL read/write/schema/destructive operations where the administrator delegates the corresponding authority; it must not inherit unrelated grants or bypass installation/network boundaries. General reads and sensitive raw values require distinct consent. Prefer WordPress/provider APIs for semantic business operations; direct database administration must disclose hooks/cache/validation bypass and real transaction/recovery limits.
 
 ## 6. Discovery, execution and truthful outcomes
 

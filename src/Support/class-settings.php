@@ -14,6 +14,9 @@ final class Settings {
 	const OPTION_NAME  = 'wp_ai_bridge_settings';
 	const OPTION_GROUP = 'wp_ai_bridge';
 
+	const GROUP_DATABASE_INSPECTION = 'database_inspection';
+	const GROUP_DATABASE_READ       = 'sensitive_database_read';
+
 	const GROUP_SITE_READ         = 'site_read';
 	const GROUP_BUILDER_WRITE     = 'builder_write';
 	const GROUP_REMOTE_MEDIA      = 'remote_media';
@@ -55,91 +58,103 @@ final class Settings {
 	 */
 	public function groups() {
 		return array(
-			self::GROUP_SITE_READ         => array(
+			self::GROUP_DATABASE_INSPECTION => array(
+				'label'       => __( 'Database Inspection', 'wp-ai-bridge' ),
+				'description' => __( 'Inspect installation table, column and index metadata using the WordPress database connection. Multisite requires Super Admin. This does not expose stored record values.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_DATABASE_READ       => array(
+				'label'       => __( 'Sensitive Database Read', 'wp-ai-bridge' ),
+				'description' => __( 'Read exact raw installation database values, including possible credentials and private plugin data. Database Inspection and administrator authority are also required. This grants no database writes.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_SITE_READ           => array(
 				'label'       => __( 'Site Read', 'wp-ai-bridge' ),
 				'description' => __( 'Inspect site, content, blocks, media, navigation, plugins, themes, and supported integrations.', 'wp-ai-bridge' ),
 				'default'     => true,
 				'warning'     => false,
 			),
-			self::GROUP_BUILDER_WRITE     => array(
+			self::GROUP_BUILDER_WRITE       => array(
 				'label'       => __( 'Builder Write', 'wp-ai-bridge' ),
 				'description' => __( 'Create and update drafts, content, blocks, media, taxonomies, navigation, and forms.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_REMOTE_MEDIA      => array(
+			self::GROUP_REMOTE_MEDIA        => array(
 				'label'       => __( 'Remote Media', 'wp-ai-bridge' ),
 				'description' => __( 'Allow downloads from safe HTTP(S) URLs into the Media Library. Builder Write and WordPress upload capabilities are also required.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_LIVE_CONTENT      => array(
+			self::GROUP_LIVE_CONTENT        => array(
 				'label'       => __( 'Live Content', 'wp-ai-bridge' ),
 				'description' => __( 'Allow publishing and other live content status changes when WordPress capabilities also permit them.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_SITE_CONFIG       => array(
+			self::GROUP_SITE_CONFIG         => array(
 				'label'       => __( 'Site Configuration', 'wp-ai-bridge' ),
 				'description' => __( 'Allow supported global WordPress, theme, and Astra configuration changes.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_ADVANCED_METADATA => array(
+			self::GROUP_ADVANCED_METADATA   => array(
 				'label'       => __( 'Advanced Metadata', 'wp-ai-bridge' ),
 				'description' => __( 'Allow authorized MCP clients to inspect and update protected/private post, term, user, and comment metadata for exact WordPress objects the connected user may edit. Options, Workspace internals, role/capability/session/application-password state, and credential-like keys remain outside this surface.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_AUTHENTICATION    => array(
+			self::GROUP_AUTHENTICATION      => array(
 				'label'       => __( 'Authentication & Credentials', 'wp-ai-bridge' ),
 				'description' => __( 'Allow authorized MCP clients to list, create, rename, and revoke WordPress Application Passwords through Core. Generated credentials are returned only once at creation.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_CODE_EXTENSIONS   => array(
+			self::GROUP_CODE_EXTENSIONS     => array(
 				'label'       => __( 'Code & Extensions', 'wp-ai-bridge' ),
 				'description' => __( 'Allow supported managed snippets and plugin/theme lifecycle operations. This does not expose arbitrary code execution.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_EXTERNAL_PACKAGES => array(
+			self::GROUP_EXTERNAL_PACKAGES   => array(
 				'label'       => __( 'External Packages', 'wp-ai-bridge' ),
 				'description' => __( 'Allow plugin/theme installation from explicit safe public HTTPS package URLs. Code & Extensions and native WordPress install authority are also required. Installed package code runs with normal WordPress runtime authority.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_SOURCE_EDITING    => array(
+			self::GROUP_SOURCE_EDITING      => array(
 				'label'       => __( 'Source Editing', 'wp-ai-bridge' ),
 				'description' => __( 'Allow installed plugin/theme source read, preview, apply, and recovery. Code & Extensions and WordPress file-editor capabilities are also required. Executable PHP is administrator-level code trust, not a sandbox.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_NATIVE_ABILITIES  => array(
+			self::GROUP_NATIVE_ABILITIES    => array(
 				'label'       => __( 'Native Abilities', 'wp-ai-bridge' ),
 				'description' => __( 'Allow registered Core and provider Abilities to execute through WP AI Bridge when their own WordPress/provider permission checks also allow it. This is broad registered-operation trust, not a sandbox.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_REST_DISCOVERY    => array(
+			self::GROUP_REST_DISCOVERY      => array(
 				'label'       => __( 'Registered REST Discovery', 'wp-ai-bridge' ),
 				'description' => __( 'Allow WordPress administrators to inspect bounded registered REST route contracts. This does not authorize executing REST routes.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_REST_INVOCATION   => array(
+			self::GROUP_REST_INVOCATION     => array(
 				'label'       => __( 'High-Trust Registered REST Invocation', 'wp-ai-bridge' ),
 				'description' => __( 'Allow guarded registered REST execution only after every protected lifecycle Bridge consent and corresponding WordPress capability is separately enabled. Generic provider effects are unclassified and require full administrator-equivalent trust; this is not a sandbox.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_COMMENTS          => array(
+			self::GROUP_COMMENTS            => array(
 				'label'       => __( 'Comments', 'wp-ai-bridge' ),
 				'description' => __( 'Allow bounded comment discovery, replies, and moderation through WordPress Core. Permanent deletion also requires Users & Destructive.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),
-			self::GROUP_USERS_DESTRUCTIVE => array(
+			self::GROUP_USERS_DESTRUCTIVE   => array(
 				'label'       => __( 'Users & Destructive', 'wp-ai-bridge' ),
 				'description' => __( 'Allow supported user/role administration and destructive operations when WordPress capabilities also permit them.', 'wp-ai-bridge' ),
 				'default'     => false,
