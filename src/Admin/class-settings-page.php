@@ -386,8 +386,13 @@ final class Settings_Page {
 				<?php settings_fields( Settings::OPTION_GROUP ); ?>
 				<table class="form-table" role="presentation"><tbody>
 				<?php foreach ( $this->settings->groups() as $key => $group ) : ?>
-					<tr><th scope="row"><?php echo esc_html( $group['label'] ); ?></th><td><label><input type="checkbox" name="<?php echo esc_attr( Settings::OPTION_NAME . '[' . $key . ']' ); ?>" value="1" <?php checked( ! empty( $values[ $key ] ) ); ?>> <?php echo esc_html__( 'Enabled', 'wp-ai-bridge' ); ?></label><p class="description"><?php echo esc_html( $group['description'] ); ?></p>
+					<tr><th scope="row"><?php echo esc_html( $group['label'] ); ?></th><td><label><input type="checkbox" name="<?php echo esc_attr( Settings::OPTION_NAME . '[' . $key . ']' ); ?>" value="1" <?php checked( ! empty( $values[ $key ] ) ); ?> <?php disabled( ! $this->settings->can_configure_group( $key ) ); ?>> <?php echo esc_html__( 'Enabled', 'wp-ai-bridge' ); ?></label><p class="description"><?php echo esc_html( $group['description'] ); ?></p>
 					<?php
+					if ( ! $this->settings->can_configure_group( $key ) ) :
+						?>
+						<p class="description"><?php echo esc_html__( 'Only a Super Admin with current network administration authority can change database delegation on multisite. Existing values are preserved when you save other settings.', 'wp-ai-bridge' ); ?></p>
+						<?php
+					endif;
 					if ( ! empty( $group['warning'] ) ) :
 						?>
 						<p class="description"><strong><?php echo esc_html__( 'Warning:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html__( 'Enable only when you intend to expose this class of changes to authenticated MCP clients.', 'wp-ai-bridge' ); ?></p><?php endif; ?></td></tr>

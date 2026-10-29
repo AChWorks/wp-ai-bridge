@@ -50,6 +50,7 @@ try {
 	wpai199_assert( ! is_multisite(), 'Run the main database smoke on disposable single-site WordPress.' );
 	wpai199_assert( current_user_can( 'manage_options' ), 'Database smoke requires its synthetic administrator.' );
 	$settings = new Settings();
+	$settings->register();
 	$provider = new Database_Abilities( new Permissions( $settings ), new Mutation_Log() );
 	$grants = $settings->defaults();
 	update_option( Settings::OPTION_NAME, $grants, false );

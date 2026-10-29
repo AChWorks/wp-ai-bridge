@@ -185,14 +185,34 @@ final class Settings {
 	 * @return array<string,int> Sanitized settings.
 	 */
 	public function sanitize( $input ) {
-		$input = is_array( $input ) ? $input : array();
-		$value = array();
+		$input    = is_array( $input ) ? $input : array();
+		$value    = array();
+		$previous = $this->all();
 
 		foreach ( $this->groups() as $key => $group ) {
-			$value[ $key ] = ! empty( $input[ $key ] ) ? 1 : 0;
+			$value[ $key ] = $this->can_configure_group( $key ) ?
+				( ! empty( $input[ $key ] ) ? 1 : 0 ) : $previous[ $key ];
 		}
 
 		return $value;
+	}
+
+	/**
+	 * Restrict network-wide database delegation without changing site groups.
+	 *
+	 * The native Settings API already requires manage_options for this form.
+	 * Network database grants additionally require the actual network authority,
+	 * even when a connected execution principal is already a Super Admin.
+	 *
+	 * @param string $group Access-group key.
+	 * @return bool
+	 */
+	public function can_configure_group( $group ) {
+		if ( ! in_array( $group, array( self::GROUP_DATABASE_INSPECTION, self::GROUP_DATABASE_READ ), true ) ||
+			! function_exists( 'is_multisite' ) || ! is_multisite() ) {
+			return true;
+		}
+		return is_super_admin() && current_user_can( 'manage_network_options' );
 	}
 
 	/**

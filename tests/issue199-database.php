@@ -161,4 +161,32 @@ $access[ Settings::GROUP_DATABASE_INSPECTION ] = 0;
 update_option( Settings::OPTION_NAME, $access, false );
 $assert( ! $provider->can_read(), 'Sensitive read bypassed revoked inspection authority.' );
 
+
+$GLOBALS['wpai_test']['multisite'] = false;
+$assert( $settings->can_configure_group( Settings::GROUP_DATABASE_INSPECTION ) && $settings->can_configure_group( Settings::GROUP_DATABASE_READ ), 'Single-site database configuration authority changed.' );
+$GLOBALS['wpai_test']['multisite'] = true;
+$GLOBALS['wpai_test']['super_admin'] = false;
+$GLOBALS['wpai_test']['capabilities']['manage_network_options'] = true;
+$stored = $settings->defaults();
+update_option( Settings::OPTION_NAME, $stored, false );
+$attempt = array( Settings::GROUP_DATABASE_INSPECTION => 1, Settings::GROUP_DATABASE_READ => 1, Settings::GROUP_BUILDER_WRITE => 1 );
+$local = $settings->sanitize( $attempt );
+$assert( ! $settings->can_configure_group( Settings::GROUP_DATABASE_INSPECTION ) && ! $settings->can_configure_group( Settings::GROUP_DATABASE_READ ), 'A local administrator with a network primitive configured network database grants.' );
+$assert( 0 === $local[ Settings::GROUP_DATABASE_INSPECTION ] && 0 === $local[ Settings::GROUP_DATABASE_READ ] && 1 === $local[ Settings::GROUP_BUILDER_WRITE ], 'Local enable attempt expanded database grants or blocked ordinary settings.' );
+$stored[ Settings::GROUP_DATABASE_INSPECTION ] = 1;
+$stored[ Settings::GROUP_DATABASE_READ ] = 1;
+update_option( Settings::OPTION_NAME, $stored, false );
+foreach ( array( array( Settings::GROUP_DATABASE_INSPECTION => 0, Settings::GROUP_DATABASE_READ => 0 ), array(), null ) as $submission ) {
+	$local = $settings->sanitize( $submission );
+	$assert( 1 === $local[ Settings::GROUP_DATABASE_INSPECTION ] && 1 === $local[ Settings::GROUP_DATABASE_READ ], 'Unauthorized revoke/omission lost freshly stored network database grants.' );
+}
+$GLOBALS['wpai_test']['super_admin'] = true;
+$GLOBALS['wpai_test']['capabilities']['manage_network_options'] = false;
+$denied = $settings->sanitize( $settings->defaults() );
+$assert( ! $settings->can_configure_group( Settings::GROUP_DATABASE_READ ) && 1 === $denied[ Settings::GROUP_DATABASE_READ ], 'Super Admin bypassed an explicit native network denial while changing delegation.' );
+$GLOBALS['wpai_test']['capabilities']['manage_network_options'] = true;
+$revoked = $settings->sanitize( $settings->defaults() );
+$assert( $settings->can_configure_group( Settings::GROUP_DATABASE_READ ) && 0 === $revoked[ Settings::GROUP_DATABASE_READ ] && 0 === $revoked[ Settings::GROUP_DATABASE_INSPECTION ], 'Authorized Super Admin could not revoke database grants.' );
+$assert( $settings->can_configure_group( Settings::GROUP_SITE_READ ), 'Ordinary site-setting configuration was unnecessarily restricted.' );
+
 echo "PASS: Issue #199 database delegation/input boundaries ({$checks} checks).\n";
