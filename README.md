@@ -7,6 +7,8 @@
 
 The plugin is free and self-hosted. A direct **ChatGPT** connection is tested; a separate Gateway is optional. Other compatible clients and services can use approved connections where their authentication and transport actually interoperate. **Not every administrator operation or future service workflow is available yet.**
 
+Optional **Database Inspection** and **Sensitive Database Read** groups let administrators discover installation/plugin tables and inspect exact raw values with bounded pages and hash-checked byte windows. Both default off; sensitive reads can include stored credentials. Multisite requires actual Super Admin authority. See [database access and limits](./docs/DATABASE-ADMINISTRATION.md).
+
 ## Requirements
 
 - **WordPress 6.9 or newer**.

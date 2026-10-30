@@ -171,6 +171,7 @@ function add_submenu_page( $parent_slug, $page_title, $menu_title, $capability, 
 }
 function settings_fields( $group ) { $GLOBALS['wpai_test']['settings_fields'][] = $group; echo '<input type="hidden" name="_wpnonce" value="test">'; }
 function checked( $checked, $current = true, $echo = true ) { $result = $checked == $current ? 'checked="checked"' : ''; if ( $echo ) { echo $result; } return $result; }
+function disabled( $disabled, $current = true, $echo = true ) { $result = (string) $disabled === (string) $current ? 'disabled="disabled"' : ''; if ( $echo ) { echo $result; } return $result; }
 function selected( $selected, $current = true, $echo = true ) { $result = $selected == $current ? 'selected="selected"' : ''; if ( $echo ) { echo $result; } return $result; }
 function submit_button( $text = 'Save Changes', $type = 'primary', $name = 'submit', $wrap = true ) { echo '<button type="submit">' . esc_html( $text ) . '</button>'; }
 function admin_url( $path = '' ) { return 'https://example.test/wp-admin/' . ltrim( $path, '/' ); }

@@ -120,7 +120,7 @@ The boundary is deliberately layered:
 - metadata values containing PHP objects/resources at any depth, or values that do not survive the generic JSON contract structurally unchanged, are not generically replaceable or deletable;
 - delete additionally requires Users & Destructive access.
 
-The exact-row compare-and-swap helper is an internal fixed-purpose implementation detail, not an API surface. It accepts no SQL, table name, column name, meta ID, query fragment, or database selector from the MCP client; it is hard-bound to the already-authorized `wp_postmeta` row. The only raw SQL is the fixed prepared byte-exact update/delete predicate required to avoid database-collation equivalence. Static safety checks confine these two logical exact-row operations to six fixed prepared SQL branches in the post-meta store and keep direct database use forbidden elsewhere in production source except the separately confined term-meta store described below. The Bridge still exposes no arbitrary SQL or general database administration.
+The exact-row compare-and-swap helper is an internal fixed-purpose implementation detail, not an API surface. It accepts no SQL, table name, column name, meta ID, query fragment, or database selector from the MCP client; it is hard-bound to the already-authorized `wp_postmeta` row. The only raw SQL is the fixed prepared byte-exact update/delete predicate required to avoid database-collation equivalence. Static safety checks confine these two logical exact-row operations to six fixed prepared SQL branches in the post-meta store and keep direct database use confined to audited stores, including the separately delegated read-only database reader. That fixed-purpose metadata surface does not expose SQL. Separately delegated database administration is an accepted product family with its own explicit trust boundary; see [Database administration](./DATABASE-ADMINISTRATION.md).
 
 This mechanism provides a bounded row-level stale-write/compensation protocol, not a database transaction or serializable isolation guarantee. A write that occurs after the Bridge's verified linearization point is simply a newer state and can make the returned `state_hash` stale immediately, as with any optimistic-concurrency token.
 
@@ -204,15 +204,15 @@ Code Snippets integration is an intentional bounded provider integration. Submit
 
 The Bridge does not expose:
 
-- arbitrary SQL or database administration;
+- unchecked SQL outside an explicitly delegated database-administration contract;
 - shell/process execution;
 - WP-CLI execution;
 - unrestricted filesystem access;
-- arbitrary `wp_options` access;
+- semantic unregistered-option mutation through the database read tools;
 - arbitrary user-meta administration;
-- credential, session, OAuth-secret, private-key, security-token, or Application Password retrieval;
+- credential, session, OAuth-secret, private-key, security-token, or stored Application Password retrieval under ordinary read grants (explicit Sensitive Database Read can expose raw stored bytes);
 - unrestricted plugin ZIP/PHP upload, arbitrary server-file paths or Base64 package execution (authorized public HTTPS installer inputs remain supported; general bidirectional external-client file exchange is tracked separately by [#134](https://github.com/AChWorks/wp-ai-bridge/issues/134));
-- direct provider-table administration.
+- provider-table mutation or private business workflow guessing through the read-only database tools.
 
 ## OAuth storage
 
@@ -223,3 +223,10 @@ A successful refresh rotation also keeps a narrowly bounded, one-shot recovery e
 ## Activity logging
 
 The mutation log is bounded and metadata-oriented. It should not be treated as a content archive and must not be used to log credentials, metadata keys, metadata values, or full submitted payloads.
+## Explicit database administration boundary
+
+Database inspection and sensitive raw-value reading are separate, default-off grants. Their authoritative native option/settings group is isolated from ordinary access-group updates. Ordinary saves never rewrite protected grant values, so a lower-trust stale save cannot restore a concurrent Super Admin revocation. Embedded legacy/unreleased bits are ignored. Protected native group capability and an option sanitizer installed on every request require the actual administrator and, on multisite, actual Super Admin/network authority; unauthorized protected writes fail before persistence. Existing site-level settings remain editable. Existing Site Read, metadata, native Ability and authentication grants never silently enable either one on upgrade. The first database contract uses only the current WordPress connection/database and installation-prefixed base tables; views, database selectors and unrelated/unprefixed tables are excluded until an explicit scope contract exists. In multisite it requires actual Super Admin plus network authority, since main-site prefixes cannot isolate shared/network/other-blog tables.
+
+Raw values may include credentials under any column name or serialized value. Do not pretend a name-based secret filter makes arbitrary rows ordinary read access. Sensitive Database Read grants deliberate access to these bytes for the current authorized principal/client; discovery and ordinary diagnostics never return them. Values remain bytes with SQL type/NULL metadata, never PHP-deserialized or implicitly converted to floats. Query errors omit SQL/data, and read audit entries contain identity/outcome metadata only.
+
+The inspected database table and schema must be resolved again at execution. Pagination is a live view, not a transaction or snapshot. Large cells and column type definitions use bounded SQL byte windows and content hashes so clients can detect changes across windows. Explicit live row-offset reads require the expected value hash even at byte offset zero, select the filtered ordinal before hash comparison, and never claim stable physical-row identity. Prefix ownership is a WordPress installation convention, not a proof about an incorrectly shared database; the configured WordPress connection/prefix must identify the intended installation. Full read/write/SQL and backup/restore coverage beyond the published contracts remains accepted unfinished work.

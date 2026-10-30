@@ -385,15 +385,30 @@ final class Settings_Page {
 			<form action="options.php" method="post">
 				<?php settings_fields( Settings::OPTION_GROUP ); ?>
 				<table class="form-table" role="presentation"><tbody>
-				<?php foreach ( $this->settings->groups() as $key => $group ) : ?>
-					<tr><th scope="row"><?php echo esc_html( $group['label'] ); ?></th><td><label><input type="checkbox" name="<?php echo esc_attr( Settings::OPTION_NAME . '[' . $key . ']' ); ?>" value="1" <?php checked( ! empty( $values[ $key ] ) ); ?>> <?php echo esc_html__( 'Enabled', 'wp-ai-bridge' ); ?></label><p class="description"><?php echo esc_html( $group['description'] ); ?></p>
-					<?php
-					if ( ! empty( $group['warning'] ) ) :
-						?>
-						<p class="description"><strong><?php echo esc_html__( 'Warning:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html__( 'Enable only when you intend to expose this class of changes to authenticated MCP clients.', 'wp-ai-bridge' ); ?></p><?php endif; ?></td></tr>
-				<?php endforeach; ?>
+				<?php
+				foreach ( $this->settings->groups() as $key => $group ) {
+					if ( ! in_array( $key, Settings::DATABASE_GROUPS, true ) ) {
+						$this->render_access_group_row( Settings::OPTION_NAME, $key, $group, $values );
+					}
+				}
+				?>
 				</tbody></table>
 				<?php submit_button(); ?>
+			</form>
+
+			<h2><?php echo esc_html__( 'Database access', 'wp-ai-bridge' ); ?></h2>
+			<p><?php echo esc_html__( 'Configure database inspection and sensitive reading independently. Changing these grants requires administrator authority and, on multisite, actual Super Admin and network authority.', 'wp-ai-bridge' ); ?></p>
+			<form action="options.php" method="post">
+				<?php settings_fields( Settings::DATABASE_OPTION_GROUP ); ?>
+				<table class="form-table" role="presentation"><tbody>
+				<?php
+				$definitions = $this->settings->groups();
+				foreach ( Settings::DATABASE_GROUPS as $key ) {
+					$this->render_access_group_row( Settings::DATABASE_OPTION_NAME, $key, $definitions[ $key ], $values );
+				}
+				?>
+				</tbody></table>
+				<?php submit_button( __( 'Save database access', 'wp-ai-bridge' ), 'primary', 'submit', true, $this->settings->can_configure_group( Settings::GROUP_DATABASE_INSPECTION ) ? array() : array( 'disabled' => 'disabled' ) ); ?>
 			</form>
 
 			<?php
@@ -902,5 +917,27 @@ final class Settings_Page {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'You are not allowed to manage WP AI Bridge settings.', 'wp-ai-bridge' ) );
 		}
+	}
+
+	/**
+	 * Render one native access-group control for its authoritative option.
+	 *
+	 * @param string $option_name Native setting option.
+	 * @param string $key Group identifier.
+	 * @param array  $group Translated group metadata.
+	 * @param array  $values Current effective grants.
+	 * @return void
+	 */
+	private function render_access_group_row( $option_name, $key, array $group, array $values ) {
+		?>
+		<tr><th scope="row"><?php echo esc_html( $group['label'] ); ?></th><td><label><input type="checkbox" name="<?php echo esc_attr( $option_name . '[' . $key . ']' ); ?>" value="1" <?php checked( ! empty( $values[ $key ] ) ); ?> <?php disabled( ! $this->settings->can_configure_group( $key ) ); ?>> <?php echo esc_html__( 'Enabled', 'wp-ai-bridge' ); ?></label><p class="description"><?php echo esc_html( $group['description'] ); ?></p>
+		<?php if ( ! $this->settings->can_configure_group( $key ) ) : ?>
+			<p class="description"><?php echo esc_html__( 'Changing database access requires a current WordPress administrator and, on multisite, actual Super Admin and network authority.', 'wp-ai-bridge' ); ?></p>
+		<?php endif; ?>
+		<?php if ( ! empty( $group['warning'] ) ) : ?>
+			<p class="description"><strong><?php echo esc_html__( 'Warning:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html__( 'Enable only when you intend to expose this class of changes to authenticated MCP clients.', 'wp-ai-bridge' ); ?></p>
+		<?php endif; ?>
+		</td></tr>
+		<?php
 	}
 }

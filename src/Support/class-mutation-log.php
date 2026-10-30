@@ -37,6 +37,10 @@ final class Mutation_Log {
 			'success'     => (bool) $success,
 			'error_code'  => Error_Details::from_wp_error( new \WP_Error( (string) $error_code, '' ) )['code'] ?? '',
 		);
+		if ( 'wp-ai-bridge/database-read' === $ability ) {
+			$entry['client_fingerprint'] = substr( hash( 'sha256', OAuth_Server::authenticated_mcp_client_id() ), 0, 16 );
+			$entry['event_ref']          = bin2hex( random_bytes( 8 ) );
+		}
 		// Reuse the existing bounded activity option for a few fixed, high-signal
 		// Media staging denials. No caller data, paths or filenames are recorded.
 		if ( 'wp-ai-bridge/media-upload' === $ability && ! $success &&

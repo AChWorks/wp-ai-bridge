@@ -474,8 +474,10 @@ fi
 
 # Issues #34/#36/#58 need exact-row compare-and-swap against fixed metadata tables. Issue #80
 # additionally needs four fixed advisory-lock reads in the OAuth store to serialize one exact
-# refresh-token identity across PHP processes. Direct database use remains forbidden everywhere
-# else. No bounded store below may accept caller-selected SQL/table/column/query fragments.
+# refresh-token identity across PHP processes. Keep those fixed stores confined.
+# The separately delegated reader below has its own SELECT-only boundary; no
+# other production store accepts caller-selected SQL/table/column/query fragments.
+database_reader='src/Support/class-database-reader.php'
 metadata_store='src/Support/class-post-meta-store.php'
 term_metadata_store='src/Support/class-term-meta-store.php'
 user_comment_metadata_store='src/Support/class-user-comment-meta-store.php'
@@ -552,7 +554,7 @@ if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$cron_run_store" |
     echo "ERROR: targeted Cron claim store introduced an unreviewed database primitive." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" | grep -vFx "$database_reader" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2
@@ -726,4 +728,24 @@ php bin/check-term-meta-confinement.php
 php bin/check-user-comment-meta-confinement.php
 
 bash bin/check-canonical-identity.sh
+
+# Explicit administrator-delegated inspection is the sole generic read exception.
+# Keep every other production database surface confined to its audited owner.
+if [[ ! -f "$database_reader" ||
+      "$(grep -cF '$wpdb->get_results(' "$database_reader" || true)" != "1" ||
+      "$(grep -cF '$wpdb->suppress_errors(' "$database_reader" || true)" != "2" ]]; then
+    echo "ERROR: database inspection exceeded its single SELECT executor/error-mode boundary." >&2
+    exit 1
+fi
+if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$database_reader" |
+    grep -vE '\$wpdb->(base_prefix|has_cap|prepare|get_results|suppress_errors|last_error)([^A-Za-z0-9_]|$)'; then
+    echo "ERROR: database inspection acquired an unapproved connection or mutation primitive." >&2
+    exit 1
+fi
+if grep -nE '(^|[^A-Za-z_])(INSERT|UPDATE|DELETE|REPLACE|ALTER|DROP|CREATE|LOAD|INTO|OUTFILE|CALL|SLEEP|BENCHMARK)([^A-Za-z_]|$)' "$database_reader" |
+    grep -vE '^[0-9]+:[[:space:]]*(//|\*|#)'; then
+    echo "ERROR: read-only database inspection acquired a non-SELECT SQL effect." >&2
+    exit 1
+fi
+
 echo "PASS: static safety surface audit."
