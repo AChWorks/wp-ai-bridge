@@ -14,6 +14,7 @@ use WP_AI_Bridge\Support\Administration_Access;
 use WP_AI_Bridge\Support\Settings;
 
 require_once __DIR__ . '/issue199-completion-helper.php';
+require_once __DIR__ . '/issue199-backup-preflight-helper.php';
 
 global $wpdb;
 wpai199c_assert( defined( 'ABSPATH' ) && $wpdb->dbh instanceof mysqli, 'Native disposable WordPress bootstrap required.' );
@@ -45,6 +46,7 @@ $seed = null;
 $archive_id = null;
 $input_id = null;
 $restore_id = null;
+$json_table = null;
 $started = microtime( true );
 $test_seconds = getenv( 'WPAI_ADMIN13_BACKUP_TEST_SECONDS' );
 $test_seconds = is_string( $test_seconds ) && ctype_digit( $test_seconds ) ? (int) $test_seconds : 900;
@@ -61,7 +63,28 @@ $step = static function ( $action, $id, array $terminal ) use ( $call, $deadline
 try {
 	wpai199c_grants();
 	$seed = wpai199c_seed_provider( $suffix );
-	wpai199c_configure( $seed['directory'], $target_root, $target_schema, $seed['tables'], is_multisite() ? 'network' : 'site' );
+	$json_table = 'provider_admin13_json_' . $suffix;
+	wpai199c_assert( false !== $wpdb->query( $wpdb->prepare( 'CREATE TABLE %i (id BIGINT NOT NULL PRIMARY KEY,doc JSON NULL) ENGINE=InnoDB', $json_table ) ), 'Native JSON compatibility fixture creation failed.' );
+	$backup_tables = array_merge( $seed['tables'], array( $json_table ) );
+	wpai199c_configure( $seed['directory'], $target_root, $target_schema, $backup_tables, is_multisite() ? 'network' : 'site' );
+	if ( false !== stripos( (string) $wpdb->get_var( 'SELECT VERSION()' ), 'MariaDB' ) ) {
+		$unsupported_json = $call( array( 'action' => 'inspect', 'source_roots' => array( 'installation' ) ) );
+		wpai199c_assert( is_wp_error( $unsupported_json ) && 'backup_schema_constraint_or_partition_unsupported' === $unsupported_json->get_error_code(),
+			'MariaDB JSON/CHECK must remain an explicit unsupported preflight shape.' );
+		wpai199c_assert( false !== $wpdb->query( $wpdb->prepare( 'DROP TABLE %i', $json_table ) ), 'Exact owned JSON compatibility fixture cleanup failed.' );
+		$json_table = null;
+		wpai199c_configure( $seed['directory'], $target_root, $target_schema, $seed['tables'], is_multisite() ? 'network' : 'site' );
+	} else {
+		foreach ( array(
+			array( 'id' => '1', 'doc' => '{"unicode":"سلام","large":18446744073709551614,"decimal":123456789012345678.123456789012}' ),
+			array( 'id' => '2', 'doc' => null ),
+			array( 'id' => '3', 'doc' => 'null' ),
+			array( 'id' => '4', 'doc' => '"سلام JSON string"' ),
+		) as $json_row ) {
+			wpai199c_assert( false !== $wpdb->insert( $json_table, $json_row, array( '%s', '%s' ) ), 'Exact native JSON seed failed.' );
+		}
+	}
+	wpai199b_preflight_integrity_cases( $call, $target_schema, $target_root, $deadline );
 	$source_schema = $wpdb->get_var( 'SELECT DATABASE()' );
 	wpai199c_assert( $source_schema !== $target_schema, 'Source and target must be distinct.' );
 	$native_session = $wpdb->get_row( 'SELECT DATABASE() AS db,@@SESSION.autocommit AS ac,@@SESSION.foreign_key_checks AS fk,@@SESSION.unique_checks AS uq,@@SESSION.sql_mode AS mode,@@SESSION.time_zone AS tz', ARRAY_A );
@@ -147,6 +170,10 @@ try {
 		if ( is_string( $owned[1] ) ) {
 			$call( array( 'action' => 'cancel', 'purpose' => $owned[0], 'session_id' => $owned[1] ) );
 		}
+	}
+	if ( is_string( $json_table ) ) {
+		wpai199c_assert( $json_table === 'provider_admin13_json_' . $suffix, 'Refusing unrelated JSON fixture cleanup.' );
+		$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $json_table ) );
 	}
 	if ( is_array( $seed ) ) {
 		wpai199c_cleanup_seed( $seed, $suffix );

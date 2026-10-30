@@ -543,10 +543,17 @@ final class Backup_Exporter {
 	}
 
 	public static function unpack_schema( array $schema ) {
-		$schema['table'] = Backup_Archive::decode_name( $schema['table'] );
-		$schema['ddl']   = Backup_Archive::decode_name( $schema['ddl'] );
+		if ( array_diff( array_keys( $schema ), array( 'table', 'ddl', 'columns', 'hash' ) ) ||
+			! is_array( $schema['columns'] ?? null ) || ! Backup_Archive::digest( $schema['hash'] ?? null ) ) {
+			throw new \RuntimeException( 'backup_schema_integrity' );
+		}
+		$schema['table'] = Backup_Archive::decode_name( $schema['table'] ?? null );
+		$schema['ddl']   = Backup_Archive::decode_name( $schema['ddl'] ?? null );
 		foreach ( $schema['columns'] as &$column ) {
-			$column['name'] = Backup_Archive::decode_name( $column['name'] );
+			if ( ! is_array( $column ) ) {
+				throw new \RuntimeException( 'backup_schema_integrity' );
+			}
+			$column['name'] = Backup_Archive::decode_name( $column['name'] ?? null );
 		}
 		unset( $column );
 		$schema['blueprint'] = Backup_Schema::blueprint( $schema['ddl'], $schema['table'] );
@@ -554,6 +561,7 @@ final class Backup_Exporter {
 			array_column( $schema['columns'], 'name' ) !== $schema['blueprint']['columns'] ) {
 			throw new \RuntimeException( 'backup_schema_integrity' );
 		}
+		$schema['columns'] = Backup_Schema::reconcile_columns( $schema['blueprint'], $schema['columns'] );
 		return $schema;
 	}
 

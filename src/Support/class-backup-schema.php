@@ -63,9 +63,12 @@ final class Backup_Schema {
 		if ( 1 !== preg_match( '/^ENGINE=InnoDB(?: AUTO_INCREMENT=[0-9]+)? DEFAULT CHARSET=[A-Za-z0-9_]+(?: COLLATE=[A-Za-z0-9_]+)?(?: ROW_FORMAT=(?:DYNAMIC|COMPACT|REDUNDANT|COMPRESSED))?(?: KEY_BLOCK_SIZE=[0-9]+)?(?: COMMENT=\'(?:[^\'\\\\]|\\\\.|\'\')*\')?$/D', $options ) ) {
 			throw new \RuntimeException( 'backup_schema_options_unsupported' );
 		}
-		$columns  = array();
-		$foreign  = array();
-		$ordinary = array();
+		preg_match( '/ DEFAULT CHARSET=([A-Za-z0-9_]+)/D', ' ' . $options, $charset_match );
+		$table_charset   = strtolower( $charset_match[1] );
+		$column_metadata = array();
+		$columns         = array();
+		$foreign         = array();
+		$ordinary        = array();
 		foreach ( $parts as $part ) {
 			if ( preg_match( '/^CONSTRAINT (\x60(?:[^\x60]|\x60\x60)+\x60) FOREIGN KEY /D', $part ) ) {
 				// Parse each FK independently, never substitute arbitrary text.
@@ -73,9 +76,9 @@ final class Backup_Schema {
 				continue;
 			}
 			if ( preg_match( '/^\x60((?:[^\x60]|\x60\x60)+)\x60\s+/D', $part, $match ) ) {
-				$name      = str_replace( '``', '`', $match[1] );
-				$columns[] = $name;
-				self::column( $part );
+				$name              = str_replace( '``', '`', $match[1] );
+				$columns[]         = $name;
+				$column_metadata[] = self::column( $part, $table_charset );
 			} elseif ( ! self::index( $part ) ) {
 				throw new \RuntimeException( 'backup_schema_definition_unsupported' );
 			}
@@ -85,10 +88,11 @@ final class Backup_Schema {
 			throw new \RuntimeException( 'backup_schema_unsupported' );
 		}
 		return array(
-			'definitions' => $ordinary,
-			'options'     => $options,
-			'foreign'     => $foreign,
-			'columns'     => $columns,
+			'definitions'     => $ordinary,
+			'options'         => $options,
+			'foreign'         => $foreign,
+			'columns'         => $columns,
+			'column_metadata' => $column_metadata,
 		);
 	}
 
@@ -99,8 +103,8 @@ final class Backup_Schema {
 		return 1 === preg_match( '/^(?:PRIMARY KEY|(?:UNIQUE KEY|KEY|FULLTEXT KEY|SPATIAL KEY) ' . $id . ') \\(' . $column . '(?:, ?' . $column . ')*\\)(?: USING (?:BTREE|HASH))?$/D', $definition );
 	}
 
-	/** @param string $definition Column definition. @return void */
-	private static function column( $definition ) {
+	/** @param string $definition Column definition. @param string $table_charset Validated table default. @return array Derived native representation. */
+	private static function column( $definition, $table_charset ) {
 		$tokens            = self::tokens( $definition );
 		$allowed_functions = array( 'CURRENT_TIMESTAMP' );
 		foreach ( $tokens as $index => $token ) {
@@ -113,6 +117,65 @@ final class Backup_Schema {
 				throw new \RuntimeException( 'backup_schema_expression_unsupported' );
 			}
 		}
+		$type = strtolower( $tokens[1]['word'] ?? '' );
+		if ( ! in_array( $type, array( 'tinyint', 'smallint', 'mediumint', 'int', 'bigint', 'decimal', 'float', 'double', 'bit', 'char', 'varchar', 'binary', 'varbinary', 'tinytext', 'text', 'mediumtext', 'longtext', 'tinyblob', 'blob', 'mediumblob', 'longblob', 'date', 'datetime', 'timestamp', 'time', 'year', 'enum', 'set', 'json' ), true ) ) {
+			throw new \RuntimeException( 'backup_schema_column_unsupported' );
+		}
+		$character        = in_array( $type, array( 'char', 'varchar', 'tinytext', 'text', 'mediumtext', 'longtext', 'enum', 'set' ), true );
+		$charset          = $character ? $table_charset : null;
+		$explicit_charset = false;
+		foreach ( $tokens as $index => $token ) {
+			$word = strtoupper( $token['word'] );
+			if ( 'CHARACTER' === $word && 'SET' === strtoupper( $tokens[ $index + 1 ]['word'] ?? '' ) ) {
+				$charset          = strtolower( $tokens[ $index + 2 ]['word'] ?? '' );
+				$explicit_charset = true;
+			} elseif ( 'CHARSET' === $word ) {
+				$charset          = strtolower( $tokens[ $index + 1 ]['word'] ?? '' );
+				$explicit_charset = true;
+			} elseif ( 'COLLATE' === $word && ! $explicit_charset ) {
+				$collation = strtolower( $tokens[ $index + 1 ]['word'] ?? '' );
+				// Ordinary native collation names identify their charset.
+				// MariaDB neutral UCA names inherit the declared context.
+				if ( 0 !== strpos( $collation, 'uca' ) && false !== strpos( $collation, '_' ) ) {
+					$charset = strstr( $collation, '_', true );
+				}
+			}
+		}
+		if ( $character ? ! is_string( $charset ) || 1 !== preg_match( '/^[a-z0-9_]+$/D', $charset ) || 'binary' === $charset : null !== $charset ) {
+			throw new \RuntimeException( 'backup_schema_charset_unsupported' );
+		}
+		$name = str_replace( chr( 96 ) . chr( 96 ), chr( 96 ), substr( $tokens[0]['raw'], 1, -1 ) );
+		if ( ! self::valid_identifier( $name ) ) {
+			throw new \RuntimeException( 'backup_schema_identifier' );
+		}
+		return array(
+			'name'    => $name,
+			'type'    => $type,
+			'charset' => $charset,
+		);
+	}
+
+	/**
+	 * Archived descriptive metadata never selects the restore codec. Compare the
+	 * required fields with the accepted definition, then return only derivations.
+	 */
+	public static function reconcile_columns( array $blueprint, array $metadata ) {
+		$derived = $blueprint['column_metadata'];
+		if ( ! array_is_list( $metadata ) || count( $metadata ) !== count( $derived ) ) {
+			throw new \RuntimeException( 'backup_schema_metadata_mismatch' );
+		}
+		foreach ( $metadata as $index => $column ) {
+			if ( ! is_array( $column ) || array_diff( array_keys( $column ), array( 'name', 'type', 'charset', 'collation', 'extra', 'expression' ) ) ||
+				! array_key_exists( 'charset', $column ) || ( $column['name'] ?? null ) !== $derived[ $index ]['name'] ||
+				( $column['type'] ?? null ) !== $derived[ $index ]['type'] || $column['charset'] !== $derived[ $index ]['charset'] ||
+				isset( $column['extra'] ) && ! is_string( $column['extra'] ) ||
+				isset( $column['expression'] ) && '' !== $column['expression'] ||
+				isset( $column['collation'] ) && ( ! is_string( $column['collation'] ) || 1 !== preg_match( '/^[a-z0-9_]+$/D', $column['collation'] ) ) ||
+				null === $derived[ $index ]['charset'] && null !== ( $column['collation'] ?? null ) ) {
+				throw new \RuntimeException( 'backup_schema_metadata_mismatch' );
+			}
+		}
+		return $derived;
 	}
 
 	/** @param string $definition Native FK clause. @return array */

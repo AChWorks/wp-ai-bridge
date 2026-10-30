@@ -182,6 +182,7 @@ final class Backup_Database {
 		if ( array_column( $columns, 'name' ) !== $blueprint['columns'] ) {
 			throw new \RuntimeException( 'backup_schema_metadata_mismatch' );
 		}
+		Backup_Schema::reconcile_columns( $blueprint, $columns );
 		return array(
 			'table'     => $table,
 			'ddl'       => $ddl,
@@ -401,6 +402,8 @@ final class Backup_Database {
 			$parameters[]  = array( 'source' => $i );
 			if ( 'bit' === $column['type'] ) {
 				$expressions[] = 'CAST(CONV(HEX(?),16,10) AS UNSIGNED)';
+			} elseif ( 'json' === $column['type'] ) {
+				$expressions[] = 'CONVERT(? USING utf8mb4)';
 			} elseif ( is_string( $column['charset'] ) ) {
 				if ( ! preg_match( '/^[A-Za-z0-9_]+$/D', $column['charset'] ) ) {
 					throw new \RuntimeException( 'backup_restore_charset' );

@@ -172,6 +172,11 @@ final class Backup_Operation {
 				'activation_pending'    => true,
 				'quiescence_assumption' => true,
 			);
+			if ( in_array( $code, array( 'backup_cell_verification_resources', 'backup_cell_verification_unavailable' ), true ) ) {
+				$data['verification_work']  = 'one_complete_cell_native_sha256_replay';
+				$data['required_resources'] = 'seekable_retained_archive_and_sufficient_step_seconds_and_php_execution_time';
+				$data['recovery']           = 'restart_preflight_with_the_retained_immutable_archive_after_adjusting_resources';
+			}
 			if ( isset( $parts[1] ) && ( 0 === strpos( $parts[0], 'backup_schema_' ) || in_array( $parts[0], array( 'backup_unsupported_view', 'backup_unsupported_trigger', 'backup_unsupported_routines', 'backup_unsupported_events', 'backup_external_dependency' ), true ) ) ) {
 				$data['object_base64'] = $parts[1];
 			}

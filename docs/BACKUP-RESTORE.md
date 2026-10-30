@@ -54,6 +54,8 @@ Native statement/metadata/packet limits remain real. A row or definition which c
 | `restore_step`, `restore_status` | `session_id`; continue effects and verification until `verified` |
 | `cancel` | `purpose=backup_archive\|backup_input\|backup_state`, `session_id` |
 
+Imported column names, native type and character set must agree with the accepted quoted definition; the restore codec is derived from that definition. Descriptive archive metadata cannot select a different conversion. Imported cell bytes are hashed with native PHP SHA-256 before their declared digests contribute to row identities.
+
 Preflight alone is not a restore. No target schema/file effects occur before the complete immutable package passes validation and the ready destination plan is acknowledged. Destination schema/root emptiness and identity are rechecked immediately before starting.
 
 Source logical root `installation`, for example, restores under `<target root>/roots/installation/`. Multiple approved roots retain separate logical namespaces. File bytes, ordinary permission bits, empty files and empty directories are preserved. Destination files and directories are compared again, including unexpected extra entries.
@@ -75,7 +77,9 @@ The final footer binds the preceding chain, complete database/file digests and v
 
 Hashes establish integrity, not sender authenticity. Import and restoration still require current owner authority and explicit exact-plan approval. Private bytes contain credentials, users, OAuth state and configuration; do not publish them or expose filesystem paths.
 
-All persistent bytes/checkpoints use the existing private-transfer backend. The feature does not maintain another manager database or private filestore. Finite policies derive from transfer reservation/request/chunk/lease settings, PHP processing resources, actual disk, native packets and configured step work. Individual native queries and final private-inode verification remain subject to real host execution limits; cooperative step budgets are not database query cancellation.
+All persistent bytes/checkpoints use the existing private-transfer backend. The feature does not maintain another manager database or private filestore. Finite policies derive from transfer reservation/request/chunk/lease settings, PHP processing resources, actual disk, native packets and configured step work. A cell spanning frames is verified when its final frame arrives: the validator remembers only its archive offset/sequence, then replays that complete cell from the same pinned immutable stream through native SHA-256 and restores the stream position. No HashContext is persisted and no second payload copy/backend is created. Memory remains bounded by frame resources. One complete cell read/hash is the minimum synchronous work; it must fit the configured step and actual PHP request execution budget. Insufficient time or an unavailable seekable archive returns explicit cell-verification resource/compatibility feedback while preflight remains before target effects. Retain the archive and restart preflight with adequate resources; increasing policy may require a fresh job because configuration identities are bound.
+
+Individual native queries and final private-inode verification remain subject to real host execution limits; cooperative step budgets are not database query cancellation.
 
 ## Restore ordering and recovery
 
@@ -89,4 +93,4 @@ The running installation's users, options, credentials and Bridge controls remai
 
 ## Evidence
 
-Pure regressions are in `tests/issue199-backup.php`. The native family flow is `tests/integration/issue199-backup-smoke.php`, using the separately authored complete-schema/row-multiset/file oracle. It captures actual installation files, transports the complete package through bounded ingress, verifies revocation, performs an actual same-account isolated restore, compares all bytes/schema/modes/empty directories and rejects source Activity drift. Native execution and final acceptance must be recorded against the exact candidate and both database engines; source presence alone is not proof.
+Pure regressions are in `tests/issue199-backup.php` and `tests/issue199-backup-preflight-integrity.php`. Fully re-framed malicious cell-SHA/type/charset packages are checked before ready and before target effects; valid multi-megabyte/chunked, NULL, empty and binary inputs exercise JSON-only checkpoint continuation. The native family fixture also runs those preflight cases against an unchanged actual empty target, and covers native MySQL JSON separately from MariaDB's explicit JSON/CHECK gap. The native family flow is `tests/integration/issue199-backup-smoke.php`, using the separately authored complete-schema/row-multiset/file oracle. It captures actual installation files, transports the complete package through bounded ingress, verifies revocation, performs an actual same-account isolated restore, compares all bytes/schema/modes/empty directories and rejects source Activity drift. Native execution and final acceptance must be recorded against the exact candidate and both database engines; source presence alone is not proof.

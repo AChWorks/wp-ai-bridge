@@ -161,7 +161,7 @@ final class Backup_Restore {
 							}
 							$next = true;
 							if ( 'preflight' === $state['phase'] ) {
-								$this->validate( $state, $frame['record'], $frame['payload'] );
+								$this->validate( $state, $frame['record'], $frame['payload'], $source['stream'] );
 							} elseif ( 'apply' === $state['phase'] ) {
 								$next = $this->database->with_session(
 									$state['header']['plan']['database']['session'],
@@ -233,7 +233,7 @@ final class Backup_Restore {
 	}
 
 	/** Complete structural/chain/schema preflight, with O(depth + schema) metadata. */
-	private function validate( array &$s, array $r, $payload ) {
+	private function validate( array &$s, array $r, $payload, $archive_stream = null ) {
 		$type = $r['type'];
 		if ( 'header' === $type ) {
 			if ( 'header' !== $s['grammar'] || 0 !== $s['seq'] ) {
@@ -324,9 +324,24 @@ final class Backup_Restore {
 			if ( null !== $s['row']['cell'] && $identity !== $s['row']['cell'] || strlen( $payload ) > $r['total'] - $r['offset'] ) {
 				throw new \RuntimeException( 'backup_archive_cell' );
 			}
+			if ( 0 === $r['offset'] ) {
+				// Only scalar replay coordinates survive HTTP checkpoints.
+				$s['row']['cell_start'] = $s['offset'] ?? null;
+				$s['row']['cell_seq']   = $s['seq'];
+			}
 			$s['row']['cell']    = $identity;
 			$s['row']['offset'] += strlen( $payload );
 			if ( $s['row']['offset'] === $r['total'] ) {
+				if ( ! $r['null'] ) {
+					if ( 0 === $r['offset'] ) {
+						if ( ! hash_equals( $r['sha256'], hash( 'sha256', $payload ) ) ) {
+							throw new \RuntimeException( 'backup_archive_cell_integrity' );
+						}
+					} else {
+						$this->verify_cell_replay( $archive_stream, $s, $r );
+					}
+				}
+				unset( $s['row']['cell_start'], $s['row']['cell_seq'] );
 				$s['row']['identity'] .= $r['null'] ? 'N;' : 'V' . $r['total'] . ':' . $r['sha256'] . ';';
 				++$s['row']['column'];
 				$s['row']['offset'] = 0;
@@ -440,6 +455,53 @@ final class Backup_Restore {
 			return;
 		}
 		throw new \RuntimeException( 'backup_archive_record_unsupported' );
+	}
+
+	/**
+	 * One complete cell must be hashed in one native PHP replay. Frames remain
+	 * bounded; HashContext is never serialized and no second payload is staged.
+	 * A resource failure leaves preflight before any target effect.
+	 */
+	private function verify_cell_replay( $stream, array $state, array $cell ) {
+		$start     = $state['row']['cell_start'] ?? null;
+		$first_seq = $state['row']['cell_seq'] ?? null;
+		$position  = is_resource( $stream ) ? ftell( $stream ) : false;
+		if ( ! is_int( $start ) || $start < 0 || ! is_int( $first_seq ) || $first_seq < 0 ||
+			! is_int( $position ) || 0 !== fseek( $stream, $start ) ) {
+			throw new \RuntimeException( 'backup_cell_verification_unavailable' );
+		}
+		$seconds = $this->policy['step_seconds'] ?? null;
+		if ( ! is_numeric( $seconds ) || $seconds <= 0 ) {
+			$seconds = max( 1, (int) ini_get( 'max_execution_time' ) );
+		}
+		$deadline = microtime( true ) + $seconds;
+		try {
+			$hash  = hash_init( 'sha256' );
+			$bytes = 0;
+			for ( $seq = $first_seq; $seq <= $state['seq']; ++$seq ) {
+				$frame  = Backup_Archive::read( $stream, $this->budget );
+				$record = $frame['record'] ?? array();
+				if ( null === $frame || ( $record['seq'] ?? null ) !== $seq ||
+					'cell' !== ( $record['type'] ?? null ) || ( $record['column'] ?? null ) !== $cell['column'] ||
+					( $record['offset'] ?? null ) !== $bytes || ( $record['total'] ?? null ) !== $cell['total'] ||
+					false !== ( $record['null'] ?? null ) || ( $record['sha256'] ?? null ) !== $cell['sha256'] ||
+					strlen( $frame['payload'] ) > $cell['total'] - $bytes ) {
+					throw new \RuntimeException( 'backup_archive_cell_integrity' );
+				}
+				hash_update( $hash, $frame['payload'] );
+				$bytes += strlen( $frame['payload'] );
+				if ( microtime( true ) > $deadline ) {
+					throw new \RuntimeException( 'backup_cell_verification_resources' );
+				}
+			}
+			if ( $bytes !== $cell['total'] || ftell( $stream ) !== $position || ! hash_equals( $cell['sha256'], hash_final( $hash ) ) ) {
+				throw new \RuntimeException( 'backup_archive_cell_integrity' );
+			}
+		} finally {
+			if ( 0 !== fseek( $stream, $position ) ) {
+				throw new \RuntimeException( 'backup_cell_verification_unavailable' );
+			}
+		}
 	}
 
 	private function entry( array &$s, array $r ) {
