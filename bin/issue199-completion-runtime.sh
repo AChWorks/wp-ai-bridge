@@ -36,8 +36,8 @@ wpai199c_bootstrap() {
     "${wp[@]}" config set WPAI_ADMIN13_DISPOSABLE true --raw --allow-root >/dev/null
     "${wp[@]}" config set WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL "$enable_native_sql" --raw --allow-root >/dev/null
     "${wp[@]}" config set DISABLE_WP_CRON true --raw --allow-root >/dev/null
-    # Only this disposable runner's installed root is normalized for the v1
-    # ordinary-permissions roundtrip. Product source roots are never changed.
+    # Only this disposable runner's installation is normalized for the v1
+    # ordinary-permissions roundtrip. Preserve every descendant ordinary mode.
     case "${COMPOSE_PROJECT_NAME:-}" in
         wpai-integration-*|wpai199-write-*|wpai-issue58-ms-*) ;;
         *) echo 'ERROR: completion bootstrap requires an owned disposable Compose project.' >&2; return 1 ;;
@@ -50,11 +50,56 @@ wpai199c_bootstrap() {
             "wordpress" !== $wpdb->get_var("SELECT DATABASE()")) {
             throw new RuntimeException("Owned disposable installation identity mismatch.");
         }
-        if (!chmod($root, 0755)) { throw new RuntimeException("Disposable ordinary root permission setup failed."); }
-        clearstatcache(true, $root);
-        if (0755 !== (lstat($root)["mode"] & 07777)) {
-            throw new RuntimeException("Disposable ordinary root permissions were not applied.");
+        $counts = array("entries" => 0, "changed" => 0, "special_bits" => 0);
+        $observed = array();
+        $current = null;
+        $normalize = static function ($path, $root_mode = null) use ($root, &$counts, &$observed, &$current) {
+            $relative = $path === $root ? "." : substr($path, strlen($root) + 1);
+            $current = array("path_base64" => base64_encode($relative), "old_mode" => null, "new_mode" => null);
+            if (++$counts["entries"] > 100000 ||
+                ($path !== $root && !str_starts_with($path, $root . DIRECTORY_SEPARATOR)) ||
+                is_link($path) || realpath($path) !== $path) {
+                throw new RuntimeException("Unsafe or over-budget installation entry.");
+            }
+            clearstatcache(true, $path);
+            $before = @lstat($path);
+            if (!$before || !in_array($before["mode"] & 0170000, array(0040000, 0100000), true) ||
+                (0100000 === ($before["mode"] & 0170000) && 1 !== $before["nlink"])) {
+                throw new RuntimeException("Unsupported installation object.");
+            }
+            $old_mode = $before["mode"] & 07777;
+            $mode = $root_mode ?? ($old_mode & 0777);
+            $current["old_mode"] = $old_mode;
+            $current["new_mode"] = $mode;
+            if (0 !== ($old_mode & 07000)) { ++$counts["special_bits"]; }
+            if ($old_mode !== $mode && !@chmod($path, $mode)) {
+                throw new RuntimeException("Installation mode change failed.");
+            }
+            clearstatcache(true, $path);
+            $after = @lstat($path);
+            if (!$after || $before["dev"] !== $after["dev"] || $before["ino"] !== $after["ino"] ||
+                ($before["mode"] & 0170000) !== ($after["mode"] & 0170000) || ($after["mode"] & 07777) !== $mode) {
+                throw new RuntimeException("Installation mode verification failed.");
+            }
+            if ($old_mode !== $mode) {
+                ++$counts["changed"];
+                $candidate = array_merge($observed, array($current));
+                if (count($candidate) <= 12 && strlen(json_encode($candidate, JSON_THROW_ON_ERROR)) <= 7000) {
+                    $observed = $candidate;
+                }
+            }
+        };
+        try {
+            $normalize($root, 0755);
+            // FOLLOW_SYMLINKS is deliberately absent; unsafe entries abort setup.
+            $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
+            foreach ($iterator as $entry) { $normalize($entry->getPathname()); }
+        } catch (Throwable $mode_error) {
+            $failure = array("counts" => $counts, "entry" => $current);
+            if (strlen(json_encode($failure, JSON_THROW_ON_ERROR)) > 8000) { $failure = array("counts" => $counts); }
+            throw new RuntimeException("Disposable installation mode setup failed: " . json_encode($failure, JSON_THROW_ON_ERROR));
         }
+        echo "Disposable installation ordinary modes verified: " . json_encode(array("counts" => $counts, "entries" => $observed), JSON_THROW_ON_ERROR) . "\n";
     ' --allow-root
     "${compose[@]}" exec -T wordpress sh -ec '
         mkdir -p /var/www/html/wp-content/mu-plugins
