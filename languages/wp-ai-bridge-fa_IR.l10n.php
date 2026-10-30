@@ -34,6 +34,7 @@ $messages = array_merge(
 	require __DIR__ . '/fa_IR-parts/oauth-clients.php',
 	require __DIR__ . '/fa_IR-parts/registered-settings.php',
 	require __DIR__ . '/fa_IR-parts/native-options.php',
+	require __DIR__ . '/fa_IR-parts/native-option-write.php',
 	require __DIR__ . '/fa_IR-parts/user-comment-meta.php',
 	require __DIR__ . '/fa_IR-parts/diagnostics.php',
 	require __DIR__ . '/fa_IR-parts/database.php',

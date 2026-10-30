@@ -198,6 +198,26 @@ final class Database_Connection {
 	 * Only this fixed critical section may subsequently commit/restore the mode.
 	 */
 	public function begin() {
+		$this->begin_owned( false );
+	}
+
+	/** Enter a short native journal with no inherited SQL table locks. */
+	public function begin_callback_journal() {
+		$this->assert_callback_context();
+		$this->begin_owned( true );
+	}
+
+	/** Verify unqualified native APIs still resolve in the captured database. */
+	public function assert_callback_context() {
+		$rows = $this->run( 'SELECT DATABASE() AS db', array(), array(), 1 )['rows'];
+		if ( count( $rows ) !== 1 || ! is_string( $rows[0]['db'] ?? null ) || ! hash_equals( $this->database, $rows[0]['db'] ) ) {
+			throw new Database_Write_Failure( 'native_options_write_context_changed' );
+		}
+	}
+
+	/** @param bool $callback_clean Require positive unlocked-table admission. @return void */
+	private function begin_owned( $callback_clean ) {
+		$alias = $callback_clean ? 'wpai_native_guard_' . bin2hex( random_bytes( 12 ) ) : '';
 		if ( self::$busy ) {
 			throw new Database_Write_Failure( 'database_write_unsupported_session' );
 		}
@@ -214,6 +234,25 @@ final class Database_Connection {
 				throw new Database_Write_Failure( 'database_write_unsupported_session', $error->details );
 			}
 			throw $error;
+		}
+		if ( $callback_clean ) {
+			$opened = false;
+			try {
+				$this->run( 'HANDLER ' . $this->table( $this->options ) . ' OPEN AS ' . self::quote( $alias ) );
+				$opened = true;
+				$this->run( 'HANDLER ' . self::quote( $alias ) . ' CLOSE' );
+				$opened = false;
+			} catch ( \Throwable $error ) {
+				// Never close a caller's locks/handler on rejected OPEN. An
+				// acknowledged owned OPEN with uncertain CLOSE is unusable.
+				if ( $opened ) {
+					$this->quarantine();
+				}
+				if ( $error instanceof Database_Write_Failure && 1192 === ( $error->details['errno'] ?? 0 ) ) {
+					throw new Database_Write_Failure( 'database_write_unsupported_session', $error->details );
+				}
+				throw $error;
+			}
 		}
 		self::$busy         = true;
 		$this->mode_changed = true;

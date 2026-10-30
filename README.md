@@ -9,7 +9,7 @@ The plugin is free and self-hosted. A direct **ChatGPT** connection is tested; a
 
 **Database administration in current source is pending release.** Four separate default-off grants cover Database Inspection, Sensitive Database Read, typed Database Write and Database Delete. The typed tool supports exact insert/update/delete batches, live row/schema preconditions, resumable large values/keys and receipt-bound recovery. Raw access can include credentials and account/role/session data; Bridge control state remains protected. Multisite requires actual Super Admin and network authority. See [database access, compatibility and recovery](./docs/DATABASE-ADMINISTRATION.md).
 
-**Native settings read/export in current source is pending release.** Separate site and network consent enables effective unregistered/sensitive WordPress option reads and complete private snapshots. See [native settings semantics and capacity](./docs/NATIVE-OPTIONS.md).
+**Native settings access in current source is pending release.** Separate site/network read and write consents protect effective option reads, complete private snapshots and one native add/update/delete family with durable historical recovery. Native callbacks remain nontransactional. See [reads and snapshots](./docs/NATIVE-OPTIONS.md) and [mutations, complete inputs and recovery](./docs/NATIVE-OPTION-MUTATIONS.md).
 
 ## Requirements
 
@@ -75,6 +75,8 @@ Go to **WP AI Bridge → Settings**. **Only Site Read is enabled by default.** E
 | **Remote Media** | Import safe remote media; also requires Builder Write and native upload permission. |
 | **Live Content** | Publish content and change live status when WordPress permits. |
 | **Site Configuration** | Configure supported WordPress and provider settings. |
+| **Sensitive Native Site Settings Read / Write** | Separate native option read/write consent; source pending release. Write also requires Site Configuration. |
+| **Sensitive Native Network Settings Read / Write** | Separate network-owned read/write consent, corresponding site grants and actual Super Admin/network authority; source pending release. |
 | **Advanced Metadata** | Work with authorized object metadata, excluding credentials and sessions. |
 | **Authentication & Credentials** | Manage WordPress Application Passwords using native APIs. |
 | **Code & Extensions** | Perform supported plugin/theme and snippet lifecycle operations. |
@@ -105,6 +107,7 @@ GitHub Releases is the maintained distribution channel. WordPress.org Plugin Dir
 - [Supported operations and permissions](./docs/ABILITIES.md)
 - [Authentication and approved clients](./docs/OAUTH-CLIENTS.md)
 - [Large text, media and file exchange](./docs/LARGE-PAYLOADS.md)
+- [Native option mutations and historical recovery](./docs/NATIVE-OPTION-MUTATIONS.md)
 - [External plugin/theme packages](./docs/EXTERNAL-PACKAGES.md)
 - [Security and privacy](./docs/SECURITY.md)
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)

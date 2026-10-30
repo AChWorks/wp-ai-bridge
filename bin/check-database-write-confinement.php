@@ -13,9 +13,10 @@
  * @param string $source PHP source.
  * @param bool   $native_owner Whether this is the sole native adapter.
  * @param bool   $typed_owner Whether this is a typed transaction owner.
+ * @param array  $metadata_members Explicit read-only context fields for a non-native owner.
  * @return array<string>
  */
-function wpai_database_write_boundary( $source, $native_owner, $typed_owner ) {
+function wpai_database_write_boundary( $source, $native_owner, $typed_owner, array $metadata_members = array() ) {
 	$allowed = array(
 		'mysqli_get_client_info',
 		'mysqli_thread_id',
@@ -72,9 +73,15 @@ function wpai_database_write_boundary( $source, $native_owner, $typed_owner ) {
 			$arrow = $tokens[ $index + 1 ] ?? null;
 			$field = $tokens[ $index + 2 ] ?? null;
 			if ( is_array( $arrow ) && T_OBJECT_OPERATOR === $arrow[0] &&
-				is_array( $field ) && ( ! $native_owner ||
-				! in_array( $field[1], array( 'dbh', 'base_prefix', 'options', 'dbname', 'ready' ), true ) ||
-				'(' === ( $tokens[ $index + 3 ] ?? null ) ) ) {
+				is_array( $field ) && ( ! in_array( $field[1], $native_owner ? array( 'dbh', 'base_prefix', 'options', 'dbname', 'ready' ) : $metadata_members, true ) ||
+				'(' === ( $tokens[ $index + 3 ] ?? null ) ||
+				( ! $native_owner && (
+					in_array(
+						is_array( $tokens[ $index + 3 ] ?? null ) ? $tokens[ $index + 3 ][0] : ( $tokens[ $index + 3 ] ?? null ),
+						array( '=', T_PLUS_EQUAL, T_MINUS_EQUAL, T_MUL_EQUAL, T_DIV_EQUAL, T_CONCAT_EQUAL, T_MOD_EQUAL, T_AND_EQUAL, T_OR_EQUAL, T_XOR_EQUAL, T_SL_EQUAL, T_SR_EQUAL, T_COALESCE_EQUAL, T_POW_EQUAL, T_INC, T_DEC ),
+						true
+					) || ( is_array( $prev ) && in_array( $prev[0], array( T_INC, T_DEC ), true ) )
+				) ) ) ) {
 				$errors[] = 'Typed execution must not use wpdb SQL/reconnect/credential APIs.';
 			}
 		}
@@ -92,7 +99,12 @@ foreach ( $files as $file ) {
 		continue;
 	}
 	$relative = substr( $file->getPathname(), strlen( $root ) + 1 );
-	$errors   = wpai_database_write_boundary( file_get_contents( $file->getPathname() ), $native === $relative, in_array( $relative, array( $native, $writer ), true ) );
+	$metadata = array(
+		'src/Abilities/class-native-option-write-abilities.php' => array( 'dbh', 'base_prefix', 'prefix', 'options', 'sitemeta', 'dbname' ),
+		'src/Support/class-native-option-operation.php' => array( 'sitemeta' ),
+	);
+	$typed = in_array( $relative, array( $native, $writer, 'src/Support/class-database-control-storage.php' ), true ) || isset( $metadata[ $relative ] );
+	$errors = wpai_database_write_boundary( file_get_contents( $file->getPathname() ), $native === $relative, $typed, $metadata[ $relative ] ?? array() );
 	foreach ( $errors as $error ) {
 		fwrite( STDERR, $relative . ': ' . $error . "\n" );
 		$failed = true;
@@ -114,6 +126,26 @@ foreach ( array(
 }
 if ( wpai_database_write_boundary( '<?php $wpdb->dbh; mysqli_stmt_execute($statement);', true, true ) ) {
 	fwrite( STDERR, "Reviewed native adapter primitives were incorrectly rejected.\n" );
+	$failed = true;
+}
+foreach ( array(
+	'<?php $wpdb->query("UPDATE controls");',
+	'<?php $wpdb->sitemeta();',
+	'<?php $wpdb->sitemeta = "another_table";',
+	'<?php $wpdb->sitemeta .= "suffix";',
+	'<?php ++$wpdb->sitemeta;',
+	'<?php $wpdb->sitemeta++;',
+	'<?php $wpdb->dbpassword;',
+	'<?php mysqli_query($handle, "UPDATE controls");',
+	'<?php $db->select_db("other");',
+) as $regression ) {
+	if ( ! wpai_database_write_boundary( $regression, false, true, array( 'sitemeta' ) ) ) {
+		fwrite( STDERR, "Read-only native context confinement regression escaped.\n" );
+		$failed = true;
+	}
+}
+if ( wpai_database_write_boundary( '<?php $table = $wpdb->sitemeta;', false, true, array( 'sitemeta' ) ) ) {
+	fwrite( STDERR, "Reviewed read-only table context was incorrectly rejected.\n" );
 	$failed = true;
 }
 if ( $failed ) {

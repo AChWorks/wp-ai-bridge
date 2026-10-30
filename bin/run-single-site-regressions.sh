@@ -76,6 +76,7 @@ run_eval issue56-registered-settings-smoke.php
 run_eval issue56-registered-settings-typed-smoke.php
 run_eval issue56-specialized-settings-smoke.php
 run_eval issue199-native-options-smoke.php
+run_eval issue199-native-option-write-smoke.php
 
 run_eval issue58-user-comment-meta-smoke.php
 run_eval issue58-user-comment-meta-policy-smoke.php
