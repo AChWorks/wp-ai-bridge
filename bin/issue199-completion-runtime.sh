@@ -114,10 +114,11 @@ wpai199c_install_as() {
     if ! printf '%s  %s\n' "$expected" "$tmpfile" | sha256sum --check --status; then
         rm -f "$tmpfile"; echo 'ERROR: Action Scheduler release digest mismatch.' >&2; return 1
     fi
-    "${compose[@]}" cp "$tmpfile" wordpress:/tmp/admin13-action-scheduler.zip
+    # The CLI and Apache containers share this private volume; /tmp is per-container.
+    "${compose[@]}" cp "$tmpfile" wordpress:/wpai-admin13/private/admin13-action-scheduler.zip
     rm -f "$tmpfile"
-    "${wp[@]}" plugin install /tmp/admin13-action-scheduler.zip --activate --force --allow-root
-    "${compose[@]}" exec -T wordpress rm -f /tmp/admin13-action-scheduler.zip
+    "${wp[@]}" plugin install /wpai-admin13/private/admin13-action-scheduler.zip --activate --force --allow-root
+    "${compose[@]}" exec -T wordpress rm -f /wpai-admin13/private/admin13-action-scheduler.zip
     actual="$("${wp[@]}" plugin get action-scheduler --field=version --allow-root | tail -n 1)"
     [[ "$actual" == "$version" ]] || {
         echo "ERROR: installed Action Scheduler $actual differs from pinned $version." >&2
