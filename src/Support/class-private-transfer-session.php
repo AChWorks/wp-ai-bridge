@@ -21,13 +21,29 @@ final class Private_Transfer_Session {
 	/** @var Permissions */
 	private $permissions;
 
+	/** @var bool Fixed DB-only authority; generic transfer callers never acquire it. */
+	private $database_only = false;
+
 	/** @param Permissions $permissions Bridge current principal policy. */
 	public function __construct( Permissions $permissions ) {
 		$this->permissions = $permissions;
 	}
 
 	/**
-	 * @param string $purpose media, text, or wxr.
+	 * Internal fixed-purpose factory. Database use does not inherit or grant any
+	 * generic media, content, source-editing or MCP transfer authority.
+	 *
+	 * @param Permissions $permissions Current database delegation.
+	 * @return self
+	 */
+	public static function for_database( Permissions $permissions ) {
+		$store                = new self( $permissions );
+		$store->database_only = true;
+		return $store;
+	}
+
+	/**
+	 * @param string $purpose Fixed authorized consumer purpose.
 	 * @param int    $total Exact source byte count including zero.
 	 * @param string $sha256 Lowercase expected SHA-256.
 	 * @param int    $max_total Explicit operator/caller file budget.
@@ -323,6 +339,98 @@ final class Private_Transfer_Session {
 			);
 		} finally {
 			$this->close_meta( $handle );
+		}
+	}
+
+	/**
+	 * Hold verified database inputs for one synchronous consumer callback.
+	 *
+	 * The stable per-session coordinators remain locked until every read is
+	 * finished. Append, release, cancellation and admission cleanup all respect
+	 * those same locks. No claim fence is created: only the database transaction
+	 * receipt owns database effects, and staging can be reused after rollback.
+	 *
+	 * @param array<int,array<string,mixed>> $descriptors Exact byte identities.
+	 * @param callable $callback Receives ID-indexed stream/bytes/sha256 entries.
+	 * @return mixed|WP_Error The callback result, never a public source pathname.
+	 */
+	public function with_database_sources( array $descriptors, callable $callback ) {
+		if ( ! $this->database_only || ! $this->allowed( 'database_value' ) ) {
+			return $this->denied();
+		}
+		$unique = array();
+		foreach ( $descriptors as $descriptor ) {
+			if ( ! is_array( $descriptor ) || 3 !== count( $descriptor ) ||
+				array_diff( array_keys( $descriptor ), array( 'transfer_id', 'total_bytes', 'sha256' ) ) ||
+				! isset( $descriptor['transfer_id'], $descriptor['total_bytes'], $descriptor['sha256'] ) ||
+				! is_string( $descriptor['transfer_id'] ) ||
+				1 !== preg_match( '/^[a-f0-9]{64}$/D', $descriptor['transfer_id'] ) ||
+				! is_int( $descriptor['total_bytes'] ) || $descriptor['total_bytes'] < 0 ||
+				! is_string( $descriptor['sha256'] ) ||
+				1 !== preg_match( '/^[a-f0-9]{64}$/D', $descriptor['sha256'] ) ) {
+				return $this->invalid();
+			}
+			$id = $descriptor['transfer_id'];
+			if ( isset( $unique[ $id ] ) &&
+				( $unique[ $id ]['total_bytes'] !== $descriptor['total_bytes'] ||
+					! hash_equals( $unique[ $id ]['sha256'], $descriptor['sha256'] ) ) ) {
+				return $this->invalid();
+			}
+			$unique[ $id ] = $descriptor;
+		}
+		// Acquire each coordinator exactly once, in a stable order. Never hold
+		// the shared admission guard or recursively acquire a lease coordinator.
+		ksort( $unique, SORT_STRING );
+		$handles = array();
+		$sources = array();
+		try {
+			foreach ( $unique as $id => $descriptor ) {
+				$loaded = $this->load( $id, false, true );
+				if ( is_wp_error( $loaded ) ) {
+					return $loaded;
+				}
+				list( $root, $handle, $meta ) = $loaded;
+				$handles[ $id ]               = $handle;
+				if ( 'database_value' !== $meta['purpose'] || 'verified' !== $meta['state'] ||
+					! empty( $meta['payload_released'] ) ||
+					$meta['total'] !== $meta['received'] ||
+					$meta['total'] !== $descriptor['total_bytes'] ||
+					! hash_equals( $meta['sha256'], $descriptor['sha256'] ) ) {
+					return new WP_Error( 'transfer_source_changed', __( 'The database input must match its complete verified transfer identity.', 'wp-ai-bridge' ) );
+				}
+				$path   = $root . '/' . $id . '.bytes';
+				$stream = @fopen( $path, 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Fixed private source, pinned by its stable session coordinator.
+				if ( ! is_resource( $stream ) ) {
+					return new WP_Error( 'transfer_source_changed', __( 'The verified database input is unavailable.', 'wp-ai-bridge' ) );
+				}
+				$sources[ $id ] = array(
+					'stream' => $stream,
+					'bytes'  => $meta['total'],
+					'sha256' => $meta['sha256'],
+				);
+				$hash           = hash_init( 'sha256' );
+				if ( ! $this->secure_file( $stream, $path ) ||
+					! $this->file_length( $stream, $meta['total'] ) ||
+					hash_update_stream( $hash, $stream ) !== $meta['total'] ||
+					! hash_equals( $meta['sha256'], hash_final( $hash ) ) ||
+					! $this->secure_file( $stream, $path ) ||
+					! $this->file_length( $stream, $meta['total'] ) || ! rewind( $stream ) ) {
+					return new WP_Error( 'transfer_source_changed', __( 'The verified database input changed before streaming.', 'wp-ai-bridge' ) );
+				}
+			}
+			// All WordPress policy, metadata and file verification is complete.
+			// The callback may now own one native database transaction; this
+			// class performs only resource close/unlock after callback entry.
+			return $callback( $sources );
+		} finally {
+			foreach ( $sources as $source ) {
+				if ( is_resource( $source['stream'] ) ) {
+					fclose( $source['stream'] );
+				}
+			}
+			foreach ( array_reverse( $handles, true ) as $handle ) {
+				$this->close_meta( $handle );
+			}
 		}
 	}
 
@@ -906,6 +1014,17 @@ final class Private_Transfer_Session {
 		if ( 0 === get_current_user_id() ) {
 			return false;
 		}
+		if ( $this->database_only ) {
+			return 'database_value' === $purpose &&
+				( ! is_multisite() || ( is_super_admin() && current_user_can( 'manage_network_options' ) ) ) &&
+				$this->permissions->allowed_all(
+					array(
+						array( Settings::GROUP_DATABASE_INSPECTION, 'manage_options' ),
+						array( Settings::GROUP_DATABASE_READ, 'manage_options' ),
+						array( Settings::GROUP_DATABASE_WRITE, 'manage_options' ),
+					)
+				);
+		}
 		switch ( $purpose ) {
 			case 'media':
 				return $this->permissions->allowed( Settings::GROUP_BUILDER_WRITE, 'upload_files' );
@@ -1188,7 +1307,7 @@ final class Private_Transfer_Session {
 			is_int( $meta['user'] ) && $meta['user'] >= 1 &&
 			is_int( $meta['expires'] ) && $meta['expires'] >= 1 &&
 			is_string( $meta['client'] ) && is_string( $meta['purpose'] ) &&
-			in_array( $meta['purpose'], array( 'media', 'media_read', 'wxr_read', 'text', 'wxr', 'source_plugin', 'source_theme', 'source_plugin_read', 'source_theme_read' ), true ) &&
+			in_array( $meta['purpose'], array( 'media', 'media_read', 'wxr_read', 'text', 'wxr', 'source_plugin', 'source_theme', 'source_plugin_read', 'source_theme_read', 'database_value' ), true ) &&
 			is_string( $meta['sha256'] ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $meta['sha256'] ) &&
 			in_array( $meta['state'], array( 'open', 'preparing', 'verified', 'committing', 'committed', 'rejected', 'observed' ), true ) &&
 			( ! in_array( $meta['state'], array( 'committing', 'committed', 'rejected', 'observed' ), true ) ||
@@ -1806,6 +1925,10 @@ final class Private_Transfer_Session {
 
 	/** @param string $id Exact opaque id. @return array<int,mixed>|WP_Error */
 	private function load( $id, $allow_tombstone = false, $nonblocking = false ) {
+		// Database consumers can retain several sources for one callback. A
+		// reentrant stage action must report busy rather than wait on its own
+		// coordinator. Generic transfer waiting behavior is unchanged.
+		$nonblocking = $nonblocking || $this->database_only;
 		if ( ! is_string( $id ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $id ) ) {
 			return $this->invalid();
 		}

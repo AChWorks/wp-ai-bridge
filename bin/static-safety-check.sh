@@ -45,12 +45,13 @@ if grep -nE "$private_forbidden" "$private_writer" ||
 fi
 
 
+# DB inputs add one coordinator-held rb descriptor, never another writer.
 # One audited internal-only private byte ingress/egress seam. Keep its exact
 # resource/persistence primitive inventory explicit rather than globally
 # allowing a new generic filesystem adapter across Bridge Abilities.
 private_stage='src/Support/class-private-transfer-session.php'
 if [[ ! -f "$private_stage" ||
-      "$(grep -cF '@fopen(' "$private_stage" || true)" != "16" ||
+      "$(grep -cF '@fopen(' "$private_stage" || true)" != "17" ||
       "$(grep -cF 'fwrite(' "$private_stage" || true)" != "4" ||
       "$(grep -cF 'stream_copy_to_stream(' "$private_stage" || true)" != "1" ||
       "$(grep -cF '@mkdir(' "$private_stage" || true)" != "1" ||
@@ -475,9 +476,10 @@ fi
 # Issues #34/#36/#58 need exact-row compare-and-swap against fixed metadata tables. Issue #80
 # additionally needs four fixed advisory-lock reads in the OAuth store to serialize one exact
 # refresh-token identity across PHP processes. Keep those fixed stores confined.
-# The separately delegated reader below has its own SELECT-only boundary; no
-# other production store accepts caller-selected SQL/table/column/query fragments.
+# Database reads retain their SELECT-only boundary. The independently delegated
+# typed writer uses one confined native adapter; it accepts no caller SQL.
 database_reader='src/Support/class-database-reader.php'
+database_connection='src/Support/class-database-connection.php'
 metadata_store='src/Support/class-post-meta-store.php'
 term_metadata_store='src/Support/class-term-meta-store.php'
 user_comment_metadata_store='src/Support/class-user-comment-meta-store.php'
@@ -554,7 +556,7 @@ if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$cron_run_store" |
     echo "ERROR: targeted Cron claim store introduced an unreviewed database primitive." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" | grep -vFx "$database_reader" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" | grep -vFx "$database_reader" | grep -vFx "$database_connection" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2
@@ -747,5 +749,7 @@ if grep -nE '(^|[^A-Za-z_])(INSERT|UPDATE|DELETE|REPLACE|ALTER|DROP|CREATE|LOAD|
     echo "ERROR: read-only database inspection acquired a non-SELECT SQL effect." >&2
     exit 1
 fi
+
+php bin/check-database-write-confinement.php
 
 echo "PASS: static safety surface audit."

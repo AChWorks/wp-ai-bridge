@@ -397,7 +397,8 @@ final class Settings_Page {
 			</form>
 
 			<h2><?php echo esc_html__( 'Database access', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'Configure database inspection and sensitive reading independently. Changing these grants requires administrator authority and, on multisite, actual Super Admin and network authority.', 'wp-ai-bridge' ); ?></p>
+			<p><?php echo esc_html__( 'Configure database inspection, sensitive reading, typed writes and deletion independently. Changing these grants requires administrator authority and, on multisite, actual Super Admin and network authority.', 'wp-ai-bridge' ); ?></p>
+			<p><?php echo esc_html__( 'Typed database writes bypass WordPress and plugin business APIs. Review the exact schema and row state before changing live data; use the matching native feature when its lifecycle is required.', 'wp-ai-bridge' ); ?></p>
 			<form action="options.php" method="post">
 				<?php settings_fields( Settings::DATABASE_OPTION_GROUP ); ?>
 				<table class="form-table" role="presentation"><tbody>
