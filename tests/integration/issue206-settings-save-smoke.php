@@ -33,6 +33,11 @@ if ( ! defined( 'WPAI206_DISPOSABLE' ) || true !== WPAI206_DISPOSABLE ||
 	throw new RuntimeException( 'The exact coordinator-owned disposable database must be explicitly selected.' );
 }
 $original_user   = get_current_user_id();
+$original_blog   = get_current_blog_id();
+$original_options_table = $wpdb->options;
+$original_switch_depth = count( $GLOBALS['_wp_switched_stack'] ?? array() );
+$action_secondary = 0;
+$native_action_cases = 0;
 $original_method = $_SERVER['REQUEST_METHOD'] ?? null;
 $original_post   = $_POST;
 $original_get    = $_GET;
@@ -62,10 +67,11 @@ $site_options = array(
 );
 $network_options = array( Native_Option_Access::NETWORK_OPTION_NAME, Native_Option_Access::NETWORK_WRITE_OPTION_NAME );
 $network = get_current_network_id();
-$read_rows = static function () use ( $wpdb, $site_options ) {
+$read_rows = static function ( $table = null ) use ( $wpdb, $site_options ) {
+	$table = null === $table ? $wpdb->options : $table;
 	$rows = array();
 	foreach ( $site_options as $name ) {
-		$rows[ $name ] = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$wpdb->options} WHERE option_name = %s", $name ), ARRAY_A );
+		$rows[ $name ] = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE option_name = %s", $name ), ARRAY_A );
 	}
 	return $rows;
 };
@@ -84,9 +90,9 @@ $original_registered   = $wp_registered_settings;
 $original_allowed      = $new_allowed_options ?? null;
 $original_errors       = $wp_settings_errors ?? null;
 $original_stack        = $wp_current_filter;
-$hook_names = array( 'wp_die_handler', 'pre_update_option', 'updated_option', 'map_meta_cap' );
+$hook_names = array( 'wp_die_handler', 'pre_update_option', 'update_option', 'add_option', 'updated_option', 'map_meta_cap' );
 foreach ( array_merge( $site_options, $network_options ) as $name ) {
-	foreach ( array( 'sanitize_option_', 'default_option_', 'pre_update_option_', 'pre_add_option_', 'pre_update_site_option_', 'pre_add_site_option_' ) as $prefix ) {
+	foreach ( array( 'sanitize_option_', 'default_option_', 'pre_update_option_', 'pre_update_site_option_', 'pre_add_site_option_' ) as $prefix ) {
 		$hook_names[] = $prefix . $name;
 	}
 }
@@ -97,6 +103,15 @@ $original_filters = array();
 foreach ( $hook_names as $hook ) {
 	$original_filters[ $hook ] = isset( $wp_filter[ $hook ] ) ? clone $wp_filter[ $hook ] : null;
 }
+$hook_callbacks = static function () use ( $hook_names ) {
+	global $wp_filter;
+	$callbacks = array();
+	foreach ( $hook_names as $hook ) {
+		$callbacks[ $hook ] = isset( $wp_filter[ $hook ] ) ? $wp_filter[ $hook ]->callbacks : array();
+	}
+	return $callbacks;
+};
+
 $root = sys_get_temp_dir() . '/wpai206-native-' . bin2hex( random_bytes( 8 ) );
 if ( ! mkdir( $root, 0700 ) ) {
 	wp_set_current_user( $original_user );
@@ -319,6 +334,106 @@ try {
 	$result = $controller->save( $post( array( Operation_Receipt_Limits::OPTION_NAME => '20480' ) ) );
 	$assert( 'saved' === $result['status'], 'Native hook dispatch did not remain usable after wp_die recovery.' );
 
+	// The last native pre-SQL actions follow every sanitizer/pre-update filter.
+	// An existing foreign row makes wrong-table UPDATE detectable; an absent
+	// foreign row makes wrong-table INSERT detectable. All rows are read from
+	// their explicit original tables even while the callback changed context.
+	$drifts = array( 'actor', 'capability' );
+	$foreign_table = null;
+	if ( is_multisite() ) {
+		$created_action_site = wp_insert_site( array(
+			'domain' => 'wpai206-actions-' . bin2hex( random_bytes( 6 ) ) . '.invalid',
+			'path' => '/',
+			'network_id' => $network,
+			'title' => 'Unified Save native action fixture',
+		) );
+		$assert( is_int( $created_action_site ) && $created_action_site > 0, 'Cannot create the precisely owned native-action secondary site.' );
+		$action_secondary = $created_action_site;
+		$foreign_table = $wpdb->get_blog_prefix( $action_secondary ) . 'options';
+		$drifts[] = 'site';
+	}
+	foreach ( array( 'update_option', 'add_option' ) as $action ) {
+		foreach ( $drifts as $drift ) {
+			if ( 'update_option' === $action ) {
+				// A registered default can short-circuit update_option without
+				// creating a row. Use a distinct valid native preimage for UPDATE.
+				update_option( Operation_Receipt_Limits::OPTION_NAME, 3072, false );
+			} else {
+				delete_option( Operation_Receipt_Limits::OPTION_NAME );
+			}
+			if ( null !== $foreign_table ) {
+				switch_to_blog( $action_secondary );
+				try {
+					if ( 'update_option' === $action ) {
+						update_option( Operation_Receipt_Limits::OPTION_NAME, 6144, false );
+					} else {
+						delete_option( Operation_Receipt_Limits::OPTION_NAME );
+					}
+				} finally {
+					restore_current_blog();
+				}
+			}
+			$before_action = $read_rows( $original_options_table );
+			$before_foreign = null === $foreign_table ? null : $read_rows( $foreign_table );
+			if ( 'update_option' === $action ) {
+				$assert( null !== $before_action[ Operation_Receipt_Limits::OPTION_NAME ] && '3072' === $before_action[ Operation_Receipt_Limits::OPTION_NAME ]['option_value'], 'UPDATE regression requires a physically stored original-site nondefault preimage.' );
+				if ( null !== $before_foreign ) {
+					$assert( null !== $before_foreign[ Operation_Receipt_Limits::OPTION_NAME ] && '6144' === $before_foreign[ Operation_Receipt_Limits::OPTION_NAME ]['option_value'], 'UPDATE regression requires a distinct physically stored foreign-site preimage.' );
+				}
+			} else {
+				$assert( null === $before_action[ Operation_Receipt_Limits::OPTION_NAME ] && Operation_Receipt_Limits::DEFAULT_RECEIPTS === ( new Operation_Receipt_Limits() )->limit(), 'ADD regression requires a physically absent original-site row with its registered effective default.' );
+				if ( null !== $before_foreign ) {
+					$assert( null === $before_foreign[ Operation_Receipt_Limits::OPTION_NAME ], 'ADD regression requires a physically absent foreign-site row.' );
+				}
+			}
+			$before_callbacks = $hook_callbacks();
+			$before_stack = $wp_current_filter;
+			$switch_depth = count( $GLOBALS['_wp_switched_stack'] ?? array() );
+			$calls = 0;
+			$deny_capability = static function ( $caps, $cap ) {
+				return 'manage_options' === $cap ? array( 'do_not_allow' ) : $caps;
+			};
+			$drift_callback = static function ( $name ) use ( $drift, $action_secondary, $deny_capability, &$calls ) {
+				if ( Operation_Receipt_Limits::OPTION_NAME !== $name ) {
+					return;
+				}
+				++$calls;
+				if ( 'actor' === $drift ) {
+					wp_set_current_user( 0 );
+				} elseif ( 'capability' === $drift ) {
+					add_filter( 'map_meta_cap', $deny_capability, PHP_INT_MAX, 2 );
+				} else {
+					switch_to_blog( $action_secondary );
+				}
+			};
+			add_action( $action, $drift_callback, 20, 1 );
+			try {
+				$result = $controller->save( $post( array(
+					Operation_Receipt_Limits::OPTION_NAME => '4096',
+					External_Package_Limits::OPTION_NAME => '240',
+				) ) );
+				$assert( 1 === $calls, 'The intended real native pre-SQL action was not exercised: ' . $action . '/' . $drift );
+				$assert( $before_action === $read_rows( $original_options_table ), 'Final native action drift changed an original-site owned row: ' . $action . '/' . $drift );
+				if ( null !== $foreign_table ) {
+					$assert( $before_foreign === $read_rows( $foreign_table ), 'Final native action drift changed a foreign-site owned row: ' . $action . '/' . $drift );
+				}
+				$assert( 'partial' === $result['status'] && 'unverified' === $result['outcomes'][ Operation_Receipt_Limits::OPTION_NAME ] && 'not_attempted' === $result['outcomes'][ External_Package_Limits::OPTION_NAME ], 'Native pre-SQL failure fabricated a saved result or attempted later stores.' );
+				$assert( 'write' === $result['failure']['phase'] && Operation_Receipt_Limits::OPTION_NAME === $result['failure']['option'] && isset( $result['draft'][ Operation_Receipt_Limits::OPTION_NAME ] ), 'Native pre-SQL failure lost recoverable intent and exact failing option.' );
+				$assert( $before_stack === $wp_current_filter && ! doing_action( $action ), 'Native pre-SQL failure left a real WP_Hook action frame active.' );
+				++$native_action_cases;
+			} finally {
+				remove_action( $action, $drift_callback, 20 );
+				remove_filter( 'map_meta_cap', $deny_capability, PHP_INT_MAX );
+				while ( count( $GLOBALS['_wp_switched_stack'] ?? array() ) > $switch_depth ) {
+					restore_current_blog();
+				}
+				wp_set_current_user( (int) $admin[0] );
+			}
+			$assert( $before_callbacks === $hook_callbacks(), 'Native pre-SQL failure leaked temporary guards or changed preexisting callbacks.' );
+			$assert( $original_blog === get_current_blog_id() && current_user_can( 'manage_options' ), 'Native action fixture did not restore its current actor/site authority.' );
+		}
+	}
+
 	$stale = $post( array( Operation_Receipt_Limits::OPTION_NAME => '24576' ) );
 	update_option( Payload_Settings::OPTION_NAME, array_replace( ( new Payload_Settings() )->all(), array( Payload_Settings::RESPONSE_KEY => 128 ) ), false );
 	$before = $read_rows();
@@ -385,6 +500,12 @@ try {
 		}
 	}
 	wp_set_current_user( (int) $admin[0] );
+	while ( count( $GLOBALS['_wp_switched_stack'] ?? array() ) > $original_switch_depth ) {
+		restore_current_blog();
+	}
+	if ( $action_secondary > 0 ) {
+		wp_delete_site( $action_secondary );
+	}
 	foreach ( $site_options as $name ) {
 		$wpdb->delete( $wpdb->options, array( 'option_name' => $name ) );
 		if ( null !== $original_rows[ $name ] ) {
@@ -419,4 +540,4 @@ try {
 	wp_set_current_user( $original_user );
 	rmdir( $root );
 }
-echo 'PASS: #206 native WordPress save fixture ' . wp_json_encode( array( 'checks' => $checks, 'wordpress' => get_bloginfo( 'version' ), 'multisite' => is_multisite(), 'network' => $network_result, 'exact_rows_restored' => true ) ) . "\n";
+echo 'PASS: #206 native WordPress save fixture ' . wp_json_encode( array( 'checks' => $checks, 'wordpress' => get_bloginfo( 'version' ), 'multisite' => is_multisite(), 'network' => $network_result, 'native_action_cases' => $native_action_cases, 'exact_rows_restored' => true ) ) . "\n";

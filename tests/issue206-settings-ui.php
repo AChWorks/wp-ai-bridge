@@ -86,6 +86,14 @@ $assert( 0 === $xp->query( '//section[@hidden]' )->length, 'No-JS must expose ev
 $assert( 1 === $xp->query( '//button[@id="wpai-settings-save"]' )->length, 'There must be exactly one Save changes action.' );
 $assert( 1 === $xp->query( '(//input[@type="submit"] | //button[not(@type) or @type="submit"])[1][@id="wpai-settings-default-submit" and @hidden and not(@name)]' )->length, 'The first native submitter must trigger the main Save action without Add scope draft intent.' );
 $assert( 3 === $xp->query( '//form' )->length, 'Settings, Export and Clear must have distinct forms.' );
+$clear_form = '//form[contains(concat(" ", normalize-space(@class), " "), " wpai-workspace-clear ")]';
+$assert( 1 === $xp->query( $clear_form . '[@target="_blank" and contains(concat(" ", normalize-space(@rel), " "), " noopener ")]' )->length, 'Native no-JS Clear must preserve the settings page in a separate tab without an opener.' );
+$assert( 1 === $xp->query( $clear_form . '[@method="post" and @action="https://example.test/wp-admin/admin-post.php"]/input[@name="action" and @value="wpai_workspace_clear"]' )->length &&
+	0 === $xp->query( $clear_form . '//*[@form="wpai-settings-form" or starts-with(@name,"wp_ai_bridge_") or @name="expected_revision" or @name="form_complete"]' )->length,
+	'Clear must submit only its separate native action, without associating pending settings controls.' );
+$assert( 1 === $xp->query( $clear_form . '//input[@name="_wpnonce"]' )->length &&
+	1 === $xp->query( $clear_form . '//input[@type="checkbox" and @name="confirm_clear" and @value="clear" and @required]' )->length,
+	'Native Clear must retain its nonce and explicit required confirmation.' );
 $assert( 0 === $xp->query( '//form//form' )->length, 'Operation forms must not nest in settings.' );
 $assert( 0 === $xp->query( '//form[@id="wpai-settings-form"]//input[@value="wpai_workspace_clear" or @value="wpai_workspace_export"]' )->length, 'Save must never execute a Workspace operation.' );
 $assert( 1 === $xp->query( '//form[@id="wpai-settings-form"]/input[last()][@name="form_complete"]' )->length, 'Completeness sentinel must follow every settings input.' );
@@ -117,6 +125,13 @@ $assert( 2 === $xp->query( '//div[@id="wpai-settings-roots"]/fieldset' )->length
 $assert( 1 === $xp->query( '//input[@name="wp_ai_bridge_payload_limits[response_kib]" and @value="256"]' )->length, 'Draft add roundtrip must retain another section’s pending value.' );
 $assert( 1 === $xp->query( '//input[@name="expected_revision" and @value="' . $snapshot['revision'] . '"]' )->length, 'Draft add must preserve the expected revision.' );
 $assert( str_contains( $html, 'No settings have been saved.' ), 'Draft roundtrip must not claim save success.' );
+$assert( 1 === $xp->query( '//div[contains(concat(" ", normalize-space(@class), " "), " wpai-settings ") and @data-pending="1"]' )->length,
+	'No-JS draft roundtrip must render pending settings state.' );
+$assert( 1 === $xp->query( $clear_form . '[@target="_blank" and contains(concat(" ", normalize-space(@rel), " "), " noopener ")]' )->length,
+	'Clear must preserve a pending server-rendered draft without relying on JavaScript.' );
+$assert( 1 === $xp->query( '//form[@id="wpai-settings-form"]//input[@name="wp_ai_bridge_payload_limits[response_kib]" and @value="256"]' )->length &&
+	0 === $xp->query( $clear_form . '//*[@form="wpai-settings-form" or starts-with(@name,"wp_ai_bridge_") or @name="expected_revision" or @name="form_complete"]' )->length,
+	'The pending settings value must remain associated with global Save and excluded from Clear.' );
 
 $_POST = $post;
 unset( $_POST['wpai_add_scope'] );

@@ -9,17 +9,31 @@ namespace WP_AI_Bridge\Admin {
 	// The common test bootstrap has a deliberately hook-free setter. This
 	// scoped test adapter exercises this controller through native sanitizers,
 	// pre-write rejection/mutation and post-write hooks without changing it.
+	function add_action( $hook, $callback, $priority = 10, $accepted_args = 1 ) { \add_filter( $hook, $callback, $priority, $accepted_args ); }
+	function remove_action( $hook, $callback, $priority = 10 ) { \remove_filter( $hook, $callback, $priority ); }
 	function update_option( $name, $value, $autoload = null ) {
-		$old   = \get_option( $name, null );
 		$value = \apply_filters( 'sanitize_option_' . $name, $value, $name, $value );
+		$old = \get_option( $name, null );
+		$present = array_key_exists( $name, $GLOBALS['wpai_test']['options'] );
 		$value = \apply_filters( 'pre_update_option_' . $name, $value, $old, $name );
 		$value = \apply_filters( 'pre_update_option', $value, $name, $old );
 		if ( $value === $old ) {
 			return false;
 		}
+		if ( $present ) {
+			\do_action( 'update_option', $name, $old, $value );
+		} else {
+			// update_option delegates to add_option, which sanitizes again.
+			$value = \apply_filters( 'sanitize_option_' . $name, $value, $name, $value );
+			\do_action( 'add_option', $name, $value );
+		}
 		$GLOBALS['wpai_test']['options'][ $name ] = $value;
 		$GLOBALS['wpai206_writes'][] = $name;
-		\do_action( 'updated_option', $name, $old, $value );
+		if ( $present ) {
+			\do_action( 'updated_option', $name, $old, $value );
+		} else {
+			\do_action( 'added_option', $name, $value );
+		}
 		return true;
 	}
 }
@@ -76,6 +90,19 @@ namespace {
 			}
 		}
 	}
+	function wpai206_hook_callbacks() {
+		$hooks = array();
+		foreach ( $GLOBALS['wpai206_filters'] as $hook => $priorities ) {
+			foreach ( $priorities as $priority => $callbacks ) {
+				if ( $callbacks ) {
+					$hooks[ $hook ][ $priority ] = array_values( $callbacks );
+				}
+			}
+		}
+		ksort( $hooks );
+		return $hooks;
+	}
+
 	function update_network_option( $network, $name, $value ) {
 		$old   = get_network_option( $network, $name, null );
 		$value = apply_filters( 'pre_update_site_option_' . $name, $value, $old, $name, $network );
@@ -284,6 +311,7 @@ namespace {
 		$result = $controller->save( wpai206_post( $controller, array( Workspace_Limits::OPTION_NAME => array( Workspace_Limits::DOCUMENTS_KEY => '300' ), Operation_Receipt_Limits::OPTION_NAME => '4096', External_Package_Limits::OPTION_NAME => '200' ) ) );
 		wpai206_assert( 'partial' === $result['status'] && 'saved' === $result['outcomes'][ Workspace_Limits::OPTION_NAME ] && 'not_attempted' === $result['outcomes'][ External_Package_Limits::OPTION_NAME ], 'Partial persistence hid the successful/rejected/unattempted sections.' );
 		$controller = wpai206_fixture();
+		$GLOBALS['wpai_test']['options'][ Operation_Receipt_Limits::OPTION_NAME ] = 2048;
 		add_filter( 'updated_option', static function ( $name ) {
 			if ( Operation_Receipt_Limits::OPTION_NAME === $name ) {
 				$GLOBALS['wpai_test']['options'][ Workspace_Limits::OPTION_NAME ] = array( 'documents' => 500, 'tasks' => 200 );
@@ -302,10 +330,12 @@ namespace {
 		wpai206_assert( 'partial' === $result['status'] && ! $GLOBALS['wpai206_writes'], 'Generic pre-update filter context drift reached storage.' );
 
 		$controller = wpai206_fixture();
+		$GLOBALS['wpai_test']['options'][ Operation_Receipt_Limits::OPTION_NAME ] = 2048;
 		add_filter( 'updated_option', static function () { throw new RuntimeException( 'secret-provider-message' ); } );
 		$result = $controller->save( wpai206_post( $controller, array( Operation_Receipt_Limits::OPTION_NAME => '4096', External_Package_Limits::OPTION_NAME => '200' ) ) );
 		wpai206_assert( 'partial' === $result['status'] && 4096 === get_option( Operation_Receipt_Limits::OPTION_NAME ) && false === strpos( json_encode( $result ), 'secret-provider-message' ), 'Post-write exception fabricated success or exposed provider exception content.' );
 		$controller = wpai206_fixture();
+		$GLOBALS['wpai_test']['options'][ Operation_Receipt_Limits::OPTION_NAME ] = 2048;
 		add_filter( 'updated_option', static function () {
 			$handler = apply_filters( 'wp_die_handler', null );
 			wpai206_assert( is_callable( $handler ), 'The native termination handler must be scoped around persistence.' );
@@ -314,6 +344,39 @@ namespace {
 		$result = $controller->save( wpai206_post( $controller, array( Operation_Receipt_Limits::OPTION_NAME => '4096' ) ) );
 		wpai206_assert( 'partial' === $result['status'] && false === strpos( json_encode( $result ), 'secret-native-denial' ), 'Native termination lost truthful partial recovery or exposed its message.' );
 		wpai206_assert( null === apply_filters( 'wp_die_handler', null ), 'The temporary native termination handler leaked beyond this Save.' );
+
+		// A normal final native action may revoke the actor/authority or switch
+		// blog after every filter has completed. Neither write path may reach SQL.
+		foreach ( array( 'update_option', 'add_option' ) as $action ) {
+			foreach ( array( 'actor', 'capability', 'site' ) as $drift ) {
+				$controller = wpai206_fixture( true );
+				if ( 'update_option' === $action ) {
+					$GLOBALS['wpai_test']['options'][ Operation_Receipt_Limits::OPTION_NAME ] = 2048;
+				}
+				$before = $GLOBALS['wpai_test']['options'];
+				$calls = 0;
+				$callback = static function ( $name ) use ( $drift, &$calls ) {
+					if ( Operation_Receipt_Limits::OPTION_NAME !== $name ) {
+						return;
+					}
+					++$calls;
+					if ( 'actor' === $drift ) {
+						$GLOBALS['wpai_test']['user_id'] = 2;
+					} elseif ( 'capability' === $drift ) {
+						$GLOBALS['wpai_test']['capabilities']['manage_options'] = false;
+					} else {
+						$GLOBALS['wpai_test']['blog'] = 2;
+					}
+				};
+				add_filter( $action, $callback, 20 );
+				$hooks = wpai206_hook_callbacks();
+				$result = $controller->save( wpai206_post( $controller, array( Operation_Receipt_Limits::OPTION_NAME => '4096', External_Package_Limits::OPTION_NAME => '240' ) ) );
+				wpai206_assert( 1 === $calls && ! $GLOBALS['wpai206_writes'] && $before === $GLOBALS['wpai_test']['options'], 'Final native ' . $action . ' action ' . $drift . ' drift reached owned storage.' );
+				wpai206_assert( 'partial' === $result['status'] && 'unverified' === $result['outcomes'][ Operation_Receipt_Limits::OPTION_NAME ] && 'not_attempted' === $result['outcomes'][ External_Package_Limits::OPTION_NAME ], 'Final native action failure attempted later stores or fabricated a saved result.' );
+				wpai206_assert( 'write' === $result['failure']['phase'] && Operation_Receipt_Limits::OPTION_NAME === $result['failure']['option'] && isset( $result['draft'][ Operation_Receipt_Limits::OPTION_NAME ] ), 'Final native action failure lost recoverable intent/option feedback.' );
+				wpai206_assert( $hooks === wpai206_hook_callbacks(), 'Final native action failure leaked temporary guards or changed existing callbacks.' );
+			}
+		}
 
 		wpai206_assert( $GLOBALS['wpai206_nocache'] > 0, 'Save responses must disable caching.' );
 		echo "PASS: #206 {$GLOBALS['wpai206_assertions']} unified save, authority, validation, omission, stale and native hook outcome assertions.\n";

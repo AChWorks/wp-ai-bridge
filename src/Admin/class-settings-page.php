@@ -1019,7 +1019,7 @@ else :
 				<?php submit_button( __( 'Export Workspace', 'wp-ai-bridge' ), 'secondary', 'submit', false ); ?>
 			</form>
 			<p class="description"><?php echo esc_html__( 'When settings edits are pending, Clear opens in a new tab so your draft stays here. Neither Workspace action saves settings.', 'wp-ai-bridge' ); ?></p>
-			<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" class="wpai-workspace-clear">
+			<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" class="wpai-workspace-clear" target="_blank" rel="noopener">
 				<input type="hidden" name="action" value="wpai_workspace_clear">
 				<?php wp_nonce_field( 'wpai_workspace_clear' ); ?>
 				<label><input type="checkbox" name="confirm_clear" value="clear" required> <?php echo esc_html__( 'I understand that Clear Workspace permanently deletes all Workspace documents and tasks.', 'wp-ai-bridge' ); ?></label>

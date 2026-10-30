@@ -262,7 +262,6 @@ final class Settings_Save {
 			$hooks[] = 'pre_add_site_option_' . $name;
 		} else {
 			$hooks[] = 'pre_update_option_' . $name;
-			$hooks[] = 'pre_add_option_' . $name;
 		}
 		foreach ( $hooks as $hook ) {
 			add_filter( $hook, $guard, PHP_INT_MAX );
@@ -272,6 +271,19 @@ final class Settings_Save {
 		};
 		// Core's generic site-option pre-update filter follows its named one.
 		add_filter( 'pre_update_option', $global_guard, PHP_INT_MAX, 2 );
+		$action_guard = function ( $option ) use ( $name, $guard ) {
+			if ( $name === $option ) {
+				$guard( null );
+			}
+		};
+		if ( 'network' !== $definition['kind'] ) {
+			// Core runs these actions after the final filters, immediately before
+			// SQL against the current blog's options table. With autoload=false,
+			// update_option has no later autoload filter; add_option already
+			// determined autoload. Core has no named site pre-add filter.
+			add_action( 'update_option', $action_guard, PHP_INT_MAX, 1 );
+			add_action( 'add_option', $action_guard, PHP_INT_MAX, 1 );
+		}
 		try {
 			Hook_Dispatch_Recovery::run(
 				function () use ( $name, $candidate, $definition, $state ) {
@@ -283,6 +295,10 @@ final class Settings_Save {
 				}
 			);
 		} finally {
+			if ( 'network' !== $definition['kind'] ) {
+				remove_action( 'update_option', $action_guard, PHP_INT_MAX );
+				remove_action( 'add_option', $action_guard, PHP_INT_MAX );
+			}
 			remove_filter( 'pre_update_option', $global_guard, PHP_INT_MAX );
 			foreach ( $hooks as $hook ) {
 				remove_filter( $hook, $guard, PHP_INT_MAX );
@@ -504,7 +520,7 @@ final class Settings_Save {
 			'allowed'          => $allowed,
 			'values'           => $values,
 			'effective_values' => $effective_values,
-			'valid'            => $valid && $origin === $this->context() && current_user_can( 'manage_options' ),
+			'valid'            => $valid && current_user_can( 'manage_options' ) && $origin === $this->context(),
 		);
 	}
 
