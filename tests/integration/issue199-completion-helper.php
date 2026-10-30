@@ -46,6 +46,18 @@ function wpai199c_grants( $enabled = true ) {
 	return $protected;
 }
 
+/** Explicit consent for the published conservative unclassified Customizer provider lifecycle. */
+function wpai199c_provider_lifecycle_grants() {
+	wpai199c_assert( current_user_can( 'manage_options' ), 'Provider lifecycle consent requires the native fixture administrator.' );
+	$settings = new Settings();
+	$ordinary = $settings->all();
+	foreach ( array( Settings::GROUP_BUILDER_WRITE, Settings::GROUP_REMOTE_MEDIA, Settings::GROUP_LIVE_CONTENT, Settings::GROUP_SITE_CONFIG, Settings::GROUP_ADVANCED_METADATA, Settings::GROUP_AUTHENTICATION, Settings::GROUP_CODE_EXTENSIONS, Settings::GROUP_EXTERNAL_PACKAGES, Settings::GROUP_SOURCE_EDITING, Settings::GROUP_COMMENTS, Settings::GROUP_USERS_DESTRUCTIVE ) as $group ) {
+		$ordinary[ $group ] = 1;
+	}
+	$ordinary[ Settings::GROUP_NATIVE_ABILITIES ] = 0;
+	update_option( Settings::OPTION_NAME, $settings->sanitize( $ordinary ), false );
+}
+
 /** Existing directories are explicitly operator configured, never AI path inputs. */
 function wpai199c_configure( $fixture_directory, $restore_root, $restore_schema, array $provider_tables, $scope = 'site' ) {
 	wpai199c_assert( in_array( $scope, array( 'site', 'network' ), true ), 'Invalid synthetic root scope.' );

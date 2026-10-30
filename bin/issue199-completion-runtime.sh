@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Sourced only by existing disposable Compose runners, after historical checks.
+# All new fixtures receive an explicit DB identity and nonserved restore target.
+
+wpai199c_bootstrap() {
+    local enable_native_sql="${1:-false}"
+    local engine="${2:-mariadb}"
+    [[ "$enable_native_sql" == true || "$enable_native_sql" == false ]] || return 1
+    [[ "$engine" == mysql || "$engine" == mariadb ]] || return 1
+
+    tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \
+        | "${compose[@]}" exec -T wordpress tar -xf - -C /var/www/html/wp-content/plugins/wp-ai-bridge
+    "${wp[@]}" config set WPAI_ADMIN13_DISPOSABLE true --raw --allow-root >/dev/null
+    "${wp[@]}" config set WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL "$enable_native_sql" --raw --allow-root >/dev/null
+    "${wp[@]}" config set DISABLE_WP_CRON true --raw --allow-root >/dev/null
+    "${compose[@]}" exec -T wordpress sh -ec '
+        mkdir -p /var/www/html/wp-content/mu-plugins
+        cp /var/www/html/wp-content/plugins/wp-ai-bridge/tests/fixtures/issue199-completion-provider.php /var/www/html/wp-content/mu-plugins/admin13-provider.php
+    '
+    "${compose[@]}" exec -T wordpress sh -ec '
+        install -d -o 33 -g 33 -m 0700 /wpai-admin13/private /wpai-admin13/private/wp-temp /wpai-admin13/private/wpcli-cache /wpai-admin13/private/wpcli-packages
+        mkdir -p /var/www/html/wp-content/uploads
+        chown -R 33:33 /var/www/html/wp-content/uploads
+    '
+    "${wp[@]}" config set WP_TEMP_DIR /wpai-admin13/private/wp-temp --allow-root >/dev/null
+    wpai199c_restore_root="$("${compose[@]}" exec -T --user=33:33 wordpress mktemp -d /wpai-admin13/private/restore.XXXXXX | tr -d '\r')"
+    [[ "$wpai199c_restore_root" == /wpai-admin13/private/restore.* ]] || {
+        echo 'ERROR: disposable restore root was not created.' >&2
+        return 1
+    }
+    # This is container-administrator fixture provisioning, never a product connection.
+    # Keep the historical suites above unchanged, then narrow the new suite's app account.
+    local wpai199c_app_password
+    wpai199c_app_password="$(openssl rand -hex 24)"
+    "${compose[@]}" exec -T -e "WPAI199C_APP_PASSWORD=$wpai199c_app_password" -e "WPAI199C_ENGINE=$engine" db sh -se <<'DBBOOT'
+case "$WPAI199C_APP_PASSWORD" in *[!a-f0-9]*|"") exit 1 ;; esac
+if command -v mariadb >/dev/null 2>&1; then db_client=mariadb; else db_client=mysql; fi
+root_password=${MARIADB_ROOT_PASSWORD:-${MYSQL_ROOT_PASSWORD:-}}
+test -n "$root_password"
+metadata_grant=''
+if [ "$WPAI199C_ENGINE" = mariadb ]; then
+    # MariaDB dictionary identity/FK views require PROCESS (read-only metadata).
+    # MySQL INNODB_FOREIGN does not, so its account retains global USAGE only.
+    metadata_grant="GRANT PROCESS ON *.* TO 'wpai_admin13'@'%';"
+fi
+MYSQL_PWD="$root_password" "$db_client" --protocol=socket --user=root --batch <<SQL
+CREATE DATABASE wpai_admin13_restore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE wpai_admin13_denied CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE TABLE wpai_admin13_denied.must_not_read(id INT);
+CREATE USER 'wpai_admin13'@'%' IDENTIFIED BY '$WPAI199C_APP_PASSWORD';
+GRANT ALL PRIVILEGES ON wordpress.* TO 'wpai_admin13'@'%';
+GRANT ALL PRIVILEGES ON wpai_admin13_restore.* TO 'wpai_admin13'@'%';
+$metadata_grant
+SQL
+DBBOOT
+    "${wp[@]}" config set DB_USER wpai_admin13 --allow-root >/dev/null
+    "${wp[@]}" config set DB_PASSWORD "$wpai199c_app_password" --allow-root >/dev/null
+    unset wpai199c_app_password
+    "${wp[@]}" eval '
+    global $wpdb;
+    if ("wordpress" !== $wpdb->get_var("SELECT DATABASE()")) { throw new RuntimeException("Disposable database identity mismatch."); }
+    $prior = $wpdb->suppress_errors(true);
+    $denied = false === $wpdb->query("CREATE TABLE wpai_admin13_denied.must_not_create(id INT)");
+    $read_denied = null === $wpdb->get_var("SELECT id FROM wpai_admin13_denied.must_not_read LIMIT 1") && "" !== $wpdb->last_error;
+    $drop_denied = false === $wpdb->query("DROP TABLE wpai_admin13_denied.must_not_read");
+    $view = false !== stripos($wpdb->get_var("SELECT VERSION()"),"MariaDB") ? "INNODB_SYS_FOREIGN" : "INNODB_FOREIGN";
+    $wpdb->get_results("SELECT ID FROM information_schema.".$view." LIMIT 1");
+    $fk_readable = "" === $wpdb->last_error;
+    if ("INNODB_SYS_FOREIGN" === $view) {
+        $wpdb->get_results("SELECT TABLE_ID FROM information_schema.INNODB_SYS_TABLES LIMIT 1");
+        $fk_readable = $fk_readable && "" === $wpdb->last_error;
+    }
+    $wpdb->suppress_errors($prior);
+    if (!$denied || !$read_denied || !$drop_denied || !$fk_readable) { throw new RuntimeException("The completion app account scope or native metadata prerequisite is incorrect."); }
+    echo "Verified limited app account: source plus approved restore; third schema denied.\n";
+    ' --user=1 --allow-root
+    wpai199c_wp=("${compose[@]}" run --rm --user=33:33
+        -e WP_CLI_CACHE_DIR=/wpai-admin13/private/wpcli-cache
+        -e WP_CLI_PACKAGES_DIR=/wpai-admin13/private/wpcli-packages
+        -e "WPAI199C_EXPECT_PRODUCT_SHA=$(git -C "$root" rev-parse HEAD)"
+        -e "WPAI199C_EXPECT_FILESYSTEM_SHA256=$(sha256sum "$root/src/Support/class-scoped-filesystem.php" | cut -d ' ' -f 1)"
+        -e WPAI199C_EXPECT_DATABASE=wordpress
+        -e "WPAI199C_EXPECT_ENGINE=$engine"
+        -e WPAI199C_RESTORE_SCHEMA=wpai_admin13_restore
+        -e "WPAI199C_RESTORE_ROOT=$wpai199c_restore_root"
+        -e WPAI_ADMIN13_RESTORE_SCHEMA=wpai_admin13_restore
+        -e "WPAI_ADMIN13_RESTORE_ROOT=$wpai199c_restore_root"
+        cli)
+}
+
+wpai199c_eval() {
+    local fixture="$1"
+    test -s "$root/tests/integration/$fixture"
+    "${wpai199c_wp[@]}" eval-file \
+        wp-content/plugins/wp-ai-bridge/tests/integration/issue199-completion-loader.php "$fixture" --user=1
+}
+
+wpai199c_install_as() {
+    local version="$1" expected tmpfile actual
+    case "$version" in
+        3.9.3) expected=7c9fd7c37676f4032fbf4c29fae1fb6e37b7de94c94dbb1f56b10c711ee15432 ;;
+        4.2.0) expected=99d14500f28b62330e61e109ad9f9d1a5f092c2f54858dfe199aee7bd97e66b8 ;;
+        *) echo 'ERROR: unpinned Action Scheduler fixture version.' >&2; return 1 ;;
+    esac
+    tmpfile="$(mktemp "${TMPDIR:-/tmp}/wpai199c-as.XXXXXX")"
+    if ! curl -fsSL --connect-timeout 15 --max-time 120 \
+        "https://github.com/woocommerce/action-scheduler/releases/download/$version/action-scheduler.zip" -o "$tmpfile"; then
+        rm -f "$tmpfile"; return 1
+    fi
+    if ! printf '%s  %s\n' "$expected" "$tmpfile" | sha256sum --check --status; then
+        rm -f "$tmpfile"; echo 'ERROR: Action Scheduler release digest mismatch.' >&2; return 1
+    fi
+    "${compose[@]}" cp "$tmpfile" wordpress:/tmp/admin13-action-scheduler.zip
+    rm -f "$tmpfile"
+    "${wp[@]}" plugin install /tmp/admin13-action-scheduler.zip --activate --force --allow-root
+    "${compose[@]}" exec -T wordpress rm -f /tmp/admin13-action-scheduler.zip
+    actual="$("${wp[@]}" plugin get action-scheduler --field=version --allow-root | tail -n 1)"
+    [[ "$actual" == "$version" ]] || {
+        echo "ERROR: installed Action Scheduler $actual differs from pinned $version." >&2
+        return 1
+    }
+    echo "Verified installed Action Scheduler $actual; release SHA256 $expected"
+}
+
+wpai199c_remove_provider() {
+    "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-content/mu-plugins/admin13-provider.php
+}

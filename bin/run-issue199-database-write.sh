@@ -6,7 +6,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 database_engine="${1:-mariadb}"
 wordpress_tag="${2:-6.9-php8.4-apache}"
-compose=(docker compose -f "$root/tests/integration/compose.yml")
+compose=(docker compose -f "$root/tests/integration/compose.yml" -f "$root/tests/integration/compose-completion-private.yml")
 case "$database_engine" in
     mariadb) ;;
     mysql) compose+=(-f "$root/tests/integration/compose-database-write-mysql.yml") ;;
@@ -110,4 +110,20 @@ for fixture in "${fixtures[@]}"; do
     echo "== ${database_engine} / ${fixture} =="
     "${wp[@]}" eval-file "wp-content/plugins/wp-ai-bridge/tests/integration/${fixture}" --user=1 --allow-root
 done
+# New administration families extend these same engine lanes; existing fixtures above remain intact.
+source "$root/bin/issue199-completion-runtime.sh"
+wpai199c_bootstrap true "$database_engine"
+wpai199c_eval issue199-database-administration-smoke.php
+wpai199c_eval issue199-native-configuration-smoke.php
+wpai199c_eval issue199-native-schedulers-smoke.php
+for as_version in 3.9.3 4.2.0; do
+    wpai199c_install_as "$as_version"
+    wpai199c_eval issue199-native-schedulers-smoke.php
+done
+wpai199c_eval issue199-completion-concurrency-smoke.php
+wpai199c_eval issue199-completion-mcp-smoke.php
+wpai199c_eval issue199-backup-smoke.php
+wpai199c_eval issue199-completion-derived-bootstrap-smoke.php
+wpai199c_remove_provider
+
 echo "PASS: focused typed-write native suite for ${database_engine} / ${wordpress_tag}."

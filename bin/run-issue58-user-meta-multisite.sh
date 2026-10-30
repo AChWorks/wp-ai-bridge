@@ -8,7 +8,7 @@ safe_tag="$(printf '%s' "$wordpress_tag" | tr -c 'A-Za-z0-9' '-')"
 export WORDPRESS_TAG="$wordpress_tag"
 export COMPOSE_PROJECT_NAME="wpai-issue58-ms-${safe_tag}-$$"
 
-compose=(docker compose -f "$compose_file")
+compose=(docker compose -f "$compose_file" -f "$root/tests/integration/compose-completion-private.yml")
 cleanup() {
     "${compose[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
 }
@@ -63,5 +63,11 @@ echo "Issue #58 multisite baseline: WordPress ${actual_wp}; PHP ${actual_php}; i
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue199-native-options-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue199-native-option-write-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue199-database-write-multisite-smoke.php --user=1 --allow-root
+
+# Preserve every prior multisite assertion, then check new bound administration surfaces.
+source "$root/bin/issue199-completion-runtime.sh"
+wpai199c_bootstrap false mariadb
+wpai199c_eval issue199-completion-multisite-smoke.php
+wpai199c_remove_provider
 
 echo "PASS: user/auth multisite regression suite for ${wordpress_tag}."

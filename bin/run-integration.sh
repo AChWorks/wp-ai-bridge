@@ -8,7 +8,7 @@ safe_tag="$(printf '%s' "$wordpress_tag" | tr -c 'A-Za-z0-9' '-')"
 export WORDPRESS_TAG="$wordpress_tag"
 export COMPOSE_PROJECT_NAME="wpai-integration-${safe_tag}-$$"
 
-compose=(docker compose -f "$compose_file")
+compose=(docker compose -f "$compose_file" -f "$root/tests/integration/compose-completion-private.yml")
 bash "$root/bin/build-zip.sh"
 cleanup() {
     "${compose[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
@@ -302,6 +302,24 @@ if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION
     echo '== #134 portable private temp, v0.6.5 upgrade, safe native consumers =='
     bash "$root/bin/run-issue134-private-portability.sh" "$wordpress_tag"
 fi
+
+# Additive completion coverage runs after historical behavior and before lifecycle preservation.
+source "$root/bin/issue199-completion-runtime.sh"
+wpai199c_bootstrap false mariadb
+wpai199c_eval issue199-native-configuration-smoke.php
+wpai199c_eval issue199-native-schedulers-smoke.php
+wpai199c_eval issue199-completion-mcp-smoke.php
+if [[ "${RUN_OPTIONAL_PROVIDERS:-0}" == '1' ]]; then
+    for as_version in 3.9.3 4.2.0; do
+        wpai199c_install_as "$as_version"
+        wpai199c_eval issue199-native-schedulers-smoke.php
+    done
+fi
+if [[ "$wordpress_tag" == 'php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.1' ]]; then
+    wpai199c_eval issue199-backup-smoke.php
+    wpai199c_eval issue199-completion-derived-bootstrap-smoke.php
+fi
+wpai199c_remove_provider
 
 echo "== Workspace deactivation/uninstall preservation =="
 "${wp[@]}" eval '

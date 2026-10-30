@@ -1,0 +1,11 @@
+# One disposable PHP node: shared nonserved storage, mounted from initial startup.
+# Existing /tmp and historical CLI execution remain unchanged.
+services:
+  wordpress:
+    volumes:
+      - wpai-completion-private:/wpai-admin13
+  cli:
+    volumes:
+      - wpai-completion-private:/wpai-admin13
+volumes:
+  wpai-completion-private: {}
