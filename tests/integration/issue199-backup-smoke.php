@@ -84,7 +84,7 @@ try {
 			wpai199c_assert( false !== $wpdb->insert( $json_table, $json_row, array( '%s', '%s' ) ), 'Exact native JSON seed failed.' );
 		}
 	}
-	wpai199b_preflight_integrity_cases( $call, $target_schema, $target_root, $deadline );
+	wpai199b_preflight_integrity_cases( $call, $target_schema, $target_root, 'restore', $deadline );
 	$source_schema = $wpdb->get_var( 'SELECT DATABASE()' );
 	wpai199c_assert( $source_schema !== $target_schema, 'Source and target must be distinct.' );
 	$native_session = $wpdb->get_row( 'SELECT DATABASE() AS db,@@SESSION.autocommit AS ac,@@SESSION.foreign_key_checks AS fk,@@SESSION.unique_checks AS uq,@@SESSION.sql_mode AS mode,@@SESSION.time_zone AS tz', ARRAY_A );
@@ -121,7 +121,7 @@ try {
 	wpai199c_ok( $call( array( 'action' => 'input_seal', 'session_id' => $input_id, 'offset' => $export['bytes'], 'sha256' => $export['sha256'] ) ), 'Portable input seal failed.' );
 
 	$prepared = wpai199c_ok( $call( array( 'action' => 'restore_prepare', 'archive_id' => $input_id, 'archive_sha256' => $export['sha256'],
-		'archive_purpose' => 'backup_input', 'target_schema' => $target_schema, 'target_root' => $target_root ) ), 'Isolated restore preflight reservation failed.' );
+		'archive_purpose' => 'backup_input', 'target_schema' => $target_schema, 'target_root' => 'restore' ) ), 'Isolated restore preflight reservation failed.' );
 	$restore_id = $prepared['session_id'];
 	$ready = $step( 'restore_step', $restore_id, array( 'ready' ) );
 	wpai199c_assert( false === $ready['complete'], 'Preflight alone was reported restored.' );

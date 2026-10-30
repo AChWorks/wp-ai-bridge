@@ -7,7 +7,7 @@
  */
 require_once dirname( __DIR__ ) . '/fixtures/issue199-backup-package.php';
 
-function wpai199b_preflight_integrity_cases( callable $call, $schema, $root, $deadline ) {
+function wpai199b_preflight_integrity_cases( callable $call, $schema, $root, $root_id, $deadline ) {
 	global $wpdb;
 	wpai199c_assert( defined( 'WPAI_ADMIN13_DISPOSABLE' ) && true === WPAI_ADMIN13_DISPOSABLE &&
 		is_string( getenv( 'WPAI199C_EXPECT_DATABASE' ) ) &&
@@ -38,7 +38,7 @@ function wpai199b_preflight_integrity_cases( callable $call, $schema, $root, $de
 			}
 			wpai199c_ok( $call( array( 'action' => 'input_seal', 'session_id' => $input, 'offset' => $offset, 'sha256' => $package['chain'] ) ), 'Integrity fixture frame-chain seal failed.' );
 			$prepared = wpai199c_ok( $call( array( 'action' => 'restore_prepare', 'archive_id' => $input, 'archive_sha256' => $package['chain'],
-				'archive_purpose' => 'backup_input', 'target_schema' => $schema, 'target_root' => $root ) ), 'Integrity fixture prepare failed before package validation.' );
+				'archive_purpose' => 'backup_input', 'target_schema' => $schema, 'target_root' => $root_id ) ), 'Integrity fixture prepare failed before package validation.' );
 			$job = $prepared['session_id'];
 			do {
 				wpai199c_assert( microtime( true ) < $deadline, 'Integrity fixture preflight budget exhausted.' );
