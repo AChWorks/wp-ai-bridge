@@ -39,6 +39,7 @@ function wp_get_ability( $name ) {
 }
 
 require dirname( __DIR__ ) . '/src/Support/class-settings.php';
+require dirname( __DIR__ ) . '/src/Support/class-native-option-access.php';
 require dirname( __DIR__ ) . '/src/Support/class-native-ability-delegation.php';
 
 use WP_AI_Bridge\Support\Native_Ability_Delegation;

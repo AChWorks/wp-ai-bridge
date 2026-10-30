@@ -24,6 +24,12 @@ final class Private_Transfer_Session {
 	/** @var bool Fixed DB-only authority; generic transfer callers never acquire it. */
 	private $database_only = false;
 
+	/** @var string|null Fixed native scope; null preserves generic transport. */
+	private $native_options_scope = null;
+
+	/** @var array<string,array> Exact original proofs of settings leases created by this instance. */
+	private $native_created_roots = array();
+
 	/** @param Permissions $permissions Bridge current principal policy. */
 	public function __construct( Permissions $permissions ) {
 		$this->permissions = $permissions;
@@ -43,6 +49,30 @@ final class Private_Transfer_Session {
 	}
 
 	/**
+	 * Internal native settings factory. An invalid scope never gains generic
+	 * transfer authority. Network and site purposes remain distinct.
+	 *
+	 * @param Permissions $permissions Current native read delegation.
+	 * @param string      $scope Site or network.
+	 * @return self
+	 */
+	public static function for_native_options( Permissions $permissions, string $scope ) {
+		$store                       = new self( $permissions );
+		$store->native_options_scope = $scope;
+		return $store;
+	}
+
+	/** @return array<string,mixed> Current native snapshot principal and source. */
+	private function native_binding() {
+		return array(
+			'blog'      => (int) get_current_blog_id(),
+			'user'      => (int) get_current_user_id(),
+			'client'    => OAuth_Server::authenticated_mcp_client_id(),
+			'source_id' => 'network' === $this->native_options_scope ? (int) get_current_network_id() : (int) get_current_blog_id(),
+		);
+	}
+
+	/**
 	 * @param string $purpose Fixed authorized consumer purpose.
 	 * @param int    $total Exact source byte count including zero.
 	 * @param string $sha256 Lowercase expected SHA-256.
@@ -53,7 +83,9 @@ final class Private_Transfer_Session {
 	 * @return array<string,mixed>|WP_Error No private path in return.
 	 */
 	public function begin( $purpose, $total, $sha256, $max_total, $max_chunk, $active_limit, $ttl_seconds, $max_active = null ) {
-		if ( ! $this->allowed( $purpose ) ) {
+		$native_binding = null !== $this->native_options_scope ? $this->native_binding() : null;
+		if ( ! $this->allowed( $purpose ) ||
+			( null !== $native_binding && $native_binding !== $this->native_binding() ) ) {
 			return $this->denied();
 		}
 		if ( null === $max_active && is_int( $max_total ) && is_int( $active_limit ) && $max_total > 0 && $active_limit > 0 ) {
@@ -147,8 +179,8 @@ final class Private_Transfer_Session {
 				return new WP_Error( 'transfer_disk_insufficient', 'Private temporary storage cannot accommodate the requested active transfer reservation.' );
 			}
 
-			$id       = bin2hex( random_bytes( 32 ) );
-			$meta     = array(
+			$id   = bin2hex( random_bytes( 32 ) );
+			$meta = array(
 				'version'  => 1,
 				'id'       => $id,
 				'purpose'  => $purpose,
@@ -162,6 +194,10 @@ final class Private_Transfer_Session {
 				'expires'  => time() + $ttl_seconds,
 				'state'    => 'open',
 			);
+			if ( null !== $native_binding ) {
+				// Bind at creation, before any append/status/verify can load it.
+				$meta = array_merge( $meta, $native_binding );
+			}
 			$data     = $root . '/' . $id . '.bytes';
 			$manifest = $root . '/' . $id . '.meta';
 			$file     = @fopen( $data, 'x+b' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Randomly generated private root, exclusive creation.
@@ -184,6 +220,24 @@ final class Private_Transfer_Session {
 				return new WP_Error( 'transfer_storage_unavailable', 'Could not persist the private transfer identity.' );
 			}
 			fclose( $handle );
+			if ( null !== $native_binding ) {
+				if ( ! $this->allowed( $purpose ) || $native_binding !== $this->native_binding() ) {
+					return $this->erase( $root, $id ) ? $this->denied() :
+						new WP_Error( 'transfer_cleanup_uncertain', 'Failed private settings creation requires cleanup.' );
+				}
+				$root_identity = @lstat( $root ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- A disappeared private root must not disclose its path in PHP diagnostics.
+				if ( ! is_array( $root_identity ) ) {
+					return new WP_Error( 'transfer_cleanup_uncertain', 'The private settings creation root became unavailable.' );
+				}
+				$this->native_created_roots[ $id ] = array(
+					'root'    => $root,
+					'device'  => $root_identity['dev'],
+					'inode'   => $root_identity['ino'],
+					'binding' => $native_binding,
+					'sha256'  => $sha256,
+					'total'   => $total,
+				);
+			}
 			return $this->receipt( $meta );
 		} finally {
 			flock( $guard, LOCK_UN );
@@ -318,6 +372,9 @@ final class Private_Transfer_Session {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function verified_private_source( $id, $purpose ) {
+		if ( null !== $this->native_options_scope ) {
+			return $this->denied();
+		}
 		$loaded = $this->load( $id );
 		if ( is_wp_error( $loaded ) ) {
 			return $loaded;
@@ -636,6 +693,134 @@ final class Private_Transfer_Session {
 	}
 
 	/**
+	 * Stage a complete trusted encoder document directly into existing private
+	 * bytes. No public temporary source, native getter or effect journal.
+	 *
+	 * @param string            $encoded_json Complete native value document.
+	 * @param array<string,int> $policy Current operator limits.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function stage_encoded_settings( string $encoded_json, array $policy ) {
+		$purpose = 'native_' . $this->native_options_scope . '_settings_read';
+		if ( null === $this->native_options_scope || ! $this->allowed( $purpose ) ) {
+			return $this->denied();
+		}
+		$size  = strlen( $encoded_json );
+		$chunk = min( $policy['chunk'], $policy['file'], max( 1, intdiv( max( 1, $policy['request'] - 4096 ), 4 ) * 3 ) );
+		$lease = Hook_Dispatch_Recovery::run(
+			function () use ( $purpose, $size, $encoded_json, $policy, $chunk ) {
+				return $this->begin( $purpose, $size, hash( 'sha256', $encoded_json ), $policy['file'], $chunk, $policy['sessions'], $policy['ttl'], $policy['active'] );
+			}
+		);
+		if ( is_wp_error( $lease ) ) {
+			return $lease;
+		}
+		$id      = $lease['id'];
+		$success = false;
+		try {
+			$offset = 0;
+			while ( $offset < $size ) {
+				$next = Hook_Dispatch_Recovery::run(
+					function () use ( $id, $offset, $encoded_json, $chunk, $size ) {
+						return $this->append( $id, $offset, substr( $encoded_json, $offset, min( $chunk, $size - $offset ) ) );
+					}
+				);
+				if ( is_wp_error( $next ) ) {
+					return $next;
+				}
+				$offset = $next['received'];
+			}
+			$verified = Hook_Dispatch_Recovery::run(
+				function () use ( $id ) {
+					return $this->verify( $id );
+				}
+			);
+			if ( is_wp_error( $verified ) ) {
+				return $verified;
+			}
+			$state = Hook_Dispatch_Recovery::run(
+				function () use ( $id ) {
+					return $this->status( $id );
+				}
+			);
+			if ( is_wp_error( $state ) ) {
+				return $state;
+			}
+			$success = 'verified' === $state['state'];
+			return $success ? $state : $this->invalid();
+		} finally {
+			if ( ! $success ) {
+				try {
+					$cleanup = Hook_Dispatch_Recovery::run(
+						function () use ( $id ) {
+							return $this->discard_native_option_creation( $id );
+						}
+					);
+				} catch ( \Throwable $error ) {
+					$cleanup = new WP_Error( 'transfer_cleanup_uncertain', 'Failed private settings creation requires cleanup.' );
+				}
+				if ( is_wp_error( $cleanup ) ) {
+					return $cleanup;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Cleanup authority is limited to a lease allocated by this exact instance.
+	 * It survives revocation/drift only to erase its own failed creation; it
+	 * grants no read, general cancellation or access to other stored leases.
+	 *
+	 * @param string $id Exact newly allocated lease.
+	 * @return bool|WP_Error
+	 */
+	public function discard_native_option_creation( $id ) {
+		if ( null === $this->native_options_scope || ! is_string( $id ) ||
+			! isset( $this->native_created_roots[ $id ] ) ) {
+			return $this->denied();
+		}
+		$proof = $this->native_created_roots[ $id ];
+		$root  = $proof['root'];
+		clearstatcache( true, $root );
+		$stat = @lstat( $root ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Missing original storage is a redacted cleanup failure.
+		if ( is_link( $root ) || realpath( $root ) !== $root || ! is_array( $stat ) ||
+			$stat['dev'] !== $proof['device'] || $stat['ino'] !== $proof['inode'] ||
+			0040000 !== ( $stat['mode'] & 0170000 ) || 0700 !== ( $stat['mode'] & 0777 ) ) {
+			return new WP_Error( 'transfer_storage_unsafe', 'The original private settings creation root changed.' );
+		}
+		$guard = $this->guard( $root );
+		if ( is_wp_error( $guard ) ) {
+			return $guard;
+		}
+		try {
+			$info = $this->open_meta( $root, $id, true, true );
+			if ( is_wp_error( $info ) ) {
+				return $info;
+			}
+			list( $handle, $meta ) = $info;
+			try {
+				if ( 'native_' . $this->native_options_scope . '_settings_read' !== $meta['purpose'] ||
+					array_intersect_key( $meta, $proof['binding'] ) !== $proof['binding'] ||
+					$proof['total'] !== $meta['total'] ||
+					! hash_equals( $proof['sha256'], $meta['sha256'] ) ||
+					! in_array( $meta['state'], array( 'open', 'verified' ), true ) ) {
+					return $this->denied();
+				}
+				if ( ! $this->erase( $root, $id ) ) {
+					return new WP_Error( 'transfer_cleanup_uncertain', 'Failed private settings creation requires cleanup.' );
+				}
+				unset( $this->native_created_roots[ $id ] );
+				return true;
+			} finally {
+				$this->close_meta( $handle );
+			}
+		} finally {
+			flock( $guard, LOCK_UN );
+			fclose( $guard );
+		}
+	}
+
+	/**
 	 * One private snapshot writer, reused by native Media and WXR producers.
 	 * Permissions and exact provider identity are rechecked before receipt.
 	 *
@@ -727,14 +912,29 @@ final class Private_Transfer_Session {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function read_media_export( $id, $offset, $max_bytes ) {
+		return $this->read_export_window( $id, $offset, $max_bytes, array( 'media_read', 'wxr_read', 'source_plugin_read', 'source_theme_read' ) );
+	}
+
+	/** @return array<string,mixed>|WP_Error Fixed native-settings byte plane only. */
+	public function read_native_options( $id, $offset, $max_bytes ) {
+		if ( null === $this->native_options_scope ) {
+			return $this->denied();
+		}
+		return $this->read_export_window( $id, $offset, $max_bytes, array( 'native_' . $this->native_options_scope . '_settings_read' ) );
+	}
+
+	/** @return array<string,mixed>|WP_Error Shared immutable window implementation. */
+	private function read_export_window( $id, $offset, $max_bytes, $purposes ) {
 		$loaded = $this->load( $id );
 		if ( is_wp_error( $loaded ) ) {
 			return $loaded;
 		}
 		list( $root, $handle, $meta ) = $loaded;
 		try {
-			if ( ! in_array( $meta['purpose'], array( 'media_read', 'wxr_read', 'source_plugin_read', 'source_theme_read' ), true ) ||
+			if ( ! in_array( $meta['purpose'], $purposes, true ) ||
 				'verified' !== $meta['state'] || ! $this->allowed( $meta['purpose'] ) ||
+				( null !== $this->native_options_scope &&
+					$this->native_binding() !== array_intersect_key( $meta, $this->native_binding() ) ) ||
 				! is_int( $meta['source_id'] ?? null ) ||
 				( 'media_read' === $meta['purpose'] && (
 					'attachment' !== get_post_type( $meta['source_id'] ) ||
@@ -1013,6 +1213,21 @@ final class Private_Transfer_Session {
 	private function allowed( $purpose ) {
 		if ( 0 === get_current_user_id() ) {
 			return false;
+		}
+		if ( null !== $this->native_options_scope ) {
+			if ( ! in_array( $this->native_options_scope, array( 'site', 'network' ), true ) ||
+				'native_' . $this->native_options_scope . '_settings_read' !== $purpose ) {
+				return false;
+			}
+			try {
+				return Hook_Dispatch_Recovery::run(
+					function () {
+						return ( new Native_Option_Access( $this->permissions ) )->allowed( $this->native_options_scope );
+					}
+				);
+			} catch ( \Throwable $error ) {
+				return false;
+			}
 		}
 		if ( $this->database_only ) {
 			return 'database_value' === $purpose &&
@@ -1307,7 +1522,10 @@ final class Private_Transfer_Session {
 			is_int( $meta['user'] ) && $meta['user'] >= 1 &&
 			is_int( $meta['expires'] ) && $meta['expires'] >= 1 &&
 			is_string( $meta['client'] ) && is_string( $meta['purpose'] ) &&
-			in_array( $meta['purpose'], array( 'media', 'media_read', 'wxr_read', 'text', 'wxr', 'source_plugin', 'source_theme', 'source_plugin_read', 'source_theme_read', 'database_value' ), true ) &&
+			in_array( $meta['purpose'], array( 'media', 'media_read', 'wxr_read', 'text', 'wxr', 'source_plugin', 'source_theme', 'source_plugin_read', 'source_theme_read', 'database_value', 'native_site_settings_read', 'native_network_settings_read' ), true ) &&
+			( ! in_array( $meta['purpose'], array( 'native_site_settings_read', 'native_network_settings_read' ), true ) ||
+				( is_int( $meta['source_id'] ?? null ) && $meta['source_id'] > 0 &&
+					in_array( $meta['state'], array( 'open', 'verified' ), true ) ) ) &&
 			is_string( $meta['sha256'] ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $meta['sha256'] ) &&
 			in_array( $meta['state'], array( 'open', 'preparing', 'verified', 'committing', 'committed', 'rejected', 'observed' ), true ) &&
 			( ! in_array( $meta['state'], array( 'committing', 'committed', 'rejected', 'observed' ), true ) ||
@@ -1949,7 +2167,13 @@ final class Private_Transfer_Session {
 		if ( (int) get_current_blog_id() !== $meta['blog'] ||
 			(int) get_current_user_id() !== $meta['user'] ||
 			OAuth_Server::authenticated_mcp_client_id() !== $meta['client'] ||
-			! $this->allowed( $meta['purpose'] ) ) {
+			! $this->allowed( $meta['purpose'] ) ||
+			( null !== $this->native_options_scope &&
+				( ! is_int( $meta['source_id'] ?? null ) ||
+					$meta['source_id'] !== $this->native_binding()['source_id'] ||
+					(int) get_current_blog_id() !== $meta['blog'] ||
+					(int) get_current_user_id() !== $meta['user'] ||
+					OAuth_Server::authenticated_mcp_client_id() !== $meta['client'] ) ) ) {
 			$this->close_meta( $h );
 			return $this->denied();
 		}

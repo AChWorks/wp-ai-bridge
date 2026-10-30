@@ -46,6 +46,8 @@ wp=("${compose[@]}" run --rm cli)
 "${compose[@]}" cp "$root/tests/integration/issue61-application-passwords-multisite-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue61-application-passwords-multisite-smoke.php
 "${compose[@]}" cp "$root/tests/integration/issue119-rest-multisite-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue119-rest-multisite-smoke.php
 "${compose[@]}" cp "$root/tests/integration/issue199-database-multisite-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue199-database-multisite-smoke.php
+"${compose[@]}" cp "$root/tests/integration/issue199-native-options-helper.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue199-native-options-helper.php
+"${compose[@]}" cp "$root/tests/integration/issue199-native-options-multisite-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue199-native-options-multisite-smoke.php
 "${compose[@]}" cp "$root/tests/integration/issue199-database-write-helper.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue199-database-write-helper.php
 "${compose[@]}" cp "$root/tests/integration/issue199-database-write-multisite-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue199-database-write-multisite-smoke.php
 
@@ -56,6 +58,7 @@ echo "Issue #58 multisite baseline: WordPress ${actual_wp}; PHP ${actual_php}; i
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue61-application-passwords-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue119-rest-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue199-database-multisite-smoke.php --user=1 --allow-root
+"${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue199-native-options-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue199-database-write-multisite-smoke.php --user=1 --allow-root
 
 echo "PASS: user/auth multisite regression suite for ${wordpress_tag}."

@@ -2,7 +2,7 @@
 
 WP AI Bridge can expose WordPress settings that are already part of the site's supported REST settings contract without maintaining a provider-specific option allowlist.
 
-This surface is intentionally narrower than arbitrary option access.
+This surface is intentionally narrower than arbitrary option access. For separately delegated native unregistered/sensitive site and network reads and complete private snapshots in current source (pending release), see [Native options](./NATIVE-OPTIONS.md). This registered REST contract remains unchanged.
 
 ## Abilities
 

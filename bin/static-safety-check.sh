@@ -55,7 +55,7 @@ if [[ ! -f "$private_stage" ||
       "$(grep -cF 'fwrite(' "$private_stage" || true)" != "4" ||
       "$(grep -cF 'stream_copy_to_stream(' "$private_stage" || true)" != "1" ||
       "$(grep -cF '@mkdir(' "$private_stage" || true)" != "1" ||
-      "$(grep -cF 'flock(' "$private_stage" || true)" != "6" ||
+      "$(grep -cF 'flock(' "$private_stage" || true)" != "7" ||
       "$(grep -cF 'ftruncate(' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'rename(' "$private_stage" || true)" != "2" ]]; then
     echo "ERROR: internal-only private transfer filesystem/lock surface changed." >&2
@@ -480,6 +480,7 @@ fi
 # typed writer uses one confined native adapter; it accepts no caller SQL.
 database_reader='src/Support/class-database-reader.php'
 database_connection='src/Support/class-database-connection.php'
+native_options_reader='src/Abilities/class-native-option-abilities.php'
 metadata_store='src/Support/class-post-meta-store.php'
 term_metadata_store='src/Support/class-term-meta-store.php'
 user_comment_metadata_store='src/Support/class-user-comment-meta-store.php'
@@ -556,7 +557,25 @@ if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$cron_run_store" |
     echo "ERROR: targeted Cron claim store introduced an unreviewed database primitive." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" | grep -vFx "$database_reader" | grep -vFx "$database_connection" || true)"
+# Native options inventory/admission reads only fixed names and byte lengths.
+# The separate Options API getter owns effective values and its callbacks.
+if [[ ! -f "$native_options_reader" ||
+      "$(grep -cF '$wpdb->get_results(' "$native_options_reader" || true)" != "1" ||
+      "$(grep -cF '$wpdb->get_var(' "$native_options_reader" || true)" != "1" ||
+      "$(grep -cF '$wpdb->prepare(' "$native_options_reader" || true)" != "4" ||
+      "$(grep -cF 'SELECT CAST(meta_id AS CHAR) AS id, meta_key AS name, CAST(OCTET_LENGTH(meta_value) AS CHAR) AS value_bytes' "$native_options_reader" || true)" != "1" ||
+      "$(grep -cF 'SELECT CAST(option_id AS CHAR) AS id, option_name AS name, CAST(OCTET_LENGTH(option_value) AS CHAR) AS value_bytes' "$native_options_reader" || true)" != "1" ||
+      "$(grep -cF 'SELECT CAST(MAX(OCTET_LENGTH(meta_value)) AS CHAR) FROM %i WHERE site_id = %d AND meta_key = %s' "$native_options_reader" || true)" != "1" ||
+      "$(grep -cF 'SELECT CAST(OCTET_LENGTH(option_value) AS CHAR) FROM %i WHERE option_name = %s LIMIT 1' "$native_options_reader" || true)" != "1" ]]; then
+    echo "ERROR: native options metadata reader changed its fixed read-only inventory." >&2
+    exit 1
+fi
+if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$native_options_reader" |
+   grep -vE '\$wpdb->(options|sitemeta|get_var|get_results|prepare|esc_like|last_error)([^A-Za-z0-9_]|$)'; then
+    echo "ERROR: native options reader grew unapproved database primitives." >&2
+    exit 1
+fi
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" | grep -vFx "$database_reader" | grep -vFx "$database_connection" | grep -vFx "$native_options_reader" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2

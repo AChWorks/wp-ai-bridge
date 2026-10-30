@@ -10,6 +10,8 @@ namespace WP_AI_Bridge\Admin;
 use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Environment;
 use WP_AI_Bridge\Support\Mutation_Log;
+use WP_AI_Bridge\Support\Native_Option_Access;
+use WP_AI_Bridge\Support\Hook_Dispatch_Recovery;
 use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Transfer_Settings;
 use WP_AI_Bridge\Support\Create_Claim;
@@ -387,7 +389,7 @@ final class Settings_Page {
 				<table class="form-table" role="presentation"><tbody>
 				<?php
 				foreach ( $this->settings->groups() as $key => $group ) {
-					if ( ! in_array( $key, Settings::DATABASE_GROUPS, true ) ) {
+					if ( Settings::GROUP_NATIVE_NETWORK_READ !== $key && ! in_array( $key, Settings::DATABASE_GROUPS, true ) ) {
 						$this->render_access_group_row( Settings::OPTION_NAME, $key, $group, $values );
 					}
 				}
@@ -395,6 +397,8 @@ final class Settings_Page {
 				</tbody></table>
 				<?php submit_button(); ?>
 			</form>
+
+			<?php $this->render_native_network_read_form(); ?>
 
 			<h2><?php echo esc_html__( 'Database access', 'wp-ai-bridge' ); ?></h2>
 			<p><?php echo esc_html__( 'Configure database inspection, sensitive reading, typed writes and deletion independently. Changing these grants requires administrator authority and, on multisite, actual Super Admin and network authority.', 'wp-ai-bridge' ); ?></p>
@@ -907,6 +911,72 @@ final class Settings_Page {
 		);
 
 		return isset( $labels[ $value ] ) ? $labels[ $value ] : (string) $value;
+	}
+
+	/**
+	 * Separate current-network consent; ordinary site options.php never writes it.
+	 *
+	 * @return void
+	 */
+	private function render_native_network_read_form() {
+		$allowed = Native_Option_Access::can_configure_network();
+		$network = $allowed ? get_current_network_id() : 0;
+		?>
+		<h2><?php echo esc_html__( 'Sensitive Native Network Settings Read', 'wp-ai-bridge' ); ?></h2>
+		<p><?php echo esc_html__( 'This separate consent belongs to the current network. Reading network settings also requires the current site settings read grant and actual Super Admin network authority. Ordinary site saves do not change this consent.', 'wp-ai-bridge' ); ?></p>
+		<?php if ( $allowed ) : ?>
+			<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post">
+				<input type="hidden" name="action" value="wpai_native_network_read">
+				<input type="hidden" name="network_id" value="<?php echo esc_attr( (string) $network ); ?>">
+				<?php wp_nonce_field( 'wpai-native-network-read-' . $network ); ?>
+				<label><input type="checkbox" name="enabled" value="1" <?php checked( Native_Option_Access::network_enabled() ); ?>> <?php echo esc_html__( 'Enable sensitive current-network settings reads and private exports', 'wp-ai-bridge' ); ?></label>
+				<p class="description"><?php echo esc_html__( 'Native settings may contain credentials under any name. This grants no native settings writes.', 'wp-ai-bridge' ); ?></p>
+				<?php submit_button( __( 'Save network settings read access', 'wp-ai-bridge' ) ); ?>
+			</form>
+		<?php else : ?>
+			<label><input type="checkbox" disabled <?php checked( Native_Option_Access::network_enabled() ); ?>> <?php echo esc_html__( 'Enable sensitive current-network settings reads and private exports', 'wp-ai-bridge' ); ?></label>
+			<p class="description"><?php echo esc_html__( 'Only a current Super Admin with network and site administration authority can change this network-owned consent. Network settings are available only on multisite.', 'wp-ai-bridge' ); ?></p>
+		<?php endif; ?>
+		<?php
+	}
+
+	/** @return void Nonce-bound current-network consent handler. */
+	public function handle_native_network_read() {
+		try {
+			Hook_Dispatch_Recovery::run(
+				function () {
+					$user    = get_current_user_id();
+					$blog    = get_current_blog_id();
+					$network = is_multisite() ? get_current_network_id() : 0;
+					if ( ! Native_Option_Access::can_configure_network( $network ) ||
+						'POST' !== ( $_SERVER['REQUEST_METHOD'] ?? '' ) ||
+						! isset( $_POST['network_id'] ) || ! is_string( $_POST['network_id'] ) ||
+						wp_unslash( $_POST['network_id'] ) !== (string) $network ) {
+						wp_die( esc_html__( 'Current Super Admin network authority and an exact current-network request are required.', 'wp-ai-bridge' ), '', array( 'response' => 403 ) );
+						return;
+					}
+					check_admin_referer( 'wpai-native-network-read-' . $network );
+					if ( get_current_user_id() !== $user || get_current_blog_id() !== $blog ||
+						get_current_network_id() !== $network || ! Native_Option_Access::can_configure_network( $network ) ||
+						( isset( $_POST['enabled'] ) && ( ! is_string( $_POST['enabled'] ) || '1' !== wp_unslash( $_POST['enabled'] ) ) ) ) {
+						wp_die( esc_html__( 'The native network settings consent request is invalid or its authority changed.', 'wp-ai-bridge' ), '', array( 'response' => 403 ) );
+						return;
+					}
+					$value = isset( $_POST['enabled'] ) ? 1 : 0;
+					update_network_option( $network, Native_Option_Access::NETWORK_OPTION_NAME, $value );
+					if ( get_current_user_id() !== $user || get_current_blog_id() !== $blog ||
+						get_current_network_id() !== $network || ! Native_Option_Access::can_configure_network( $network ) ||
+						( 1 === $value ) !== Native_Option_Access::network_enabled() ) {
+						wp_die( esc_html__( 'The network settings consent result could not be verified. Inspect current network consent before trying again.', 'wp-ai-bridge' ), '', array( 'response' => 500 ) );
+						return;
+					}
+					wp_safe_redirect( admin_url( 'admin.php?page=' . self::SETTINGS_SLUG ) );
+					exit;
+				}
+			);
+		} catch ( \Throwable $throwable ) {
+			wp_die( esc_html__( 'The network settings consent result could not be verified. Inspect current network consent before trying again.', 'wp-ai-bridge' ), '', array( 'response' => 500 ) );
+		}
 	}
 
 	/**
