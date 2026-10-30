@@ -68,8 +68,16 @@ try {
 	$created[] = $child;
 	$wpdb->insert( $parent, array( 'id' => 1, 'payload' => 'parent remains' ) );
 	$wpdb->insert( $child, array( 'id' => 1, 'parent_id' => 1 ) );
-	$native_view = false !== stripos( (string) $wpdb->get_var( 'SELECT VERSION()' ), 'MariaDB' ) ? 'INNODB_SYS_FOREIGN' : 'INNODB_FOREIGN';
-	$native_ref = $wpdb->get_var( $wpdb->prepare( 'SELECT REF_NAME FROM information_schema.' . $native_view . ' WHERE ID LIKE %s', '%/' . $wpdb->esc_like( $constraint ) ) );
+	$is_mariadb = false !== stripos( (string) $wpdb->get_var( 'SELECT VERSION()' ), 'MariaDB' );
+	$native_view = $is_mariadb ? 'INNODB_SYS_FOREIGN' : 'INNODB_FOREIGN';
+	// MariaDB 12.1 changed ID's namespace; the fixture child has exactly one FK.
+	$native_name = $is_mariadb ? 'CAST(CONVERT(CONVERT(CAST(%s AS BINARY) USING utf8mb4) USING filename) AS BINARY)' : '%s';
+	$native_refs = $wpdb->get_col( $wpdb->prepare(
+		'SELECT REF_NAME FROM information_schema.' . $native_view . ' WHERE BINARY FOR_NAME = BINARY CONCAT(' . $native_name . ", '/', " . $native_name . ') LIMIT 2',
+		$wpdb->dbname,
+		$child
+	) );
+	$native_ref = 1 === count( $native_refs ) ? $native_refs[0] : null;
 	wpai199w_assert( is_string( $native_ref ) && '' !== $native_ref, 'Complete native FK metadata identity unavailable.' );
 	echo 'WPAI199W_NATIVE_FK_REFERENCE=' . $native_ref . "\n";
 	$schema = wpai199w_describe( $parent )['schema_hash'];
