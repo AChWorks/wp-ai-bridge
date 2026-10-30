@@ -181,7 +181,7 @@ try {
 	foreach ( array( 'one', 'two' ) as $slot ) {
 		$finished = $json( $slot . '.final.json' );
 		$assert( 'completed' === $finished['status']['state'] && 'committed' === $finished['status']['outcome'] &&
-			true === $finished['input_status']['payload_released'] && true === $finished['replay']['historical'] &&
+			true === ( $finished['input_status']['payload_released'] ?? false ) && true === $finished['replay']['historical'] &&
 			$winning['operation_ref'] === $finished['replay']['operation_ref'], 'Status/input recovery allowed redispatch or lost historical identity.' );
 	}
 	$native = $events( 'race' );

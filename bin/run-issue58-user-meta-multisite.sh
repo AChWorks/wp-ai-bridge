@@ -66,7 +66,7 @@ echo "Issue #58 multisite baseline: WordPress ${actual_wp}; PHP ${actual_php}; i
 
 # Preserve every prior multisite assertion, then check new bound administration surfaces.
 source "$root/bin/issue199-completion-runtime.sh"
-wpai199c_bootstrap false mariadb
+wpai199c_bootstrap true mariadb
 wpai199c_eval issue199-completion-multisite-smoke.php
 wpai199c_remove_provider
 

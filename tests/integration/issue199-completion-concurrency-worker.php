@@ -122,6 +122,21 @@ namespace {
 			usleep( 10000 );
 		}
 	};
+	// Only nonblocking read observations may be retried. Effect and historical
+	// execute calls below each remain exactly one public Ability invocation.
+	$observe = static function ( $ability, array $request ) {
+		wpai199c_assert( 'status' === ( $request['action'] ?? null ) &&
+			in_array( $ability, array( 'filesystem-write', 'filesystem-transfer' ), true ), 'Observation retry received an effect request.' );
+		$deadline = microtime( true ) + 2;
+		for ( $attempt = 0; $attempt < 100; ++$attempt ) {
+			$value = wpai199c_ability( $ability, $request );
+			if ( ! is_wp_error( $value ) || 'transfer_session_busy' !== $value->get_error_code() || microtime( true ) >= $deadline ) {
+				return $value;
+			}
+			usleep( 20000 );
+		}
+		return $value;
+	};
 	$connection_id = (string) $wpdb->get_var( 'SELECT CONNECTION_ID()' );
 	$write_json( $slot . '.ready.json', array( 'pid' => getmypid(), 'connection_id' => $connection_id,
 		'filesystem_sha256' => $assignment['filesystem_sha256'], 'worker_sha256' => $assignment['worker_sha256'] ) );
@@ -133,8 +148,8 @@ namespace {
 	$final = array( 'first' => $first_summary, 'pid' => getmypid(), 'connection_id' => $connection_id );
 	if ( 'race' === $case ) {
 		$wait( 'race.retry-go' );
-		$final['status'] = $summary( wpai199c_ability( 'filesystem-write', array( 'action' => 'status', 'root_id' => $assignment['root_id'], 'operation_id' => $assignment['request']['operation_id'] ) ) );
-		$final['input_status'] = $summary( wpai199c_ability( 'filesystem-transfer', array( 'action' => 'status', 'root_id' => $assignment['root_id'], 'transfer_id' => $assignment['request']['transfer_id'] ) ) );
+		$final['status'] = $summary( $observe( 'filesystem-write', array( 'action' => 'status', 'root_id' => $assignment['root_id'], 'operation_id' => $assignment['request']['operation_id'] ) ) );
+		$final['input_status'] = $summary( $observe( 'filesystem-transfer', array( 'action' => 'status', 'root_id' => $assignment['root_id'], 'transfer_id' => $assignment['request']['transfer_id'] ) ) );
 		$final['replay'] = $summary( wpai199c_ability( 'filesystem-write', $assignment['request'] ) );
 	}
 	$write_json( $slot . '.final.json', $final );

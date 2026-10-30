@@ -29,6 +29,7 @@ function wpai_database_write_boundary( $source, $native_owner, $typed_owner, arr
 		'mysqli_stmt_insert_id',
 		'mysqli_warning_count',
 		'mysqli_stmt_get_result',
+		'mysqli_stmt_get_warnings',
 		'mysqli_query',
 		'mysqli_affected_rows',
 		'mysqli_insert_id',
@@ -472,6 +473,13 @@ $boundary_pins = array(
 		'src/Support/class-database-connection.php' => array(
 			'Database_Connection::__construct|mysqli_get_client_info' => 1,
 			'Database_Connection::__construct|mysqli_thread_id' => 1,
+			'Database_Connection::set_backup_sql_mode|mysqli_thread_id' => 1,
+			'Database_Connection::set_backup_sql_mode|mysqli_prepare' => 1,
+			'Database_Connection::set_backup_sql_mode|mysqli_warning_count' => 2,
+			'Database_Connection::set_backup_sql_mode|mysqli_stmt_bind_param' => 1,
+			'Database_Connection::set_backup_sql_mode|mysqli_stmt_execute' => 1,
+			'Database_Connection::set_backup_sql_mode|mysqli_stmt_get_warnings' => 1,
+			'Database_Connection::set_backup_sql_mode|mysqli_stmt_close' => 2,
 			'Database_Connection::dispatch_ddl_once|mysqli_thread_id' => 1,
 			'Database_Connection::dispatch_ddl_once|mysqli_query' => 1,
 			'Database_Connection::dispatch_ddl_once|mysqli_errno' => 1,
@@ -600,18 +608,22 @@ $boundary_pins = array(
 			'Backup_Database::ddl|dispatch_ddl_once'  => 1,
 			'Backup_Database::insert|begin_callback_journal' => 1,
 			'Backup_Database::insert|run'             => 5,
-			'Backup_Database::with_session|run'       => 4,
+			'Backup_Database::with_session|run'       => 2,
+			'Backup_Database::with_session|set_backup_sql_mode' => 2,
+			'Backup_Database::with_session|quarantine_backup_session' => 1,
 		),
 		'src/Support/class-database-connection.php'       => array(
-			'Database_Connection::__construct|run'       => 2,
+			'Database_Connection::__construct|run'         => 2,
+			'Database_Connection::set_backup_sql_mode|run' => 1,
+			'Database_Connection::quarantine_backup_session|abandon_native_sql_session' => 1,
 			'Database_Connection::assert_clean_session|begin_callback_journal' => 1,
 			'Database_Connection::acquire_schema_write_lock|dispatch_ddl_once' => 1,
 			'Database_Connection::release_schema_write_lock|dispatch_ddl_once' => 1,
-			'Database_Connection::foreign_reference|run' => 2,
+			'Database_Connection::foreign_reference|run'   => 2,
 			'Database_Connection::assert_callback_context|run' => 1,
-			'Database_Connection::begin_owned|run'       => 5,
-			'Database_Connection::commit|run'            => 2,
-			'Database_Connection::rollback|run'          => 2,
+			'Database_Connection::begin_owned|run'         => 5,
+			'Database_Connection::commit|run'              => 2,
+			'Database_Connection::rollback|run'            => 2,
 		),
 	),
 	'constructors' => array(
@@ -654,7 +666,7 @@ $boundary_actual = array(
 	'adapter'      => array(),
 	'constructors' => array(),
 );
-$adapter_methods = array( 'run', 'dispatch_ddl_once', 'prepare_native_sql', 'stream_native_sql_once', 'cancel_native_sql', 'abandon_native_sql_session', 'begin_callback_journal', 'acquire_schema_write_lock', 'release_schema_write_lock' );
+$adapter_methods = array( 'run', 'dispatch_ddl_once', 'prepare_native_sql', 'stream_native_sql_once', 'cancel_native_sql', 'abandon_native_sql_session', 'set_backup_sql_mode', 'quarantine_backup_session', 'begin_callback_journal', 'acquire_schema_write_lock', 'release_schema_write_lock' );
 foreach ( $files as $file ) {
 	if ( 'php' !== $file->getExtension() ) {
 		continue;

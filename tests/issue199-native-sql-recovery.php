@@ -19,6 +19,9 @@ namespace WP_AI_Bridge\Support {
 		public static function effective_memory_bytes() { return 268435456; }
 	}
 	final class Private_Transfer_Session {
+		public static $cancelled = array();
+		public function cancel( $id ) { self::$cancelled[] = $id; return true; }
+		public function status( $id ) { return in_array( $id, self::$cancelled, true ) ? new \WP_Error( 'transfer_invalid', 'Disposed result.' ) : array( 'state' => 'verified' ); }
 		public static function for_administration( $permissions, $purpose, $binding ) { return new self(); }
 		public function begin_administration_stream( $max ) { return array( 'id' => str_repeat( 'b', 64 ) ); }
 		public function with_administration_writer( $id, $callback ) { return array( 'receipt' => array( 'id' => $id, 'sha256' => hash( 'sha256', 'result' ), 'bytes' => 6 ), 'result' => $callback( new \stdClass() ) ); }
@@ -92,6 +95,16 @@ namespace {
 	$prepares = Native::$prepares;
 	$historical = $run( $execute );
 	$assert( true === $historical['historical'] && 1 === Native::$executes && $prepares === Native::$prepares, 'Historical execution re-prepared or resent target SQL.' );
+	$receipt_rows = Native::$rows;
+	$released = $run( array( 'action' => 'result_release', 'operation_id' => $request['operation_id'], 'acknowledge_native_account_scope' => true, 'result_id' => $completed['private_result']['id'] ) );
+	$assert( 'cancelled' === ( $released['state'] ?? null ) && true === ( $released['payload_released'] ?? null ) && array( $completed['private_result']['id'] ) === \WP_AI_Bridge\Support\Private_Transfer_Session::$cancelled, 'Verified native results did not use immutable-result cancellation.' );
+	$assert( $receipt_rows === Native::$rows, 'Private result disposal changed native SQL effect history.' );
+	$disposed = $run( array( 'action' => 'result_status', 'operation_id' => $request['operation_id'], 'acknowledge_native_account_scope' => true, 'result_id' => $completed['private_result']['id'] ) );
+	$assert( is_wp_error( $disposed ), 'Disposed private result remained readable.' );
+	$recovered = $run( array( 'action' => 'recover', 'operation_id' => $request['operation_id'], 'acknowledge_native_account_scope' => true ) );
+	$after_disposal = $run( $execute );
+	$assert( true === $recovered['historical'] && 'completed' === $recovered['state'] && $completed['operation_ref'] === $recovered['operation_ref'] && $completed['receipt'] === $recovered['receipt'], 'Result disposal lost acknowledged historical recovery.' );
+	$assert( true === $after_disposal['historical'] && 1 === Native::$executes && $prepares === Native::$prepares, 'Disposed results caused native SQL re-preparation or redispatch.' );
 	$changed = array_replace( $execute, array( 'statement_base64' => base64_encode( 'SELECT 2' ) ) );
 	$assert( is_wp_error( $run( $changed ) ) && 1 === Native::$executes, 'Changed statement adopted the consumed identity.' );
 	Native::$rows = array();

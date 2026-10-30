@@ -204,11 +204,14 @@ final class Backup_Database {
 
 	/** @param array $schema Validated schema. @param string $after Prior digest or empty. @param string|null $database Approved database. @return array|null */
 	public function next_group( array $schema, $after, $database = null ) {
-		$database   = null === $database ? $this->connection->database : $database;
-		$expression = self::row_expression( $schema['columns'] );
-		$rows       = $this->connection->run(
-			'SELECT ' . $expression . ' AS digest,COUNT(*) AS multiplicity FROM ' . Backup_Schema::qualified( $database, $schema['table'] ) .
-			' GROUP BY digest HAVING digest > ? ORDER BY digest LIMIT 1',
+		$database     = null === $database ? $this->connection->database : $database;
+		$expression   = self::row_expression( $schema['columns'] );
+		$derived_hash = Backup_Schema::qualified( 'wpai_backup_rows', 'wpai_row_sha256' );
+		$rows         = $this->connection->run(
+			'SELECT ' . $derived_hash . ' AS digest,COUNT(*) AS multiplicity FROM (SELECT ' . $expression .
+			' AS ' . Database_Connection::quote( 'wpai_row_sha256' ) . ' FROM ' . Backup_Schema::qualified( $database, $schema['table'] ) .
+			') AS ' . Database_Connection::quote( 'wpai_backup_rows' ) . ' WHERE ' . $derived_hash . ' > ? GROUP BY ' .
+			$derived_hash . ' ORDER BY ' . $derived_hash . ' LIMIT 1',
 			array( $after ),
 			array(),
 			1
@@ -447,14 +450,24 @@ final class Backup_Database {
 				throw new \RuntimeException( 'backup_restore_session' );
 			}
 		}
+		// A rejected caller-owned transaction/lock session receives no backup
+		// setters or cleanup. Only an admitted clean session is ours to change.
+		$this->connection->assert_clean_session();
 		try {
-			$this->connection->assert_clean_session();
-			$this->connection->run( 'SET SESSION sql_mode=?', array( $session['sql_mode'] ) );
+			$this->connection->set_backup_sql_mode( $session['sql_mode'] );
 			$this->connection->run( 'SET SESSION time_zone=?', array( $session['time_zone'] ) );
 			return $callback();
 		} finally {
-			$this->connection->run( 'SET SESSION sql_mode=?', array( $original['sql_mode'] ) );
-			$this->connection->run( 'SET SESSION time_zone=?', array( $original['time_zone'] ) );
+			try {
+				$this->connection->set_backup_sql_mode( $original['sql_mode'] );
+				$this->connection->run( 'SET SESSION time_zone=?', array( $original['time_zone'] ) );
+			} catch ( \Throwable $cleanup_error ) {
+				try {
+					$this->connection->quarantine_backup_session();
+				} finally {
+					throw $cleanup_error;
+				}
+			}
 		}
 	}
 

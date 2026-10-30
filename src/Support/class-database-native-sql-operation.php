@@ -72,7 +72,14 @@ final class Database_Native_SQL_Operation {
 					return $store->status( $input['result_id'] );
 				}
 				if ( 'result_release' === $input['action'] ) {
-					return $store->release_payload( $input['result_id'] );
+					// Immutable exports have no unknown-effect input fence. Cancellation
+					// disposes only this bound result and does not alter SQL effect history.
+					$cancelled = $store->cancel( $input['result_id'] );
+					return is_wp_error( $cancelled ) ? $cancelled : array(
+						'result_id'        => $input['result_id'],
+						'state'            => 'cancelled',
+						'payload_released' => true,
+					);
 				}
 				$length = $input['length'] ?? max( 1, intdiv( Bounded_Payload::response_limit(), 8 ) );
 				$length = min( $length, ( new Transfer_Settings() )->bytes()['chunk'], max( 1, intdiv( Bounded_Payload::response_limit(), 8 ) ) );

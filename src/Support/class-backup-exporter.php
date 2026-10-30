@@ -368,6 +368,9 @@ final class Backup_Exporter {
 							( null === $candidate || strcmp( $name, base64_decode( end( $candidate['components'] ), true ) ) < 0 ) ) {
 							$candidate = $this->portable_descriptor( $entry );
 						}
+						// This metadata entry was consumed even when it cannot
+						// improve the candidate. Null requests retry of this entry.
+						return true;
 					},
 					array(
 						'bytes'   => $this->policy['step_bytes'],

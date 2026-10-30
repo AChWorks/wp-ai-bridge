@@ -47,6 +47,8 @@ $archive_id = null;
 $input_id = null;
 $restore_id = null;
 $json_table = null;
+$collision_table = null;
+$collision_table_name = $wpdb->prefix . 'wpai199b_collision_' . $suffix;
 $started = microtime( true );
 $test_seconds = getenv( 'WPAI_ADMIN13_BACKUP_TEST_SECONDS' );
 $test_seconds = is_string( $test_seconds ) && ctype_digit( $test_seconds ) ? (int) $test_seconds : 900;
@@ -63,6 +65,23 @@ $step = static function ( $action, $id, array $terminal ) use ( $call, $deadline
 try {
 	wpai199c_grants();
 	$seed = wpai199c_seed_provider( $suffix );
+	wpai199c_assert( false !== $wpdb->query( $wpdb->prepare(
+		'CREATE TABLE %i (`digest` VARBINARY(64) NULL,`multiplicity` VARBINARY(64) NULL,`wpai_row_sha256` VARBINARY(64) NULL,`wpai_backup_rows` VARBINARY(64) NULL,`value` VARBINARY(64) NULL) ENGINE=InnoDB',
+		$collision_table_name
+	) ), 'Native row-hash namespace collision fixture creation failed.' );
+	$collision_table = $collision_table_name;
+	// These are legitimate source names, including both generated namespace
+	// names. The same source digest must not merge one/two; one is duplicated.
+	foreach ( array( 'one', 'two', 'one' ) as $collision_value ) {
+		wpai199c_assert( false !== $wpdb->insert( $collision_table, array(
+			'digest' => 'same', 'multiplicity' => 'same', 'wpai_row_sha256' => 'same',
+			'wpai_backup_rows' => 'same', 'value' => $collision_value,
+		), array( '%s', '%s', '%s', '%s', '%s' ) ), 'Native row-hash namespace collision seed failed.' );
+	}
+	wpai199c_assert( '3' === (string) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i', $collision_table ) ) &&
+		'2' === (string) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE `value`=%s', $collision_table, 'one' ) ) &&
+		'1' === (string) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE `value`=%s', $collision_table, 'two' ) ),
+		'Native keyless collision fixture must retain two distinct rows and an exact duplicate.' );
 	$json_table = 'provider_admin13_json_' . $suffix;
 	wpai199c_assert( false !== $wpdb->query( $wpdb->prepare( 'CREATE TABLE %i (id BIGINT NOT NULL PRIMARY KEY,doc JSON NULL) ENGINE=InnoDB', $json_table ) ), 'Native JSON compatibility fixture creation failed.' );
 	$backup_tables = array_merge( $seed['tables'], array( $json_table ) );
@@ -174,6 +193,10 @@ try {
 	if ( is_string( $json_table ) ) {
 		wpai199c_assert( $json_table === 'provider_admin13_json_' . $suffix, 'Refusing unrelated JSON fixture cleanup.' );
 		$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $json_table ) );
+	}
+	if ( is_string( $collision_table ) ) {
+		wpai199c_assert( $collision_table === $collision_table_name, 'Refusing unrelated row-hash collision fixture cleanup.' );
+		$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $collision_table ) );
 	}
 	if ( is_array( $seed ) ) {
 		wpai199c_cleanup_seed( $seed, $suffix );

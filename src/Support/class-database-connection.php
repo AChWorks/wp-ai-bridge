@@ -119,6 +119,124 @@ final class Database_Connection {
 		}
 	}
 
+
+	/**
+	 * Set only Backup's session representation, preserving strict query warnings.
+	 *
+	 * The single known MySQL3135 strict-mode deprecation is harmless only for
+	 * this fixed setter, complete diagnostics and an exact native mode readback.
+	 * No SQL, warning policy or callback can be supplied by the caller.
+	 *
+	 * @param string $mode Native expanded mode list from the captured session.
+	 * @return array Acknowledged warning/deprecation counts.
+	 */
+	public function set_backup_sql_mode( $mode ) {
+		$expected  = $this->backup_sql_mode_names( $mode );
+		$statement = null;
+		$sent      = false;
+		set_error_handler(
+			static function () {
+				return true;
+			}
+		);
+		try {
+			global $wpdb;
+			if ( self::$busy || $this->owned || $this->mode_changed || $this->schema_lock_owned || $this->quarantined ||
+				$wpdb !== $this->wpdb || $this->wpdb->dbh !== $this->handle ||
+				$this->wpdb->base_prefix !== $this->prefix || $this->wpdb->options !== $this->options ||
+				mysqli_thread_id( $this->handle ) !== $this->session ) {
+				throw new Database_Write_Failure( 'database_write_unsupported_connection' );
+			}
+			if ( $this->packet_bytes < 2048 || strlen( $mode ) + 128 >= $this->packet_bytes - 1024 ) {
+				throw new Database_Write_Failure( 'database_write_packet_limit', array( 'max_allowed_packet' => $this->packet_bytes ) );
+			}
+			$statement = @mysqli_prepare( $this->handle, 'SET SESSION sql_mode=?' );
+			if ( false === $statement ) {
+				$this->native_failure();
+			}
+			if ( mysqli_warning_count( $this->handle ) > 0 || ! @mysqli_stmt_bind_param( $statement, 's', $mode ) ) {
+				throw new Database_Write_Failure( 'database_backup_sql_mode_unproved' );
+			}
+			$sent = true;
+			if ( ! @mysqli_stmt_execute( $statement ) ) {
+				$this->native_failure( $statement );
+			}
+			$count = mysqli_warning_count( $this->handle );
+			if ( $count > 0 ) {
+				// Do not retrieve an unbounded or already truncated diagnostic list.
+				// This exact setter has one known deprecation, never a mixed set.
+				if ( 1 !== $count ) {
+					throw new Database_Write_Failure( 'database_backup_sql_mode_warning', array( 'warning_count' => $count ) );
+				}
+				$warning = @mysqli_stmt_get_warnings( $statement );
+				if ( ! is_object( $warning ) || 3135 !== $warning->errno || 'HY000' !== $warning->sqlstate ||
+					"'NO_ZERO_DATE', 'NO_ZERO_IN_DATE' and 'ERROR_FOR_DIVISION_BY_ZERO' sql modes should be used with strict mode. They will be merged with strict mode in a future release." !== $warning->message ||
+					false !== $warning->next() ) {
+					throw new Database_Write_Failure( 'database_backup_sql_mode_warning', array( 'warning_count' => $count ) );
+				}
+			}
+			$closing   = $statement;
+			$statement = null;
+			@mysqli_stmt_close( $closing );
+			$rows = $this->run( 'SELECT @@SESSION.sql_mode AS mode', array(), array(), 1 )['rows'];
+			if ( 1 !== count( $rows ) || $expected !== $this->backup_sql_mode_names( $rows[0]['mode'] ?? null ) ) {
+				throw new Database_Write_Failure( 'database_backup_sql_mode_readback' );
+			}
+			return array(
+				'warning_count'              => $count,
+				'accepted_deprecation_count' => $count,
+			);
+		} catch ( \Throwable $error ) {
+			if ( $sent ) {
+				$this->quarantine();
+			}
+			if ( $error instanceof Database_Write_Failure ) {
+				throw $error;
+			}
+			throw new Database_Write_Failure(
+				'database_backup_sql_mode_unproved',
+				$error instanceof \mysqli_sql_exception ? array(
+					'errno'    => (int) $error->getCode(),
+					'sqlstate' => $error->getSqlState(),
+				) : array()
+			);
+		} finally {
+			try {
+				if ( $statement instanceof \mysqli_stmt ) {
+					try {
+						@mysqli_stmt_close( $statement );
+					} catch ( \Throwable $error ) {
+						if ( $sent ) {
+							$this->quarantine();
+						}
+						throw new Database_Write_Failure( 'database_backup_sql_mode_unproved' );
+					}
+				}
+			} finally {
+				restore_error_handler();
+			}
+		}
+	}
+
+	/** @param mixed $mode Exact native expanded mode list. @return array */
+	private function backup_sql_mode_names( $mode ) {
+		if ( ! is_string( $mode ) || strlen( $mode ) > 4096 ||
+			( '' !== $mode && ! preg_match( '/^[A-Z][A-Z0-9_]*(?:,[A-Z][A-Z0-9_]*)*$/D', $mode ) ) ) {
+			throw new Database_Write_Failure( 'database_backup_sql_mode_invalid' );
+		}
+		$names = '' === $mode ? array() : explode( ',', $mode );
+		if ( count( $names ) !== count( array_unique( $names ) ) ) {
+			throw new Database_Write_Failure( 'database_backup_sql_mode_invalid' );
+		}
+		sort( $names, SORT_STRING );
+		return $names;
+	}
+
+	/** Quarantine when Backup cannot prove restoration of its session settings. */
+	public function quarantine_backup_session() {
+		$this->abandon_native_sql_session();
+	}
+
 	/**
 	 * Send one internally generated DDL statement without warning-as-rollback.
 	 *

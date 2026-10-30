@@ -130,6 +130,35 @@ try {
 	update_option( Settings::DATABASE_OPTION_NAME, $revoked, false );
 	$assert( is_wp_error( $sql( array( 'action' => 'result_status', 'operation_id' => $native['operation_id'], 'acknowledge_native_account_scope' => true, 'result_id' => $lease['id'] ) ) ), 'Revoked SQL result authority remained usable.' );
 	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
+	$released = $ok( $sql( array( 'action' => 'result_release', 'operation_id' => $native['operation_id'], 'acknowledge_native_account_scope' => true, 'result_id' => $lease['id'] ) ), 'Verified SQL result disposal failed' );
+	$assert( 'cancelled' === $released['state'] && true === $released['payload_released'], 'Immutable SQL result disposal was not acknowledged.' );
+	array_pop( $results );
+	$assert( is_wp_error( $sql( array( 'action' => 'result_status', 'operation_id' => $native['operation_id'], 'acknowledge_native_account_scope' => true, 'result_id' => $lease['id'] ) ) ), 'Disposed SQL result remained available.' );
+	$recovered = $ok( $sql( array( 'action' => 'recover', 'operation_id' => $native['operation_id'], 'acknowledge_native_account_scope' => true ) ), 'SQL effect history was lost after result disposal' );
+	$after_disposal = $ok( $sql( $run ), 'Disposed SQL result prevented historical execute recovery' );
+	$assert( true === $recovered['historical'] && true === $after_disposal['historical'] &&
+		$executed['operation_ref'] === $recovered['operation_ref'] && $executed['receipt'] === $recovered['receipt'] &&
+		$executed['receipt'] === $after_disposal['receipt'], 'Result disposal altered the retained SQL effect receipt.' );
+
+	// A native DML effect makes accidental redispatch independently observable.
+	$assert( 1 === $wpdb->query( 'INSERT INTO ' . Database_Connection::quote( $table ) . " (row_id,body) VALUES (7,X'00')" ), 'Cannot seed the private no-redispatch row.' );
+	$mutation = array( 'action' => 'prepare', 'operation_id' => 'sql-disposal-' . $nonce, 'acknowledge_native_account_scope' => true,
+		'statement_base64' => base64_encode( 'UPDATE ' . Database_Connection::quote( $table ) . " SET body=CONCAT(body,X'61') WHERE row_id=7" ),
+		'parameters' => array(), 'max_result_bytes' => 4096 );
+	$mutation_prepared = $ok( $sql( $mutation ), 'Native disposal mutation preparation failed' );
+	$mutation_run = array_replace( $mutation, array( 'action' => 'execute', 'preparation_token' => $mutation_prepared['preparation_token'] ) );
+	$mutated = $ok( $sql( $mutation_run ), 'Native disposal mutation execute failed' );
+	$results[] = array( $mutation['operation_id'], $mutated['private_result']['id'] );
+	$assert( 'acknowledged' === $mutated['receipt']['result']['native']['outcome'] &&
+		'0061' === $wpdb->get_var( 'SELECT HEX(body) FROM ' . Database_Connection::quote( $table ) . ' WHERE row_id=7' ), 'The single native effect was not acknowledged with exact row bytes.' );
+	$mutation_disposed = $ok( $sql( array( 'action' => 'result_release', 'operation_id' => $mutation['operation_id'], 'acknowledge_native_account_scope' => true, 'result_id' => $mutated['private_result']['id'] ) ), 'Native mutation result disposal failed' );
+	$assert( 'cancelled' === $mutation_disposed['state'] && true === $mutation_disposed['payload_released'], 'Native mutation result was not disposed.' );
+	array_pop( $results );
+	$mutation_recovered = $ok( $sql( array( 'action' => 'recover', 'operation_id' => $mutation['operation_id'], 'acknowledge_native_account_scope' => true ) ), 'Native mutation receipt recovery failed' );
+	$mutation_replayed = $ok( $sql( $mutation_run ), 'Native mutation historical replay failed' );
+	$assert( true === $mutation_recovered['historical'] && true === $mutation_replayed['historical'] &&
+		$mutated['operation_ref'] === $mutation_recovered['operation_ref'] && $mutated['receipt'] === $mutation_replayed['receipt'] &&
+		'0061' === $wpdb->get_var( 'SELECT HEX(body) FROM ' . Database_Connection::quote( $table ) . ' WHERE row_id=7' ), 'Recovery after result disposal resent native DML or changed its effect history.' );
 	$execute( 'drop_table' );
 	echo 'PASS: actual typed schema/native-account SQL (' . $checks . ' checks; ' . $version . ").\n";
 } finally {

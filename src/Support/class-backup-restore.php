@@ -809,7 +809,9 @@ final class Backup_Restore {
 					'backup_restore',
 					null,
 					static function () use ( &$count ) {
-						++$count['count']; },
+						++$count['count'];
+						return true;
+					},
 					array(
 						'cursor'  => $count['cursor'],
 						'bytes'   => $this->policy['step_bytes'],
@@ -847,6 +849,7 @@ final class Backup_Restore {
 				null,
 				static function () use ( &$count ) {
 					++$count;
+					return true;
 				},
 				array(
 					'cursor'  => 0,
