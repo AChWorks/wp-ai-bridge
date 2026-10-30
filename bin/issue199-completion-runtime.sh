@@ -37,12 +37,9 @@ case "$WPAI199C_APP_PASSWORD" in *[!a-f0-9]*|"") exit 1 ;; esac
 if command -v mariadb >/dev/null 2>&1; then db_client=mariadb; else db_client=mysql; fi
 root_password=${MARIADB_ROOT_PASSWORD:-${MYSQL_ROOT_PASSWORD:-}}
 test -n "$root_password"
-metadata_grant=''
-if [ "$WPAI199C_ENGINE" = mariadb ]; then
-    # MariaDB dictionary identity/FK views require PROCESS (read-only metadata).
-    # MySQL INNODB_FOREIGN does not, so its account retains global USAGE only.
-    metadata_grant="GRANT PROCESS ON *.* TO 'wpai_admin13'@'%';"
-fi
+# Both native InnoDB dictionary/FK views require PROCESS metadata visibility.
+# This grants no third-schema data/DDL authority; verify those denials below.
+metadata_grant="GRANT PROCESS ON *.* TO 'wpai_admin13'@'%';"
 MYSQL_PWD="$root_password" "$db_client" --protocol=socket --user=root --batch <<SQL
 CREATE DATABASE wpai_admin13_restore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE wpai_admin13_denied CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -71,7 +68,11 @@ DBBOOT
         $fk_readable = $fk_readable && "" === $wpdb->last_error;
     }
     $wpdb->suppress_errors($prior);
-    if (!$denied || !$read_denied || !$drop_denied || !$fk_readable) { throw new RuntimeException("The completion app account scope or native metadata prerequisite is incorrect."); }
+    if (!$denied || !$read_denied || !$drop_denied || !$fk_readable) {
+        throw new RuntimeException("The completion app account scope or native metadata prerequisite is incorrect: " . json_encode(array(
+            "create_denied"=>$denied,"read_denied"=>$read_denied,"drop_denied"=>$drop_denied,"fk_metadata_readable"=>$fk_readable
+        ), JSON_THROW_ON_ERROR));
+    }
     echo "Verified limited app account: source plus approved restore; third schema denied.\n";
     ' --user=1 --allow-root
     wpai199c_wp=("${compose[@]}" run --rm --user=33:33

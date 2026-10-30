@@ -84,15 +84,48 @@ try {
 	$blocked = $execute( 'truncate_table' );
 	$assert( 'native_error' === $blocked['receipt']['result']['native']['outcome'] && '1' === (string) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Database_Connection::quote( $table ) ), 'Inbound FK veto was called applied or disabled.' );
 	$wpdb->query( 'DROP TABLE ' . Database_Connection::quote( $child ) );
-	$execute( 'rename_column', array( 'name' => 'id', 'new_name' => 'row_id' ) );
+	$key_column = 'id';
+	$unproved_rename = static function ( array $operation, $suffix ) use ( $schema, $ok, $assert, $describe, $wpdb, &$table, &$key_column, $version, $nonce ) {
+		$before = $describe( $table );
+		$ddl_before = $wpdb->get_var( 'SHOW CREATE TABLE ' . Database_Connection::quote( $table ), 1 );
+		$rows_sql = 'SELECT ' . Database_Connection::quote( $key_column ) . ',HEX(body) AS body FROM ' . Database_Connection::quote( $table ) . ' ORDER BY ' . Database_Connection::quote( $key_column ) . ' LIMIT 2';
+		$rows_before = $wpdb->get_results( $rows_sql, ARRAY_A );
+		$operation_id = 'schema-unproved-' . $suffix . '-' . $nonce;
+		$rename = $schema( array( 'action' => 'execute', 'operation_id' => $operation_id,
+			'operation' => array_merge( array( 'table' => $table, 'expected_schema_hash' => $before['schema_hash'] ), $operation ) ) );
+		$details = is_wp_error( $rename ) ? $rename->get_error_data() : null;
+		$assert( is_wp_error( $rename ) && 'database_schema_exclusive_ddl_required' === $rename->get_error_code() &&
+			is_array( $details ) && 'unproven_engine_specific_rename_fence' === ( $details['precondition'] ?? null ) &&
+			$version === ( $details['native_version'] ?? null ) && 'observed_not_atomic' === ( $details['precondition_strength'] ?? null ) &&
+			! isset( $details['native'] ) && ! isset( $details['outcome'] ), 'Unqualified native rename did not report its exact pre-dispatch fence prerequisite.' );
+		$after = $describe( $table );
+		$assert( is_string( $ddl_before ) && '' !== $ddl_before && $before['schema_hash'] === $after['schema_hash'] &&
+			$ddl_before === $wpdb->get_var( 'SHOW CREATE TABLE ' . Database_Connection::quote( $table ), 1 ) &&
+			is_array( $rows_before ) && count( $rows_before ) === 1 && $rows_before === $wpdb->get_results( $rows_sql, ARRAY_A ),
+			'Unqualified native rename changed the exact target definition or fixture row bytes.' );
+		$recovered = $ok( $schema( array( 'action' => 'recover', 'operation_id' => $operation_id ) ), 'Cannot inspect unqualified rename journal history' );
+		$assert( 'not_recorded' === ( $recovered['status'] ?? null ) && true === ( $recovered['absence_is_not_reexecution_authority'] ?? null ),
+			'Unqualified native rename reserved or armed a journal, or claimed absence authorized resend.' );
+		echo 'WPAI199C_RENAME_PREREQUISITE=' . json_encode( array( 'action' => $operation['action'], 'native_version' => $version,
+			'precondition' => $details['precondition'], 'target_unchanged' => true, 'journal' => 'not_recorded' ), JSON_THROW_ON_ERROR ) . "\n";
+	};
+	if ( $mariadb && 1 === preg_match( '/^12\.3\./', $version ) ) {
+		// CI MariaDB 12.3 has no two-session fence qualification. Keep the product gate
+		// and positively verify its exact pre-effect compatibility contract.
+		$unproved_rename( array( 'action' => 'rename_column', 'name' => 'id', 'new_name' => 'row_id' ), 'column' );
+	} else {
+		$column_renamed = $execute( 'rename_column', array( 'name' => 'id', 'new_name' => 'row_id' ) );
+		$assert( 'acknowledged' === $column_renamed['receipt']['result']['native']['outcome'] &&
+			'owned_write_lock_definition_and_complete_fk_checks' === ( $column_renamed['receipt']['result']['native']['rename_fence'] ?? null ),
+			'Qualified native column rename lost its acknowledged owned fence.' );
+		$key_column = 'row_id';
+	}
 	if ( ! $mariadb ) {
 		$renamed = $execute( 'rename_table', array( 'new_name' => $destination, 'expected_destination_absent' => true ) );
 		$assert( 'acknowledged' === $renamed['receipt']['result']['native']['outcome'], 'Native table rename fence failed.' );
 		$table = $destination;
 	} else {
-		$before = $describe( $table );
-		$rename = $schema( array( 'action' => 'execute', 'operation_id' => 'schema-table-rename-' . $nonce, 'operation' => array( 'action' => 'rename_table', 'table' => $table, 'expected_schema_hash' => $before['schema_hash'], 'new_name' => $destination, 'expected_destination_absent' => true ) ) );
-		$assert( is_wp_error( $rename ) && 'database_schema_exclusive_ddl_required' === $rename->get_error_code(), 'Unproved MariaDB table rename claimed a retained fence.' );
+		$unproved_rename( array( 'action' => 'rename_table', 'new_name' => $destination, 'expected_destination_absent' => true ), 'table' );
 	}
 	$execute( 'truncate_table' );
 	$assert( '0' === (string) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Database_Connection::quote( $table ) ), 'Acknowledged truncate retained rows.' );
@@ -141,16 +174,16 @@ try {
 		$executed['receipt'] === $after_disposal['receipt'], 'Result disposal altered the retained SQL effect receipt.' );
 
 	// A native DML effect makes accidental redispatch independently observable.
-	$assert( 1 === $wpdb->query( 'INSERT INTO ' . Database_Connection::quote( $table ) . " (row_id,body) VALUES (7,X'00')" ), 'Cannot seed the private no-redispatch row.' );
+	$assert( 1 === $wpdb->query( 'INSERT INTO ' . Database_Connection::quote( $table ) . ' (' . Database_Connection::quote( $key_column ) . ",body) VALUES (7,X'00')" ), 'Cannot seed the private no-redispatch row.' );
 	$mutation = array( 'action' => 'prepare', 'operation_id' => 'sql-disposal-' . $nonce, 'acknowledge_native_account_scope' => true,
-		'statement_base64' => base64_encode( 'UPDATE ' . Database_Connection::quote( $table ) . " SET body=CONCAT(body,X'61') WHERE row_id=7" ),
+		'statement_base64' => base64_encode( 'UPDATE ' . Database_Connection::quote( $table ) . " SET body=CONCAT(body,X'61') WHERE " . Database_Connection::quote( $key_column ) . '=7' ),
 		'parameters' => array(), 'max_result_bytes' => 4096 );
 	$mutation_prepared = $ok( $sql( $mutation ), 'Native disposal mutation preparation failed' );
 	$mutation_run = array_replace( $mutation, array( 'action' => 'execute', 'preparation_token' => $mutation_prepared['preparation_token'] ) );
 	$mutated = $ok( $sql( $mutation_run ), 'Native disposal mutation execute failed' );
 	$results[] = array( $mutation['operation_id'], $mutated['private_result']['id'] );
 	$assert( 'acknowledged' === $mutated['receipt']['result']['native']['outcome'] &&
-		'0061' === $wpdb->get_var( 'SELECT HEX(body) FROM ' . Database_Connection::quote( $table ) . ' WHERE row_id=7' ), 'The single native effect was not acknowledged with exact row bytes.' );
+		'0061' === $wpdb->get_var( 'SELECT HEX(body) FROM ' . Database_Connection::quote( $table ) . ' WHERE ' . Database_Connection::quote( $key_column ) . '=7' ), 'The single native effect was not acknowledged with exact row bytes.' );
 	$mutation_disposed = $ok( $sql( array( 'action' => 'result_release', 'operation_id' => $mutation['operation_id'], 'acknowledge_native_account_scope' => true, 'result_id' => $mutated['private_result']['id'] ) ), 'Native mutation result disposal failed' );
 	$assert( 'cancelled' === $mutation_disposed['state'] && true === $mutation_disposed['payload_released'], 'Native mutation result was not disposed.' );
 	array_pop( $results );
@@ -158,7 +191,7 @@ try {
 	$mutation_replayed = $ok( $sql( $mutation_run ), 'Native mutation historical replay failed' );
 	$assert( true === $mutation_recovered['historical'] && true === $mutation_replayed['historical'] &&
 		$mutated['operation_ref'] === $mutation_recovered['operation_ref'] && $mutated['receipt'] === $mutation_replayed['receipt'] &&
-		'0061' === $wpdb->get_var( 'SELECT HEX(body) FROM ' . Database_Connection::quote( $table ) . ' WHERE row_id=7' ), 'Recovery after result disposal resent native DML or changed its effect history.' );
+		'0061' === $wpdb->get_var( 'SELECT HEX(body) FROM ' . Database_Connection::quote( $table ) . ' WHERE ' . Database_Connection::quote( $key_column ) . '=7' ), 'Recovery after result disposal resent native DML or changed its effect history.' );
 	$execute( 'drop_table' );
 	echo 'PASS: actual typed schema/native-account SQL (' . $checks . ' checks; ' . $version . ").\n";
 } finally {

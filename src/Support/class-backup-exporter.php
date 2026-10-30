@@ -148,60 +148,70 @@ final class Backup_Exporter {
 			$this->rewind( $state );
 			$checkpoint = Backup_Operation::checked( $store->checkpoint( $id, $state, $checkpoint['revision'] ) );
 		}
-		$deadline = microtime( true ) + $this->policy['step_seconds'];
-		$used     = 0;
-		do {
-			$record = $this->database->with_session(
-				$state['plan']['database']['session'],
-				function () use ( &$state ) {
-					return $this->next( $state );
-				}
-			);
-			if ( null !== $record ) {
-				if ( 'verify' === $state['mode'] && 'footer' !== $record['record']['type'] ) {
-					$record = null;
-				}
-			}
-			if ( null !== $record ) {
-				$record['record']['seq'] = $state['seq'];
-				$frame                   = Backup_Archive::encode( $record['record'], $record['payload'], $this->budget );
-				$already_sealed          = false;
-				if ( 'footer' === $record['record']['type'] ) {
-					$status = Backup_Operation::checked( $store->status( $id ) );
-					if ( 'verified' === $status['state'] ) {
-						$expected_chain = Backup_Archive::fold( $state['chain'], $frame );
-						if ( $status['total'] !== $state['offset'] + strlen( $frame ) || ! hash_equals( $expected_chain, $status['sha256'] ) ) {
-							throw new \RuntimeException( 'backup_archive_changed' );
+		$deadline       = microtime( true ) + $this->policy['step_seconds'];
+		$footer_pending = false;
+		$this->database->with_session(
+			$state['plan']['database']['session'],
+			function () use ( $id, $store, &$state, &$checkpoint, $deadline, &$footer_pending ) {
+				$used = 0;
+				do {
+					$record = $this->next( $state );
+					if ( null !== $record ) {
+						if ( 'verify' === $state['mode'] && 'footer' !== $record['record']['type'] ) {
+							$record = null;
 						}
-						$matched = Backup_Operation::checked(
-							$store->with_administration_source(
-								$id,
-								static function ( $source ) use ( $state, $frame ) {
-									return 0 === fseek( $source['stream'], $state['offset'] ) && fread( $source['stream'], strlen( $frame ) ) === $frame;
-								}
-							)
-						);
-						if ( true !== $matched ) {
-							throw new \RuntimeException( 'backup_archive_changed' );
-						}
-						$already_sealed = true;
 					}
-				}
-				if ( ! $already_sealed ) {
-					Backup_Operation::checked( $store->append_verified_frame( $id, $state['offset'], $frame, hash( 'sha256', $frame ) ) );
-				}
-				$state['offset'] += strlen( $frame );
-				$state['chain']   = Backup_Archive::fold( $state['chain'], $frame );
-				++$state['seq'];
-				$used += strlen( $frame );
-				if ( 'footer' === $record['record']['type'] ) {
-					Backup_Operation::checked( $store->seal_administration_stream( $id, $state['offset'], $state['chain'] ) );
-					$state['status'] = 'sealed';
-					$state['phase']  = 'done';
-				}
+					if ( null !== $record ) {
+						$record['record']['seq'] = $state['seq'];
+						$frame                   = Backup_Archive::encode( $record['record'], $record['payload'], $this->budget );
+						$already_sealed          = false;
+						if ( 'footer' === $record['record']['type'] ) {
+							$status = Backup_Operation::checked( $store->status( $id ) );
+							if ( 'verified' === $status['state'] ) {
+								$expected_chain = Backup_Archive::fold( $state['chain'], $frame );
+								if ( $status['total'] !== $state['offset'] + strlen( $frame ) || ! hash_equals( $expected_chain, $status['sha256'] ) ) {
+									throw new \RuntimeException( 'backup_archive_changed' );
+								}
+								$matched = Backup_Operation::checked(
+									$store->with_administration_source(
+										$id,
+										static function ( $source ) use ( $state, $frame ) {
+											return 0 === fseek( $source['stream'], $state['offset'] ) && fread( $source['stream'], strlen( $frame ) ) === $frame;
+										}
+									)
+								);
+								if ( true !== $matched ) {
+									throw new \RuntimeException( 'backup_archive_changed' );
+								}
+								$already_sealed = true;
+							}
+						}
+						if ( ! $already_sealed ) {
+							Backup_Operation::checked( $store->append_verified_frame( $id, $state['offset'], $frame, hash( 'sha256', $frame ) ) );
+						}
+						$state['offset'] += strlen( $frame );
+						$state['chain']   = Backup_Archive::fold( $state['chain'], $frame );
+						++$state['seq'];
+						$used += strlen( $frame );
+						if ( 'footer' === $record['record']['type'] ) {
+							// Keep the durable cursor before this footer until native
+							// session restoration succeeds. Existing footer replay and
+							// open-stream recovery can then verify an interrupted send.
+							$footer_pending = true;
+							break;
+						}
+					}
+					$checkpoint = Backup_Operation::checked( $store->checkpoint( $id, $state, $checkpoint['revision'] ) );
+				} while ( 'sealed' !== $state['status'] && $used < $this->policy['step_bytes'] && microtime( true ) < $deadline );
 			}
-			$checkpoint = Backup_Operation::checked( $store->checkpoint( $id, $state, $checkpoint['revision'] ) );
-		} while ( 'sealed' !== $state['status'] && $used < $this->policy['step_bytes'] && microtime( true ) < $deadline );
+		);
+		if ( $footer_pending ) {
+			// A complete seal/receipt requires acknowledged native cleanup.
+			Backup_Operation::checked( $store->seal_administration_stream( $id, $state['offset'], $state['chain'] ) );
+			$state['status'] = 'sealed';
+			$state['phase']  = 'done';
+			Backup_Operation::checked( $store->checkpoint( $id, $state, $checkpoint['revision'] ) );
+		}
 		return $this->receipt( $id, $state );
 	}
 

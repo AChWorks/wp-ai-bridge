@@ -125,110 +125,127 @@ final class Backup_Restore {
 		if ( in_array( $state['status'], array( 'ready', 'verified' ), true ) ) {
 			return $this->receipt( $id, $state );
 		}
+		$preflight = 'preflighting' === $state['status'] && 'preflight' === $state['phase'];
+		if ( ! $preflight && ( ! in_array( $state['status'], array( 'restoring', 'verifying_restore' ), true ) ||
+			! in_array( $state['phase'], array( 'wrapper', 'apply', 'constraints', 'verify_database', 'verify_files' ), true ) ||
+			! isset( $state['header']['plan']['database']['session'] ) ) ) {
+			throw new \RuntimeException( 'backup_restore_checkpoint_invalid' );
+		}
 		$deadline = microtime( true ) + $this->policy['step_seconds'];
-		$used     = 0;
-		do {
-			if ( 'wrapper' === $state['phase'] ) {
-				$this->committed(
-					$this->filesystem->mkdir(
-						$state['target_root'],
-						$state['pending']['components'],
-						'backup_restore',
-						$state['pending']['parent'],
-						$this->operation( $state, 'wrapper' ),
-						0700
-					)
-				);
-				unset( $state['pending'] );
-				$state['phase'] = 'apply';
-			} elseif ( 'constraints' === $state['phase'] ) {
-				$this->constraints( $state );
-			} elseif ( 'verify_database' === $state['phase'] ) {
-				$this->verify_database( $state );
-			} else {
-				$archive = $this->store( $state['archive_purpose'] );
-				$work    = Backup_Operation::checked(
-					$archive->with_administration_source(
-						$state['archive_id'],
-						function ( $source ) use ( &$state, $id ) {
-							if ( $source['bytes'] !== $state['archive']['bytes'] || $source['sha256'] !== $state['archive']['sha256'] ||
-							0 !== fseek( $source['stream'], $state['offset'] ) ) {
-								throw new \RuntimeException( 'backup_archive_changed' );
-							}
-							$frame = Backup_Archive::read( $source['stream'], $this->budget );
-							if ( null === $frame || $frame['record']['seq'] !== $state['seq'] ) {
-								throw new \RuntimeException( 'backup_archive_sequence' );
-							}
-							$next = true;
-							if ( 'preflight' === $state['phase'] ) {
-								$this->validate( $state, $frame['record'], $frame['payload'], $source['stream'] );
-							} elseif ( 'apply' === $state['phase'] ) {
-								$next = $this->database->with_session(
-									$state['header']['plan']['database']['session'],
-									function () use ( &$state, $frame, $id ) {
-										return $this->apply( $state, $frame['record'], $frame['payload'], $id );
-									}
-								);
-							} elseif ( 'verify_files' === $state['phase'] ) {
-								$next = $this->verify_file_record( $state, $frame['record'], $frame['payload'] );
-							} else {
-								throw new \RuntimeException( 'backup_restore_checkpoint_invalid' );
-							}
-							if ( $next ) {
-								$state['offset'] += strlen( $frame['frame'] );
-								$state['chain']   = Backup_Archive::fold( $state['chain'], $frame['frame'] );
-								++$state['seq'];
-								if ( 'footer' === $frame['record']['type'] ) {
-									if ( $state['offset'] !== $source['bytes'] || ! hash_equals( $state['chain'], $source['sha256'] ) ) {
-										throw new \RuntimeException( 'backup_archive_integrity' );
-									}
-									if ( 'preflight' === $state['phase'] ) {
-										$state['status']    = 'ready';
-										$state['plan_hash'] = hash(
-											'sha256',
-											json_encode(
-												array(
-													$state['archive'],
-													$state['target_schema'],
-													$state['target_root'],
-													$state['target_root_identity'],
-													$state['origin'],
-													$state['configuration_revision'],
-													$state['header']['plan']['tables'],
-													$state['header']['plan']['roots'],
+		$advance  = function () use ( $id, $store, &$state, &$checkpoint, $deadline ) {
+			$used = 0;
+			do {
+				if ( 'wrapper' === $state['phase'] ) {
+					$this->committed(
+						$this->filesystem->mkdir(
+							$state['target_root'],
+							$state['pending']['components'],
+							'backup_restore',
+							$state['pending']['parent'],
+							$this->operation( $state, 'wrapper' ),
+							0700
+						)
+					);
+					unset( $state['pending'] );
+					$state['phase'] = 'apply';
+				} elseif ( 'constraints' === $state['phase'] ) {
+					$this->constraints( $state );
+				} elseif ( 'verify_database' === $state['phase'] ) {
+					$this->verify_database( $state );
+				} else {
+					$archive = $this->store( $state['archive_purpose'] );
+					$work    = Backup_Operation::checked(
+						$archive->with_administration_source(
+							$state['archive_id'],
+							function ( $source ) use ( &$state, $id ) {
+								if ( $source['bytes'] !== $state['archive']['bytes'] || $source['sha256'] !== $state['archive']['sha256'] ||
+								0 !== fseek( $source['stream'], $state['offset'] ) ) {
+									throw new \RuntimeException( 'backup_archive_changed' );
+								}
+								$frame = Backup_Archive::read( $source['stream'], $this->budget );
+								if ( null === $frame || $frame['record']['seq'] !== $state['seq'] ) {
+									throw new \RuntimeException( 'backup_archive_sequence' );
+								}
+								$next = true;
+								if ( 'preflight' === $state['phase'] ) {
+									$this->validate( $state, $frame['record'], $frame['payload'], $source['stream'] );
+								} elseif ( 'apply' === $state['phase'] ) {
+									$next = $this->apply( $state, $frame['record'], $frame['payload'], $id );
+								} elseif ( 'verify_files' === $state['phase'] ) {
+									$next = $this->verify_file_record( $state, $frame['record'], $frame['payload'] );
+								} else {
+									throw new \RuntimeException( 'backup_restore_checkpoint_invalid' );
+								}
+								if ( $next ) {
+									$state['offset'] += strlen( $frame['frame'] );
+									$state['chain']   = Backup_Archive::fold( $state['chain'], $frame['frame'] );
+									++$state['seq'];
+									if ( 'footer' === $frame['record']['type'] ) {
+										if ( $state['offset'] !== $source['bytes'] || ! hash_equals( $state['chain'], $source['sha256'] ) ) {
+											throw new \RuntimeException( 'backup_archive_integrity' );
+										}
+										if ( 'preflight' === $state['phase'] ) {
+											$state['status']    = 'ready';
+											$state['plan_hash'] = hash(
+												'sha256',
+												json_encode(
+													array(
+														$state['archive'],
+														$state['target_schema'],
+														$state['target_root'],
+														$state['target_root_identity'],
+														$state['origin'],
+														$state['configuration_revision'],
+														$state['header']['plan']['tables'],
+														$state['header']['plan']['roots'],
+													)
 												)
-											)
-										);
-									} elseif ( 'apply' === $state['phase'] ) {
-										$state['phase']            = 'constraints';
-										$state['constraint_table'] = 0;
-										$state['constraint_index'] = 0;
-									} else {
-										$this->verify_wrapper( $state );
-										$state['status'] = 'verified';
-										$state['phase']  = 'done';
+											);
+										} elseif ( 'apply' === $state['phase'] ) {
+											$state['phase']            = 'constraints';
+											$state['constraint_table'] = 0;
+											$state['constraint_index'] = 0;
+										} else {
+											$this->verify_wrapper( $state );
+											$state['status'] = 'verified';
+											$state['phase']  = 'done';
+										}
 									}
 								}
+								return strlen( $frame['frame'] );
 							}
-							return strlen( $frame['frame'] );
-						}
-					)
-				);
-				$used   += $work;
-			}
-			$checkpoint = Backup_Operation::checked( $store->checkpoint( $id, $state, $checkpoint['revision'] ) );
-			// Release staged bytes only after the cursor which no longer needs
-			// them is durable. A crash can repeat disposable cleanup, not DML.
-			if ( isset( $state['release_stage'] ) ) {
-				$released = $this->store( 'backup_input' )->cancel( $state['release_stage'] );
-				if ( ! is_wp_error( $released ) || in_array( $released->get_error_code(), array( 'transfer_not_found', 'transfer_unavailable' ), true ) ) {
-					unset( $state['release_stage'] );
-					$checkpoint = Backup_Operation::checked( $store->checkpoint( $id, $state, $checkpoint['revision'] ) );
-				} else {
-					throw new \RuntimeException( 'backup_stage_cleanup_pending' );
+						)
+					);
+					$used   += $work;
 				}
-			}
-		} while ( ! in_array( $state['status'], array( 'ready', 'verified' ), true ) && $used < $this->policy['step_bytes'] && microtime( true ) < $deadline );
+				if ( 'verified' === $state['status'] ) {
+					// Native cleanup must succeed before a complete receipt is durable.
+					break;
+				}
+				$checkpoint = Backup_Operation::checked( $store->checkpoint( $id, $state, $checkpoint['revision'] ) );
+				// Release staged bytes only after the cursor which no longer needs
+				// them is durable. A crash can repeat disposable cleanup, not DML.
+				if ( isset( $state['release_stage'] ) ) {
+					$released = $this->store( 'backup_input' )->cancel( $state['release_stage'] );
+					if ( ! is_wp_error( $released ) || in_array( $released->get_error_code(), array( 'transfer_not_found', 'transfer_unavailable' ), true ) ) {
+						unset( $state['release_stage'] );
+						$checkpoint = Backup_Operation::checked( $store->checkpoint( $id, $state, $checkpoint['revision'] ) );
+					} else {
+						throw new \RuntimeException( 'backup_stage_cleanup_pending' );
+					}
+				}
+			} while ( ! in_array( $state['status'], array( 'ready', 'verified' ), true ) && $used < $this->policy['step_bytes'] && microtime( true ) < $deadline );
+		};
+		if ( $preflight ) {
+			// Imported settings have no native authority before complete preflight
+			// and the separate ready-plan approval in begin().
+			$advance();
+		} else {
+			$this->database->with_session( $state['header']['plan']['database']['session'], $advance );
+		}
+		if ( 'verified' === $state['status'] ) {
+			Backup_Operation::checked( $store->checkpoint( $id, $state, $checkpoint['revision'] ) );
+		}
 		return $this->receipt( $id, $state );
 	}
 
@@ -691,15 +708,10 @@ final class Backup_Restore {
 			$s['constraint_index'] = 0;
 			return;
 		}
-		$this->database->with_session(
-			$s['header']['plan']['database']['session'],
-			function () use ( $s, $schema, $foreign ) {
-				return $this->database->ddl(
-					Backup_Schema::add_foreign( $foreign, $s['target_schema'], $schema['table'] ),
-					$this->operation( $s, 'foreign:' . $s['constraint_table'] . ':' . $s['constraint_index'] ),
-					$s['origin']
-				);
-			}
+		$this->database->ddl(
+			Backup_Schema::add_foreign( $foreign, $s['target_schema'], $schema['table'] ),
+			$this->operation( $s, 'foreign:' . $s['constraint_table'] . ':' . $s['constraint_index'] ),
+			$s['origin']
 		);
 		++$s['constraint_index'];
 	}
@@ -720,28 +732,23 @@ final class Backup_Restore {
 		}
 		$table64 = $tables[ $s['verify_table'] ];
 		$schema  = Backup_Exporter::unpack_schema( $s['schemas'][ $table64 ] );
-		$this->database->with_session(
-			$s['header']['plan']['database']['session'],
-			function () use ( &$s, $table64, $schema ) {
-				if ( ! $s['verify_schema_started'] ) {
-					$current = $this->database->schema( $schema['table'], $s['target_schema'] );
-					if ( ! hash_equals( $schema['hash'], $current['hash'] ) ) {
-						throw new \RuntimeException( 'backup_restore_schema_mismatch' );
-					}
-					$s['verify_db']             = hash( 'sha256', $s['verify_db'] . ':table:' . $table64 . ':' . $schema['hash'] );
-					$s['verify_schema_started'] = true;
-				}
-				$group = $this->database->next_group( $schema, $s['verify_after'], $s['target_schema'] );
-				if ( null === $group ) {
-					++$s['verify_table'];
-					$s['verify_after']          = '';
-					$s['verify_schema_started'] = false;
-				} else {
-					$s['verify_after'] = $group['digest'];
-					$s['verify_db']    = hash( 'sha256', $s['verify_db'] . ':row:' . $group['digest'] . ':' . $group['multiplicity'] );
-				}
+		if ( ! $s['verify_schema_started'] ) {
+			$current = $this->database->schema( $schema['table'], $s['target_schema'] );
+			if ( ! hash_equals( $schema['hash'], $current['hash'] ) ) {
+				throw new \RuntimeException( 'backup_restore_schema_mismatch' );
 			}
-		);
+			$s['verify_db']             = hash( 'sha256', $s['verify_db'] . ':table:' . $table64 . ':' . $schema['hash'] );
+			$s['verify_schema_started'] = true;
+		}
+		$group = $this->database->next_group( $schema, $s['verify_after'], $s['target_schema'] );
+		if ( null === $group ) {
+			++$s['verify_table'];
+			$s['verify_after']          = '';
+			$s['verify_schema_started'] = false;
+		} else {
+			$s['verify_after'] = $group['digest'];
+			$s['verify_db']    = hash( 'sha256', $s['verify_db'] . ':row:' . $group['digest'] . ':' . $group['multiplicity'] );
+		}
 	}
 
 	private function verify_file_record( array &$s, array $r, $payload ) {
