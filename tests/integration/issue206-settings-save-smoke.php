@@ -119,6 +119,18 @@ $post = static function ( array $fields ) use ( $controller, $assert ) {
 };
 
 try {
+	// Core runs menu access checks before admin_init. A hidden legacy submenu
+	// must redirect during menu construction or an administrator gets HTTP403.
+	$legacy_redirect = false;
+	foreach ( $wp_filter['admin_menu']->callbacks ?? array() as $priority => $callbacks ) {
+		foreach ( $callbacks as $hook ) {
+			$callback = $hook['function'];
+			if ( is_array( $callback ) && $callback[0] instanceof \WP_AI_Bridge\Admin\Administration_Page && 'redirect_legacy' === $callback[1] ) {
+				$legacy_redirect = $priority > 20 && false === has_action( 'admin_init', $callback );
+			}
+		}
+	}
+	$assert( $legacy_redirect, 'Legacy bookmarks must redirect after registration and before native Core menu access checks.' );
 	$_SERVER['REQUEST_METHOD'] = 'POST';
 	$settings = new Settings();
 	$settings->register();

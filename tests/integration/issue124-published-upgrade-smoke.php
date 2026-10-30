@@ -14,7 +14,14 @@ use WP_AI_Bridge\Auth\Approved_OAuth_Clients;
 use WP_AI_Bridge\Auth\Client_Assertion_Validator;
 use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Auth\OAuth_Store;
+use WP_AI_Bridge\Support\Administration_Configuration;
+use WP_AI_Bridge\Support\External_Package_Limits;
+use WP_AI_Bridge\Support\Native_Option_Access;
+use WP_AI_Bridge\Support\Operation_Content_Limits;
+use WP_AI_Bridge\Support\Payload_Settings;
+use WP_AI_Bridge\Support\REST_Invocation_Input_Limits;
 use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Transfer_Settings;
 use WP_AI_Bridge\Support\Workspace_Limits;
 use WP_AI_Bridge\Support\Operation_Receipt_Limits;
 use WP_AI_Bridge\Workspace\Store;
@@ -23,6 +30,45 @@ function wpai124_assert( $condition, $message ) {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message );
 	}
+}
+
+/**
+ * Preserve native option values separately from Settings::all()'s effective
+ * grants. Explicit defaults keep absent rows distinct from registered defaults.
+ *
+ * @return array<string,mixed> Observed option values, with strict array types/order.
+ */
+function wpai124_stored_settings() {
+	$values = array();
+	foreach ( array(
+		Settings::OPTION_NAME,
+		Settings::DATABASE_OPTION_NAME,
+		Settings::ADMINISTRATION_OPTION_NAME,
+		Administration_Configuration::OPTION_NAME,
+		Payload_Settings::OPTION_NAME,
+		Transfer_Settings::OPTION_NAME,
+		Workspace_Limits::OPTION_NAME,
+		Operation_Receipt_Limits::OPTION_NAME,
+		Operation_Content_Limits::OPTION_NAME,
+		REST_Invocation_Input_Limits::OPTION_NAME,
+		External_Package_Limits::OPTION_NAME,
+	) as $name ) {
+		$values[ $name ] = get_option( $name, null );
+	}
+	return $values;
+}
+
+/** @return array Current network identity and independently stored consent. */
+function wpai124_stored_network_settings() {
+	$network = get_current_network_id();
+	$values  = array();
+	foreach ( array( Native_Option_Access::NETWORK_OPTION_NAME, Native_Option_Access::NETWORK_WRITE_OPTION_NAME ) as $name ) {
+		$values[ $name ] = is_multisite() ? get_network_option( $network, $name, null ) : null;
+	}
+	return array(
+		'network_id' => $network,
+		'values'     => $values,
+	);
 }
 
 function wpai124_b64( $value ) {
@@ -138,11 +184,22 @@ $workspace = new Store();
 if ( 'before' === $phase ) {
 	wpai124_assert( '0.7.0' === WP_AI_BRIDGE_VERSION, 'Published baseline plugin version was not 0.7.0.' );
 	wpai124_assert( false === get_option( $state_option, false ), 'Published-upgrade test state unexpectedly exists.' );
-	$old_settings = $settings->defaults();
+	$old_settings = $settings->sanitize( $settings->defaults() );
 	$old_settings[ Settings::GROUP_BUILDER_WRITE ] = 1;
 	$old_settings[ Settings::GROUP_NATIVE_ABILITIES ] = 1;
 	update_option( Settings::OPTION_NAME, $old_settings, false );
-	wpai124_assert( $settings->all() === $old_settings, 'Published baseline Bridge settings were not persisted.' );
+	wpai124_assert( get_option( Settings::OPTION_NAME ) === $old_settings, 'Published baseline ordinary Bridge settings were not persisted exactly.' );
+	// v0.7.0 already excludes protected grants from the ordinary row and adds
+	// both independent native network consents to its effective settings view.
+	$old_effective_settings = array_replace(
+		$settings->defaults(),
+		$old_settings,
+		array(
+			Settings::GROUP_NATIVE_NETWORK_READ  => 0,
+			Settings::GROUP_NATIVE_NETWORK_WRITE => 0,
+		)
+	);
+	wpai124_assert( $settings->all() === $old_effective_settings, 'Published baseline effective grants differ from the explicitly seeded ordinary grants and disabled protected defaults.' );
 
 	$approved = $registry->sanitize( array( $client_id ) );
 	wpai124_assert( array( $client_id ) === $approved, 'Published baseline did not accept the fixture OAuth client ID.' );
@@ -197,6 +254,9 @@ if ( 'before' === $phase ) {
 		'baseline'            => '0.7.0',
 		'wordpress_user'      => get_current_user_id(),
 		'settings'            => $old_settings,
+		'effective_settings'  => $old_effective_settings,
+		'stored_settings'     => wpai124_stored_settings(),
+		'network_settings'    => wpai124_stored_network_settings(),
 		'client_id'           => $client_id,
 		'client_revision'     => $revision,
 		'instance_id'         => $oauth_store->instance_id(),
@@ -224,6 +284,10 @@ wpai124_assert( false !== $fixture, 'Published v0.7.0 continuity evidence is abs
 wpai124_assert( is_array( $fixture ) && '0.7.0' === ( $fixture['baseline'] ?? '' ), 'Published baseline continuity data is invalid.' );
 wpai124_assert( (int) $fixture['wordpress_user'] === get_current_user_id(), 'Upgraded WordPress principal changed.' );
 wpai124_assert( $fixture['settings'] === get_option( Settings::OPTION_NAME ), 'Stored canonical Bridge delegation settings were changed on upgrade.' );
+wpai124_assert( isset( $fixture['effective_settings'], $fixture['stored_settings'], $fixture['network_settings'] ), 'Published baseline independent settings continuity evidence is absent.' );
+wpai124_assert( $fixture['effective_settings'] === $settings->all(), 'Published baseline effective grants changed on upgrade.' );
+wpai124_assert( wpai124_stored_settings() === $fixture['stored_settings'], 'An independent native settings, protected grant, scope or budget option changed on upgrade.' );
+wpai124_assert( wpai124_stored_network_settings() === $fixture['network_settings'], 'Current network identity or independently stored native consent changed on upgrade.' );
 $workspace_limits = ( new Workspace_Limits() )->all();
 wpai124_assert( Workspace_Limits::DEFAULT_DOCUMENTS === $workspace_limits[ Workspace_Limits::DOCUMENTS_KEY ], 'Candidate upgrade changed the default document admission limit.' );
 wpai124_assert( Workspace_Limits::DEFAULT_TASKS === $workspace_limits[ Workspace_Limits::TASKS_KEY ], 'Candidate upgrade changed the default task admission limit.' );
@@ -231,7 +295,7 @@ wpai124_assert( Operation_Receipt_Limits::DEFAULT_RECEIPTS === ( new Operation_R
 wpai124_assert( false === $settings->is_enabled( Settings::GROUP_REST_DISCOVERY ), 'REST Discovery was silently enabled after upgrade.' );
 wpai124_assert( false === $settings->is_enabled( Settings::GROUP_REST_INVOCATION ), 'REST Invocation was silently enabled after upgrade.' );
 foreach ( array_merge( Settings::DATABASE_GROUPS, Settings::ADMINISTRATION_GROUPS, array( Settings::GROUP_NATIVE_OPTIONS_READ, Settings::GROUP_NATIVE_OPTIONS_WRITE, Settings::GROUP_NATIVE_NETWORK_READ, Settings::GROUP_NATIVE_NETWORK_WRITE ) ) as $group ) {
-	wpai124_assert( false === $settings->is_enabled( $group ), 'New protected administration grant was silently enabled on upgrade: ' . $group );
+	wpai124_assert( false === $settings->is_enabled( $group ), 'Previously disabled protected administration grant was silently enabled on upgrade: ' . $group );
 }
 $administration_configuration = ( new \WP_AI_Bridge\Support\Administration_Configuration() )->all();
 wpai124_assert( array() === $administration_configuration['roots'] && array() === $administration_configuration['restore_schemas'], 'Upgrade silently approved filesystem roots or restore schemas.' );
@@ -258,7 +322,7 @@ wpai124_assert( false !== $oauth_store->read( OAuth_Store::TYPE_REFRESH, $old_re
 
 $routes = rest_get_server()->get_routes();
 wpai124_assert( isset( $routes[ OAuth_Server::MCP_REQUEST_ROUTE ], $routes['/wp-ai-bridge/v1/oauth/token'] ), 'Official Adapter/Bridge canonical MCP or token route is missing after upgrade.' );
-wpai124_assert( wp_get_ability( 'wp-ai-bridge/rest-routes-read' ) instanceof WP_Ability, 'New bounded REST discovery is missing after upgrade.' );
+wpai124_assert( wp_get_ability( 'wp-ai-bridge/rest-routes-read' ) instanceof WP_Ability, 'Existing bounded REST discovery was lost after upgrade.' );
 wpai124_assert( wp_get_ability( 'wp-ai-bridge/rest-route-invoke' ) instanceof WP_Ability, 'Guarded REST invocation was lost after upgrade.' );
 foreach (
 	array(

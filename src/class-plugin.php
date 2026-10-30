@@ -107,7 +107,8 @@ final class Plugin {
 		add_action( 'admin_menu', array( $this->settings_page, 'register_menu' ) );
 		add_action( 'admin_menu', array( $this->settings_page, 'order_settings_submenu' ), 999 );
 		$administration_page = new Administration_Page( $this->settings );
-		add_action( 'admin_init', array( $administration_page, 'redirect_legacy' ) );
+		// Core checks hidden-page access while building the menu, before admin_init.
+		add_action( 'admin_menu', array( $administration_page, 'redirect_legacy' ), 1000 );
 		add_action( 'admin_menu', array( $administration_page, 'register_menu' ), 20 );
 		add_action( 'admin_post_wpai_administration_configuration', array( $administration_page, 'save_configuration' ) );
 		add_action( 'admin_post_wpai_workspace_export', array( $this->settings_page, 'handle_export' ) );

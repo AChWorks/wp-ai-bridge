@@ -35,7 +35,7 @@ final class Administration_Page {
 		<?php
 	}
 
-	/** Redirect old bookmarks before admin output; existing POST handlers stay independent. @return void */
+	/** Redirect old bookmarks before Core menu access checks; existing POST handlers stay independent. @return void */
 	public function redirect_legacy() {
 		if ( 'GET' === ( $_SERVER['REQUEST_METHOD'] ?? '' ) && isset( $_GET['page'] ) && self::SLUG === $_GET['page'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only legacy route.
 			if ( ! current_user_can( 'manage_options' ) ) {
