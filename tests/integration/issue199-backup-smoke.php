@@ -17,13 +17,22 @@ require_once __DIR__ . '/issue199-completion-helper.php';
 
 global $wpdb;
 wpai199c_assert( defined( 'ABSPATH' ) && $wpdb->dbh instanceof mysqli, 'Native disposable WordPress bootstrap required.' );
+wpai199c_assert( defined( 'WPAI_ADMIN13_DISPOSABLE' ) && true === WPAI_ADMIN13_DISPOSABLE, 'Explicit disposable Core bootstrap required.' );
+$expected_database = getenv( 'WPAI199C_EXPECT_DATABASE' );
+wpai199c_assert( is_string( $expected_database ) && '' !== $expected_database, 'Explicit expected disposable database is required.' );
+$database_probe = $wpdb->dbh->query( 'SELECT DATABASE()' );
+wpai199c_assert( $database_probe instanceof mysqli_result, 'Selected disposable database could not be verified.' );
+try {
+	$selected_database = $database_probe->fetch_row();
+	wpai199c_assert( is_array( $selected_database ) && is_string( $selected_database[0] ?? null ) &&
+		hash_equals( $expected_database, $selected_database[0] ), 'Selected database does not match the explicitly expected disposable database.' );
+} finally {
+	$database_probe->free();
+}
 $target_schema = getenv( 'WPAI_ADMIN13_RESTORE_SCHEMA' );
 $target_root = getenv( 'WPAI_ADMIN13_RESTORE_ROOT' );
 wpai199c_assert( is_string( $target_schema ) && preg_match( '/^wpai[a-z0-9_]+restore[a-z0-9_]*$/D', $target_schema ), 'Explicit task-owned empty restore schema required.' );
 wpai199c_assert( is_string( $target_root ) && realpath( $target_root ) === $target_root && is_dir( $target_root ) && ! is_link( $target_root ), 'Explicit task-owned nonserved restore directory required.' );
-if ( ! defined( 'WPAI_ADMIN13_DISPOSABLE' ) ) {
-	define( 'WPAI_ADMIN13_DISPOSABLE', true );
-}
 if ( ! function_exists( 'wpai199c_seed_provider' ) ) {
 	require dirname( __DIR__ ) . '/fixtures/issue199-completion-provider.php';
 }

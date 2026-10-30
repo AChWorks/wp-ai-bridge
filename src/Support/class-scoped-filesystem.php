@@ -344,14 +344,15 @@ final class Scoped_Filesystem {
 			( defined( 'WP_CONTENT_DIR' ) && Filesystem_Roots::within( $full_path, WP_CONTENT_DIR . '/themes' ) ) ||
 			Filesystem_Roots::within( $full_path, rtrim( ABSPATH, '/\\' ) . '/wp-admin' ) ||
 			Filesystem_Roots::within( $full_path, rtrim( ABSPATH, '/\\' ) . '/wp-includes' );
-		$executable = ! empty( $root['executable'] ) || $known_code ||
+		$vcs        = Filesystem_Roots::vcs_path( $full_path );
+		$executable = ! empty( $root['executable'] ) || $known_code || $vcs ||
 			preg_match( '/(?:\.(?:php[0-9]*|phtml|phar|inc|cgi|pl|py|sh|ini|shtml)|^\.htaccess|^\.user\.ini|^web\.config|^\.env)$/iD', $name );
 		if ( $executable ) {
 			$allowed = $this->roots->resolve( $root_id, $purpose, 'executable' );
 			if ( is_wp_error( $allowed ) ) {
 				return new WP_Error( 'filesystem_executable_denied', 'Executable/configuration changes require separate current code trust.' );
 			}
-			if ( 'filesystem' === $purpose ) {
+			if ( 'filesystem' === $purpose || $vcs ) {
 				$full_path   = $root['path'] . DIRECTORY_SEPARATOR . implode( DIRECTORY_SEPARATOR, $parts );
 				$plugin_path = defined( 'WP_PLUGIN_DIR' ) && Filesystem_Roots::within( $full_path, WP_PLUGIN_DIR );
 				$mu_path     = defined( 'WPMU_PLUGIN_DIR' ) && Filesystem_Roots::within( $full_path, WPMU_PLUGIN_DIR );
@@ -365,6 +366,12 @@ final class Scoped_Filesystem {
 			}
 		}
 		return $this->describe( $root, $relative, true );
+	}
+
+	/** Preflight a move source/destination before any continuation can change it. */
+	public function check_mutation( $root_id, $relative, $purpose = 'filesystem', $destructive = false ) {
+		$target = $this->mutation_target( $root_id, $relative, $purpose, $destructive );
+		return is_wp_error( $target ) ? $target : true;
 	}
 
 	/** Private same-device work area; never uses public same-directory stage names. */

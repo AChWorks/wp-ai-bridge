@@ -30,7 +30,9 @@ Recovery restores a private preimage only while the exact owned candidate remain
 
 ## Privacy and consistency boundaries
 
-The root/path layer excludes Bridge private transfer, staging, artifact, source-CAS, operation/control and version-control paths, including beneath broad roots. Symlinks, unexpected hard-linked files and special files are not followed. Backup source and restore verification fail explicitly when a required directory contains excluded entries. They never silently omit them. Private absolute paths and internal stream descriptors do not cross the public filesystem Ability boundary.
+The root/path layer excludes Bridge private transfer, staging, artifact, source-CAS, operation/control paths, including beneath broad roots. Symlinks, unexpected hard-linked files and special files are not followed. Backup source and restore verification fail explicitly when a required directory contains excluded entries. They never silently omit them. Private absolute paths and internal stream descriptors do not cross the public filesystem Ability boundary.
+
+Git and Subversion metadata are legitimate deployment data: configured sensitive filesystem reads and full-backup inventory include .git and .svn without expanding a root or silently omitting entries. Writes, deletion and moves touching those components require the root executable flag, explicit filesystem code delegation where applicable, and current native code capabilities. VCS configuration and hooks can influence later code execution, so ordinary data-write trust does not authorize those changes. Actual Bridge-private/control artifacts remain excluded even when nested beneath VCS data.
 
 Portable PHP provides pathname/opened-inode checks and advisory locks. It lacks ordinary portable fd-relative openat/O_NOFOLLOW confinement against hostile same-UID ancestor swaps. Administrators must configure roots with trusted ancestor writers; mode bits alone do not establish that trust. HTTP aliases, shared-storage routing and nonparticipating writers remain real environmental boundaries.
 

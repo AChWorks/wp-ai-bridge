@@ -125,12 +125,16 @@ final class Filesystem_Roots {
 	/** Reserved private/control artifacts never become ordinary FS/log sources. */
 	public static function protected_path( $path ) {
 		foreach ( explode( DIRECTORY_SEPARATOR, $path ) as $part ) {
-			if ( preg_match( '/^(?:wpai-transfer-|wpai-native-input-|wpai-private-artifact|wpai-source-lock-|\.ht-wpai-source-cas-|\.wpai-fs-)/D', $part ) ||
-				in_array( $part, array( '.git', '.svn' ), true ) ) {
+			if ( preg_match( '/^(?:wpai-transfer-|wpai-native-input-|wpai-private-artifact|wpai-source-lock-|\.ht-wpai-source-cas-|\.wpai-fs-)/D', $part ) ) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	/** VCS metadata is authorized data on read, executable/configuration trust on change. */
+	public static function vcs_path( $path ) {
+		return (bool) array_intersect( explode( DIRECTORY_SEPARATOR, $path ), array( '.git', '.svn' ) );
 	}
 
 	public static function served( $path ) {

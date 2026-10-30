@@ -92,7 +92,7 @@ namespace {
 	function get_current_user_id() { return $GLOBALS['fs_origin']['user']; }
 	function is_multisite() { return false; }
 	function is_super_admin() { return true; }
-	function current_user_can( $capability ) { return true; }
+	function current_user_can( $capability ) { return $GLOBALS['fs_capabilities'][ $capability ] ?? true; }
 	function wp_is_file_mod_allowed( $context ) { return true; }
 	function get_option( $key, $fallback = null ) { return $GLOBALS['fs_options'][ $key ] ?? $fallback; }
 	function get_temp_dir() { return $GLOBALS['fs_temp']; }
@@ -172,6 +172,64 @@ namespace {
 		check( is_wp_error( $gap ), 'backup never silently omits protected entries' );
 		rmdir( $fixture . '/site/uploads/wpai-transfer-private' );
 		unlink( $fixture . '/site/uploads/escape' );
+
+		// VCS deployment metadata is readable/backup eligible, with separate code trust for changes.
+		mkdir( $fixture . '/site/uploads/.git', 0755 );
+		mkdir( $fixture . '/site/uploads/.svn', 0755 );
+		file_put_contents( $fixture . '/site/uploads/.git/config', 'fixture-vcs-config' );
+		file_put_contents( $fixture . '/site/uploads/.svn/wc.db', "fixture-svn-database" );
+		$git = ok( $fs->stat( 'data', '.git/config' ), 'configured Git metadata read' );
+		$svn = ok( $fs->stat( 'data', '.svn/wc.db' ), 'configured SVN metadata read' );
+		$git_read = ok( $fs->read_window( 'data', '.git/config', 'filesystem', $git['identity'], 0, 7 ), 'Git bytes under sensitive read' );
+		check( 'fixture' === $git_read['bytes'], 'Git read is exact' );
+		$inventory = array();
+		$cursor = 0;
+		do {
+			$page = ok( $fs->iterate_entries( 'data', array(), 'backup_export', null,
+				function ( $entry ) use ( &$inventory ) { $inventory[] = $entry['components']; return true; },
+				array( 'cursor' => $cursor ) ), 'full root inventory includes VCS entries' );
+			$cursor = $page['cursor'];
+		} while ( ! $page['complete'] );
+		check( in_array( array( base64_encode( '.git' ) ), $inventory, true ) &&
+			in_array( array( base64_encode( '.svn' ) ), $inventory, true ), 'backup does not omit Git or SVN directories' );
+		foreach ( array( '.git', '.svn' ) as $vcs ) {
+			$entries = array();
+			$page = ok( $fs->iterate_entries( 'data', $vcs, 'backup_export', null,
+				function ( $entry ) use ( &$entries ) { $entries[] = $entry['components']; return true; }, array() ), 'full VCS child inventory' );
+			check( count( $entries ) === 1, 'VCS metadata file included without filtering' );
+		}
+		check( \WP_AI_Bridge\Support\Filesystem_Roots::protected_path( $fixture . '/site/uploads/.git/wpai-transfer-fixture' ), 'actual Bridge artifacts remain protected inside VCS trees' );
+		$git_directory = ok( $fs->stat( 'data', '.git' ), 'Git directory identity' );
+		$denied = $fs->mkdir( 'data', '.git/ordinary', 'filesystem', $git_directory['identity'], 'vcs-mkdir-data-0001' );
+		check( is_wp_error( $denied ) && ! is_dir( $fixture . '/site/uploads/.git/ordinary' ), 'ordinary data write cannot change Git metadata' );
+		$denied = $fs->delete( 'data', '.git/config', 'filesystem',
+			array( 'identity' => $git['identity'], 'sha256' => hash( 'sha256', 'fixture-vcs-config' ) ), 'vcs-delete-data-0001' );
+		check( is_wp_error( $denied ) && is_file( $fixture . '/site/uploads/.git/config' ), 'ordinary destructive grant cannot delete Git configuration' );
+		$vcs_operations = new \WP_AI_Bridge\Support\Filesystem_Operation( $permissions );
+		$svn_directory = ok( $fs->stat( 'data', '.svn' ), 'SVN directory identity' );
+		$denied = $vcs_operations->begin( 'data', '.svn', 'vcs-moved', true, $svn_directory['identity'], 'vcs-move-data-0001' );
+		check( is_wp_error( $denied ) && ! file_exists( $fixture . '/site/uploads/vcs-moved' ), 'moving VCS metadata checks source code trust before creating a destination' );
+		$GLOBALS['fs_config']['roots']['data']['executable'] = true;
+		$GLOBALS['fs_grants']['filesystem_executable'] = false;
+		check( is_wp_error( $fs->mkdir( 'data', '.git/no-code-consent', 'filesystem', $git_directory['identity'], 'vcs-mkdir-grant-0001' ) ), 'root executable flag does not replace the current code grant' );
+		$GLOBALS['fs_grants']['filesystem_executable'] = true;
+		$GLOBALS['fs_capabilities']['edit_plugins'] = false;
+		check( is_wp_error( $fs->mkdir( 'data', '.git/no-native-authority', 'filesystem', $git_directory['identity'], 'vcs-mkdir-native-0001' ) ), 'VCS changes retain current native code capability checks' );
+		unset( $GLOBALS['fs_capabilities']['edit_plugins'] );
+		$created = ok( $fs->mkdir( 'data', '.git/approved', 'filesystem', $git_directory['identity'], 'vcs-mkdir-code-0001' ), 'explicit code-trusted VCS directory creation' );
+		check( 'committed' === $created['outcome'], 'approved VCS creation commits' );
+		$approved = ok( $fs->stat( 'data', '.git/approved' ), 'approved VCS child identity' );
+		$removed = ok( $fs->delete( 'data', '.git/approved', 'filesystem', $approved['identity'], 'vcs-delete-code-0001' ), 'explicit code-trusted VCS deletion' );
+		check( 'committed' === $removed['outcome'], 'approved VCS deletion commits' );
+		$vcs_job = ok( $vcs_operations->begin( 'data', '.svn', 'vcs-moved', true, $svn_directory['identity'], 'vcs-move-code-0001' ), 'explicit code-trusted VCS move begins' );
+		$vcs_steps = 0;
+		do {
+			$vcs_progress = ok( $vcs_operations->step( 'data', $vcs_job['transfer_id'], true ), 'approved VCS move progression' );
+			check( ++$vcs_steps < 30, 'approved VCS move is bounded and progresses' );
+		} while ( 'committed' !== $vcs_progress['outcome'] );
+		check( ! file_exists( $fixture . '/site/uploads/.svn' ) &&
+			'fixture-svn-database' === file_get_contents( $fixture . '/site/uploads/vcs-moved/wc.db' ), 'authorized VCS move preserves exact metadata' );
+		$GLOBALS['fs_config']['roots']['data']['executable'] = false;
 
 		$factory = function ( $purpose = 'filesystem_input' ) use ( $permissions ) {
 			return \WP_AI_Bridge\Support\Private_Transfer_Session::for_administration( $permissions, $purpose,

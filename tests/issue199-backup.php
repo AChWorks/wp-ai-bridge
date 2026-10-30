@@ -52,6 +52,13 @@ $throws( static function () { Backup_Archive::encode( array( 'seq' => 0, 'type' 
 $assert( Backup_Archive::decode_name( base64_encode( "raw-\xff" ) ) === "raw-\xff", 'Exact nonUTF8 names must remain opaque.' );
 $throws( static function () { Backup_Archive::decode_name( "YQ==\n" ); }, 'Noncanonical base64 must fail.' );
 $throws( static function () { Backup_Archive::decode_name( base64_encode( "a\0b" ) ); }, 'NUL names must fail.' );
+$assert( ! Backup_Schema::valid_identifier( "wp_actual\0nul" ), 'A native identifier must reject actual byte0x00.' );
+$assert( Backup_Schema::valid_identifier( 'wp_printable\\0sequence' ), 'An ordinary backslash followed by zero must not be mistaken for a NUL byte.' );
+$assert( Backup_Schema::valid_identifier( str_repeat( 'a', 64 ) ), 'The native64 ASCII character boundary must remain valid.' );
+$assert( ! Backup_Schema::valid_identifier( str_repeat( 'a', 65 ) ), 'Native identifiers longer than64 ASCII characters must fail.' );
+$assert( Backup_Schema::valid_identifier( str_repeat( 'د', 64 ) ), 'Native64 multibyte characters must not be measured as UTF8 bytes.' );
+$assert( ! Backup_Schema::valid_identifier( str_repeat( 'د', 65 ) ), 'Native identifiers longer than64 multibyte characters must fail.' );
+$assert( ! Backup_Schema::valid_identifier( "wp_bad_\xff" ), 'Malformed UTF8 must not be counted as a valid native identifier.' );
 $assert( Backup_Operation::native_int( (string) PHP_INT_MAX ) === PHP_INT_MAX, 'Native integer boundary is supported.' );
 $throws( static function () { Backup_Operation::native_int( (string) PHP_INT_MAX . '0' ); }, 'Oversized native offsets must fail explicitly.' );
 

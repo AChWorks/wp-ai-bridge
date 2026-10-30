@@ -134,7 +134,7 @@ final class Backup_Schema {
 
 	/** Native identifiers are limited in characters, not UTF8 bytes. */
 	public static function valid_identifier( $name ) {
-		if ( ! is_string( $name ) || '' === $name || false !== strpos( $name, "\\0" ) ) {
+		if ( ! is_string( $name ) || '' === $name || false !== strpos( $name, "\0" ) ) {
 			return false;
 		}
 		$count = preg_match_all( '/./us', $name );

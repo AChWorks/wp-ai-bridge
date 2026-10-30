@@ -70,6 +70,16 @@ final class Filesystem_Operation {
 		if ( $destination === $source_parts || array_slice( $destination, 0, count( $source_parts ) ) === $source_parts ) {
 			return new WP_Error( 'filesystem_operation_recursive', 'The copy destination must be outside the source subtree.' );
 		}
+		if ( $move ) {
+			$source_access = $this->fs->check_mutation( $root_id, $source_parts, 'filesystem', true );
+			if ( is_wp_error( $source_access ) ) {
+				return $source_access;
+			}
+		}
+		$destination_access = $this->fs->check_mutation( $root_id, $destination );
+		if ( is_wp_error( $destination_access ) ) {
+			return $destination_access;
+		}
 		$request     = array(
 			'action'            => 'directory_copy',
 			'root_id'           => $root_id,
