@@ -132,6 +132,7 @@ namespace {
 			$r->getProperty( 'connection' )->setValue( $this->session_database, $native );
 			$r->getProperty( 'budget' )->setValue( $this->session_database, 1048576 );
 		}
+		public function reset_groups() { $this->session_database->reset_groups(); }
 		public function with_session( $session, $callback ) { return $this->session_database->with_session( $session, $callback ); }
 		public function assert_session( $session ) { return $this->session_database->assert_session( $session ); }
 		public function identity() { return $this->session_database->identity(); }

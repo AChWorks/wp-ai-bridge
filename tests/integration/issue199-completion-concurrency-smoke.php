@@ -252,6 +252,47 @@ try {
 		'historical_replays' => 2, 'same_byte_competitor_preserved' => true, 'candidate_inode' => $owned['ino'], 'competitor_inode' => $competitor['ino'], 'checks' => $checks,
 	), JSON_THROW_ON_ERROR ) . "\n";
 	echo "PASS: independent public filesystem race, one armed native publication, historical recovery and competing-generation refusal.\n";
+} catch ( Throwable $failure ) {
+	// Compose deletes its disposable volumes after failure. Emit only bounded
+	// task records before unwinding, while retaining every original assertion.
+	try {
+		$poll();
+		$records = array();
+		foreach ( array( 'one', 'two', 'interrupted' ) as $slot ) {
+			foreach ( array( 'ready', 'effect-ready', 'first', 'final' ) as $phase ) {
+				$name = $slot . '.' . $phase . '.json';
+				$value = $json( $name );
+				if ( null !== $value ) { $records[ $name ] = $value; }
+			}
+		}
+		$pipes = array();
+		foreach ( $children as $slot => $child ) {
+			$pipes[ $slot ] = array( 'pid' => $child['pid'], 'exit' => $child['exit'],
+				'stdout' => substr( $child['stdout'], 0, 1024 ), 'stderr' => substr( $child['stderr'], 0, 1024 ) );
+		}
+		$stats = array();
+		foreach ( array( 'private_base' => $private, 'fixture_root' => $fixture, 'race_target' => $fixture . '/race.bin' ) as $label => $path ) {
+			clearstatcache( true, $path );
+			$stat = @lstat( $path );
+			$stats[ $label ] = is_array( $stat ) ? array_intersect_key( $stat, array_fill_keys( array( 'dev', 'ino', 'mode', 'nlink', 'uid', 'gid', 'size', 'mtime', 'ctime' ), true ) ) : null;
+		}
+		$diagnostic = array( 'run' => $nonce, 'winner' => $winner ?? null, 'product_sha' => $product_sha, 'engine' => $version,
+			'parent_test_sha256' => hash_file( 'sha256', __FILE__ ), 'worker_test_sha256' => $worker_sha,
+			'effective_uid' => function_exists( 'posix_geteuid' ) ? posix_geteuid() : null,
+			'records' => $records, 'native_race' => array_slice( $events( 'race' ), 0, 4 ),
+			'native_recovery' => array_slice( $events( 'recovery' ), 0, 4 ), 'stats' => $stats, 'children' => $pipes );
+		$encoded = json_encode( $diagnostic, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE );
+		if ( strlen( $encoded ) > 16384 ) {
+			$diagnostic['records'] = array_intersect_key( $records, array_fill_keys( array( 'one.first.json', 'two.first.json', 'interrupted.first.json' ), true ) );
+			$diagnostic['children'] = array();
+			$diagnostic['truncated'] = true;
+			$encoded = json_encode( $diagnostic, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE );
+		}
+		echo strlen( $encoded ) <= 16384 ? 'WPAI199C_CONCURRENCY_FAILURE=' . $encoded . "\n" : "WPAI199C_CONCURRENCY_FAILURE=diagnostic_budget_exceeded\n";
+	} catch ( Throwable $diagnostic_failure ) {
+		echo "WPAI199C_CONCURRENCY_FAILURE=diagnostic_unavailable\n";
+	}
+	throw $failure;
 } finally {
 	try {
 		foreach ( $children as &$child ) {

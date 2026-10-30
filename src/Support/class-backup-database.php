@@ -18,6 +18,8 @@ final class Backup_Database {
 	private $connection;
 	/** @var int */
 	private $budget;
+	/** @var array One request-local metadata page; never a native cursor. */
+	private $group_page = array();
 	/** @var bool A discarded shared handle must receive no later cleanup SQL. */
 	private $session_discarded = false;
 
@@ -204,36 +206,146 @@ final class Backup_Database {
 		return 'SHA2(CONCAT(' . implode( ',', $parts ) . '),256)';
 	}
 
-	/** @param array $schema Validated schema. @param string $after Prior digest or empty. @param string|null $database Approved database. @return array|null */
-	public function next_group( array $schema, $after, $database = null ) {
-		$database     = null === $database ? $this->connection->database : $database;
-		$expression   = self::row_expression( $schema['columns'] );
-		$derived_hash = Backup_Schema::qualified( 'wpai_backup_rows', 'wpai_row_sha256' );
-		$rows         = $this->connection->run(
-			'SELECT ' . $derived_hash . ' AS digest,COUNT(*) AS multiplicity FROM (SELECT ' . $expression .
-			' AS ' . Database_Connection::quote( 'wpai_row_sha256' ) . ' FROM ' . Backup_Schema::qualified( $database, $schema['table'] ) .
-			') AS ' . Database_Connection::quote( 'wpai_backup_rows' ) . ' WHERE ' . $derived_hash . ' > ? GROUP BY ' .
-			$derived_hash . ' ORDER BY ' . $derived_hash . ' LIMIT 1',
-			array( $after ),
-			array(),
-			1
-		)['rows'];
-		if ( ! $rows ) {
-			return null;
-		}
-		if ( ! Backup_Archive::digest( $rows[0]['digest'] ) || ! ctype_digit( $rows[0]['multiplicity'] ) || '0' === $rows[0]['multiplicity'] ) {
-			throw new \RuntimeException( 'backup_source_digest_unavailable' );
-		}
-		return $rows[0];
+	/** Discard prefetched source evidence before any independent verification. */
+	public function reset_groups() {
+		$this->group_page = array();
 	}
 
-	/** @param array $schema Validated schema. @param string $group Exact row-group digest. @param int $column Ordered column. @param int $offset Cell offset. @param int $length Bounded bytes. @return array */
-	public function cell( array $schema, $group, $column, $offset, $length ) {
-		$name = Database_Connection::quote( $schema['columns'][ $column ]['name'] );
-		$rows = $this->connection->run(
+	/** @param array $schema Validated schema. @return array|null Exact single integer PK. */
+	private function integer_primary( array $schema ) {
+		$definitions = $schema['blueprint']['definitions'] ?? array();
+		$primary     = null;
+		foreach ( $definitions as $definition ) {
+			if ( 1 === preg_match( '/^PRIMARY KEY \\((\x60(?:[^\x60]|\x60\x60)+\x60)(?: (?:ASC|DESC))?\\)(?: USING BTREE)?$/D', $definition, $match ) ) {
+				$primary = str_replace( '``', '`', substr( $match[1], 1, -1 ) );
+			}
+		}
+		if ( null === $primary ) {
+			return null;
+		}
+		$bounds = array(
+			'tinyint'   => array( '127', '128', '255' ),
+			'smallint'  => array( '32767', '32768', '65535' ),
+			'mediumint' => array( '8388607', '8388608', '16777215' ),
+			'int'       => array( '2147483647', '2147483648', '4294967295' ),
+			'bigint'    => array( '9223372036854775807', '9223372036854775808', '18446744073709551615' ),
+		);
+		foreach ( $definitions as $definition ) {
+			if ( 1 === preg_match( '/^' . preg_quote( Database_Connection::quote( $primary ), '/' ) . '\\s+(tinyint|smallint|mediumint|int|bigint)(?:\\([0-9]+\\))?( unsigned)? NOT NULL(?: |$)/iD', $definition, $match ) ) {
+				$type     = strtolower( $match[1] );
+				$unsigned = ! empty( $match[2] );
+				return array(
+					'name'     => $primary,
+					'cast'     => $unsigned ? 'UNSIGNED' : 'SIGNED',
+					'positive' => $bounds[ $type ][ $unsigned ? 2 : 0 ],
+					'negative' => $unsigned ? null : $bounds[ $type ][1],
+				);
+			}
+		}
+		return null;
+	}
+
+	/** @param mixed $value Native decimal bytes. @param array $primary Verified type. @return string */
+	private function locator( $value, array $primary ) {
+		if ( ! is_string( $value ) || 1 !== preg_match( '/^(?:0|[1-9][0-9]*|-[1-9][0-9]*)$/D', $value ) ) {
+			throw new \RuntimeException( 'backup_source_locator_invalid' );
+		}
+		$negative = '-' === $value[0];
+		$digits   = $negative ? substr( $value, 1 ) : $value;
+		$bound    = $primary[ $negative ? 'negative' : 'positive' ];
+		if ( null === $bound || strlen( $digits ) > strlen( $bound ) ||
+			( strlen( $digits ) === strlen( $bound ) && strcmp( $digits, $bound ) > 0 ) ) {
+			throw new \RuntimeException( 'backup_source_locator_invalid' );
+		}
+		return $value;
+	}
+
+	/** @param array $schema Validated schema. @param string $after Prior digest or empty. @param string|null $database Approved database. @return array|null */
+	public function next_group( array $schema, $after, $database = null ) {
+		$database   = null === $database ? $this->connection->database : $database;
+		$expression = self::row_expression( $schema['columns'] );
+		$primary    = $this->integer_primary( $schema );
+		$key        = hash( 'sha256', serialize( array( $database, $schema['table'], $schema['hash'] ?? null, $expression, $primary ) ) );
+		if ( ( $this->group_page['key'] ?? null ) !== $key || ( $this->group_page['after'] ?? null ) !== $after ) {
+			$this->reset_groups();
+		}
+		if ( ! $this->group_page ) {
+			// Each fixed-width digest/count/optional integer row receives a
+			// conservative 4KiB processing charge, including PHP/native copies.
+			// This is a page quantum, never a limit on total rows or groups.
+			$limit        = max( 1, intdiv( $this->budget, 4096 ) );
+			$derived_hash = Backup_Schema::qualified( 'wpai_backup_rows', 'wpai_row_sha256' );
+			$pk_alias     = Backup_Schema::qualified( 'wpai_backup_rows', 'wpai_row_pk' );
+			$rows         = $this->connection->run(
+				'SELECT ' . $derived_hash . ' AS digest,COUNT(*) AS multiplicity' .
+				( null === $primary ? '' : ',MIN(' . $pk_alias . ') AS locator' ) .
+				' FROM (SELECT ' . $expression . ' AS ' . Database_Connection::quote( 'wpai_row_sha256' ) .
+				( null === $primary ? '' : ',' . Database_Connection::quote( $primary['name'] ) . ' AS ' . Database_Connection::quote( 'wpai_row_pk' ) ) .
+				' FROM ' . Backup_Schema::qualified( $database, $schema['table'] ) . ') AS ' . Database_Connection::quote( 'wpai_backup_rows' ) .
+				' WHERE ' . $derived_hash . ' > ? GROUP BY ' . $derived_hash . ' ORDER BY ' . $derived_hash . ' LIMIT ' . $limit,
+				array( $after ),
+				array(),
+				$limit
+			)['rows'];
+			if ( count( $rows ) > $limit ) {
+				throw new \RuntimeException( 'backup_metadata_capacity' );
+			}
+			$previous = $after;
+			foreach ( $rows as &$row ) {
+				if ( ! Backup_Archive::digest( $row['digest'] ?? null ) || strcmp( $row['digest'], $previous ) <= 0 ||
+					! is_string( $row['multiplicity'] ?? null ) || ! ctype_digit( $row['multiplicity'] ) || '0' === $row['multiplicity'] ) {
+					throw new \RuntimeException( 'backup_source_digest_unavailable' );
+				}
+				$previous = $row['digest'];
+				if ( null !== $primary ) {
+					$row['locator'] = $this->locator( $row['locator'] ?? null, $primary );
+					if ( '1' !== $row['multiplicity'] ) {
+						unset( $row['locator'] );
+					}
+				}
+			}
+			unset( $row );
+			if ( ! $rows ) {
+				return null;
+			}
+			$this->group_page = array(
+				'key'   => $key,
+				'after' => $after,
+				'rows'  => $rows,
+				'index' => 0,
+				'last'  => count( $rows ) < $limit,
+			);
+		}
+		$index = $this->group_page['index'];
+		if ( ! isset( $this->group_page['rows'][ $index ] ) ) {
+			$last = $this->group_page['last'];
+			$this->reset_groups();
+			return $last ? null : $this->next_group( $schema, $after, $database );
+		}
+		$row = $this->group_page['rows'][ $index ];
+		++$this->group_page['index'];
+		$this->group_page['after'] = $row['digest'];
+		return $row;
+	}
+
+	/** @param array $schema Validated schema. @param string $group Exact row-group digest. @param int $column Ordered column. @param int $offset Cell offset. @param int $length Bounded bytes. @param string|null $locator Private current-row integer locator. @return array */
+	public function cell( array $schema, $group, $column, $offset, $length, $locator = null ) {
+		$name       = Database_Connection::quote( $schema['columns'][ $column ]['name'] );
+		$predicate  = '';
+		$parameters = array( (string) ( $offset + 1 ), (string) $length );
+		if ( null !== $locator ) {
+			$primary = $this->integer_primary( $schema );
+			if ( null === $primary ) {
+				throw new \RuntimeException( 'backup_source_locator_invalid' );
+			}
+			$predicate    = Database_Connection::quote( $primary['name'] ) . '=CAST(? AS ' . $primary['cast'] . ') AND ';
+			$parameters[] = $this->locator( $locator, $primary );
+		}
+		$parameters[] = $group;
+		$rows         = $this->connection->run(
 			'SELECT SUBSTRING(CAST(' . $name . ' AS BINARY),?,?) AS value,OCTET_LENGTH(CAST(' . $name . ' AS BINARY)) AS bytes,SHA2(CAST(' . $name . ' AS BINARY),256) AS digest FROM ' .
-			$this->connection->table( $schema['table'] ) . ' WHERE ' . self::row_expression( $schema['columns'] ) . '=? LIMIT 1',
-			array( (string) ( $offset + 1 ), (string) $length, $group ),
+			$this->connection->table( $schema['table'] ) . ' WHERE ' . $predicate . self::row_expression( $schema['columns'] ) . '=? LIMIT 1',
+			$parameters,
 			array(),
 			1
 		)['rows'];

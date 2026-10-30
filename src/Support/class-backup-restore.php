@@ -698,6 +698,7 @@ final class Backup_Restore {
 		$this->database->assert_session( $s['header']['plan']['database']['session'] );
 		$tables = $s['header']['plan']['tables'];
 		if ( $s['constraint_table'] >= count( $tables ) ) {
+			$this->database->reset_groups();
 			$s['phase']                 = 'verify_database';
 			$s['verify_table']          = 0;
 			$s['verify_after']          = '';

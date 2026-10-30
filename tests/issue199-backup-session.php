@@ -134,7 +134,7 @@ $assert( str_repeat( 'b', 64 ) === $group['digest'] && '2' === $group['multiplic
 $assert( false !== strpos( $native->group_sql, ' FROM (SELECT ' ) &&
 	false !== strpos( $native->group_sql, 'FROM ' . Backup_Schema::qualified( 'isolated_restore', 'wp_collisions' ) . ') AS ' ),
 	'Row hashes must be projected through an isolated derived namespace.' );
-$assert( false !== strpos( $native->group_sql, 'WHERE ' . $hash . ' > ? GROUP BY ' . $hash . ' ORDER BY ' . $hash . ' LIMIT 1' ),
+$assert( false !== strpos( $native->group_sql, 'WHERE ' . $hash . ' > ? GROUP BY ' . $hash . ' ORDER BY ' . $hash . ' LIMIT ' ),
 	'Filtering, grouping and ordering must resolve only the explicitly qualified generated hash.' );
 $assert( false === strpos( $native->group_sql, 'GROUP BY digest' ) && false === strpos( $native->group_sql, 'HAVING digest' ), 'A legitimate source digest column must not select the grouping key.' );
 foreach ( array_column( $columns, 'name' ) as $name ) {

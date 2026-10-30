@@ -48,8 +48,26 @@ namespace WP_AI_Bridge\Support {
 			if ( \microtime( true ) >= $deadline ) { throw new \RuntimeException( 'Task publication gate exceeded its deadline.' ); }
 			\usleep( 10000 );
 		}
-		$result = \link( $from, $to );
-		wpai199cr_native_event( array( 'event' => 'publication_link', 'success' => $result ) );
+		// Test-only diagnostics retain the real syscall and never publish paths.
+		$stat_fields = \array_fill_keys( array( 'dev', 'ino', 'mode', 'nlink', 'uid', 'gid', 'size', 'mtime', 'ctime' ), true );
+		$source = @\lstat( $from );
+		$source_parent = @\lstat( \dirname( $from ) );
+		$target_parent = @\lstat( \dirname( $to ) );
+		$warning = null;
+		\set_error_handler( static function ( $severity, $message ) use ( &$warning ) {
+			$kind = false !== \stripos( $message, 'cross-device' ) ? 'cross_device' :
+				( false !== \stripos( $message, 'Permission denied' ) || false !== \stripos( $message, 'Operation not permitted' ) ? 'permission_denied' :
+					( false !== \stripos( $message, 'File exists' ) ? 'already_exists' : 'other' ) );
+			$warning = array( 'severity' => $severity, 'classification' => $kind );
+			return true;
+		} );
+		try { $result = \link( $from, $to ); }
+		finally { \restore_error_handler(); }
+		wpai199cr_native_event( array( 'event' => 'publication_link', 'success' => $result, 'warning' => $warning,
+			'effective_uid' => \function_exists( 'posix_geteuid' ) ? \posix_geteuid() : null,
+			'source_stat' => \is_array( $source ) ? \array_intersect_key( $source, $stat_fields ) : null,
+			'source_parent_stat' => \is_array( $source_parent ) ? \array_intersect_key( $source_parent, $stat_fields ) : null,
+			'target_parent_stat' => \is_array( $target_parent ) ? \array_intersect_key( $target_parent, $stat_fields ) : null ) );
 		return $result;
 	}
 	function unlink( $path ) {
@@ -107,10 +125,15 @@ namespace {
 		'case' => $case, 'sha256' => $assignment['sha256'], 'private_base' => $private,
 	);
 	$summary = static function ( $value ) {
-		if ( is_wp_error( $value ) ) { return array( 'error' => $value->get_error_code() ); }
+		if ( is_wp_error( $value ) ) {
+			$data = $value->get_error_data();
+			return array( 'error' => $value->get_error_code(),
+				'storage_reason' => is_array( $data ) && is_string( $data['storage_reason'] ?? null ) && preg_match( '/^[a-z0-9_]{1,128}$/D', $data['storage_reason'] ) ? $data['storage_reason'] : null );
+		}
 		return array( 'state' => $value['state'] ?? null, 'outcome' => $value['outcome'] ?? null,
 			'historical' => $value['historical'] ?? null, 'operation_ref' => $value['operation_ref'] ?? null,
-			'payload_released' => $value['payload_released'] ?? null );
+			'payload_released' => $value['payload_released'] ?? null,
+			'result_reason' => $value['receipt']['result']['reason'] ?? null, 'reporting_pending' => $value['reporting_pending'] ?? null );
 	};
 	$write_json = static function ( $name, $value ) use ( $directory ) {
 		WP_AI_Bridge\Support\wpai199cr_private_json( $directory . '/' . $name, $value );
@@ -139,7 +162,8 @@ namespace {
 	};
 	$connection_id = (string) $wpdb->get_var( 'SELECT CONNECTION_ID()' );
 	$write_json( $slot . '.ready.json', array( 'pid' => getmypid(), 'connection_id' => $connection_id,
-		'filesystem_sha256' => $assignment['filesystem_sha256'], 'worker_sha256' => $assignment['worker_sha256'] ) );
+		'filesystem_sha256' => $assignment['filesystem_sha256'], 'worker_sha256' => $assignment['worker_sha256'],
+		'effective_uid' => function_exists( 'posix_geteuid' ) ? posix_geteuid() : null, 'memory_limit' => ini_get( 'memory_limit' ) ) );
 	$wait( $case . '.go' );
 	$write_json( $slot . '.entered.json', array( 'pid' => getmypid(), 'at' => 'public_ability_execute', 'request_sha256' => hash( 'sha256', json_encode( $assignment['request'] ) ) ) );
 	$first = wpai199c_ability( 'filesystem-write', $assignment['request'] );

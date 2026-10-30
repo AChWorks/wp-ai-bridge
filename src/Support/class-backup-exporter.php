@@ -297,7 +297,7 @@ final class Backup_Exporter {
 				$state['phase'] = 'group';
 				return $this->record( 'row_end', array( 'digest' => $state['group']['digest'] ) );
 			}
-			$value                 = $this->database->cell( $schema, $state['group']['digest'], $state['column'], $state['cell_offset'], $state['chunk_bytes'] );
+			$value                 = $this->database->cell( $schema, $state['group']['digest'], $state['column'], $state['cell_offset'], $state['chunk_bytes'], $state['group']['locator'] ?? null );
 			$null                  = null === $value['bytes'];
 			$total                 = $null ? 0 : Backup_Operation::native_int( $value['bytes'] );
 			$offset                = $state['cell_offset'];
@@ -488,6 +488,7 @@ final class Backup_Exporter {
 	}
 
 	private function rewind( array &$state ) {
+		$this->database->reset_groups();
 		$state['table_index']  = 0;
 		$state['root_index']   = 0;
 		$state['db_digest']    = hash( 'sha256', 'wpai-backup-database-v1' );
