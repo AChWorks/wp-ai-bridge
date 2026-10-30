@@ -3,7 +3,7 @@
 ## Requirements
 
 - WordPress 6.9 or newer.
-- Official WordPress MCP Adapter installed and active.
+- Official WordPress MCP Adapter installed and active; it is a native required-plugin dependency for activating WP AI Bridge.
 - HTTPS with a publicly reachable REST API for direct ChatGPT connections; independent clients need a mutually supported transport and authentication contract.
 - A WordPress user with the capabilities needed for the intended operations.
 
@@ -11,8 +11,8 @@
 
 1. Download `wp-ai-bridge.zip` from the latest GitHub release.
 2. In WordPress open **Plugins → Add Plugin → Upload Plugin**.
-3. Upload the ZIP and activate **WP AI Bridge**.
-4. Open **WP AI Bridge → Settings**.
+3. Upload the ZIP. Install and activate the separate official **MCP Adapter** from WordPress.org if it is not already active; the native Plugins screen identifies a missing or inactive required dependency.
+4. Activate **WP AI Bridge**, then open **WP AI Bridge → Settings**.
 
 The settings screen reports whether the WordPress Abilities API, MCP Adapter, and public HTTPS endpoint are available.
 
@@ -28,7 +28,9 @@ Native WXR import is non-atomic; it returns a durable receipt and disallows blin
 
 An existing canonical 0.4.0-or-newer installation can be updated normally with WordPress's replace/update flow, subject to the selected release's compatibility and hosting notes. The plugin directory, Workspace identifiers, settings identity, OAuth routes and Ability namespace remain canonical; the version number alone is not a reason to erase persistent Workspace data or reset a working OAuth client. Verify actual post-upgrade OAuth health and current Bridge delegation rather than inferring it from source or a successful ZIP upload.
 
-Before any production plugin update, keep a normal WordPress/database backup appropriate to the site.
+Before any production plugin update, keep a normal WordPress/database backup appropriate to the site. For v0.7.0, ensure the official MCP Adapter is installed and active before replacing the Bridge package. WordPress owns normal dependency activation/deactivation controls; the Bridge keeps readiness diagnostics for abnormal manual filesystem removal or other paths outside those controls. An upload or activation does not silently install/activate the Adapter. Core does not automatically deactivate an already-active Bridge solely because this dependency metadata was added or the Adapter was manually removed; the Plugins screen shows the missing/inactive dependency, and Bridge readiness diagnostics remain available outside that screen. Restore the official Adapter before relying on MCP operations.
+
+The v0.7.0 package adds separately protected database, native settings and advanced-administration grants; existing ordinary grants do not enable them on upgrade. Approved filesystem roots and restore-schema lists start empty. Open **WP AI Bridge → Administration** to configure intended scopes and consult the [administration guide](./ADMINISTRATION.md) before enabling SQL, filesystem, scheduler or backup workflows. Native-account SQL requires an additional hosting opt-in and account-scope acknowledgement. Full capture requires declared writer quiescence; verified restore is isolated and does not activate the restored site. Keep the source installation authoritative during recovery.
 
 ### GitHub release updates in the WordPress dashboard (v0.6.8 and later)
 
@@ -98,6 +100,8 @@ A conservative starting point is:
 - Builder Write: enable when drafts or edits are needed.
 - Live Content: leave disabled until publishing is intentionally required.
 - Site Configuration: enable only for site/theme configuration work.
+- Database and sensitive native settings: enable only the particular protected read/write/schema/SQL or site/network grants required. Raw database access is distinct from native options/provider lifecycle; native-account SQL can affect the account's other schemas and Bridge controls.
+- Advanced administration: select the separate file/log/scheduler/configuration/backup grants and approve exact roots/restore schemas. Executable-file changes, immediate scheduled-action execution and full restore carry separate consent. Multisite retains actual Super Admin/network requirements.
 - Code & Extensions: enable only for managed snippets or extension lifecycle work.
 - External Packages: leave disabled unless the administrator explicitly permits a validated public HTTPS plugin/theme installation via `extension-lifecycle`. Code & Extensions, exact native install authority and hosting filesystem policy must also allow the operation.
 - Registered REST Discovery: leave disabled unless bounded Core/provider route metadata is needed. It requires the native `manage_options` capability and is not proof that a route can be executed.

@@ -171,6 +171,14 @@ final class Plugin {
 		}
 
 		if ( ! $this->environment->mcp_adapter_available() ) {
+			// The native Plugins table already explains unmet declared requirements.
+			$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+			if ( $screen && 'plugins' === $screen->base && class_exists( '\WP_Plugin_Dependencies' )
+				&& \WP_Plugin_Dependencies::has_dependencies( plugin_basename( WP_AI_BRIDGE_FILE ) )
+				&& \WP_Plugin_Dependencies::has_unmet_dependencies( plugin_basename( WP_AI_BRIDGE_FILE ) ) ) {
+				return;
+			}
+
 			printf(
 				'<div class="notice notice-warning"><p>%1$s <a href="%2$s" target="_blank" rel="noopener noreferrer">%3$s</a></p></div>',
 				esc_html__( 'WP AI Bridge is active, but the official WordPress MCP Adapter is not available.', 'wp-ai-bridge' ),

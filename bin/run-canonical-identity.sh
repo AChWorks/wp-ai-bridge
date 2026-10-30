@@ -39,9 +39,18 @@ wp=("${compose[@]}" run --rm cli)
     --skip-email \
     --allow-root
 
+# Exercise missing, inactive and active requirements using separate real Core requests.
+"${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --allow-root
+"${compose[@]}" cp "$root/tests/integration/issue198-plugin-dependency-smoke.php" wordpress:/var/www/html/wpai198-plugin-dependency-smoke.php
+run_dependency_phase() {
+    "${compose[@]}" run --rm -e WPAI198_DEPENDENCY_PHASE="$1" cli eval-file /var/www/html/wpai198-plugin-dependency-smoke.php --user=1 --allow-root
+}
+run_dependency_phase missing
 mcp_adapter_url="${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.6.1/mcp-adapter.zip}"
-"${wp[@]}" plugin install "$mcp_adapter_url" --activate --allow-root
-"${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
+"${wp[@]}" plugin install "$mcp_adapter_url" --allow-root
+run_dependency_phase inactive
+"${wp[@]}" plugin activate mcp-adapter wp-ai-bridge --allow-root
+run_dependency_phase active
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge.zip
 
 actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
@@ -91,5 +100,14 @@ if (is_wp_error($doc_read) || is_wp_error($task_read)) { exit(1); }
 if ((int) $doc_read["id"] !== (int) $doc["id"] || (int) $task_read["id"] !== (int) $task["id"]) { exit(1); }
 if (!hash_equals((string) $doc["state_hash"], (string) $doc_read["state_hash"]) || !hash_equals((string) $task["state_hash"], (string) $task_read["state_hash"])) { exit(1); }
 ' --user=1 --allow-root
+
+# Low-level native deactivation deliberately models a manual/bypassed deployment.
+# It is not the administrator UI path, which the active phase proves is blocked.
+"${wp[@]}" eval 'deactivate_plugins("mcp-adapter/mcp-adapter.php");' --user=1 --allow-root
+run_dependency_phase bypassed
+"${wp[@]}" plugin activate mcp-adapter --allow-root
+"${wp[@]}" plugin is-active mcp-adapter --allow-root
+"${wp[@]}" plugin is-active wp-ai-bridge --allow-root
+"${compose[@]}" exec -T wordpress rm -f /var/www/html/wpai198-plugin-dependency-smoke.php
 
 echo "PASS: v$expected_version activates natively with canonical identity and canonical Workspace storage, without retired migration code."

@@ -27,6 +27,19 @@ if [[ -z "$plugin_version" || "$plugin_version" != "$readme_version" ]]; then
     exit 1
 fi
 
+# Core reads dependency metadata from the first 8 KiB of the main plugin file.
+# Validate both staging and extracted bytes so a release cannot lose the contract.
+validate_dependency_header() {
+    php -r '
+$header = file_get_contents($argv[1], false, null, 0, 8192);
+if (1 !== preg_match_all("/^[ \t]*\*[ \t]*Requires Plugins:[ \t]*([^\r\n]*)$/m", $header, $matches) || array("mcp-adapter") !== $matches[1]) {
+    fwrite(STDERR, "ERROR: installable plugin must declare Requires Plugins: mcp-adapter exactly once.\n");
+    exit(1);
+}
+' "$1"
+}
+validate_dependency_header "$plugin_dir/wp-ai-bridge.php"
+
 rm -f "$zip_file"
 
 php -r '
@@ -91,6 +104,7 @@ extract_dir="$build_dir/verify"
 rm -rf "$extract_dir"
 mkdir -p "$extract_dir"
 unzip -q "$zip_file" -d "$extract_dir"
+validate_dependency_header "$extract_dir/wp-ai-bridge/wp-ai-bridge.php"
 while IFS= read -r -d '' file; do
     php -l "$file" >/dev/null
 done < <(find "$extract_dir/wp-ai-bridge" -type f -name '*.php' -print0)

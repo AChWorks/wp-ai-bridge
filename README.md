@@ -7,14 +7,14 @@
 
 The plugin is free and self-hosted. A direct **ChatGPT** connection is tested; a separate Gateway is optional. Other compatible clients and services can use approved connections where their authentication and transport actually interoperate. **Not every administrator operation or future service workflow is available yet.**
 
-**Administration completion is implemented in source; [Issue #199](https://github.com/AChWorks/wp-ai-bridge/issues/199) tracks exact validation, integration and release evidence.** Separate default-off grants cover database inspection/read/write/delete/schema/native-account SQL; scoped files and sensitive logs; native scheduler management; theme mods/transients/Customizer; and quiescent database/files capture with isolated restore. Configure explicit roots and restore schemas under **WP AI Bridge → Administration**. Native-account SQL additionally requires a hosting constant and explicit acknowledgement of the database account’s broader privileges. See the [administration guide](./docs/ADMINISTRATION.md), [database boundary](./docs/DATABASE-ADMINISTRATION.md) and [backup contract](./docs/BACKUP-RESTORE.md). Published/installed versions retain their own capabilities.
+**Version 0.7.0 adds explicitly delegated advanced administration.** Separate default-off grants cover database inspection/read/write/delete/schema/native-account SQL; scoped files and sensitive logs; native scheduler management; theme mods/transients/Customizer; and quiescent database/files capture with isolated restore. Configure explicit roots and restore schemas under **WP AI Bridge → Administration**. Native-account SQL additionally requires a hosting constant and explicit acknowledgement of the database account’s broader privileges. See the [administration guide](./docs/ADMINISTRATION.md), [database boundary](./docs/DATABASE-ADMINISTRATION.md) and [backup contract](./docs/BACKUP-RESTORE.md). Check the installed version and current grants before relying on a workflow.
 
-**Native settings access in current source is pending release.** Separate site/network read and write consents protect effective option reads, complete private snapshots and one native add/update/delete family with durable historical recovery. Native callbacks remain nontransactional. See [reads and snapshots](./docs/NATIVE-OPTIONS.md) and [mutations, complete inputs and recovery](./docs/NATIVE-OPTION-MUTATIONS.md).
+**Native settings access includes unregistered and sensitive site/network options.** Separate site/network read and write consents protect effective option reads, complete private snapshots and one native add/update/delete family with durable historical recovery. Native callbacks remain nontransactional. See [reads and snapshots](./docs/NATIVE-OPTIONS.md) and [mutations, complete inputs and recovery](./docs/NATIVE-OPTION-MUTATIONS.md).
 
 ## Requirements
 
 - **WordPress 6.9 or newer**.
-- The separate official [WordPress MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) plugin, installed and active for MCP connections. Published integration tests cover Adapter 0.6.1, 0.7.0 and 0.7.1.
+- The separate official [WordPress MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) plugin, installed and active before activating WP AI Bridge. Integration tests cover Adapter 0.6.1, 0.7.0 and 0.7.1.
 - HTTPS and a publicly reachable WordPress REST API for direct ChatGPT access.
 - A WordPress account with the capabilities needed for the operations you authorize.
 
@@ -22,10 +22,10 @@ The plugin is free and self-hosted. A direct **ChatGPT** connection is tested; a
 
 1. Download the official **`wp-ai-bridge.zip`** from the [latest stable GitHub Release](https://github.com/AChWorks/wp-ai-bridge/releases/latest). **Do not download “Source code (zip)”; it is not the installable plugin package.**
 2. In WordPress open **Plugins → Add Plugin → Upload Plugin**, select the ZIP and install it.
-3. Activate WP AI Bridge and the official MCP Adapter.
+3. Install and activate the official **MCP Adapter**, then activate **WP AI Bridge**. WordPress identifies a missing or inactive Adapter as a required dependency on the Plugins screen.
 4. Visit **WP AI Bridge → Settings** to review the connection details and access groups.
 
-Upgrading? Back up your site and database first, then use WordPress's normal **Replace current with uploaded** flow, without uninstalling the old plugin. Existing canonical settings, OAuth identity and private Workspace are intended to remain intact; verify them after upgrading.
+Upgrading? Back up your site and database first and ensure the official MCP Adapter is installed and active, then use WordPress's normal **Replace current with uploaded** flow, without uninstalling the old plugin. Existing canonical settings, OAuth identity and private Workspace are intended to remain intact; verify them after upgrading.
 
 If you still use the historical v0.3.0 installation and need to preserve old Workspace data, **follow the special v0.4.0 migration first**. See [complete installation and upgrade instructions](./docs/INSTALLATION.md).
 
@@ -53,6 +53,9 @@ The actual operations available depend on your site's WordPress/plugins/themes, 
 - **Content:** read and manage supported posts, pages, custom post types, revisions, Gutenberg blocks, taxonomies and navigation.
 - **Media:** inspect and manage the Media Library; upload files and import media from approved public HTTP(S) URLs.
 - **Site administration:** manage supported settings, comments, user operations, registered Core/provider Abilities, and eligible registered REST operations under the applicable extra permissions.
+- **Database and configuration:** inspect installation/plugin tables, read exact values, execute typed row/schema changes, and use separately enabled native-account SQL. Native options, current-theme modifications, transients and compatible registered Customizer settings retain their own WordPress/provider lifecycle.
+- **Files, logs and scheduling:** read or change files under approved roots, tail authorized file logs and manage supported Core/Action Scheduler events through native contracts.
+- **Backup and recovery:** capture approved database objects and installation files under declared quiescence, then verify an isolated restore into an approved empty schema and nonserved directory. Live activation is separate.
 - **Extensions:** manage supported plugins, themes and managed snippets. Explicit additional grants enable approved external package installation or installed plugin/theme source read/edit/recovery.
 - **Project continuity:** keep private Workspace documents and tasks inside WordPress, with project references, compact resume, guarded editing and archival.
 - **Supported data transfer:** exchange bounded text and file content through authenticated private-transfer workflows and native Media/WXR operations, where the client/hosting transport supports them.
@@ -67,16 +70,18 @@ Go to **WP AI Bridge → Settings**. **Only Site Read is enabled by default.** E
 | Access group | Intended use |
 | --- | --- |
 | **Site Read** | Inspect permitted site, content, media and extensions. |
-| **Database Inspection** | Discover installation/plugin table metadata; source pending release. |
+| **Database Inspection** | Discover installation/plugin table metadata. |
 | **Sensitive Database Read** | Read exact raw database values, including secrets; also requires Inspection. |
 | **Database Write** | Stage exact bytes and execute typed insert/update batches with recovery; also requires Inspection and Sensitive Read. |
 | **Database Delete** | Additionally authorize typed delete batches and explicit destructive receipt recovery. |
+| **Database schema changes** | Authorize typed native DDL with explicit preconditions and recovery; DDL is not atomic CAS or rollback. |
+| **Native-account SQL** | Use the database account's actual privileges only with hosting enablement, every database grant and per-execution acknowledgement. |
 | **Builder Write** | Create and edit supported content, Media and Workspace data. |
 | **Remote Media** | Import safe remote media; also requires Builder Write and native upload permission. |
 | **Live Content** | Publish content and change live status when WordPress permits. |
 | **Site Configuration** | Configure supported WordPress and provider settings. |
-| **Sensitive Native Site Settings Read / Write** | Separate native option read/write consent; source pending release. Write also requires Site Configuration. |
-| **Sensitive Native Network Settings Read / Write** | Separate network-owned read/write consent, corresponding site grants and actual Super Admin/network authority; source pending release. |
+| **Sensitive Native Site Settings Read / Write** | Separate native option read/write consent. Write also requires Site Configuration. |
+| **Sensitive Native Network Settings Read / Write** | Separate network-owned read/write consent, corresponding site grants and actual Super Admin/network authority. |
 | **Advanced Metadata** | Work with authorized object metadata, excluding credentials and sessions. |
 | **Authentication & Credentials** | Manage WordPress Application Passwords using native APIs. |
 | **Code & Extensions** | Perform supported plugin/theme and snippet lifecycle operations. |
@@ -87,8 +92,14 @@ Go to **WP AI Bridge → Settings**. **Only Site Read is enabled by default.** E
 | **High-Trust Registered REST Invocation** | Invoke guarded registered REST operations under additional high-trust grants and native WordPress checks. |
 | **Comments** | Read, reply to and moderate supported comments. |
 | **Users & Destructive** | Administer authorized users/roles and perform destructive actions. |
+| **Sensitive filesystem read / Filesystem write** | Separate read/write grants for explicitly approved roots and exact file bytes. |
+| **Filesystem deletion and moves / Executable filesystem changes** | Separate destructive and executable-file authority, in addition to the root's permissions and native capabilities. |
+| **Sensitive log access** | Read approved file-log windows and tails, including potentially sensitive contents. |
+| **Scheduler management / Immediate scheduled-action execution** | Separate schedule/cancel and supported immediate-run authority; provider callbacks keep their native effects. |
+| **Full backup export / Full backup restore** | Separate capture and isolated-restore grants, approved scopes and declared quiescence. |
+| **Native appearance and transient settings / Registered Customizer settings** | Separate native configuration and compatible current-theme Customizer authority, plus the required sensitive settings grants. |
 
-Database grants use a separate protected settings form. Existing ordinary grants never enable them on upgrade. Typed raw writes bypass WordPress/plugin business APIs; use native features when their hooks, validation, caches or lifecycle are required.
+Database and advanced-administration grants use protected forms; existing ordinary grants never enable them on upgrade. Configure approved roots and restore schemas under **WP AI Bridge → Administration**; roots start empty. Backup requires all selected database/DDL/file writers to remain quiescent throughout capture and verification. Native-account SQL can reach other schemas and Bridge controls within the account's privileges, so recovery may become unavailable if those controls are changed. Typed raw writes bypass WordPress/plugin business APIs; use native features when their hooks, validation, caches or lifecycle are required.
 
 **Source Editing and External Packages can execute code with WordPress's ordinary runtime privileges.** They are not sandboxes. Enable high-trust groups only for appropriate accounts and approved clients. See the [security guide](./docs/SECURITY.md) and [user guide](./docs/USER-GUIDE.md).
 
