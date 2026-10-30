@@ -171,7 +171,7 @@ namespace {
 	$write_json( $slot . '.first.json', $first_summary );
 	$final = array( 'first' => $first_summary, 'pid' => getmypid(), 'connection_id' => $connection_id );
 	if ( 'race' === $case ) {
-		$wait( 'race.retry-go' );
+		$wait( $case . '.' . $slot . '.retry-go' );
 		$final['status'] = $summary( $observe( 'filesystem-write', array( 'action' => 'status', 'root_id' => $assignment['root_id'], 'operation_id' => $assignment['request']['operation_id'] ) ) );
 		$final['input_status'] = $summary( $observe( 'filesystem-transfer', array( 'action' => 'status', 'root_id' => $assignment['root_id'], 'transfer_id' => $assignment['request']['transfer_id'] ) ) );
 		$final['replay'] = $summary( wpai199c_ability( 'filesystem-write', $assignment['request'] ) );

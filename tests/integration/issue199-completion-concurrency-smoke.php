@@ -176,9 +176,11 @@ try {
 	$assert( 'completed' === $winning['state'] && 'committed' === $winning['outcome'] && false === $winning['historical'], 'Exactly one native publication winner was not acknowledged.' );
 	$published = $generation( $assignment['target'] );
 	$assert( strlen( $bytes ) === $published['size'] && hash( 'sha256', $bytes ) === hash_file( 'sha256', $assignment['target'] ), 'Real publication bytes differ from the verified request.' );
-	$publish( 'race.retry-go' );
-	$await( static function () use ( $json ) { return null !== $json( 'one.final.json' ) && null !== $json( 'two.final.json' ); }, 'Independent status/input recovery and replay did not finish.' );
+	// Keep the initial effects overlapping; sequence post-effect history reads
+	// and single historical execute calls so they do not race the input mutex.
 	foreach ( array( 'one', 'two' ) as $slot ) {
+		$publish( 'race.' . $slot . '.retry-go' );
+		$await( static function () use ( $json, $slot ) { return null !== $json( $slot . '.final.json' ); }, 'Independent status/input recovery and replay did not finish.' );
 		$finished = $json( $slot . '.final.json' );
 		$assert( 'completed' === $finished['status']['state'] && 'committed' === $finished['status']['outcome'] &&
 			true === ( $finished['input_status']['payload_released'] ?? false ) && true === $finished['replay']['historical'] &&
