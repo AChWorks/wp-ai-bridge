@@ -19,6 +19,18 @@ if ( ! defined( 'DAY_IN_SECONDS' ) ) {
 	define( 'DAY_IN_SECONDS', 86400 );
 }
 function is_multisite() { return ! empty( $GLOBALS['wpai_test']['multisite'] ); }
+// Only this standalone renderer uses these synthetic native primitives.
+// Real hook/nonce behavior is exercised by the dedicated native fixtures.
+function nocache_headers() {}
+function is_super_admin( $user = false ) { return ! empty( $GLOBALS['wpai_test']['super_admin'] ); }
+function get_current_blog_id() { return $GLOBALS['wpai_test']['blog'] ?? 1; }
+function get_current_network_id() { return $GLOBALS['wpai_test']['network'] ?? 1; }
+function get_network_option( $network, $name, $default = false ) { return $GLOBALS['wpai_test']['network_options'][ $network ][ $name ] ?? $default; }
+function apply_filters( $hook, $value, ...$args ) { return $value; }
+function wp_salt( $scheme = 'auth' ) { return 'synthetic-diagnostics-settings-salt'; }
+function esc_attr__( $value, $domain = '' ) { return esc_attr( $value ); }
+function esc_textarea( $value ) { return htmlspecialchars( (string) $value, ENT_QUOTES, 'UTF-8' ); }
+function wp_max_upload_size() { return 200 * 1024 * 1024; }
 function get_site_transient( $name ) {
 	return 'update_core' === $name ? ( $GLOBALS['wpai_test']['core_transient'] ?? false ) : false;
 }

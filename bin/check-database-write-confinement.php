@@ -650,10 +650,10 @@ $boundary_pins = array(
 	),
 	'metadata'     => array(
 		'src/Support/class-administration-configuration.php' => array(
-			'Administration_Configuration::sanitize|realpath($path)' => 1,
-			'Administration_Configuration::sanitize|lstat($canonical)' => 1,
-			'Administration_Configuration::sanitize|is_link($path)' => 1,
-			'Administration_Configuration::sanitize|is_dir($canonical)' => 1,
+			'Administration_Configuration::validate|realpath($path)' => 1,
+			'Administration_Configuration::validate|lstat($canonical)' => 1,
+			'Administration_Configuration::validate|is_link($path)' => 1,
+			'Administration_Configuration::validate|is_dir($canonical)' => 1,
 		),
 	),
 );

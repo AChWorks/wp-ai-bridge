@@ -2,7 +2,11 @@
 
 All notable public changes are documented here.
 
-## Unreleased
+## 0.7.1
+
+- Consolidate administrator controls under one final **Settings** submenu with eight task sections, active-section navigation, Persian/RTL presentation and an all-sections no-JavaScript fallback. The old Administration URL redirects to Settings (#206).
+- Apply edits across sections through one **Save changes** submission, including ordinary fields in inactive sections. Prevalidate the complete editable input, check CSRF/current user/site/network authority and stale state, then verify each native option write. Rejected, stale, partial or unverified results retain submitted values for review; native writes are not an atomic transaction (#206).
+- Preserve existing option stores, OAuth identities, Workspace data and separately controlled grants without a migration or automatic permission expansion. Workspace export and destructive clear remain independent explicit actions.
 
 ## 0.7.0
 

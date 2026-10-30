@@ -207,9 +207,7 @@ docs/           architecture, security, operation contracts and developer guides
 
 ### Pinned published-predecessor ZIP upgrade regression
 
-The currently checked-in fixture exercises the real **published v0.6.11 → v0.7.0** replacement path. It starts from the
-**published v0.6.11 release ZIP**, pinned by SHA-256 `0ae118ff79e9091ffdd71b7822846846a08df9ceb17f0fa255c23f9dd41bf856` (the runner checks byte identity; GitHub does not enforce asset immutability), then installs the
-candidate using WordPress Core's normal replacement operation:
+For the **v0.7.1 candidate**, validate the real **published v0.7.0 → v0.7.1** replacement path. The predecessor is the official **v0.7.0 `wp-ai-bridge.zip`**, 740322 bytes, pinned by SHA-256 `e642a58a2c4779ded085b9574a13ccf9e1311d80d172fc1354ffbd34fda15074` (the runner checks byte identity; GitHub does not enforce asset immutability). Install the candidate using WordPress Core's normal replacement operation:
 
 ```bash
 bash bin/run-published-upgrade.sh 6.9-php8.4-apache
@@ -225,7 +223,7 @@ must register `workspace-delete`, `diagnostics-read`, and the guarded exact pack
 default-off Users & Destructive authority; registration is not authorization.
 Fixture credentials remain confined to the disposable test environment.
 
-Both supported CI upgrade lanes use this runner. Its pinned **published v0.6.11** predecessor is correct for the **v0.7.0** candidate, not automatically the latest predecessor for a future release. Before validating the next version, advance the pinned predecessor ZIP URL, checksum, expected version and compatible fixture to the actual latest published predecessor. Never label a historical predecessor run as newest-published-to-candidate proof.
+Both supported CI upgrade lanes use this runner. Keep its URL, checksum, expected version and compatible fixture aligned with the actual latest published predecessor before validating each candidate. Never label a historical predecessor run as newest-published-to-candidate proof, or treat a candidate validation as publication or live installation.
 
 ## Canonical GitHub distribution and conditional WordPress.org directory eligibility
 

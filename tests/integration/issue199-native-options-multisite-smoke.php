@@ -8,6 +8,7 @@
  */
 
 use WP_AI_Bridge\Admin\Settings_Page;
+use WP_AI_Bridge\Admin\Settings_Save;
 use WP_AI_Bridge\Support\Environment;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Native_Option_Access;
@@ -51,6 +52,49 @@ function wpai199nms_form( Settings $settings ) {
 	} finally {
 		ob_end_clean();
 	}
+}
+
+/** Inspect the current network's saved consent within the shared Save form. */
+function wpai199nms_assert_network_controls( $html, Settings $settings, $editable ) {
+	wpai199n_assert( 1 === preg_match( '~<form\\b[^>]*\\bid="wpai-settings-form"[^>]*>(.*?)</form>~s', $html, $form ), 'Network consent must be presented in the unified settings form.' );
+	$context = array();
+	$controls = array();
+	$enabled_named = 0;
+	$zero_controls = 0;
+	$processor = new WP_HTML_Tag_Processor( $form[1] );
+	while ( $processor->next_tag( 'INPUT' ) ) {
+		$name = $processor->get_attribute( 'name' );
+		if ( in_array( $name, array( 'action', '_wpnonce', 'expected_revision', 'blog_id', 'network_id', 'user_id' ), true ) ) {
+			$context[ $name ][] = $processor->get_attribute( 'value' );
+		}
+		if ( Native_Option_Access::NETWORK_OPTION_NAME === $name && null === $processor->get_attribute( 'disabled' ) ) {
+			++$enabled_named;
+			if ( 'hidden' === $processor->get_attribute( 'type' ) && '0' === $processor->get_attribute( 'value' ) ) {
+				++$zero_controls;
+			}
+		}
+		if ( 'wpai-grant-' . Settings::GROUP_NATIVE_NETWORK_READ === $processor->get_attribute( 'id' ) ) {
+			$controls[] = array(
+				'name' => $name,
+				'type' => $processor->get_attribute( 'type' ),
+				'disabled' => null !== $processor->get_attribute( 'disabled' ),
+				'checked' => null !== $processor->get_attribute( 'checked' ),
+			);
+		}
+	}
+	wpai199n_assert( 1 === count( $controls ) && 'checkbox' === $controls[0]['type'] && Native_Option_Access::network_enabled() === $controls[0]['checked'], 'The current network saved consent was omitted or misrepresented.' );
+	wpai199n_assert( ( ! $editable ) === $controls[0]['disabled'], 'Network consent editing did not follow current native authority.' );
+	if ( $editable ) {
+		wpai199n_assert( Native_Option_Access::NETWORK_OPTION_NAME === $controls[0]['name'] && 2 === $enabled_named && 1 === $zero_controls, 'Authorized network consent must retain its independent native option name and explicit unchecked value.' );
+	} else {
+		wpai199n_assert( ( null === $controls[0]['name'] || Native_Option_Access::NETWORK_OPTION_NAME === $controls[0]['name'] ) && 0 === $enabled_named, 'Unauthorized network controls exposed an actionable consent value.' );
+	}
+	$save = new Settings_Save( $settings );
+	$snapshot = $save->snapshot();
+	foreach ( array( 'action' => Settings_Save::ACTION, 'expected_revision' => $snapshot['revision'], 'blog_id' => (string) get_current_blog_id(), 'network_id' => (string) get_current_network_id(), 'user_id' => (string) get_current_user_id() ) as $field => $expected ) {
+		wpai199n_assert( array( $expected ) === ( $context[ $field ] ?? array() ), 'Unified network consent lost its exact current-context field: ' . $field );
+	}
+	wpai199n_assert( 1 === count( $context['_wpnonce'] ?? array() ) && wp_verify_nonce( $context['_wpnonce'][0], $save->nonce_action() ), 'Unified network consent lost its current-principal/site/network nonce.' );
 }
 
 global $wpdb, $current_site;
@@ -156,7 +200,7 @@ try {
 	wpai199n_protected_denial( static function () use ( $network ) { update_network_option( $network, Native_Option_Access::NETWORK_OPTION_NAME, 0 ); } );
 	wpai199n_assert( Native_Option_Access::network_enabled(), 'Unauthorized native network update changed consent.' );
 	$html = wpai199nms_form( $settings );
-	wpai199n_assert( str_contains( $html, 'type="checkbox" disabled' ) && ! str_contains( $html, 'value="wpai_native_network_read"' ), 'Local network consent UI exposed an actionable protected form.' );
+	wpai199nms_assert_network_controls( $html, $settings, false );
 	$page = new Settings_Page( new Environment(), $settings );
 	wpai199nms_form_denial( $page, array( 'network_id' => (string) $network, 'enabled' => '1', '_wpnonce' => wp_create_nonce( 'wpai-native-network-read-' . $network ) ) );
 
@@ -194,7 +238,7 @@ try {
 	wpai199nms_form_denial( $page, array( 'network_id' => (string) $network, 'enabled' => '1', '_wpnonce' => 'wrong' ) );
 	wpai199nms_form_denial( $page, array( 'network_id' => (string) ( $network + 1000 ), 'enabled' => '1', '_wpnonce' => wp_create_nonce( 'wpai-native-network-read-' . $network ) ) );
 	$html = wpai199nms_form( $settings );
-	wpai199n_assert( str_contains( $html, 'value="wpai_native_network_read"' ) && str_contains( $html, 'name="network_id" value="' . $network . '"' ) && str_contains( $html, 'name="_wpnonce"' ), 'Authorized network form omitted separate action/nonce/current-network binding.' );
+	wpai199nms_assert_network_controls( $html, $settings, true );
 	restore_current_blog();
 	$switched = false;
 

@@ -21,89 +21,29 @@ final class Administration_Page {
 	/** @return void */
 	public function register_menu() {
 		add_submenu_page( Settings_Page::PAGE_SLUG, __( 'Advanced administration', 'wp-ai-bridge' ), __( 'Administration', 'wp-ai-bridge' ), 'manage_options', self::SLUG, array( $this, 'render' ) );
+		remove_submenu_page( Settings_Page::PAGE_SLUG, self::SLUG );
 	}
 
 	/** @return void */
 	public function render() {
-		$configuration = new Administration_Configuration();
-		if ( ! $configuration->can_configure() ) {
-			wp_die( esc_html__( 'Administration delegation requires current administrator and network authority.', 'wp-ai-bridge' ), esc_html__( 'Administration', 'wp-ai-bridge' ), array( 'response' => 403 ) );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to manage Bridge settings.', 'wp-ai-bridge' ), '', array( 'response' => 403 ) );
 			return;
 		}
-		wp_enqueue_script( 'wp-ai-bridge-administration', plugins_url( 'src/Admin/administration-settings.js', WP_AI_BRIDGE_FILE ), array(), WP_AI_BRIDGE_VERSION, true );
-		$config = $configuration->all();
-		$values = $this->settings->all();
-		$groups = $this->settings->groups();
-		$notice = isset( $_GET['wpai_notice'] ) ? sanitize_key( wp_unslash( $_GET['wpai_notice'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect notice.
 		?>
-		<div class="wrap">
-			<h1><?php echo esc_html__( 'Advanced administration', 'wp-ai-bridge' ); ?></h1>
-			<?php
-			if ( 'administration-saved' === $notice ) :
-				?>
-				<div class="notice notice-success is-dismissible"><p><?php echo esc_html__( 'Administration scopes saved.', 'wp-ai-bridge' ); ?></p></div><?php endif; ?>
-			<?php settings_errors(); ?>
-			<p><?php echo esc_html__( 'Grant only the operations a connected WordPress administrator needs, then select the exact file and restore scopes below. Existing client approval and native capabilities remain required.', 'wp-ai-bridge' ); ?></p>
-			<h2><?php echo esc_html__( 'Delegated operations', 'wp-ai-bridge' ); ?></h2>
-			<form action="options.php" method="post">
-				<?php settings_fields( Settings::ADMINISTRATION_OPTION_GROUP ); ?>
-				<table class="form-table" role="presentation"><tbody>
-				<?php
-				foreach ( Settings::ADMINISTRATION_GROUPS as $key ) :
-					$group = $groups[ $key ];
-					?>
-					<tr><th scope="row"><?php echo esc_html( $group['label'] ); ?></th><td>
-						<label><input type="checkbox" name="<?php echo esc_attr( Settings::ADMINISTRATION_OPTION_NAME . '[' . $key . ']' ); ?>" value="1" <?php checked( 1, $values[ $key ] ?? 0 ); ?>> <?php echo esc_html__( 'Enable this delegation', 'wp-ai-bridge' ); ?></label>
-						<p class="description"><?php echo esc_html( $group['description'] ); ?></p>
-					</td></tr>
-				<?php endforeach; ?>
-				</tbody></table>
-				<?php submit_button( __( 'Save administration access', 'wp-ai-bridge' ), 'primary', 'wpai_administration_access_submit' ); ?>
-			</form>
-
-			<h2><?php echo esc_html__( 'Native database authority', 'wp-ai-bridge' ); ?></h2>
-			<p><a href="<?php echo esc_url( admin_url( 'admin.php?page=' . Settings_Page::SETTINGS_SLUG ) ); ?>"><?php echo esc_html__( 'Configure database inspection, reading, writing, deletion, schema and SQL grants in Settings.', 'wp-ai-bridge' ); ?></a></p>
-			<p><?php echo esc_html( defined( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL' ) && true === WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL ? __( 'Server policy enables native-account SQL. Its native privileges can affect Bridge controls and other accessible schemas.', 'wp-ai-bridge' ) : __( 'Native-account SQL is disabled by server policy. The hosting operator must explicitly enable WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL before the separate SQL grant can be used.', 'wp-ai-bridge' ) ); ?></p>
-
-			<h2><?php echo esc_html__( 'Approved file and restore scopes', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'Roots start empty. Use existing directories whose writers you trust. Removing a root revokes that scope; it does not delete its files. A data root is not a PHP sandbox.', 'wp-ai-bridge' ); ?></p>
-			<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" id="wpai-administration-scopes">
-				<input type="hidden" name="action" value="wpai_administration_configuration">
-				<input type="hidden" name="expected_revision" value="<?php echo esc_attr( $config['revision'] ); ?>">
-				<input type="hidden" name="blog_id" value="<?php echo esc_attr( (string) $config['blog'] ); ?>">
-				<input type="hidden" name="network_id" value="<?php echo esc_attr( (string) $config['network'] ); ?>">
-				<?php wp_nonce_field( 'wpai-administration-configuration-' . $config['blog'] . '-' . $config['network'] ); ?>
-				<div id="wpai-administration-roots">
-				<?php
-				$index = 0;
-				foreach ( $config['roots'] as $root ) {
-					$this->root_fields( $index++, $root ); }
-				?>
-				</div>
-				<p><button type="button" class="button" id="wpai-add-root"><?php echo esc_html__( 'Add directory scope', 'wp-ai-bridge' ); ?></button></p>
-				<template id="wpai-administration-root-template"><?php $this->root_fields( '__INDEX__', array() ); ?></template>
-				<table class="form-table" role="presentation"><tbody>
-					<tr><th scope="row"><label for="wpai-restore-schemas"><?php echo esc_html__( 'Empty restore database schemas', 'wp-ai-bridge' ); ?></label></th><td>
-						<textarea class="large-text code" dir="ltr" rows="3" id="wpai-restore-schemas" name="restore_schemas"><?php echo esc_textarea( implode( "\n", $config['restore_schemas'] ) ); ?></textarea>
-						<p class="description"><?php echo esc_html__( 'Exact database names, one per line. Restore additionally requires an empty destination and the existing database account’s native privileges. No new database connection is created.', 'wp-ai-bridge' ); ?></p>
-					</td></tr>
-					<tr><th scope="row"><label for="wpai-backup-tables"><?php echo esc_html__( 'Additional approved backup tables', 'wp-ai-bridge' ); ?></label></th><td>
-						<textarea class="large-text code" dir="ltr" rows="3" id="wpai-backup-tables" name="backup_tables"><?php echo esc_textarea( implode( "\n", $config['backup_tables'] ) ); ?></textarea>
-						<p class="description"><?php echo esc_html__( 'Exact current-database provider tables outside the installation prefix, one per line. Required dependencies must also be approved.', 'wp-ai-bridge' ); ?></p>
-					</td></tr>
-					<tr><th scope="row"><label for="wpai-step-bytes"><?php echo esc_html__( 'Work bytes per step', 'wp-ai-bridge' ); ?></label></th><td>
-						<input type="number" min="1" step="1" class="regular-text" id="wpai-step-bytes" name="step_bytes" value="<?php echo esc_attr( (string) $config['step_bytes'] ); ?>" required>
-						<p class="description"><?php echo esc_html__( 'A resumable processing budget, not a total file or backup-size ceiling. Actual PHP, disk and transfer policies still apply.', 'wp-ai-bridge' ); ?></p>
-					</td></tr>
-					<tr><th scope="row"><label for="wpai-step-seconds"><?php echo esc_html__( 'Work seconds per step', 'wp-ai-bridge' ); ?></label></th><td>
-						<input type="number" min="1" step="1" class="small-text" id="wpai-step-seconds" name="step_seconds" value="<?php echo esc_attr( (string) $config['step_seconds'] ); ?>" required>
-					</td></tr>
-				</tbody></table>
-				<input type="hidden" name="form_complete" value="1">
-				<?php submit_button( __( 'Save approved scopes', 'wp-ai-bridge' ), 'primary', 'wpai_administration_scopes_submit' ); ?>
-			</form>
-		</div>
+		<div class="wrap"><h1><?php echo esc_html__( 'Settings', 'wp-ai-bridge' ); ?></h1><p><a href="<?php echo esc_url( admin_url( 'admin.php?page=' . Settings_Page::SETTINGS_SLUG . '#files-backups' ) ); ?>"><?php echo esc_html__( 'Administration controls are now in Settings.', 'wp-ai-bridge' ); ?></a></p></div>
 		<?php
+	}
+
+	/** Redirect old bookmarks before admin output; existing POST handlers stay independent. @return void */
+	public function redirect_legacy() {
+		if ( 'GET' === ( $_SERVER['REQUEST_METHOD'] ?? '' ) && isset( $_GET['page'] ) && self::SLUG === $_GET['page'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only legacy route.
+			if ( ! current_user_can( 'manage_options' ) ) {
+				return;
+			}
+			wp_safe_redirect( admin_url( 'admin.php?page=' . Settings_Page::SETTINGS_SLUG . '#files-backups' ) );
+			exit;
+		}
 	}
 
 	/** @param int|string $index Stable form field index. @param array $root Configured record or empty. @return void */

@@ -45,6 +45,8 @@ mcp_adapter_url="${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/rel
 
 tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \
     | "${compose[@]}" exec -T wordpress tar -xf - -C /var/www/html/wp-content/plugins/wp-ai-bridge
+# Real network-option save hooks require the actual disposable Super Admin.
+"${compose[@]}" run --rm -e WPAI206_EXPECT_DATABASE=wordpress cli eval 'define("WPAI206_DISPOSABLE", true); require ABSPATH . "wp-content/plugins/wp-ai-bridge/tests/integration/issue206-settings-save-smoke.php";' --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue135-no-private-packages-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue130-141-multisite-smoke.php --user=1 --allow-root
 "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue126-128-multisite-smoke.php --user=1 --allow-root

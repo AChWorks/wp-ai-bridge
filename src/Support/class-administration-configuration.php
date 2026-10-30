@@ -79,12 +79,28 @@ final class Administration_Configuration {
 	 * @return array Canonical stored value, bound to this site and network.
 	 */
 	public function sanitize( $input ) {
+		$value = $this->validate( $input );
+		if ( is_wp_error( $value ) ) {
+			return $this->reject( $value->get_error_message(), $value->get_error_data()['status'] );
+		}
+		return $value;
+	}
+
+	/**
+	 * Preflight scopes without terminating the request or changing any option.
+	 *
+	 * The native sanitizer retains the same validation and authorization.
+	 *
+	 * @param mixed $input Complete operator scope candidate.
+	 * @return array|\WP_Error Canonical value or recoverable validation error.
+	 */
+	public function validate( $input ) {
 		if ( ! $this->can_configure() ) {
-			return $this->reject( __( 'Changing administration scopes requires current administrator and network authority.', 'wp-ai-bridge' ), 403 );
+			return $this->invalid( __( 'Changing administration scopes requires current administrator and network authority.', 'wp-ai-bridge' ), 403 );
 		}
 		$origin = $this->defaults();
 		if ( ! is_array( $input ) || ! is_array( $input['roots'] ?? null ) ) {
-			return $this->reject( __( 'Administration roots must be a complete array.', 'wp-ai-bridge' ) );
+			return $this->invalid( __( 'Administration roots must be a complete array.', 'wp-ai-bridge' ) );
 		}
 		$value = array(
 			'_format'         => 1,
@@ -98,7 +114,7 @@ final class Administration_Configuration {
 		);
 		foreach ( $input['roots'] as $entry ) {
 			if ( ! is_array( $entry ) ) {
-				return $this->reject( __( 'Each configured root must be a complete record.', 'wp-ai-bridge' ) ); }
+				return $this->invalid( __( 'Each configured root must be a complete record.', 'wp-ai-bridge' ) ); }
 			if ( $this->flag( $entry['remove'] ?? false ) ) {
 				continue; }
 			$id   = $entry['id'] ?? '';
@@ -107,26 +123,26 @@ final class Administration_Configuration {
 				continue; }
 			if ( ! $this->root_id( $id ) || isset( $value['roots'][ $id ] ) || ! is_string( $path ) ||
 				'' === $path || false !== strpos( $path, "\0" ) || strpos( $path, '://' ) !== false ) {
-				return $this->reject( __( 'Root IDs must be unique ASCII identifiers and paths must be absolute native directories.', 'wp-ai-bridge' ) );
+				return $this->invalid( __( 'Root IDs must be unique ASCII identifiers and paths must be absolute native directories.', 'wp-ai-bridge' ) );
 			}
 			$absolute  = '/' === $path[0] || ( strlen( $path ) > 2 && ctype_alpha( $path[0] ) && ':' === $path[1] && in_array( $path[2], array( '/', '\\' ), true ) );
 			$canonical = $absolute ? realpath( $path ) : false;
 			$stat      = is_string( $canonical ) ? @lstat( $canonical ) : false; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Operator-only validation returns a targeted scope error.
 			if ( ! is_string( $canonical ) || 1 !== preg_match( '//u', $canonical ) || ! is_array( $stat ) || is_link( $path ) || ! is_dir( $canonical ) ||
 				0040000 !== ( $stat['mode'] & 0170000 ) || Filesystem_Roots::protected_path( $canonical ) ) {
-				return $this->reject( __( 'A configured root is missing, linked, private or not a directory. Review its path.', 'wp-ai-bridge' ) );
+				return $this->invalid( __( 'A configured root is missing, linked, private or not a directory. Review its path.', 'wp-ai-bridge' ) );
 			}
 			$purposes = $entry['purposes'] ?? array();
 			if ( ! is_array( $purposes ) || count( array_filter( $purposes, 'is_string' ) ) !== count( $purposes ) || array_diff( $purposes, self::PURPOSES ) ) {
-				return $this->reject( __( 'A root contains an unknown administration purpose.', 'wp-ai-bridge' ) );
+				return $this->invalid( __( 'A root contains an unknown administration purpose.', 'wp-ai-bridge' ) );
 			}
 			$scope = $entry['scope'] ?? 'site';
 			if ( ! in_array( $scope, array( 'site', 'network' ), true ) ) {
-				return $this->reject( __( 'Root scope must be this site or the current network.', 'wp-ai-bridge' ) );
+				return $this->invalid( __( 'Root scope must be this site or the current network.', 'wp-ai-bridge' ) );
 			}
 			$label = $entry['label'] ?? $id;
 			if ( ! is_string( $label ) || 1 !== preg_match( '//u', $label ) ) {
-				return $this->reject( __( 'Root labels must contain valid text.', 'wp-ai-bridge' ) );
+				return $this->invalid( __( 'Root labels must contain valid text.', 'wp-ai-bridge' ) );
 			}
 			$root = array(
 				'id'       => $id,
@@ -143,11 +159,11 @@ final class Administration_Configuration {
 				$root[ $flag ] = $this->flag( $entry[ $flag ] ?? false );
 			}
 			if ( in_array( 'logs', $root['purposes'], true ) && ! $root['read'] ) {
-				return $this->reject( __( 'Log roots require read access.', 'wp-ai-bridge' ) );
+				return $this->invalid( __( 'Log roots require read access.', 'wp-ai-bridge' ) );
 			}
 			if ( in_array( 'backup_restore', $root['purposes'], true ) &&
 				( ! $root['write'] || ! $root['nonserved'] || Filesystem_Roots::served( $canonical ) ) ) {
-				return $this->reject( __( 'Restore roots must be writable and explicitly nonserved, outside the active installation.', 'wp-ai-bridge' ) );
+				return $this->invalid( __( 'Restore roots must be writable and explicitly nonserved, outside the active installation.', 'wp-ai-bridge' ) );
 			}
 			$value['roots'][ $id ] = $root;
 		}
@@ -156,14 +172,14 @@ final class Administration_Configuration {
 			if ( is_string( $names ) ) {
 				$names = preg_split( '/\r\n|\r|\n/', $names ); }
 			if ( ! is_array( $names ) ) {
-				return $this->reject( __( 'Database scopes must be exact identifiers, one per line.', 'wp-ai-bridge' ) ); }
+				return $this->invalid( __( 'Database scopes must be exact identifiers, one per line.', 'wp-ai-bridge' ) ); }
 			foreach ( $names as $name ) {
 				if ( ! is_string( $name ) ) {
-					return $this->reject( __( 'Database scope identifiers must be text.', 'wp-ai-bridge' ) ); }
+					return $this->invalid( __( 'Database scope identifiers must be text.', 'wp-ai-bridge' ) ); }
 				if ( '' === $name ) {
 					continue; }
 				if ( ! $this->identifier( $name ) ) {
-					return $this->reject( __( 'A database scope identifier is invalid or exceeds the native identifier length.', 'wp-ai-bridge' ) ); }
+					return $this->invalid( __( 'A database scope identifier is invalid or exceeds the native identifier length.', 'wp-ai-bridge' ) ); }
 				$value[ $field ][] = $name;
 			}
 			$value[ $field ] = array_values( array_unique( $value[ $field ] ) );
@@ -183,13 +199,13 @@ final class Administration_Configuration {
 						),
 					)
 				) ) {
-				return $this->reject( __( 'Work budgets must be positive native integers.', 'wp-ai-bridge' ) );
+				return $this->invalid( __( 'Work budgets must be positive native integers.', 'wp-ai-bridge' ) );
 			}
 			$value[ $field ] = (int) $n;
 		}
 		$current = $this->defaults();
 		if ( $origin['blog'] !== $current['blog'] || $origin['network'] !== $current['network'] || ! $this->can_configure() ) {
-			return $this->reject( __( 'Administration context changed while validating scopes.', 'wp-ai-bridge' ), 409 );
+			return $this->invalid( __( 'Administration context changed while validating scopes.', 'wp-ai-bridge' ), 409 );
 		}
 		return $value;
 	}
@@ -227,6 +243,11 @@ final class Administration_Configuration {
 				return false; }
 		}
 		return true;
+	}
+
+	/** @param string $message Scope validation problem. @param int $status HTTP status. @return \WP_Error */
+	private function invalid( $message, $status = 400 ) {
+		return new \WP_Error( 'wpai_administration_configuration_invalid', $message, array( 'status' => $status ) );
 	}
 
 	/** @param string $message Exact operator validation problem. @param int $status HTTP status. @return array */

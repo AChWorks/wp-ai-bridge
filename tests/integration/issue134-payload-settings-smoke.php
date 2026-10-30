@@ -51,15 +51,30 @@ try {
 	ob_start();
 	$page->render_settings();
 	$html = ob_get_clean();
-	wpai134_limits_assert(
-		false !== strpos( $html, 'wpai-response-kib' ) &&
-		false !== strpos( $html, 'wpai-text-window-kib' ) &&
-		false !== strpos( $html, 'wpai-document-kib' ) &&
-		false !== strpos( $html, 'wpai-notes-kib' ) &&
-		false !== strpos( $html, 'wpai-inline-file-mib' ) &&
-		false !== strpos( $html, 'wpai-inline-media-mib' ),
-		'Native administrator configuration form is missing a budget field.'
-	);
+	wpai134_limits_assert( 1 === preg_match( '~<form\\b[^>]*\\bid="wpai-settings-form"[^>]*>(.*?)</form>~s', $html, $form ), 'Native payload budgets must belong to the unified settings form.' );
+	$fields = array();
+	$processor = new WP_HTML_Tag_Processor( $form[1] );
+	while ( $processor->next_tag( 'INPUT' ) ) {
+		$name = $processor->get_attribute( 'name' );
+		if ( is_string( $name ) ) {
+			$fields[ $name ][] = array( 'id' => $processor->get_attribute( 'id' ), 'value' => $processor->get_attribute( 'value' ) );
+		}
+	}
+	$labels = array();
+	$processor = new WP_HTML_Tag_Processor( $form[1] );
+	while ( $processor->next_tag( 'LABEL' ) ) {
+		$for = $processor->get_attribute( 'for' );
+		if ( is_string( $for ) ) {
+			$labels[ $for ] = 1 + ( $labels[ $for ] ?? 0 );
+		}
+	}
+	foreach ( array( Payload_Settings::RESPONSE_KEY, Payload_Settings::WINDOW_KEY, Payload_Settings::DOCUMENT_KEY, Payload_Settings::NOTES_KEY, Payload_Settings::INLINE_FILE_KEY, Payload_Settings::INLINE_MEDIA_KEY ) as $key ) {
+		$controls = $fields[ Payload_Settings::OPTION_NAME . '[' . $key . ']' ] ?? array();
+		wpai134_limits_assert( 1 === count( $controls ), 'Native administrator configuration omitted or duplicated the named payload budget: ' . $key );
+		$id = $controls[0]['id'];
+		wpai134_limits_assert( is_string( $id ) && '' !== $id && 1 === ( $labels[ $id ] ?? 0 ), 'Native payload budget lacks its own associated label: ' . $key );
+		wpai134_limits_assert( (string) $chosen[ $key ] === $controls[0]['value'], 'Native payload control does not display its stored budget: ' . $key );
+	}
 
 	$store = new Store();
 	// Deliberately below the 512 KiB current record limit but above the
