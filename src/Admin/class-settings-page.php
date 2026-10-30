@@ -389,7 +389,7 @@ final class Settings_Page {
 				<table class="form-table" role="presentation"><tbody>
 				<?php
 				foreach ( $this->settings->groups() as $key => $group ) {
-					if ( ! in_array( $key, array( Settings::GROUP_NATIVE_NETWORK_READ, Settings::GROUP_NATIVE_NETWORK_WRITE ), true ) && ! in_array( $key, Settings::DATABASE_GROUPS, true ) ) {
+					if ( ! in_array( $key, array( Settings::GROUP_NATIVE_NETWORK_READ, Settings::GROUP_NATIVE_NETWORK_WRITE ), true ) && ! in_array( $key, Settings::DATABASE_GROUPS, true ) && ! in_array( $key, Settings::ADMINISTRATION_GROUPS, true ) ) {
 						$this->render_access_group_row( Settings::OPTION_NAME, $key, $group, $values );
 					}
 				}
@@ -398,6 +398,7 @@ final class Settings_Page {
 				<?php submit_button(); ?>
 			</form>
 
+			<p><a href="<?php echo esc_url( admin_url( 'admin.php?page=' . Administration_Page::SLUG ) ); ?>"><?php echo esc_html__( 'Configure advanced administration access, directory scopes and backup destinations.', 'wp-ai-bridge' ); ?></a></p>
 			<?php $this->render_native_network_read_form(); ?>
 			<?php $this->render_native_network_write_form(); ?>
 

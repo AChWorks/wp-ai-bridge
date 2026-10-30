@@ -51,12 +51,20 @@ final class Database_Connection {
 	public $options;
 	/** @var bool */
 	public $mariadb;
+	/** @var string */
+	public $version;
+	/** @var bool */
+	private $schema_lock_owned = false;
+	/** @var bool */
+	private $quarantined = false;
 	/** @var int */
 	public $packet_bytes;
 	/** @var int */
 	private $case_mode;
 	/** @var array */
 	private $grants = array();
+	/** @var array Request-local admitted native SQL statements. */
+	private $native_statements = array();
 
 	/** Retain only the existing supported handle. */
 	public function __construct() {
@@ -78,12 +86,561 @@ final class Database_Connection {
 		if ( '' === $this->database || ! isset( $wpdb->dbname ) || $wpdb->dbname !== $this->database ) {
 			throw new Database_Write_Failure( 'database_write_unsupported_connection' );
 		}
-		$this->mariadb      = false !== stripos( $rows[0]['version'] ?? '', 'MariaDB' );
+		$this->version      = (string) ( $rows[0]['version'] ?? '' );
+		$this->mariadb      = false !== stripos( $this->version, 'MariaDB' );
 		$this->packet_bytes = (int) ( $rows[0]['packet'] ?? 0 );
 		$this->case_mode    = (int) ( $rows[0]['case_mode'] ?? -1 );
 		foreach ( $this->run( 'SHOW GRANTS FOR CURRENT_USER' )['rows'] as $row ) {
 			$this->grants[] = (string) reset( $row );
 		}
+	}
+
+
+	/** @param string $database Verified native schema. @param string $table Verified table. @return string */
+	public static function qualified( $database, $table ) {
+		return self::quote( $database ) . '.' . self::quote( $table );
+	}
+
+	/**
+	 * A positive clean-session probe; it never commits caller-owned work.
+	 *
+	 * @return true
+	 */
+	public function assert_clean_session() {
+		try {
+			$this->begin_callback_journal();
+			if ( ! $this->rollback() ) {
+				throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+			}
+			return true;
+		} catch ( \Throwable $error ) {
+			$this->rollback();
+			throw $error;
+		}
+	}
+
+	/**
+	 * Send one internally generated DDL statement without warning-as-rollback.
+	 *
+	 * The caller must complete admission and arm its durable journal first.
+	 * An acknowledged SQL error is captured, not called a transactional rollback.
+	 * No callbacks, reconnect, retries or subsequent inspection happen here.
+	 *
+	 * @param string $sql Internally generated, qualified DDL.
+	 * @return array Native acknowledgement, independent of later reporting.
+	 */
+	public function dispatch_ddl_once( $sql ) {
+		$sent = false;
+		$ack  = null;
+		set_error_handler(
+			static function () {
+				return true;
+			}
+		);
+		try {
+			global $wpdb;
+			if ( self::$busy || $this->owned || $this->mode_changed ||
+				$wpdb !== $this->wpdb || $this->wpdb->dbh !== $this->handle ||
+				mysqli_thread_id( $this->handle ) !== $this->session ||
+				$this->wpdb->base_prefix !== $this->prefix || $this->wpdb->options !== $this->options ||
+				! is_string( $sql ) || '' === $sql ) {
+				throw new Database_Write_Failure( 'database_write_unsupported_connection' );
+			}
+			if ( $this->packet_bytes > 0 && strlen( $sql ) >= $this->packet_bytes - 1024 ) {
+				throw new Database_Write_Failure( 'database_write_packet_limit', array( 'max_allowed_packet' => $this->packet_bytes ) );
+			}
+			$sent   = true;
+			$result = @mysqli_query( $this->handle, $sql );
+			if ( false === $result ) {
+				$errno = mysqli_errno( $this->handle );
+				return $this->ddl_error( $errno, mysqli_sqlstate( $this->handle ) );
+			}
+			$ack = array(
+				'outcome'       => 'acknowledged',
+				'errno'         => 0,
+				'sqlstate'      => '00000',
+				'warning_count' => mysqli_warning_count( $this->handle ),
+				'affected'      => (string) mysqli_affected_rows( $this->handle ),
+			);
+			if ( $result instanceof \mysqli_result ) {
+				mysqli_free_result( $result );
+			}
+			return $ack;
+		} catch ( Database_Write_Failure $error ) {
+			if ( ! $sent ) {
+				throw $error;
+			}
+			$this->quarantine();
+			return array(
+				'outcome'       => 'unknown',
+				'errno'         => 0,
+				'sqlstate'      => '',
+				'warning_count' => 0,
+				'affected'      => null,
+			);
+		} catch ( \mysqli_sql_exception $error ) {
+			return $this->ddl_error( (int) $error->getCode(), $error->getSqlState() );
+		} catch ( \Throwable $error ) {
+			if ( $sent ) {
+				$this->quarantine();
+			}
+			if ( null !== $ack ) {
+				$ack['cleanup_pending'] = true;
+				return $ack;
+			}
+			return array(
+				'outcome'       => $sent ? 'unknown' : 'not_dispatched',
+				'errno'         => 0,
+				'sqlstate'      => '',
+				'warning_count' => 0,
+				'affected'      => null,
+			);
+		} finally {
+			restore_error_handler();
+		}
+	}
+
+	/** @param int $errno Native numeric diagnostic. @param string $sqlstate Native SQLSTATE. @return array */
+	private function ddl_error( $errno, $sqlstate ) {
+		$unknown = ( $errno >= 2000 && $errno < 3000 ) || in_array( $errno, array( 0, 4031 ), true );
+		if ( $unknown ) {
+			$this->quarantine();
+		}
+		return array(
+			'outcome'       => $unknown ? 'unknown' : 'native_error',
+			'errno'         => $errno,
+			'sqlstate'      => $sqlstate,
+			'warning_count' => 0,
+			'affected'      => null,
+		);
+	}
+
+
+	/**
+	 * Prepare exactly one account-authorized statement before dispatch admission.
+	 * Native result rows are never buffered as a complete result.
+	 *
+	 * @param string $sql Complete native statement, not installation confined.
+	 * @param array $parameters Exact scalar bytes/NULL.
+	 * @param int $metadata_budget Finite metadata allowance.
+	 * @param int $memory_ceiling Known finite PHP memory ceiling.
+	 * @return array Private token plus pre-dispatch resource evidence.
+	 */
+	public function prepare_native_sql( $sql, array $parameters, $metadata_budget, $memory_ceiling ) {
+		$this->native_sql_capacity( $metadata_budget, $memory_ceiling );
+		$statement = null;
+		set_error_handler(
+			static function () {
+				return true;
+			}
+		);
+		try {
+			$inline = strlen( $sql ) + 64 * count( $parameters );
+			foreach ( $parameters as $parameter ) {
+				if ( null !== $parameter && ! is_string( $parameter ) ) {
+					throw new Database_Write_Failure( 'database_native_sql_invalid' );
+				}
+				$inline += null === $parameter ? 0 : strlen( $parameter );
+			}
+			if ( '' === $sql || $inline >= $this->packet_bytes - 1024 ) {
+				throw new Database_Write_Failure( 'database_write_packet_limit', array( 'max_allowed_packet' => $this->packet_bytes ) );
+			}
+			$statement = @mysqli_prepare( $this->handle, $sql );
+			if ( false === $statement ) {
+				$this->native_failure();
+			}
+			if ( mysqli_stmt_param_count( $statement ) !== count( $parameters ) ) {
+				throw new Database_Write_Failure( 'database_native_sql_parameters' );
+			}
+			$values = array_values( $parameters );
+			if ( $values && ! @mysqli_stmt_bind_param( $statement, str_repeat( 's', count( $values ) ), ...$values ) ) {
+				$this->native_failure( $statement );
+			}
+			$fields = $this->native_sql_fields( $statement, $metadata_budget );
+			$kind   = preg_match( '/^\s*([a-z]+)/i', $sql, $match ) ? strtoupper( $match[1] ) : '';
+			if ( ! $fields && ! in_array( $kind, array( 'CREATE', 'ALTER', 'DROP', 'RENAME', 'TRUNCATE', 'INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'SET', 'DO', 'GRANT', 'REVOKE', 'COMMIT', 'ROLLBACK', 'BEGIN', 'START', 'LOCK', 'UNLOCK', 'USE', 'FLUSH', 'RESET', 'KILL', 'INSTALL', 'UNINSTALL', 'WITH' ), true ) ) {
+				throw new Database_Write_Failure( 'database_native_sql_metadata_unavailable', array( 'compatibility' => 'unknown_preexecute_result_shape' ) );
+			}
+			$row_bound = $this->native_sql_row_bound( $fields, ! empty( $parameters ) );
+			$this->native_sql_capacity( $metadata_budget, $memory_ceiling, $row_bound );
+			$token                             = bin2hex( random_bytes( 32 ) );
+			$this->native_statements[ $token ] = array(
+				'statement'       => $statement,
+				'parameters'      => $values,
+				'fields'          => $fields,
+				'metadata_budget' => $metadata_budget,
+				'memory_ceiling'  => $memory_ceiling,
+				'row_bound'       => $row_bound,
+			);
+			$statement                         = null;
+			return array(
+				'token'                => $token,
+				'field_count'          => count( $fields ),
+				'max_allowed_packet'   => $this->packet_bytes,
+				'row_bound_bytes'      => $row_bound,
+				'required_headroom'    => $this->native_sql_capacity( $metadata_budget, $memory_ceiling, $row_bound ),
+				'minimum_result_bytes' => strlen(
+					$this->native_sql_frame(
+						array(
+							'format' => 'wpai-native-sql-result-v1',
+							'fields' => $fields,
+						)
+					)
+				) + 128,
+			);
+		} catch ( Database_Write_Failure $error ) {
+			throw $error;
+		} catch ( \mysqli_sql_exception $error ) {
+			throw new Database_Write_Failure(
+				'database_native_sql_prepare_failed',
+				array(
+					'errno'    => (int) $error->getCode(),
+					'sqlstate' => $error->getSqlState(),
+				)
+			);
+		} catch ( \Throwable $error ) {
+			throw new Database_Write_Failure( 'database_native_sql_prepare_failed' );
+		} finally {
+			if ( $statement instanceof \mysqli_stmt ) {
+				@mysqli_stmt_close( $statement );
+			}
+			restore_error_handler();
+		}
+	}
+
+	/** @param string $token This request's private native statement. @return void */
+	public function cancel_native_sql( $token ) {
+		if ( isset( $this->native_statements[ $token ] ) ) {
+			set_error_handler(
+				static function () {
+					return true;
+				}
+			);
+			try {
+				@mysqli_stmt_close( $this->native_statements[ $token ]['statement'] );
+				unset( $this->native_statements[ $token ] );
+			} finally {
+				restore_error_handler();
+			}
+		}
+	}
+
+	/**
+	 * Execute once and stream exact typed row frames to an admitted private sink.
+	 * Only one packet-sized row is live; FLOAT/DOUBLE retain IEEE bytes rather
+	 * than losing precision through PHP's decimal string conversion.
+	 *
+	 * @param string $token Private admitted statement.
+	 * @param Administration_Transfer_Writer $writer Already reserved raw sink.
+	 * @return array Captured acknowledgement and independent result completeness.
+	 */
+	public function stream_native_sql_once( $token, Administration_Transfer_Writer $writer ) {
+		$owned = $this->native_statements[ $token ] ?? null;
+		if ( ! is_array( $owned ) ) {
+			throw new Database_Write_Failure( 'database_native_sql_invalid' );
+		}
+		$this->native_sql_capacity( $owned['metadata_budget'], $owned['memory_ceiling'], $owned['row_bound'] );
+		unset( $this->native_statements[ $token ] );
+		$statement = $owned['statement'];
+		$sent      = false;
+		$ack       = null;
+		$rows      = '0';
+		$complete  = false;
+		$failure   = '';
+		set_error_handler(
+			static function () {
+				return true;
+			}
+		);
+		try {
+			global $wpdb;
+			if ( self::$busy || $this->owned || $this->mode_changed || $wpdb !== $this->wpdb ||
+				$this->wpdb->dbh !== $this->handle || mysqli_thread_id( $this->handle ) !== $this->session ) {
+				throw new Database_Write_Failure( 'database_write_unsupported_connection' );
+			}
+			$sent = true;
+			if ( ! @mysqli_stmt_execute( $statement ) ) {
+				$ack = $this->ddl_error( mysqli_stmt_errno( $statement ), mysqli_stmt_sqlstate( $statement ) );
+			} else {
+				$ack    = array(
+					'outcome'       => 'acknowledged',
+					'errno'         => 0,
+					'sqlstate'      => '00000',
+					'warning_count' => mysqli_warning_count( $this->handle ),
+					'affected'      => (string) mysqli_stmt_affected_rows( $statement ),
+					'insert_id'     => (string) mysqli_stmt_insert_id( $statement ),
+				);
+				$fields = $this->native_sql_fields( $statement, $owned['metadata_budget'] );
+				if ( count( $fields ) !== count( $owned['fields'] ) ||
+					$this->native_sql_row_bound( $fields, ! empty( $owned['parameters'] ) ) > $owned['row_bound'] ) {
+					throw new Database_Write_Failure( 'database_native_sql_metadata_changed' );
+				}
+				$this->native_sql_append(
+					$writer,
+					array(
+						'format' => 'wpai-native-sql-result-v1',
+						'fields' => $fields,
+					)
+				);
+				if ( $fields ) {
+					$values = array_fill( 0, count( $fields ), null );
+					if ( ! @mysqli_stmt_bind_result( $statement, ...$values ) ) {
+						throw new Database_Write_Failure( 'database_native_sql_result_incomplete' );
+					}
+					while ( true ) {
+						$fetched = @mysqli_stmt_fetch( $statement );
+						if ( null === $fetched ) {
+							break;
+						}
+						if ( false === $fetched ) {
+							throw new Database_Write_Failure(
+								'database_native_sql_result_incomplete',
+								array(
+									'errno'    => mysqli_stmt_errno( $statement ),
+									'sqlstate' => mysqli_stmt_sqlstate( $statement ),
+								)
+							);
+						}
+						$row_bytes = 0;
+						foreach ( $values as $value ) {
+							$row_bytes += is_string( $value ) ? strlen( $value ) : 32;
+						}
+						if ( $row_bytes > $owned['row_bound'] + 32 * count( $fields ) ) {
+							throw new Database_Write_Failure( 'database_native_sql_result_packet' );
+						}
+						foreach ( $values as $index => $value ) {
+							$representation = 'native_scalar_bytes';
+							if ( null !== $value && in_array( $fields[ $index ]['type'], array( 4, 5 ), true ) ) {
+								$representation = 4 === $fields[ $index ]['type'] ? 'ieee754_binary32_be' : 'ieee754_binary64_be';
+								$value          = pack( 4 === $fields[ $index ]['type'] ? 'G' : 'E', (float) $value );
+							} elseif ( null !== $value ) {
+								$value = (string) $value;
+							}
+							$length = null === $value ? 0 : strlen( $value );
+							$sha    = null === $value ? null : hash( 'sha256', $value );
+							$offset = 0;
+							$window = max( 1, min( 49152, intdiv( $owned['metadata_budget'], 4 ) ) );
+							do {
+								$chunk = null === $value ? '' : substr( $value, $offset, $window );
+								$this->native_sql_append(
+									$writer,
+									array(
+										'row'            => $rows,
+										'column'         => $index,
+										'is_null'        => null === $value,
+										'representation' => $representation,
+										'encoding'       => 'base64',
+										'bytes'          => $length,
+										'offset'         => $offset,
+										'data'           => base64_encode( $chunk ),
+										'sha256'         => $sha,
+									)
+								);
+								$offset += strlen( $chunk );
+							} while ( $offset < $length );
+						}
+						$rows = $this->native_sql_increment( $rows );
+					}
+				}
+				if ( mysqli_stmt_more_results( $statement ) ) {
+					throw new Database_Write_Failure( 'database_native_sql_multiple_results' );
+				}
+				$this->native_sql_append(
+					$writer,
+					array(
+						'rows'     => $rows,
+						'complete' => true,
+					)
+				);
+				$complete = true;
+			}
+		} catch ( \mysqli_sql_exception $error ) {
+			if ( null === $ack ) {
+				$ack = $this->ddl_error( (int) $error->getCode(), $error->getSqlState() );
+			} else {
+				$failure = 'database_native_sql_result_incomplete';
+			}
+		} catch ( \Throwable $error ) {
+			$failure = $error instanceof Database_Write_Failure ? $error->reason : 'database_native_sql_result_incomplete';
+			if ( null === $ack ) {
+				$ack = array(
+					'outcome'       => $sent ? 'unknown' : 'not_dispatched',
+					'errno'         => 0,
+					'sqlstate'      => '',
+					'warning_count' => 0,
+					'affected'      => null,
+				);
+			}
+		} finally {
+			try {
+				if ( $complete || ( null !== $ack && 'native_error' === $ack['outcome'] ) ) {
+					@mysqli_stmt_close( $statement );
+				} elseif ( $sent ) {
+					$this->quarantine();
+				} else {
+					@mysqli_stmt_close( $statement );
+				}
+			} catch ( \Throwable $error ) {
+				$this->quarantine();
+				$failure = 'database_native_sql_result_cleanup';
+			} finally {
+				restore_error_handler();
+			}
+		}
+		return array(
+			'native'          => $ack,
+			'result_complete' => $complete,
+			'rows'            => $rows,
+			'result_error'    => $failure,
+		);
+	}
+
+	/** @param int $budget Metadata allowance. @param int $ceiling Finite known memory ceiling. @param int $row_bound Admitted native row bytes. @return int */
+	private function native_sql_capacity( $budget, $ceiling, $row_bound = 0 ) {
+		if ( ! is_int( $budget ) || $budget < 1 || ! is_int( $ceiling ) || $ceiling < 1 ||
+			$this->packet_bytes < 1024 || ! is_int( $row_bound ) || $row_bound < 0 || $row_bound > intdiv( PHP_INT_MAX, 8 ) ||
+			$budget > intdiv( PHP_INT_MAX, 16 ) ) {
+			throw new Database_Write_Failure( 'database_native_sql_resource_proof' );
+		}
+		$required = 4 * $row_bound + 8 * $budget;
+		if ( $required > $ceiling || memory_get_usage( true ) > $ceiling - $required ) {
+			throw new Database_Write_Failure(
+				'database_native_sql_resource_proof',
+				array(
+					'required_headroom'  => $required,
+					'memory_ceiling'     => $ceiling,
+					'max_allowed_packet' => $this->packet_bytes,
+				)
+			);
+		}
+		return $required;
+	}
+
+
+	/** @param array $fields Native prepared metadata. @param bool $parameters Parameter-sensitive metadata needs native packet fallback. @return int */
+	private function native_sql_row_bound( $fields, $parameters ) {
+		$bound = 0;
+		foreach ( $fields as $field ) {
+			$length = $field['declared_bytes'];
+			if ( ! ctype_digit( $length ) || ( '0' === $length && 6 !== $field['type'] ) || $parameters ) {
+				return $this->packet_bytes;
+			}
+			$bound += min( $this->packet_bytes, (int) $length );
+			if ( $bound >= $this->packet_bytes ) {
+				return $this->packet_bytes;
+			}
+		}
+		return $bound;
+	}
+
+	/** @param \mysqli_stmt $statement Native statement. @param int $budget Finite metadata allowance. @return array */
+	private function native_sql_fields( $statement, $budget ) {
+		$count = mysqli_stmt_field_count( $statement );
+		if ( $count > intdiv( $budget, 1024 ) ) {
+			throw new Database_Write_Failure( 'database_native_sql_metadata_budget' );
+		}
+		if ( 0 === $count ) {
+			return array();
+		}
+		$metadata = mysqli_stmt_result_metadata( $statement );
+		if ( ! $metadata instanceof \mysqli_result ) {
+			throw new Database_Write_Failure( 'database_native_sql_metadata_unavailable' );
+		}
+		try {
+			$fields = array();
+			foreach ( mysqli_fetch_fields( $metadata ) as $index => $field ) {
+				$fields[] = array(
+					'ordinal'        => $index,
+					'name_base64'    => base64_encode( $field->name ),
+					'type'           => $field->type,
+					'flags'          => $field->flags,
+					'charset'        => $field->charsetnr,
+					'declared_bytes' => (string) $field->length,
+					'decimals'       => $field->decimals,
+				);
+			}
+			if ( strlen( $this->native_sql_frame( $fields ) ) > $budget ) {
+				throw new Database_Write_Failure( 'database_native_sql_metadata_budget' );
+			}
+			return $fields;
+		} finally {
+			mysqli_free_result( $metadata );
+		}
+	}
+
+	/** @param Administration_Transfer_Writer $writer Reserved raw sink. @param array $frame Exact typed frame. @return void */
+	private function native_sql_append( $writer, $frame ) {
+		$bytes = $this->native_sql_frame( $frame );
+		if ( strlen( $bytes ) > $writer->remaining() || ! $writer->append_native( $bytes ) ) {
+			throw new Database_Write_Failure( 'database_native_sql_result_capacity' );
+		}
+	}
+
+	/** @param array $frame Typed inert frame. @return string */
+	private function native_sql_frame( $frame ) {
+		$encoded = json_encode( $frame );
+		if ( ! is_string( $encoded ) ) {
+			throw new Database_Write_Failure( 'database_native_sql_result_encoding' );
+		}
+		return $encoded . "\n";
+	}
+
+	/** @param string $value Nonnegative exact decimal. @return string */
+	private function native_sql_increment( $value ) {
+		for ( $index = strlen( $value ) - 1; $index >= 0; --$index ) {
+			if ( '9' !== $value[ $index ] ) {
+				$value[ $index ] = chr( ord( $value[ $index ] ) + 1 );
+				return $value;
+			}
+			$value[ $index ] = '0';
+		}
+		return '1' . $value;
+	}
+
+	/** Discard a native-account session whose state/control namespace changed. */
+	public function abandon_native_sql_session() {
+		set_error_handler(
+			static function () {
+				return true;
+			}
+		);
+		try {
+			$this->quarantine();
+		} finally {
+			restore_error_handler();
+		}
+	}
+
+
+	/**
+	 * Acquire only our own lock after clean-session admission and durable arming.
+	 * This primitive is used solely by version-qualified rename fencing.
+	 *
+	 * @param string $table Verified installation table.
+	 * @return array Native acknowledgement.
+	 */
+	public function acquire_schema_write_lock( $table ) {
+		if ( $this->schema_lock_owned || ! is_string( $table ) || 0 !== strpos( $table, $this->prefix ) ) {
+			throw new Database_Write_Failure( 'database_write_unsupported_session' );
+		}
+		$ack = $this->dispatch_ddl_once( 'LOCK TABLES ' . $this->table( $table ) . ' WRITE' );
+		if ( 'acknowledged' === $ack['outcome'] ) {
+			$this->schema_lock_owned = true;
+		}
+		return $ack;
+	}
+
+	/** @return array Release only an acknowledged lock created by this instance. */
+	public function release_schema_write_lock() {
+		if ( ! $this->schema_lock_owned ) {
+			throw new Database_Write_Failure( 'database_write_unsupported_session' );
+		}
+		$ack                     = $this->dispatch_ddl_once( 'UNLOCK TABLES' );
+		$this->schema_lock_owned = false;
+		if ( 'acknowledged' !== $ack['outcome'] ) {
+			$this->quarantine();
+		}
+		return $ack;
 	}
 
 	/** @param string $identifier Verified native identifier. @return string */
@@ -308,6 +865,11 @@ final class Database_Connection {
 
 	/** End use of a handle whose transaction/session state cannot be confirmed. */
 	private function quarantine() {
+		if ( $this->quarantined ) {
+			return;
+		}
+		$this->quarantined       = true;
+		$this->schema_lock_owned = false;
 		try {
 			@mysqli_close( $this->handle );
 		} catch ( \Throwable $error ) {
@@ -384,7 +946,15 @@ final class Database_Connection {
 					if ( is_array( $source ) && $source['bytes'] >= $this->packet_bytes - 1024 ) {
 						throw new Database_Write_Failure( 'database_write_packet_limit', array( 'max_allowed_packet' => $this->packet_bytes ) );
 					}
-					if ( ! is_array( $source ) || ! is_resource( $source['stream'] ) || 0 !== fseek( $source['stream'], 0 ) ) {
+					$source_offset = is_array( $source ) ? ( $source['offset'] ?? 0 ) : 0;
+					$container     = is_array( $source ) ? ( $source['container_bytes'] ?? $source['bytes'] ) : null;
+					if ( ! is_array( $source ) || ! is_resource( $source['stream'] ) ||
+						! is_int( $source['bytes'] ) || $source['bytes'] < 0 ||
+						! is_int( $source_offset ) || $source_offset < 0 ||
+						! is_int( $container ) || $container < $source['bytes'] ||
+						$source_offset > $container - $source['bytes'] ||
+						( $source_offset > 0 && ( fstat( $source['stream'] )['size'] ?? null ) !== $container ) ||
+						0 !== fseek( $source['stream'], $source_offset ) ) {
 						throw new Database_Write_Failure( 'database_write_source_unavailable' );
 					}
 					$sent = 0;

@@ -25,6 +25,69 @@ final class Database_Control_Storage {
 		$this->budget     = $budget;
 	}
 
+
+	/** @param string $table Exact native table. @return string Fixed control dependency class. */
+	public function table_policy( $table ) {
+		if ( preg_match( '/^' . preg_quote( $this->connection->prefix, '/' ) . '(?:[0-9]+_)?(options|sitemeta|blogmeta|posts|postmeta)$/D', $table, $match ) ) {
+			return $match[1];
+		}
+		if ( 0 === strpos( $table, $this->connection->prefix . 'wpai_' ) ||
+			0 === strpos( $table, $this->connection->prefix . 'wp_ai_bridge' ) ) {
+			return 'bridge';
+		}
+		return '';
+	}
+
+	/** @param string $table Exact schema target. @return true */
+	public function assert_schema_target( $table ) {
+		if ( ! $this->identifier( $table ) || 0 !== strpos( $table, $this->connection->prefix ) ) {
+			throw new Database_Write_Failure( 'database_schema_scope' );
+		}
+		if ( '' !== $this->table_policy( $table ) ) {
+			throw new Database_Write_Failure( 'database_schema_control_dependency' );
+		}
+		return true;
+	}
+
+	/**
+	 * Observe a name and complete native definition under the caller's section.
+	 * The observation is not an atomic precondition for a later DDL statement.
+	 *
+	 * @param string $table Exact persistent installation table.
+	 * @return array
+	 */
+	public function observe_table( $table ) {
+		if ( ! $this->identifier( $table ) || 0 !== strpos( $table, $this->connection->prefix ) ) {
+			throw new Database_Write_Failure( 'database_schema_scope' );
+		}
+		$rows = $this->connection->run(
+			'SELECT TABLE_TYPE AS kind FROM information_schema.TABLES WHERE TABLE_SCHEMA=? AND BINARY TABLE_NAME=BINARY ?',
+			array( $this->connection->database, $table ),
+			array(),
+			2
+		)['rows'];
+		if ( ! $rows ) {
+			return array(
+				'table'                 => $table,
+				'exists'                => false,
+				'schema_hash'           => null,
+				'precondition_strength' => 'observed_not_atomic',
+			);
+		}
+		$native = $this->pin_table( $table, false );
+		$stable = preg_replace( '/ AUTO_INCREMENT=[0-9]+/', '', $native['ddl'] );
+		if ( ! is_string( $stable ) ) {
+			throw new Database_Write_Failure( 'database_write_unsupported_schema' );
+		}
+		return array(
+			'table'                 => $table,
+			'exists'                => true,
+			'schema_hash'           => hash( 'sha256', $this->encode( $this->metadata_bytes( array( 'wpai-database-schema-v1', $this->connection->database, $table, $native['native'], $stable ) ) ) ),
+			'engine'                => $native['native'][0]['engine'],
+			'precondition_strength' => 'observed_not_atomic',
+		);
+	}
+
 	/** @return array Pinned verified receipt schema. */
 	public function receipt_schema() {
 		$schema = $this->schema( $this->connection->options );

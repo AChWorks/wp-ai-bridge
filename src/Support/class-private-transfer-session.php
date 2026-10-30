@@ -18,6 +18,10 @@ use WP_Error;
  * archive or exposes a client-selectable filesystem path. No daemon required.
  */
 final class Private_Transfer_Session {
+	/** Fixed server-owned administration byte purpose and immutable binding. */
+	private $administration         = null;
+	private $administration_created = array();
+
 	/** @var Permissions */
 	private $permissions;
 
@@ -36,6 +40,92 @@ final class Private_Transfer_Session {
 	/** @param Permissions $permissions Bridge current principal policy. */
 	public function __construct( Permissions $permissions ) {
 		$this->permissions = $permissions;
+	}
+
+
+	/** Fixed internal administration factory; no public caller chooses a purpose. */
+	public static function for_administration( Permissions $permissions, $purpose, array $binding ) {
+		$store                 = new self( $permissions );
+		$store->administration = array(
+			'purpose' => $purpose,
+			'binding' => $binding,
+			'origin'  => ( new Administration_Access( $permissions ) )->context(),
+		);
+		return $store;
+	}
+
+	/** All new purposes use the same private byte/journal backend. */
+	private static function administration_purposes() {
+		return array(
+			'filesystem_input',
+			'filesystem_export',
+			'configuration_input',
+			'configuration_snapshot',
+			'customizer_input',
+			'customizer_snapshot',
+			'backup_input',
+			'backup_archive',
+			'backup_state',
+			'native_sql_result',
+		);
+	}
+
+	/** Fresh authority, physical principal and complete server binding. */
+	private function administration_allowed( $purpose ) {
+		if ( null === $this->administration || $purpose !== $this->administration['purpose'] ||
+			! in_array( $purpose, self::administration_purposes(), true ) ) {
+			return false;
+		}
+		$access = new Administration_Access( $this->permissions );
+		if ( ! $access->same_context( $this->administration['origin'] ) ) {
+			return false;
+		}
+		$binding = $this->administration['binding'];
+		$network = ! empty( $binding['require_network'] );
+		if ( 'native_sql_result' === $purpose ) {
+			if ( ! defined( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL' ) || true !== WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL ) {
+				return false;
+			}
+			$requirements = array();
+			foreach ( array( 'database_inspection', 'sensitive_database_read', 'database_write', 'database_delete', 'database_schema' ) as $group ) {
+				$requirements[] = array( $group, 'manage_options' );
+			}
+			return $access->allowed( 'database_native_sql', is_multisite(), $requirements );
+		}
+		if ( 0 === strpos( $purpose, 'filesystem_' ) ) {
+			$group = 'filesystem_input' === $purpose ? 'filesystem_write' : 'filesystem_read';
+			if ( ! $access->allowed( $group, $network ) ) {
+				return false;
+			}
+		} elseif ( 0 === strpos( $purpose, 'backup_' ) ) {
+			if ( ! $access->allowed( in_array( $purpose, array( 'backup_input', 'backup_state' ), true ) ? 'full_restore' : 'full_backup', is_multisite() ) ) {
+				return false;
+			}
+		} else {
+			$customizer   = 0 === strpos( $purpose, 'customizer_' );
+			$group        = $customizer ? 'customizer_write' : 'native_configuration';
+			$requirements = array( array( 'sensitive_native_settings_read', 'manage_options' ) );
+			if ( str_ends_with( $purpose, '_input' ) ) {
+				$requirements[] = array( 'sensitive_native_settings_write', 'manage_options' );
+				$requirements[] = array( 'site_configuration', 'manage_options' );
+			}
+			if ( $network ) {
+				$requirements[] = array( 'sensitive_network_settings_read', 'manage_network_options' );
+				if ( str_ends_with( $purpose, '_input' ) ) {
+					$requirements[] = array( 'sensitive_network_settings_write', 'manage_network_options' );
+				}
+			}
+			if ( ! $access->allowed( $group, $network, $requirements ) ) {
+				return false;
+			}
+			if ( ! empty( $binding['theme'] ) && (string) get_stylesheet() !== $binding['theme'] ) {
+				return false;
+			}
+		}
+		if ( isset( $binding['revision'] ) && $access->configuration()['revision'] !== $binding['revision'] ) {
+			return false;
+		}
+		return true;
 	}
 
 	/**
@@ -111,6 +201,7 @@ final class Private_Transfer_Session {
 	 */
 	public function begin( $purpose, $total, $sha256, $max_total, $max_chunk, $active_limit, $ttl_seconds, $max_active = null ) {
 		$native_binding = null !== $this->native_options_scope ? $this->native_binding() : null;
+		$administration = $this->administration;
 		if ( ! $this->allowed( $purpose ) ||
 			( null !== $native_binding && $native_binding !== $this->native_binding() ) ) {
 			return $this->denied();
@@ -221,6 +312,9 @@ final class Private_Transfer_Session {
 				'expires'  => time() + $ttl_seconds,
 				'state'    => 'open',
 			);
+			if ( null !== $administration ) {
+				$meta['administration'] = $administration;
+			}
 			if ( null !== $native_binding ) {
 				// Bind at creation, before any append/status/verify can load it.
 				$meta = array_merge( $meta, $native_binding );
@@ -265,10 +359,433 @@ final class Private_Transfer_Session {
 					'total'   => $total,
 				);
 			}
+			if ( null !== $administration ) {
+				$identity = @lstat( $root );
+				if ( ! is_array( $identity ) ) {
+					return new WP_Error( 'transfer_cleanup_uncertain', 'Private creation root is unavailable.' );
+				}
+				$this->administration_created[ $id ] = array(
+					'root'           => $root,
+					'dev'            => $identity['dev'],
+					'ino'            => $identity['ino'],
+					'administration' => $administration,
+				);
+				if ( ! $this->administration_allowed( $purpose ) || $administration !== $this->administration ) {
+					$this->erase( $root, $id );
+					return $this->denied();
+				}
+			}
 			return $this->receipt( $meta );
 		} finally {
 			flock( $guard, LOCK_UN );
 			fclose( $guard );
+		}
+	}
+
+
+	/** Finite dynamic reservation before a producer dispatch; no whole-file hash promise. */
+	public function begin_administration_stream( $max_total, $limits = null ) {
+		if ( null === $this->administration ) {
+			return $this->denied();
+		}
+		$limits  = null === $limits ? ( new Transfer_Settings() )->bytes() : $limits;
+		$receipt = $this->begin(
+			$this->administration['purpose'],
+			$max_total,
+			hash( 'sha256', '' ),
+			$limits['file'],
+			$limits['chunk'],
+			$limits['sessions'],
+			$limits['ttl'],
+			$limits['active']
+		);
+		if ( is_wp_error( $receipt ) ) {
+			return $receipt;
+		}
+		$loaded = $this->load( $receipt['id'] );
+		if ( is_wp_error( $loaded ) ) {
+			$this->discard_administration_creation( $receipt['id'] );
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		try {
+			$meta['administration_stream'] = true;
+			$meta['stream_chain']          = hash( 'sha256', 'wpai-administration-stream-v1' );
+			if ( ! $this->save_meta( $handle, $meta ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'Stream reservation checkpoint was not confirmed.' );
+			}
+			return $this->receipt( $meta );
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
+	/** Atomic received-offset and checksum-chain checkpoint, with exact last-frame replay. */
+	public function append_verified_frame( $id, $offset, $bytes, $frame_sha256 ) {
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		try {
+			if ( null === $this->administration || empty( $meta['administration_stream'] ) ||
+				'open' !== $meta['state'] || ! is_int( $offset ) || $offset < 0 ||
+				! is_string( $bytes ) || '' === $bytes || strlen( $bytes ) > $meta['chunk'] ||
+				! is_string( $frame_sha256 ) || ! hash_equals( hash( 'sha256', $bytes ), $frame_sha256 ) ) {
+				return $this->invalid();
+			}
+			$path = $this->check_file( $root, $id, $meta );
+			if ( is_wp_error( $path ) ) {
+				return $path;
+			}
+			$file = @fopen( $path, 'r+b' );
+			if ( ! is_resource( $file ) ) {
+				return new WP_Error( 'transfer_storage_uncertain', 'Private stream is unavailable.' );
+			}
+			try {
+				if ( ! $this->secure_file( $file, $path ) || ! $this->file_length( $file, $meta['received'] ) ) {
+					return new WP_Error( 'transfer_source_changed', 'Private stream identity changed.' );
+				}
+				if ( $offset !== $meta['received'] ) {
+					$last = $meta['last_frame'] ?? array();
+					if ( ( $last['offset'] ?? null ) !== $offset || ( $last['length'] ?? null ) !== strlen( $bytes ) ||
+						( $last['sha256'] ?? null ) !== $frame_sha256 || 0 !== fseek( $file, $offset ) ||
+						fread( $file, strlen( $bytes ) ) !== $bytes ) {
+						return new WP_Error( 'transfer_conflict', 'Frame replay does not match the last committed frame.' );
+					}
+					return $this->receipt( $meta );
+				}
+				if ( strlen( $bytes ) > $meta['total'] - $offset || 0 !== fseek( $file, $offset ) ) {
+					return $this->invalid();
+				}
+				$written = 0;
+				while ( $written < strlen( $bytes ) ) {
+					$count = fwrite( $file, substr( $bytes, $written ) );
+					if ( ! is_int( $count ) || $count < 1 ) {
+						return new WP_Error( 'transfer_outcome_unknown', 'Stream frame write was interrupted; inspect the checkpoint.' );
+					}
+					$written += $count;
+				}
+				if ( ! fflush( $file ) || ! $this->file_length( $file, $offset + $written ) ) {
+					return new WP_Error( 'transfer_outcome_unknown', 'Stream frame flush was not confirmed.' );
+				}
+				$meta['received']    += $written;
+				$meta['stream_chain'] = hash( 'sha256', $meta['stream_chain'] . ':' . $written . ':' . $frame_sha256 );
+				$meta['last_frame']   = array(
+					'offset' => $offset,
+					'length' => $written,
+					'sha256' => $frame_sha256,
+				);
+				return $this->save_meta( $handle, $meta ) ? $this->receipt( $meta ) :
+					new WP_Error( 'transfer_outcome_unknown', 'Stream checkpoint commit was not confirmed.' );
+			} finally {
+				fclose( $file );
+			}
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
+	/** Seal independently checksummed frames. sha256 is explicitly a frame-chain digest. */
+	public function seal_administration_stream( $id, $expected_offset, $chain_digest ) {
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		try {
+			if ( null === $this->administration || empty( $meta['administration_stream'] ) ||
+				! in_array( $meta['state'], array( 'open', 'verified' ), true ) ||
+				$expected_offset !== $meta['received'] || ! is_string( $chain_digest ) ||
+				! hash_equals( $meta['stream_chain'], $chain_digest ) ) {
+				return $this->invalid();
+			}
+			$path = $this->check_file( $root, $id, $meta );
+			if ( is_wp_error( $path ) ) {
+				return $path;
+			}
+			$meta['total']     = $meta['received'];
+			$meta['sha256']    = $chain_digest;
+			$meta['integrity'] = 'sha256-frame-chain-v1';
+			$meta['state']     = 'verified';
+			return $this->save_meta( $handle, $meta ) ? $this->receipt( $meta ) :
+				new WP_Error( 'transfer_outcome_unknown', 'Stream seal was not confirmed.' );
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
+	/** Producer-only writer. Reservation occurs before this callback; one request computes SHA256. */
+	public function with_administration_writer( $id, callable $callback ) {
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		$file                         = false;
+		try {
+			if ( null === $this->administration || empty( $meta['administration_stream'] ) ||
+				'open' !== $meta['state'] || 0 !== $meta['received'] ) {
+				return $this->invalid();
+			}
+			$path = $this->check_file( $root, $id, $meta );
+			if ( is_wp_error( $path ) ) {
+				return $path;
+			}
+			$file = @fopen( $path, 'r+b' );
+			if ( ! is_resource( $file ) || ! $this->secure_file( $file, $path ) ) {
+				return new WP_Error( 'transfer_storage_uncertain', 'Producer destination is unavailable.' );
+			}
+			$writer = new Administration_Transfer_Writer( $file, $meta['total'] );
+			$result = $callback( $writer );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$finished = $writer->finish();
+			if ( is_wp_error( $finished ) ) {
+				return $finished;
+			}
+			$meta['received']  = $finished['bytes'];
+			$meta['total']     = $finished['bytes'];
+			$meta['sha256']    = $finished['sha256'];
+			$meta['integrity'] = 'sha256';
+			$meta['state']     = 'verified';
+			unset( $meta['administration_stream'] );
+			if ( ! $this->save_meta( $handle, $meta ) ) {
+				return new WP_Error( 'transfer_outcome_unknown', 'Producer completed but its private receipt was not confirmed.' );
+			}
+			return array(
+				'receipt' => $this->receipt( $meta ),
+				'result'  => $result,
+			);
+		} finally {
+			if ( is_resource( $file ) ) {
+				fclose( $file );
+			}
+			$this->close_meta( $handle );
+		}
+	}
+
+	/** Same-journal bounded application state; compare-and-swap revision. */
+	public function checkpoint( $id, array $state, $expected_revision = null ) {
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		try {
+			if ( null === $this->administration ) {
+				return $this->denied();
+			}
+			$revision = (int) ( $meta['checkpoint_revision'] ?? 0 );
+			if ( null !== $expected_revision && $expected_revision !== $revision ) {
+				return new WP_Error( 'transfer_checkpoint_conflict', 'Private checkpoint revision changed.' );
+			}
+			$wire = wp_json_encode( $state );
+			if ( ! is_string( $wire ) || strlen( $wire ) > ( new Transfer_Settings() )->bytes()['request'] ) {
+				return new WP_Error( 'transfer_checkpoint_budget', 'Private checkpoint exceeds the configured metadata budget.' );
+			}
+			$meta['checkpoint']          = $state;
+			$meta['checkpoint_revision'] = $revision + 1;
+			return $this->save_meta( $handle, $meta ) ?
+				array(
+					'revision' => $revision + 1,
+					'state'    => $state,
+				) :
+				new WP_Error( 'transfer_outcome_unknown', 'Private checkpoint persistence was not confirmed.' );
+		} finally {
+			$this->close_meta( $handle );
+		}
+	}
+
+	/** Same-journal application checkpoint, never a caller file path. */
+	public function read_checkpoint( $id ) {
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		$this->close_meta( $handle );
+		return null !== $this->administration ?
+			array(
+				'revision' => (int) ( $meta['checkpoint_revision'] ?? 0 ),
+				'state'    => $meta['checkpoint'] ?? array(),
+			) : $this->denied();
+	}
+
+	/** Locked, immutable internal source. Dynamic archive parsers verify each frame checksum. */
+	public function with_administration_source( $id, callable $callback ) {
+		$loaded = $this->load( $id );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+		list( $root, $handle, $meta ) = $loaded;
+		$file                         = false;
+		try {
+			if ( null === $this->administration || 'verified' !== $meta['state'] ) {
+				return $this->denied();
+			}
+			$path = $this->check_file( $root, $id, $meta );
+			if ( is_wp_error( $path ) ) {
+				return $path;
+			}
+			$file = @fopen( $path, 'rb' );
+			if ( ! is_resource( $file ) || ! $this->secure_file( $file, $path ) ||
+				! $this->file_length( $file, $meta['total'] ) ) {
+				return new WP_Error( 'transfer_source_changed', 'Verified administration bytes changed.' );
+			}
+			$before = fstat( $file );
+			if ( 'sha256' === ( $meta['integrity'] ?? 'sha256' ) ) {
+				$hash = hash_init( 'sha256' );
+				if ( hash_update_stream( $hash, $file ) !== $meta['total'] ||
+					! hash_equals( $meta['sha256'], hash_final( $hash ) ) || ! rewind( $file ) ) {
+					return new WP_Error( 'transfer_source_changed', 'Verified administration digest changed.' );
+				}
+			}
+			$source = array(
+				'id'         => $id,
+				'stream'     => $file,
+				'bytes'      => $meta['total'],
+				'sha256'     => $meta['sha256'],
+				'integrity'  => $meta['integrity'] ?? 'sha256',
+				'binding'    => $meta['administration']['binding'],
+				'checkpoint' => $meta['checkpoint'] ?? array(),
+			);
+			if ( in_array( $meta['purpose'], array( 'filesystem_input', 'backup_input' ), true ) ) {
+				$source['private_path']    = $path;
+				$source['release_payload'] = function () use ( $root, $id, $handle, &$meta ) {
+					return $this->release_private_payload( $root, $id, $handle, $meta );
+				};
+			}
+			$source['save_checkpoint'] = function ( array $state ) use ( &$meta, $handle ) {
+				$meta['checkpoint']          = $state;
+				$meta['checkpoint_revision'] = (int) ( $meta['checkpoint_revision'] ?? 0 ) + 1;
+				return $this->save_meta( $handle, $meta ) ? true : new WP_Error( 'transfer_outcome_unknown', 'Source checkpoint was not confirmed.' );
+			};
+			$result                    = $callback( $source );
+			if ( ! $this->allowed( $meta['purpose'] ) ) {
+				return new WP_Error( 'transfer_source_changed', 'Authority changed during consumption; inspect the durable operation receipt.' );
+			}
+			if ( empty( $meta['payload_released'] ) ) {
+				$keys = array_flip( array( 'dev', 'ino', 'nlink', 'size', 'mtime' ) );
+				if ( ! $this->secure_file( $file, $path ) ||
+					array_intersect_key( fstat( $file ), $keys ) !== array_intersect_key( $before, $keys ) ) {
+					return new WP_Error( 'transfer_source_changed', 'Private source changed during consumption; inspect the operation receipt.' );
+				}
+			}
+
+			return $result;
+		} finally {
+			if ( is_resource( $file ) ) {
+				fclose( $file );
+			}
+			$this->close_meta( $handle );
+		}
+	}
+
+	/** Private immutable export windows, including explicit integrity algorithm. */
+	public function read_administration( $id, $offset, $max_bytes ) {
+		if ( null === $this->administration ) {
+			return $this->denied();
+		}
+		$result = $this->read_export_window( $id, $offset, $max_bytes, array( $this->administration['purpose'] ) );
+		if ( ! is_wp_error( $result ) ) {
+			$status = $this->status( $id );
+			if ( is_wp_error( $status ) ) {
+				return $status;
+			}
+			$result['integrity'] = $status['integrity'];
+		}
+		return $result;
+	}
+
+	/** Copy only a producer-owned private artifact; never a public caller path. */
+	public function stage_administration_export( $path, $bytes, $sha256, $limits = null ) {
+		$base = Safe_Temporary_Staging::directory();
+		$stat = is_string( $path ) ? @lstat( $path ) : false;
+		if ( null === $this->administration || ! is_string( $base ) || ! is_array( $stat ) ||
+			is_link( $path ) || realpath( dirname( $path ) ) !== $base ||
+			! str_starts_with( basename( $path ), 'wpai-private-artifact' ) ||
+			0100000 !== ( $stat['mode'] & 0170000 ) || 1 !== $stat['nlink'] ||
+			0600 !== ( $stat['mode'] & 0777 ) || $stat['size'] !== $bytes ||
+			! is_string( $sha256 ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $sha256 ) ) {
+			return $this->denied();
+		}
+		$limits = null === $limits ? ( new Transfer_Settings() )->bytes() : $limits;
+		$lease  = $this->begin(
+			$this->administration['purpose'],
+			$bytes,
+			$sha256,
+			$limits['file'],
+			$limits['chunk'],
+			$limits['sessions'],
+			$limits['ttl'],
+			$limits['active']
+		);
+		if ( is_wp_error( $lease ) ) {
+			return $lease;
+		}
+		$success = false;
+		$input   = @fopen( $path, 'rb' );
+		try {
+			if ( ! is_resource( $input ) || fstat( $input )['ino'] !== $stat['ino'] ||
+				fstat( $input )['dev'] !== $stat['dev'] ) {
+				return new WP_Error( 'transfer_source_changed', 'Producer artifact identity changed.' );
+			}
+			$offset = 0;
+			while ( $offset < $bytes ) {
+				$part = fread( $input, min( $limits['chunk'], $bytes - $offset ) );
+				if ( ! is_string( $part ) || '' === $part ) {
+					return new WP_Error( 'transfer_source_changed', 'Producer artifact ended early.' );
+				}
+				$result = $this->append( $lease['id'], $offset, $part );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
+				$offset += strlen( $part );
+			}
+			$result  = $this->verify( $lease['id'] );
+			$success = ! is_wp_error( $result );
+			return $result;
+		} finally {
+			if ( is_resource( $input ) ) {
+				fclose( $input );
+			}
+			if ( ! $success ) {
+				$this->discard_administration_creation( $lease['id'] );
+			}
+		}
+	}
+
+	/** Only this object's newly allocated inert lease may be erased after drift/revocation. */
+	public function discard_administration_creation( $id ) {
+		$proof = $this->administration_created[ $id ] ?? null;
+		if ( ! is_array( $proof ) ) {
+			return $this->denied();
+		}
+		$root = $proof['root'];
+		$stat = @lstat( $root );
+		if ( ! is_array( $stat ) || is_link( $root ) || realpath( $root ) !== $root ||
+			$stat['dev'] !== $proof['dev'] || $stat['ino'] !== $proof['ino'] || 0700 !== ( $stat['mode'] & 0777 ) ) {
+			return new WP_Error( 'transfer_cleanup_uncertain', 'Original private creation root changed.' );
+		}
+		$info = $this->open_meta( $root, $id, true, true );
+		if ( is_wp_error( $info ) ) {
+			return $info;
+		}
+		list( $handle, $meta ) = $info;
+		try {
+			if ( ( $meta['administration'] ?? null ) !== $proof['administration'] ||
+				! in_array( $meta['state'], array( 'open', 'verified' ), true ) ) {
+				return $this->denied();
+			}
+			$result = $this->erase( $root, $id );
+			if ( $result ) {
+				unset( $this->administration_created[ $id ] );
+			}
+			return $result ? true : new WP_Error( 'transfer_cleanup_uncertain', 'Own failed creation cleanup was not confirmed.' );
+		} finally {
+			$this->close_meta( $handle );
 		}
 	}
 
@@ -306,6 +823,7 @@ final class Private_Transfer_Session {
 		list( $root, $handle, $meta ) = $loaded;
 		try {
 			if ( 'open' !== $meta['state'] || ! is_int( $offset ) || $offset < 0 || ! is_string( $bytes ) ||
+				! empty( $meta['administration_stream'] ) ||
 				'' === $bytes || strlen( $bytes ) > $meta['chunk'] ||
 				$offset > $meta['received'] || strlen( $bytes ) > $meta['total'] - $offset ) {
 				return $this->invalid();
@@ -366,6 +884,9 @@ final class Private_Transfer_Session {
 			// not permission to reopen a claimed/committed native effect.
 			if ( 'open' !== $meta['state'] && 'verified' !== $meta['state'] ) {
 				return new WP_Error( 'transfer_consumed', 'This private lease is preparing or already claimed. Verification cannot reopen a WordPress effect.' );
+			}
+			if ( ! empty( $meta['administration_stream'] ) ) {
+				return 'verified' === $meta['state'] ? $this->receipt( $meta ) : new WP_Error( 'transfer_incomplete', 'Seal the administration stream with its exact chain.' );
 			}
 			$path = $this->check_file( $root, $id, $meta );
 			if ( is_wp_error( $path ) ) {
@@ -962,7 +1483,7 @@ final class Private_Transfer_Session {
 				'verified' !== $meta['state'] || ! $this->allowed( $meta['purpose'] ) ||
 				( null !== $this->native_options_scope &&
 					$this->native_binding() !== array_intersect_key( $meta, $this->native_binding() ) ) ||
-				! is_int( $meta['source_id'] ?? null ) ||
+				( null === $this->administration && ! is_int( $meta['source_id'] ?? null ) ) ||
 				( 'media_read' === $meta['purpose'] && (
 					'attachment' !== get_post_type( $meta['source_id'] ) ||
 					! current_user_can( 'read_post', $meta['source_id'] ) ) ) ||
@@ -1182,7 +1703,8 @@ final class Private_Transfer_Session {
 		}
 		list( $handle, $meta ) = $info;
 		try {
-			if ( (int) get_current_blog_id() !== $meta['blog'] ||
+			if ( ( null !== $this->administration && ( $meta['administration'] ?? null ) !== $this->administration ) ||
+			(int) get_current_blog_id() !== $meta['blog'] ||
 				'committing' !== $meta['state'] || 'unknown' !== $meta['outcome'] ) {
 				return new WP_Error( 'transfer_admin_recovery_denied', 'Only a same-site administrator may release an explicitly unknown native-effect payload.' );
 			}
@@ -1238,6 +1760,9 @@ final class Private_Transfer_Session {
 
 	/** @param string $purpose Explicit caller workflow. @return bool */
 	private function allowed( $purpose ) {
+		if ( null !== $this->administration ) {
+			return $this->administration_allowed( $purpose );
+		}
 		if ( 0 === get_current_user_id() ) {
 			return false;
 		}
@@ -1369,7 +1894,7 @@ final class Private_Transfer_Session {
 		$fd   = fstat( $h );
 		if ( ! is_array( $disk ) || ! is_array( $fd ) ||
 			$disk['ino'] !== $fd['ino'] || $disk['dev'] !== $fd['dev'] ||
-			0100000 !== ( $disk['mode'] & 0170000 ) ) {
+			0100000 !== ( $disk['mode'] & 0170000 ) || ( null !== $this->administration && 1 !== $disk['nlink'] ) ) {
 			return false;
 		}
 		$mode = fileperms( $path );
@@ -1395,7 +1920,7 @@ final class Private_Transfer_Session {
 		}
 		$snapshots = array();
 		foreach ( array( 0, 1 ) as $slot ) {
-			$read = $this->read_checkpoint( $root . '/' . $id . '.meta.state.' . $slot );
+			$read = $this->read_checkpoint_file( $root . '/' . $id . '.meta.state.' . $slot );
 			if ( is_array( $read ) && $this->valid_meta( $read['body'], $id ) ) {
 				$snapshots[] = $read;
 			}
@@ -1488,7 +2013,7 @@ final class Private_Transfer_Session {
 			if ( file_exists( $checkpoint ) || is_link( $checkpoint ) ) {
 				$has_slots = true;
 			}
-			$candidate = $this->read_checkpoint( $checkpoint );
+			$candidate = $this->read_checkpoint_file( $checkpoint );
 			if ( is_array( $candidate ) && $candidate['generation'] > $highest ) {
 				$highest = $candidate['generation'];
 				$meta    = $candidate['body'];
@@ -1559,7 +2084,9 @@ final class Private_Transfer_Session {
 			is_int( $meta['user'] ) && $meta['user'] >= 1 &&
 			is_int( $meta['expires'] ) && $meta['expires'] >= 1 &&
 			is_string( $meta['client'] ) && is_string( $meta['purpose'] ) &&
-			in_array( $meta['purpose'], array( 'media', 'media_read', 'wxr_read', 'text', 'wxr', 'source_plugin', 'source_theme', 'source_plugin_read', 'source_theme_read', 'database_value', 'native_site_settings_read', 'native_network_settings_read', 'native_site_settings_write', 'native_network_settings_write' ), true ) &&
+			in_array( $meta['purpose'], array( 'media', 'media_read', 'wxr_read', 'text', 'wxr', 'source_plugin', 'source_theme', 'source_plugin_read', 'source_theme_read', 'database_value', 'native_site_settings_read', 'native_network_settings_read', 'native_site_settings_write', 'native_network_settings_write', 'filesystem_input', 'filesystem_export', 'configuration_input', 'configuration_snapshot', 'customizer_input', 'customizer_snapshot', 'backup_input', 'backup_archive', 'backup_state', 'native_sql_result' ), true ) &&
+			( ! in_array( $meta['purpose'], self::administration_purposes(), true ) ||
+				( is_array( $meta['administration'] ?? null ) && in_array( $meta['state'], array( 'open', 'verified' ), true ) ) ) &&
 			( ! in_array( $meta['purpose'], array( 'native_site_settings_read', 'native_network_settings_read', 'native_site_settings_write', 'native_network_settings_write' ), true ) ||
 				( is_int( $meta['source_id'] ?? null ) && $meta['source_id'] > 0 &&
 					in_array( $meta['state'], array( 'open', 'verified' ), true ) ) ) &&
@@ -1576,7 +2103,7 @@ final class Private_Transfer_Session {
 	}
 
 	/** @param string $path Private checkpoint. @return array<string,mixed>|null */
-	private function read_checkpoint( $path ) {
+	private function read_checkpoint_file( $path ) {
 		$h = @fopen( $path, 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Fixed private journal slot; missing slots are normal.
 		if ( ! is_resource( $h ) ) {
 			return null;
@@ -1585,7 +2112,13 @@ final class Private_Transfer_Session {
 			if ( ! $this->secure_file( $h, $path ) ) {
 				return null;
 			}
-			$raw  = stream_get_contents( $h, 12288 );
+			$stat    = fstat( $h );
+			$upper   = class_exists( Transfer_Settings::class ) ? ( new Transfer_Settings() )->upper_bounds()[ Transfer_Settings::REQUEST_KIB ] : 3;
+			$ceiling = min( intdiv( PHP_INT_MAX - 16384, 4096 ), $upper ) * 4096 + 16384;
+			if ( ! is_array( $stat ) || $stat['size'] < 1 || $stat['size'] >= $ceiling ) {
+				return null;
+			}
+			$raw  = stream_get_contents( $h, $stat['size'] + 1 );
 			$wire = is_string( $raw ) ? json_decode( $raw, true ) : null;
 			if ( ! is_array( $wire ) || ! is_int( $wire['generation'] ?? null ) ||
 				$wire['generation'] < 1 || ! is_string( $wire['body'] ?? null ) ||
@@ -1594,6 +2127,9 @@ final class Private_Transfer_Session {
 				return null;
 			}
 			$body = json_decode( $wire['body'], true );
+			if ( is_array( $body ) && ! isset( $body['administration'] ) && strlen( $wire['body'] ) > 4096 ) {
+				return null;
+			}
 			return is_array( $body ) && ( $body['generation'] ?? null ) === $wire['generation']
 				? array(
 					'generation' => $wire['generation'],
@@ -2186,7 +2722,7 @@ final class Private_Transfer_Session {
 		// Database consumers can retain several sources for one callback. A
 		// reentrant stage action must report busy rather than wait on its own
 		// coordinator. Generic transfer waiting behavior is unchanged.
-		$nonblocking = $nonblocking || $this->database_only;
+		$nonblocking = $nonblocking || $this->database_only || null !== $this->administration;
 		if ( ! is_string( $id ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $id ) ) {
 			return $this->invalid();
 		}
@@ -2248,7 +2784,7 @@ final class Private_Transfer_Session {
 		$next_meta               = $meta;
 		$next_meta['generation'] = $next;
 		$body                    = wp_json_encode( $next_meta );
-		if ( ! is_string( $body ) || strlen( $body ) > 4096 ) {
+		if ( ! is_string( $body ) || strlen( $body ) > ( isset( $meta['administration'] ) ? ( new Transfer_Settings() )->bytes()['request'] + 8192 : 4096 ) ) {
 			return false;
 		}
 		$wire = wp_json_encode(
@@ -2258,7 +2794,7 @@ final class Private_Transfer_Session {
 				'body'       => $body,
 			)
 		);
-		if ( ! is_string( $wire ) || strlen( $wire ) > 12288 ) {
+		if ( ! is_string( $wire ) || strlen( $wire ) > ( isset( $meta['administration'] ) ? ( new Transfer_Settings() )->bytes()['request'] * 4 + 16384 : 12288 ) ) {
 			return false;
 		}
 		$dest = $path . '.state.' . ( $next % 2 );
@@ -2295,7 +2831,7 @@ final class Private_Transfer_Session {
 			$this->remove_file( $temp );
 			return false;
 		}
-		$reloaded = $this->read_checkpoint( $dest );
+		$reloaded = $this->read_checkpoint_file( $dest );
 		if ( ! is_array( $reloaded ) || $next !== $reloaded['generation'] ) {
 			return false;
 		}
@@ -2389,7 +2925,7 @@ final class Private_Transfer_Session {
 
 	/** @param array<string,mixed> $meta Private metadata. @return array<string,mixed> */
 	private function receipt( $meta ) {
-		return array(
+		$receipt = array(
 			'id'                    => $meta['id'],
 			'purpose'               => $meta['purpose'],
 			'total'                 => $meta['total'],
@@ -2410,5 +2946,10 @@ final class Private_Transfer_Session {
 			'import_items'          => (int) ( $meta['import_items'] ?? 0 ),
 			'import_processed'      => (int) ( $meta['import_processed'] ?? 0 ),
 		);
+		if ( isset( $meta['administration'] ) ) {
+			$receipt['integrity']    = $meta['integrity'] ?? 'sha256';
+			$receipt['stream_chain'] = $meta['stream_chain'] ?? '';
+		}
+		return $receipt;
 	}
 }

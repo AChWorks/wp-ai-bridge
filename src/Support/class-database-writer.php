@@ -574,14 +574,7 @@ final class Database_Writer {
 
 	/** @param string $table Native table. @return string */
 	private function policy( $table ) {
-		if ( preg_match( '/^' . preg_quote( $this->connection->prefix, '/' ) . '(?:[0-9]+_)?(options|sitemeta|blogmeta|posts|postmeta)$/D', $table, $match ) ) {
-			return $match[1];
-		}
-		if ( 0 === strpos( $table, $this->connection->prefix . 'wpai_' ) ||
-			0 === strpos( $table, $this->connection->prefix . 'wp_ai_bridge' ) ) {
-			return 'bridge';
-		}
-		return '';
+		return $this->storage()->table_policy( $table );
 	}
 
 	/** @param string $policy Fixed policy. @param array $schema Native metadata. @return string */

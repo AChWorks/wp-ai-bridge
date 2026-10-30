@@ -539,9 +539,7 @@ final class Cron_Mutation_Abilities {
 						? $this->run_now_replay( $existing, $fingerprint, $profile, $context, $event, $inventory, $lock )
 						: $this->run_now_unknown();
 				}
-				return 'capacity' === $reserved
-					? new WP_Error( 'cron_run_now_capacity', __( 'The finite Cron execution receipt capacity is exhausted; reconcile retained run receipts before enabling more executions.', 'wp-ai-bridge' ) )
-					: $this->run_now_unknown();
+				return $this->run_now_unknown();
 			}
 			// From here, even a provider error could follow a real effect.
 			// The durable event fence MUST NOT be released on failure/timeout.

@@ -1,0 +1,92 @@
+# Full approved backup and isolated restore
+
+This contract is source functionality pending exact-candidate native validation, independent review and release. It does not imply that an installed client supports archive ingress or egress.
+
+`wp-ai-bridge/full-backup` captures the approved installation database and files into a private portable archive, then restores that archive into an explicitly approved **empty separate database schema** and **nonserved filesystem root**. Original table names, table prefix, stored values and logical file roots are preserved. Live activation and in-place disaster recovery are separate operations.
+
+## Authority and configuration
+
+Full Backup and Full Restore are independent default-off protected administration grants. Backup additionally requires Database Inspection and Sensitive Database Read. Restore additionally requires Database Write. Every action rechecks the actual administrator; multisite requires actual Super Admin and network authority.
+
+The administrator configures canonical filesystem roots, approved restore schemas and exact additional installation tables. These lists default empty. API callers select configured root/schema identities, never arbitrary paths, database credentials or another account. Restoring executable/configuration files requires the destination root's explicit executable trust.
+
+Every installation-prefixed table is required. Explicit `backup_tables` add approved nonprefix provider tables. Prefixes do not prove ownership of unrelated provider tables. Required native installation locations—Core, content, plugin/MU-plugin/theme directories, uploads and the actual configuration file—must be covered by approved source roots. A missing required root is an explicit gap.
+
+The existing WordPress mysqlnd connection and account perform native qualified target operations. The feature does not read archived credentials, create another connection, invoke a shell/CLI or provision databases. The approved empty target schema must already exist and be accessible to that account.
+
+## Consistency prerequisite
+
+The response reports `consistency=declared_quiescent_verified_capture`, `quiescence_assumption=true` and `activation_pending=true`.
+
+The owner must stop all selected database writers, DDL, file writers, cron, queues, deployments, direct database clients and write-producing bootstrap/authentication/provider hooks throughout capture and every continuation. Metadata privileges and ownership must remain stable. WordPress maintenance mode alone does not establish this condition.
+
+The producer captures data with private checkpoints, then reads the complete source again to compare table/schema identities, row multisets, file bytes and file identities/modes. It also checks the source Activity value at final seal admission so required failure diagnostics cannot silently change the captured source after its earlier table scan.
+
+There is no database/filesystem atomic snapshot and no transaction held across requests. Equal observations cannot prove that no concurrent change occurred and was reversed. Quiescence is an explicit prerequisite, not an inferred guarantee.
+
+Successful capture does not write a source DB journal or Activity entry during capture. Returned capture failures remain incomplete/restart-required when their private checkpoint can be updated. Generic functional failure diagnostics remain available; if they write source Activity, source verification must reject drift. Lost responses can recover acknowledged private frames, but a failed capture is not promised to resume successfully.
+
+## Supported objects and exact representation
+
+The first native blueprint supports persistent InnoDB base tables, ordinary ordered columns, supported scalar/text/blob/JSON types, primary/ordinary/unique/fulltext column indexes and in-scope foreign keys. Keyless tables and duplicate rows retain their exact multiplicities.
+
+Definitions are validated before they are compiled into qualified target operations. Archived SQL is untrusted and is never executed blindly. Values remain opaque; serialized PHP and provider data are never decoded, rewritten or searched/replaced. SQL-visible TIMESTAMP values are captured/restored in UTC. Explicit zero auto-increment values are retained. Original native session settings are restored.
+
+Current unsupported shapes include views, triggers, routines, events, CHECK/generated columns, partitioned/versioned tables, nontransactional engines, external dependencies, external storage clauses, expression indexes and unproven CREATE options. Native metadata visibility is mandatory. Presence of a required unsupported object prevents full completion and returns its exact object identity where available; nothing is silently omitted. This is not a universal MySQL/MariaDB dump importer.
+
+Native statement/metadata/packet limits remain real. A row or definition which cannot fit the actual native or current finite processing capacity fails explicitly.
+
+## Public workflow
+
+| Action | Required fields beyond `action` |
+|---|---|
+| `inspect` | `source_roots` |
+| `export_begin` | Same roots, `expected_plan_hash`, `quiescence_confirmed=true`, `bootstrap_writers_confirmed=true` |
+| `export_step`, `export_status` | `session_id` |
+| `read` | `purpose=backup_archive\|backup_input`, `session_id`, byte `offset`, bounded `max_bytes` |
+| `input_open` | Finite `max_total_bytes` reservation |
+| `input_append` | `session_id`, `offset`, canonical `content_base64` containing exactly one complete frame, its `sha256` |
+| `input_seal` | `session_id`, exact final byte `offset`, frame-chain `sha256` |
+| `input_status` | `session_id` |
+| `restore_prepare` | `archive_id`, `archive_sha256`, `archive_purpose=backup_archive\|backup_input`, configured `target_schema`, `target_root` |
+| `restore_step` | `session_id`; first scans the entire archive until `ready` |
+| `restore_begin` | Ready `session_id`, exact returned `expected_plan_hash`, `quiescence_confirmed=true` |
+| `restore_step`, `restore_status` | `session_id`; continue effects and verification until `verified` |
+| `cancel` | `purpose=backup_archive\|backup_input\|backup_state`, `session_id` |
+
+Preflight alone is not a restore. No target schema/file effects occur before the complete immutable package passes validation and the ready destination plan is acknowledged. Destination schema/root emptiness and identity are rechecked immediately before starting.
+
+Source logical root `installation`, for example, restores under `<target root>/roots/installation/`. Multiple approved roots retain separate logical namespaces. File bytes, ordinary permission bits, empty files and empty directories are preserved. Destination files and directories are compared again, including unexpected extra entries.
+
+## Portable frame integrity
+
+Format: `wpai-installation-backup-v1`.
+
+Each frame consists of `WPAI1:`, eight lowercase hexadecimal header-length digits, `:`, eight payload-length digits, newline, bounded JSON header and raw payload. Headers include ordered `seq`, `type`, `payload_bytes` and payload SHA-256. Exact identifiers/components use canonical Base64; raw data is not Base64 inside the archive.
+
+Integrity is explicitly `sha256-frame-chain-v1`, not a whole-file SHA-256:
+
+```text
+initial = SHA256("wpai-administration-stream-v1")
+next = SHA256(previous + ":" + frame_byte_length + ":" + SHA256(exact_frame_bytes))
+```
+
+The final footer binds the preceding chain, complete database/file digests and verified-source result. No complete receipt exists until the footer and private seal are acknowledged. Import must preserve frame boundaries; arbitrary network read windows can be buffered into complete frames by the client.
+
+Hashes establish integrity, not sender authenticity. Import and restoration still require current owner authority and explicit exact-plan approval. Private bytes contain credentials, users, OAuth state and configuration; do not publish them or expose filesystem paths.
+
+All persistent bytes/checkpoints use the existing private-transfer backend. The feature does not maintain another manager database or private filestore. Finite policies derive from transfer reservation/request/chunk/lease settings, PHP processing resources, actual disk, native packets and configured step work. Individual native queries and final private-inode verification remain subject to real host execution limits; cooperative step budgets are not database query cancellation.
+
+## Restore ordering and recovery
+
+Restore creates validated base schemas, streams complete rows, adds deferred foreign keys with native checks enabled, then verifies the complete destination. Re-enabling checks alone would not validate previously loaded rows; it is not used as proof.
+
+Each InnoDB row and its compact source-side receipt commit together through the same connection. This also protects duplicate/keyless row occurrences after a lost reply. DDL has a durable acknowledged dispatch fence before one native send. It is never advertised as transactional rollback. Native OK with warnings remains acknowledged; failed reporting cannot convert applied DDL into rolled-back work.
+
+Unknown DDL, noncommitted filesystem publication or unavailable receipts stop restoration. No unknown effect is automatically resent. Destination state remains isolated for reconciliation or explicit owner-authorized disposal/restart. Canceling private input does not undo restored effects.
+
+The running installation's users, options, credentials and Bridge controls remain active throughout. Their restored copies are inert data. Copied tokens/grants never become recovery authority. Exact verification leaves the restored root unchanged; only a separate derived copy may receive target-only configuration for a disposable bootstrap check. Publishing or activating restored credentials/code requires a separate explicit workflow.
+
+## Evidence
+
+Pure regressions are in `tests/issue199-backup.php`. The native family flow is `tests/integration/issue199-backup-smoke.php`, using the separately authored complete-schema/row-multiset/file oracle. It captures actual installation files, transports the complete package through bounded ingress, verifies revocation, performs an actual same-account isolated restore, compares all bytes/schema/modes/empty directories and rejects source Activity drift. Native execution and final acceptance must be recorded against the exact candidate and both database engines; source presence alone is not proof.

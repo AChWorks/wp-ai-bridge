@@ -1,6 +1,6 @@
 <?php
 /**
- * Permanent, bounded exact-native-event run-now replay fences.
+ * Permanent exact-native-event run-now replay fences.
  *
  * @package WP_AI_Bridge
  */
@@ -17,8 +17,7 @@ namespace WP_AI_Bridge\Support;
  * may retry with an older key, or a native provider may recreate an identity.
  */
 final class Cron_Run_Claim {
-	const PREFIX       = 'wpai_cron_run_';
-	const MAX_RECEIPTS = 2048;
+	const PREFIX = 'wpai_cron_run_';
 
 	/** @param string $event_id HMAC native event identity. @return string */
 	public static function name( $event_id ) {
@@ -42,7 +41,7 @@ final class Cron_Run_Claim {
 	 *
 	 * @param string $name Fixed derived key.
 	 * @param string $initial Encoded pending receipt.
-	 * @return string acquired|existing|capacity|error
+	 * @return string acquired|existing|error
 	 */
 	public static function reserve( $name, $initial ) {
 		if ( ! self::valid_name( $name ) || ! is_string( $initial ) ||
@@ -50,25 +49,15 @@ final class Cron_Run_Claim {
 			return 'error';
 		}
 		global $wpdb;
-		if ( ! is_object( $wpdb ) || ! method_exists( $wpdb, 'esc_like' ) ) {
+		if ( ! is_object( $wpdb ) || ! method_exists( $wpdb, 'query' ) ) {
 			return 'error';
 		}
-		// Existing exact-event identities take precedence over a full budget.
+		// Existing exact-event identities remain reserved indefinitely.
 		if ( false !== self::read( $name ) ) {
 			return 'existing';
 		}
-		$count = $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Exact bounded run receipt admission.
-			$wpdb->prepare( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Constant site-local options table.
-				"SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s",
-				$wpdb->esc_like( self::PREFIX ) . '%'
-			)
-		);
-		if ( ! is_numeric( $count ) || '' !== $wpdb->last_error ) {
-			return 'error';
-		}
-		if ( (int) $count >= self::MAX_RECEIPTS ) {
-			return 'capacity';
-		}
+		// No lifetime-count ceiling: permanent event fences are never purged
+		// to make room. Native storage failures remain fail-closed.
 		$inserted = $wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Atomic unique-key event replay fence.
 			$wpdb->prepare( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- INSERT IGNORE cannot overwrite a racing claim.
 				"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, %s)",
