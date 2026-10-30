@@ -4,8 +4,16 @@ set -euo pipefail
 # Reuse the installed disposable WordPress integration compose stack.
 root="$(cd "$(dirname "$0")/.." && pwd)"
 compose_file="$root/tests/integration/compose.yml"
-dc() { docker compose -f "$compose_file" "$@"; }
-wp() { dc run --rm "$@"; }
+dc() {
+    if [[ -n "${COMPOSE_FILE:-}" ]]; then
+        docker compose "$@"
+    else
+        docker compose -f "$compose_file" "$@"
+    fi
+}
+# The parent already owns the running services. Parallel workers must not
+# reconcile/recreate dependencies while entering their shared-file barrier.
+wp() { dc run --no-deps --rm "$@"; }
 fixture="wp-content/plugins/wp-ai-bridge/tests/integration"
 for mode in operation canonical; do
     key="race-$(date +%s)-$RANDOM-$$"

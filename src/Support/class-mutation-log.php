@@ -37,7 +37,7 @@ final class Mutation_Log {
 			'success'     => (bool) $success,
 			'error_code'  => Error_Details::from_wp_error( new \WP_Error( (string) $error_code, '' ) )['code'] ?? '',
 		);
-		if ( in_array( $ability, array( 'wp-ai-bridge/database-read', 'wp-ai-bridge/database-write', 'wp-ai-bridge/native-options-read', 'wp-ai-bridge/native-options-write' ), true ) ) {
+		if ( in_array( $ability, array( 'wp-ai-bridge/database-read', 'wp-ai-bridge/database-write', 'wp-ai-bridge/native-options-read', 'wp-ai-bridge/native-options-write', 'wp-ai-bridge/database-schema', 'wp-ai-bridge/database-native-sql', 'wp-ai-bridge/filesystem-read', 'wp-ai-bridge/filesystem-write', 'wp-ai-bridge/filesystem-transfer', 'wp-ai-bridge/logs-read', 'wp-ai-bridge/scheduler-read', 'wp-ai-bridge/scheduler-manage', 'wp-ai-bridge/native-configuration', 'wp-ai-bridge/customizer-settings', 'wp-ai-bridge/full-backup' ), true ) ) {
 			$entry['client_fingerprint'] = substr( hash( 'sha256', OAuth_Server::authenticated_mcp_client_id() ), 0, 16 );
 			$entry['event_ref']          = bin2hex( random_bytes( 8 ) );
 		}
@@ -50,7 +50,7 @@ final class Mutation_Log {
 			$entry['phase']      = 'provider';
 			$entry['event_ref']  = bin2hex( random_bytes( 8 ) );
 		}
-		return $this->write( $entry, in_array( $ability, array( 'wp-ai-bridge/native-options-read', 'wp-ai-bridge/native-options-write' ), true ) );
+		return $this->write( $entry, in_array( $ability, array( 'wp-ai-bridge/native-options-read', 'wp-ai-bridge/native-options-write', 'wp-ai-bridge/database-schema', 'wp-ai-bridge/database-native-sql', 'wp-ai-bridge/filesystem-read', 'wp-ai-bridge/filesystem-write', 'wp-ai-bridge/filesystem-transfer', 'wp-ai-bridge/logs-read', 'wp-ai-bridge/scheduler-read', 'wp-ai-bridge/scheduler-manage', 'wp-ai-bridge/native-configuration', 'wp-ai-bridge/customizer-settings', 'wp-ai-bridge/full-backup' ), true ) );
 	}
 
 	/**

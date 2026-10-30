@@ -25,6 +25,69 @@ final class Database_Control_Storage {
 		$this->budget     = $budget;
 	}
 
+
+	/** @param string $table Exact native table. @return string Fixed control dependency class. */
+	public function table_policy( $table ) {
+		if ( preg_match( '/^' . preg_quote( $this->connection->prefix, '/' ) . '(?:[0-9]+_)?(options|sitemeta|blogmeta|posts|postmeta)$/D', $table, $match ) ) {
+			return $match[1];
+		}
+		if ( 0 === strpos( $table, $this->connection->prefix . 'wpai_' ) ||
+			0 === strpos( $table, $this->connection->prefix . 'wp_ai_bridge' ) ) {
+			return 'bridge';
+		}
+		return '';
+	}
+
+	/** @param string $table Exact schema target. @return true */
+	public function assert_schema_target( $table ) {
+		if ( ! $this->identifier( $table ) || 0 !== strpos( $table, $this->connection->prefix ) ) {
+			throw new Database_Write_Failure( 'database_schema_scope' );
+		}
+		if ( '' !== $this->table_policy( $table ) ) {
+			throw new Database_Write_Failure( 'database_schema_control_dependency' );
+		}
+		return true;
+	}
+
+	/**
+	 * Observe a name and complete native definition under the caller's section.
+	 * The observation is not an atomic precondition for a later DDL statement.
+	 *
+	 * @param string $table Exact persistent installation table.
+	 * @return array
+	 */
+	public function observe_table( $table ) {
+		if ( ! $this->identifier( $table ) || 0 !== strpos( $table, $this->connection->prefix ) ) {
+			throw new Database_Write_Failure( 'database_schema_scope' );
+		}
+		$rows = $this->connection->run(
+			'SELECT TABLE_TYPE AS kind FROM information_schema.TABLES WHERE TABLE_SCHEMA=? AND BINARY TABLE_NAME=BINARY ?',
+			array( $this->connection->database, $table ),
+			array(),
+			2
+		)['rows'];
+		if ( ! $rows ) {
+			return array(
+				'table'                 => $table,
+				'exists'                => false,
+				'schema_hash'           => null,
+				'precondition_strength' => 'observed_not_atomic',
+			);
+		}
+		$native = $this->pin_table( $table, false );
+		$stable = $this->stable_native_definition( $native['ddl'] );
+		if ( ! is_string( $stable ) ) {
+			throw new Database_Write_Failure( 'database_write_unsupported_schema' );
+		}
+		return array(
+			'table'                 => $table,
+			'exists'                => true,
+			'schema_hash'           => hash( 'sha256', $this->encode( $this->metadata_bytes( array( 'wpai-database-schema-v1', $this->connection->database, $table, $native['native'], $stable ) ) ) ),
+			'engine'                => $native['native'][0]['engine'],
+			'precondition_strength' => 'observed_not_atomic',
+		);
+	}
+
 	/** @return array Pinned verified receipt schema. */
 	public function receipt_schema() {
 		$schema = $this->schema( $this->connection->options );
@@ -116,7 +179,7 @@ final class Database_Control_Storage {
 		if ( ! $map || ! $primary ) {
 			throw new Database_Write_Failure( 'database_write_primary_key_required' );
 		}
-		$stable_ddl = preg_replace( '/ AUTO_INCREMENT=[0-9]+/', '', $ddl );
+		$stable_ddl = $this->stable_native_definition( $ddl );
 		if ( ! is_string( $stable_ddl ) ) {
 			throw new Database_Write_Failure( 'database_write_unsupported_schema' );
 		}
@@ -186,6 +249,87 @@ final class Database_Control_Storage {
 			'native' => $native,
 			'ddl'    => $ddl,
 		);
+	}
+
+
+	/**
+	 * Remove only an unquoted native table AUTO_INCREMENT counter.
+	 *
+	 * This scans trusted SHOW CREATE quote/body boundaries, not arbitrary SQL.
+	 * Every literal, identifier and comment byte remains part of the identity.
+	 * Unknown formatting retains the complete definition rather than weakening
+	 * its hash. The native mode determines string escapes and identifier quotes.
+	 *
+	 * @param string $ddl Complete native SHOW CREATE definition.
+	 * @param string $sql_mode Current native session mode.
+	 * @return string Exact definition except its ordinary table counter.
+	 */
+	public static function stable_definition( $ddl, $sql_mode ) {
+		$modes       = explode( ',', $sql_mode );
+		$backslash   = ! in_array( 'NO_BACKSLASH_ESCAPES', $modes, true );
+		$ansi        = in_array( 'ANSI_QUOTES', $modes, true );
+		$quote       = '';
+		$depth       = 0;
+		$body        = false;
+		$options     = false;
+		$length      = strlen( $ddl );
+		$counter     = ' AUTO_INCREMENT=';
+		$counter_len = strlen( $counter );
+		for ( $offset = 0; $offset < $length; ++$offset ) {
+			$byte = $ddl[ $offset ];
+			if ( '' !== $quote ) {
+				$identifier = chr( 96 ) === $quote || ( '"' === $quote && $ansi );
+				if ( ! $identifier && $backslash && '\\' === $byte ) {
+					++$offset;
+				} elseif ( $quote === $byte ) {
+					if ( $offset + 1 < $length && $quote === $ddl[ $offset + 1 ] ) {
+						++$offset;
+					} else {
+						$quote = '';
+					}
+				}
+				continue;
+			}
+			if ( '/' === $byte && $offset + 1 < $length && '*' === $ddl[ $offset + 1 ] ) {
+				$end = strpos( $ddl, '*/', $offset + 2 );
+				if ( false === $end ) {
+					return $ddl;
+				}
+				$offset = $end + 1;
+				continue;
+			}
+			if ( "'" === $byte || '"' === $byte || chr( 96 ) === $byte ) {
+				$quote = $byte;
+			} elseif ( '(' === $byte ) {
+				++$depth;
+				$body = true;
+			} elseif ( ')' === $byte ) {
+				if ( $depth < 1 ) {
+					return $ddl;
+				}
+				--$depth;
+				$options = $body && 0 === $depth;
+			} elseif ( $options && 0 === $depth && 0 === substr_compare( $ddl, $counter, $offset, $counter_len ) ) {
+				$end    = $offset + $counter_len;
+				$digits = $end;
+				while ( $end < $length && $ddl[ $end ] >= '0' && $ddl[ $end ] <= '9' ) {
+					++$end;
+				}
+				if ( $end > $digits && ( $end === $length || false !== strpos( " \t\r\n", $ddl[ $end ] ) ) ) {
+					return substr( $ddl, 0, $offset ) . substr( $ddl, $end );
+				}
+			}
+		}
+		return $ddl;
+	}
+
+	/** @param string $ddl Complete captured definition. @return string */
+	private function stable_native_definition( $ddl ) {
+		$rows = $this->connection->run( 'SELECT @@SESSION.sql_mode AS mode', array(), array(), 1 )['rows'];
+		if ( 1 !== count( $rows ) || ! is_string( $rows[0]['mode'] ?? null ) ) {
+			throw new Database_Write_Failure( 'database_write_unsupported_schema' );
+		}
+		return self::stable_definition( $ddl, $rows[0]['mode'] );
 	}
 
 	/** @param array $column Native column. @return bool */

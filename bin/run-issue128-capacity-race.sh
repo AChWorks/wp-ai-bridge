@@ -2,7 +2,13 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 compose="$root/tests/integration/compose.yml"
-dc() { docker compose -f "$compose" "$@"; }
+dc() {
+    if [[ -n "${COMPOSE_FILE:-}" ]]; then
+        docker compose "$@"
+    else
+        docker compose -f "$compose" "$@"
+    fi
+}
 fixture=wp-content/plugins/wp-ai-bridge/tests/integration
 for mode in operation canonical; do
     key="cap-$(date +%s)-$RANDOM-$$"
@@ -14,10 +20,10 @@ for mode in operation canonical; do
     }
     trap cleanup EXIT
     echo "== Different-identity 2047/2048 capacity boundary: $mode =="
-    dc run --rm -e WPAI_CAP_KEY="$key" -e WPAI_CAP_MODE="$mode" -e WPAI_CAP_ACTION=setup cli         eval-file "$fixture/issue128-capacity-race-state.php" --user=1 --allow-root
-    dc run --rm -e WPAI_CAP_KEY="$key" -e WPAI_CAP_MODE="$mode" -e WPAI_CAP_SLOT=one cli         eval-file "$fixture/issue128-capacity-race-worker.php" --user=1 --allow-root >"$one" 2>&1 &
+    dc run --no-deps --rm -e WPAI_CAP_KEY="$key" -e WPAI_CAP_MODE="$mode" -e WPAI_CAP_ACTION=setup cli         eval-file "$fixture/issue128-capacity-race-state.php" --user=1 --allow-root
+    dc run --no-deps --rm -e WPAI_CAP_KEY="$key" -e WPAI_CAP_MODE="$mode" -e WPAI_CAP_SLOT=one cli         eval-file "$fixture/issue128-capacity-race-worker.php" --user=1 --allow-root >"$one" 2>&1 &
     first=$!
-    dc run --rm -e WPAI_CAP_KEY="$key" -e WPAI_CAP_MODE="$mode" -e WPAI_CAP_SLOT=two cli         eval-file "$fixture/issue128-capacity-race-worker.php" --user=1 --allow-root >"$two" 2>&1 &
+    dc run --no-deps --rm -e WPAI_CAP_KEY="$key" -e WPAI_CAP_MODE="$mode" -e WPAI_CAP_SLOT=two cli         eval-file "$fixture/issue128-capacity-race-worker.php" --user=1 --allow-root >"$two" 2>&1 &
     second=$!
     first_status=0
     second_status=0
@@ -34,7 +40,7 @@ for mode in operation canonical; do
         echo "ERROR: the loser must fail with create_claim_capacity before effect." >&2
         exit 1
     fi
-    dc run --rm -e WPAI_CAP_KEY="$key" -e WPAI_CAP_MODE="$mode" -e WPAI_CAP_ACTION=verify cli         eval-file "$fixture/issue128-capacity-race-state.php" --user=1 --allow-root
+    dc run --no-deps --rm -e WPAI_CAP_KEY="$key" -e WPAI_CAP_MODE="$mode" -e WPAI_CAP_ACTION=verify cli         eval-file "$fixture/issue128-capacity-race-state.php" --user=1 --allow-root
     cleanup
     trap - EXIT
 done

@@ -19,6 +19,25 @@ final class Settings {
 	const GROUP_DATABASE_WRITE      = 'database_write';
 	const GROUP_DATABASE_DELETE     = 'database_delete';
 
+	const GROUP_DATABASE_SCHEMA = 'database_schema';
+	const GROUP_DATABASE_SQL    = 'database_native_sql';
+
+	const GROUP_FILESYSTEM_READ      = 'filesystem_read';
+	const GROUP_FILESYSTEM_WRITE     = 'filesystem_write';
+	const GROUP_FILESYSTEM_DELETE    = 'filesystem_delete';
+	const GROUP_FILESYSTEM_EXECUTE   = 'filesystem_executable';
+	const GROUP_LOGS_READ            = 'sensitive_logs_read';
+	const GROUP_SCHEDULER_MANAGE     = 'scheduler_manage';
+	const GROUP_SCHEDULER_RUN        = 'scheduler_run';
+	const GROUP_BACKUP_EXPORT        = 'full_backup';
+	const GROUP_BACKUP_RESTORE       = 'full_restore';
+	const GROUP_NATIVE_CONFIGURATION = 'native_configuration';
+	const GROUP_CUSTOMIZER_WRITE     = 'customizer_write';
+
+	const ADMINISTRATION_OPTION_NAME  = 'wp_ai_bridge_administration_access';
+	const ADMINISTRATION_OPTION_GROUP = 'wp_ai_bridge_administration_access';
+	const ADMINISTRATION_GROUPS       = array( self::GROUP_FILESYSTEM_READ, self::GROUP_FILESYSTEM_WRITE, self::GROUP_FILESYSTEM_DELETE, self::GROUP_FILESYSTEM_EXECUTE, self::GROUP_LOGS_READ, self::GROUP_SCHEDULER_MANAGE, self::GROUP_SCHEDULER_RUN, self::GROUP_BACKUP_EXPORT, self::GROUP_BACKUP_RESTORE, self::GROUP_NATIVE_CONFIGURATION, self::GROUP_CUSTOMIZER_WRITE );
+
 	const GROUP_NATIVE_OPTIONS_READ  = 'sensitive_native_settings_read';
 	const GROUP_NATIVE_NETWORK_READ  = 'sensitive_network_settings_read';
 	const GROUP_NATIVE_OPTIONS_WRITE = 'sensitive_native_settings_write';
@@ -42,7 +61,7 @@ final class Settings {
 
 	const DATABASE_OPTION_NAME  = 'wp_ai_bridge_database_access';
 	const DATABASE_OPTION_GROUP = 'wp_ai_bridge_database_access';
-	const DATABASE_GROUPS       = array( self::GROUP_DATABASE_INSPECTION, self::GROUP_DATABASE_READ, self::GROUP_DATABASE_WRITE, self::GROUP_DATABASE_DELETE );
+	const DATABASE_GROUPS       = array( self::GROUP_DATABASE_INSPECTION, self::GROUP_DATABASE_READ, self::GROUP_DATABASE_WRITE, self::GROUP_DATABASE_DELETE, self::GROUP_DATABASE_SCHEMA, self::GROUP_DATABASE_SQL );
 
 
 	/**
@@ -59,6 +78,7 @@ final class Settings {
 				'default'           => array_diff_key(
 					$this->defaults(),
 					$this->database_defaults(),
+					$this->administration_defaults(),
 					array(
 						self::GROUP_NATIVE_NETWORK_READ  => 0,
 						self::GROUP_NATIVE_NETWORK_WRITE => 0,
@@ -78,7 +98,18 @@ final class Settings {
 				'show_in_rest'      => false,
 			)
 		);
+		register_setting(
+			self::ADMINISTRATION_OPTION_GROUP,
+			self::ADMINISTRATION_OPTION_NAME,
+			array(
+				'type'              => 'array',
+				'default'           => $this->administration_defaults(),
+				'sanitize_callback' => array( $this, 'sanitize_administration_grants' ),
+				'show_in_rest'      => false,
+			)
+		);
 		$this->register_database_guard();
+		$this->register_administration_guard();
 	}
 
 	/**
@@ -144,6 +175,54 @@ final class Settings {
 	}
 
 
+
+	/** Register protected administration grants on every WordPress request. @return void */
+	public function register_administration_guard() {
+		add_filter( 'sanitize_option_' . self::ADMINISTRATION_OPTION_NAME, array( $this, 'sanitize_administration_grants' ) );
+		add_filter( 'option_page_capability_' . self::ADMINISTRATION_OPTION_GROUP, array( $this, 'administration_configuration_capability' ) );
+	}
+
+	/** @return array<string,int> */
+	public function administration_defaults() {
+		return array_fill_keys( self::ADMINISTRATION_GROUPS, 0 );
+	}
+
+	/** @param string $unused Native default capability. @return string */
+	public function administration_configuration_capability( $unused = 'manage_options' ) {
+		return $this->can_configure_group( self::GROUP_FILESYSTEM_READ ) ? ( function_exists( 'is_multisite' ) && is_multisite() ? 'manage_network_options' : 'manage_options' ) : 'do_not_allow';
+	}
+
+	/** @param mixed $input Submitted explicitly protected grants. @return array */
+	public function sanitize_administration_grants( $input ) {
+		if ( ! $this->can_configure_group( self::GROUP_FILESYSTEM_READ ) ) {
+			wp_die( esc_html__( 'Changing advanced administration access requires current administrator and network authority.', 'wp-ai-bridge' ), esc_html__( 'Administration access', 'wp-ai-bridge' ), array( 'response' => 403 ) );
+			return $this->administration_values();
+		}
+		$input = is_array( $input ) ? $input : array();
+		$value = $this->administration_defaults();
+		foreach ( self::ADMINISTRATION_GROUPS as $key ) {
+			$value[ $key ] = isset( $input[ $key ] ) && in_array( $input[ $key ], array( 1, '1', true ), true ) ? 1 : 0;
+		}
+		$value['_blog_id']    = function_exists( 'get_current_blog_id' ) ? (int) get_current_blog_id() : 0;
+		$value['_network_id'] = function_exists( 'get_current_network_id' ) ? (int) get_current_network_id() : 0;
+		return $value;
+	}
+
+	/** Original site/network binding prevents adoption after reassignment. @return array<string,int> */
+	private function administration_values() {
+		$stored = get_option( self::ADMINISTRATION_OPTION_NAME, array() );
+		$value  = $this->administration_defaults();
+		if ( ! is_array( $stored ) || ! isset( $stored['_blog_id'], $stored['_network_id'] ) ||
+			! function_exists( 'get_current_blog_id' ) || ! function_exists( 'get_current_network_id' ) ||
+			(int) get_current_blog_id() !== $stored['_blog_id'] || (int) get_current_network_id() !== $stored['_network_id'] ) {
+			return $value;
+		}
+		foreach ( self::ADMINISTRATION_GROUPS as $key ) {
+			$value[ $key ] = 1 === ( $stored[ $key ] ?? null ) ? 1 : 0;
+		}
+		return $value;
+	}
+
 	/**
 	 * Returns the supported access groups and their UI metadata.
 	 *
@@ -151,6 +230,84 @@ final class Settings {
 	 */
 	public function groups() {
 		return array(
+			self::GROUP_DATABASE_SCHEMA      => array(
+				'label'       => __( 'Database schema changes', 'wp-ai-bridge' ),
+				'description' => __( 'Create and alter approved database schemas through explicit native operations. Native DDL is not a rollback or atomic compare-and-swap contract.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_DATABASE_SQL         => array(
+				'label'       => __( 'Native-account SQL', 'wp-ai-bridge' ),
+				'description' => __( 'Run explicitly acknowledged SQL with the database account\'s actual privileges only when server policy separately enables it. This can affect Bridge controls and other schemas accessible to that account.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_FILESYSTEM_READ      => array(
+				'label'       => __( 'Sensitive filesystem read', 'wp-ai-bridge' ),
+				'description' => __( 'Read exact bytes within administrator-approved filesystem roots. This may expose configuration and credentials.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_FILESYSTEM_WRITE     => array(
+				'label'       => __( 'Filesystem write', 'wp-ai-bridge' ),
+				'description' => __( 'Create and replace files within approved writable roots. Staging alone never publishes bytes.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_FILESYSTEM_DELETE    => array(
+				'label'       => __( 'Filesystem deletion and moves', 'wp-ai-bridge' ),
+				'description' => __( 'Delete or move exact approved filesystem targets. Interrupted tree operations can require recovery.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_FILESYSTEM_EXECUTE   => array(
+				'label'       => __( 'Executable filesystem changes', 'wp-ai-bridge' ),
+				'description' => __( 'Additionally permit code and configuration changes under approved roots and native file-editing authority. These changes are not a PHP sandbox.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_LOGS_READ            => array(
+				'label'       => __( 'Sensitive log access', 'wp-ai-bridge' ),
+				'description' => __( 'Read exact authorized WordPress, PHP and provider log windows within separately approved log roots.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_SCHEDULER_MANAGE     => array(
+				'label'       => __( 'Scheduler management', 'wp-ai-bridge' ),
+				'description' => __( 'Schedule and cancel native events and supported provider actions using their own public lifecycles.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_SCHEDULER_RUN        => array(
+				'label'       => __( 'Immediate scheduled-action execution', 'wp-ai-bridge' ),
+				'description' => __( 'Run supported targeted provider actions. Native callbacks may have effects even when final reporting fails.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_BACKUP_EXPORT        => array(
+				'label'       => __( 'Full backup export', 'wp-ai-bridge' ),
+				'description' => __( 'Capture approved database objects and installation files, including credentials, under an explicit quiescence contract.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_BACKUP_RESTORE       => array(
+				'label'       => __( 'Full backup restore', 'wp-ai-bridge' ),
+				'description' => __( 'Restore a verified backup into an explicitly approved empty schema and nonserved file root. Destination effects can be nontransactional.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_NATIVE_CONFIGURATION => array(
+				'label'       => __( 'Native appearance and transient settings', 'wp-ai-bridge' ),
+				'description' => __( 'Read and manage native theme modifications and exact transients under current sensitive settings authority.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_CUSTOMIZER_WRITE     => array(
+				'label'       => __( 'Registered Customizer settings', 'wp-ai-bridge' ),
+				'description' => __( 'Inspect and publish registered current-theme settings through native validation, capabilities and provider hooks.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
 			self::GROUP_NATIVE_OPTIONS_WRITE => array(
 				'label'       => __( 'Sensitive Native Site Settings Write', 'wp-ai-bridge' ),
 				'description' => __( 'Add, update and delete exact native site settings, including sensitive plugin and account configuration, through installed native callbacks. Sensitive Native Site Settings Read, Site Configuration and current administrator authority are required. Deletion also requires Users & Destructive.', 'wp-ai-bridge' ),
@@ -320,7 +477,7 @@ final class Settings {
 		$value = array();
 
 		foreach ( $this->groups() as $key => $group ) {
-			if ( ! in_array( $key, array( self::GROUP_NATIVE_NETWORK_READ, self::GROUP_NATIVE_NETWORK_WRITE ), true ) && ! in_array( $key, self::DATABASE_GROUPS, true ) ) {
+			if ( ! in_array( $key, array( self::GROUP_NATIVE_NETWORK_READ, self::GROUP_NATIVE_NETWORK_WRITE ), true ) && ! in_array( $key, self::DATABASE_GROUPS, true ) && ! in_array( $key, self::ADMINISTRATION_GROUPS, true ) ) {
 				$value[ $key ] = ! empty( $input[ $key ] ) ? 1 : 0;
 			}
 		}
@@ -342,7 +499,7 @@ final class Settings {
 		if ( in_array( $group, array( self::GROUP_NATIVE_NETWORK_READ, self::GROUP_NATIVE_NETWORK_WRITE ), true ) ) {
 			return Native_Option_Access::can_configure_network();
 		}
-		if ( ! in_array( $group, self::DATABASE_GROUPS, true ) ) {
+		if ( ! in_array( $group, self::DATABASE_GROUPS, true ) && ! in_array( $group, self::ADMINISTRATION_GROUPS, true ) ) {
 			return true;
 		}
 		return get_current_user_id() > 0 && current_user_can( 'manage_options' ) &&
@@ -361,12 +518,12 @@ final class Settings {
 		$value  = $this->defaults();
 
 		foreach ( array_keys( $this->groups() ) as $key ) {
-			if ( ! in_array( $key, array( self::GROUP_NATIVE_NETWORK_READ, self::GROUP_NATIVE_NETWORK_WRITE ), true ) && ! in_array( $key, self::DATABASE_GROUPS, true ) && array_key_exists( $key, $stored ) ) {
+			if ( ! in_array( $key, array( self::GROUP_NATIVE_NETWORK_READ, self::GROUP_NATIVE_NETWORK_WRITE ), true ) && ! in_array( $key, self::DATABASE_GROUPS, true ) && ! in_array( $key, self::ADMINISTRATION_GROUPS, true ) && array_key_exists( $key, $stored ) ) {
 				$value[ $key ] = ! empty( $stored[ $key ] ) ? 1 : 0;
 			}
 		}
 		// Never inherit embedded legacy/unreleased bits from the ordinary row.
-		$value                                     = array_replace( $value, $this->database_values() );
+		$value                                     = array_replace( $value, $this->database_values(), $this->administration_values() );
 		$value[ self::GROUP_NATIVE_NETWORK_READ ]  = Native_Option_Access::network_enabled() ? 1 : 0;
 		$value[ self::GROUP_NATIVE_NETWORK_WRITE ] = Native_Option_Access::network_write_enabled() ? 1 : 0;
 		return $value;

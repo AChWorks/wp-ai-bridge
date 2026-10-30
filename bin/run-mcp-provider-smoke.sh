@@ -3,8 +3,12 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 compose_file="$root/tests/integration/compose.yml"
-compose=(docker compose -f "$compose_file")
-wp=("${compose[@]}" run --rm cli)
+if [[ -n "${COMPOSE_FILE:-}" ]]; then
+    compose=(docker compose)
+else
+    compose=(docker compose -f "$compose_file")
+fi
+wp=("${compose[@]}" run --no-deps --rm cli)
 
 command -v jq >/dev/null 2>&1 || {
     echo "ERROR: jq is required for the MCP provider integration smoke." >&2
@@ -21,7 +25,7 @@ trap cleanup EXIT
 run_mcp() {
     local payload="$1"
     printf '%s\n' "$payload" > "$request_file"
-    "${compose[@]}" run -T --rm cli mcp-adapter serve --server=mcp-adapter-default-server --user=1 --allow-root < "$request_file" > "$output_file" 2>/dev/null
+    "${compose[@]}" run -T --no-deps --rm cli mcp-adapter serve --server=mcp-adapter-default-server --user=1 --allow-root < "$request_file" > "$output_file" 2>/dev/null
 }
 
 "${wp[@]}" eval 'use WP_AI_Bridge\Support\Settings; $s=new Settings(); $a=$s->defaults(); $a[Settings::GROUP_SITE_READ]=1; $a[Settings::GROUP_BUILDER_WRITE]=1; $a[Settings::GROUP_CODE_EXTENSIONS]=1; update_option(Settings::OPTION_NAME,$a,false);' --user=1 --allow-root >/dev/null

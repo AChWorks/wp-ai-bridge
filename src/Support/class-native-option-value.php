@@ -22,24 +22,35 @@ final class Native_Option_Value {
 	/** @var int Caller-owned finite encoded byte budget. */
 	private $maximum;
 
+	/** @var bool Explicit v2 opt-in; existing Options contracts remain v1. */
+	private $allow_stdclass = false;
+
+	/** @var array<int,bool> Seen object identities; aliases and cycles are rejected. */
+	private $objects = array();
+
 	/** @param int $maximum Finite output budget. */
 	private function __construct( $maximum ) {
 		$this->maximum = $maximum;
 	}
 
 	/**
-	 * Encode one complete wpai-native-option-value-v1 document.
+	 * Encode one complete v1 document, or v2 with explicit stdClass opt-in.
 	 *
 	 * @param mixed $value Already materialized native value.
 	 * @param int   $max_bytes Maximum complete encoded document bytes.
+	 * @param bool  $allow_stdclass Explicit v2 mode; exact stdClass data only.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public static function encode( $value, $max_bytes ) {
+	public static function encode( $value, $max_bytes, $allow_stdclass = false ) {
 		if ( ! is_int( $max_bytes ) || $max_bytes < 1 ) {
 			return new WP_Error( 'native_option_value_budget', 'The native value exceeds the available encoding budget.' );
 		}
-		$writer = new self( $max_bytes );
-		$result = $writer->append( '{"format":"wpai-native-option-value-v1","value":' );
+		if ( ! is_bool( $allow_stdclass ) ) {
+			return new WP_Error( 'native_option_value_unsupported', 'The native value codec mode is invalid.' );
+		}
+		$writer                 = new self( $max_bytes );
+		$writer->allow_stdclass = $allow_stdclass;
+		$result                 = $writer->append( '{"format":"wpai-native-option-value-v' . ( $allow_stdclass ? '2' : '1' ) . '","value":' );
 		if ( ! is_wp_error( $result ) ) {
 			$result = $writer->tag( $value, 0 );
 		}
@@ -103,10 +114,26 @@ final class Native_Option_Value {
 		if ( is_string( $value ) ) {
 			return $this->binary_tag( $value, 'string' );
 		}
+		$object = is_object( $value );
+		if ( $object ) {
+			if ( ! $this->allow_stdclass || 'stdClass' !== get_class( $value ) || isset( $this->objects[ spl_object_id( $value ) ] ) ) {
+				return $this->unsupported();
+			}
+			$this->objects[ spl_object_id( $value ) ] = true;
+			$minimum                                  = 0;
+			foreach ( $value as $property => $unused ) {
+				$cost = 48 + strlen( (string) $property );
+				if ( $cost > $this->maximum - strlen( $this->json ) - $minimum ) {
+					return $this->decode_budget();
+				}
+				$minimum += $cost;
+			}
+			$value = (array) $value;
+		}
 		if ( ! is_array( $value ) ) {
 			return $this->unsupported();
 		}
-		$result = $this->append( '{"type":"array","entries":[' );
+		$result = $this->append( '{"type":"' . ( $object ? 'stdClass' : 'array' ) . '","entries":[' );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
@@ -119,7 +146,7 @@ final class Native_Option_Value {
 			}
 			$result = $this->append( ( $first ? '' : ',' ) . '{"key":' );
 			if ( ! is_wp_error( $result ) ) {
-				$result = $this->tag( $key, $depth + 1 );
+				$result = $this->tag( $object ? (string) $key : $key, $depth + 1 );
 			}
 			if ( ! is_wp_error( $result ) ) {
 				$result = $this->append( ',"value":' );
@@ -153,12 +180,13 @@ final class Native_Option_Value {
 	 * This reconstructs a complete PHP value. The caller owns transport/file
 	 * admission and reserves memory for subsequent native setter callbacks.
 	 *
-	 * @param mixed $document Complete canonical v1 document.
+	 * @param mixed $document Complete canonical v1 document, or v2 in opt-in mode.
 	 * @param int   $max_bytes Finite encoded input admission.
 	 * @param int   $memory_ceiling_bytes Absolute PHP allocation ceiling, or zero.
+	 * @param bool  $allow_stdclass Explicit v2 mode; never accepts class names.
 	 * @return array<string,mixed>|WP_Error Internal native value, never a tool result.
 	 */
-	public static function decode( $document, $max_bytes, $memory_ceiling_bytes = 0 ) {
+	public static function decode( $document, $max_bytes, $memory_ceiling_bytes = 0, $allow_stdclass = false ) {
 		if ( ! is_int( $max_bytes ) || $max_bytes < 1 ||
 			! is_int( $memory_ceiling_bytes ) || $memory_ceiling_bytes < 0 ) {
 			return new WP_Error( 'native_option_value_budget', 'The native value exceeds the available decoding budget.' );
@@ -169,13 +197,17 @@ final class Native_Option_Value {
 		if ( strlen( $document ) > $max_bytes ) {
 			return new WP_Error( 'native_option_value_budget', 'The native value exceeds the available decoding budget.' );
 		}
+		if ( ! is_bool( $allow_stdclass ) ) {
+			return new WP_Error( 'native_option_value_unsupported', 'The native value codec mode is invalid.' );
+		}
 		$reader                 = new self( $max_bytes );
+		$reader->allow_stdclass = $allow_stdclass;
 		$reader->document       = $document;
 		$reader->memory_ceiling = $memory_ceiling_bytes;
 		if ( ! $reader->memory_fits( 4096 ) ) {
 			return $reader->decode_budget();
 		}
-		if ( ! $reader->consume( '{"format":"wpai-native-option-value-v1","value":' ) ) {
+		if ( ! $reader->consume( '{"format":"wpai-native-option-value-v' . ( $allow_stdclass ? '2' : '1' ) . '","value":' ) ) {
 			return $reader->decode_invalid();
 		}
 		$value = $reader->decode_tag( 0 );
@@ -255,6 +287,9 @@ final class Native_Option_Value {
 		}
 		if ( ! $key && $this->consume( '{"type":"array","entries":[' ) ) {
 			return $this->decode_entries( $depth );
+		}
+		if ( ! $key && $this->allow_stdclass && $this->consume( '{"type":"stdClass","entries":[' ) ) {
+			return $this->decode_object( $depth );
 		}
 		return $this->decode_invalid();
 	}
@@ -362,6 +397,42 @@ final class Native_Option_Value {
 			$first         = false;
 		}
 		return $value;
+	}
+
+	/** @param int $depth Parent object depth. @return \stdClass|WP_Error */
+	private function decode_object( $depth ) {
+		$properties = array();
+		$seen       = array();
+		$first      = true;
+		while ( ! $this->consume( ']}' ) ) {
+			if ( ( ! $first && ! $this->consume( ',' ) ) || ! $this->consume( '{"key":' ) ) {
+				return $this->decode_invalid();
+			}
+			$key = $this->decode_tag( $depth + 1, true );
+			if ( is_wp_error( $key ) ) {
+				return $key;
+			}
+			if ( ! is_string( $key ) || isset( $seen[ ':' . base64_encode( $key ) ] ) || ! $this->consume( ',"value":' ) ) {
+				return $this->decode_invalid();
+			}
+			$part = $this->decode_tag( $depth + 1 );
+			if ( is_wp_error( $part ) ) {
+				return $part;
+			}
+			if ( ! $this->consume( '}' ) ) {
+				return $this->decode_invalid();
+			}
+			$count = count( $properties ) + 1;
+			if ( $count > intdiv( PHP_INT_MAX - 4096, 512 ) || ! $this->memory_fits( $count * 512 + 4096 ) ) {
+				return $this->decode_budget();
+			}
+			$seen[ ':' . base64_encode( $key ) ] = true;
+			$properties[ $key ]                  = $part;
+			$first                               = false;
+		}
+		// Native array-to-stdClass cast preserves binary/NUL and numeric property
+		// names. Dynamic property assignment rejects some otherwise valid names.
+		return (object) $properties;
 	}
 
 	/** @return WP_Error Redacted syntax/canonicality error. */

@@ -3,17 +3,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-forbidden='(^|[^[:alnum:]_])(shell_exec|exec|system|passthru|proc_open|popen|eval|file_put_contents|fopen|fwrite|unlink|rename|copy|mkdir|rmdir)[[:space:]]*\('
-
-unexpected_primitives="$(grep -R -nE "$forbidden" src --include='*.php' --exclude='class-media-abilities.php' --exclude='class-source-editing-abilities.php' --exclude='class-private-artifact-writer.php' --exclude='class-private-transfer-session.php' --exclude='class-safe-temporary-staging.php' |
-    grep -vE "^src/Support/class-extension-install-lock.php:[0-9]+:[[:space:]]+[$]handle = @fopen[(] [$]path, '[xr]' [)];" || true)"
-if [[ -n "$unexpected_primitives" ||
-      "$(grep -cF "@fopen( \$path, 'x' );" src/Support/class-extension-install-lock.php || true)" != "1" ||
-      "$(grep -cF "@fopen( \$path, 'r' );" src/Support/class-extension-install-lock.php || true)" != "1" ]]; then
-    printf '%s\n' "$unexpected_primitives"
-    echo "ERROR: forbidden direct execution/filesystem primitive found in production source." >&2
-    exit 1
-fi
+# Syntax-aware class/method/argument ownership below replaces file-wide direct-IO
+# exemptions. It also rejects command execution, native callable aliases and
+# read-to-write mode changes; native provider method names are not syscalls.
 
 # Exactly one new isolated private 0700 one-shot directory may be created.
 # This does not grant other Bridge source permission to create arbitrary paths.
@@ -45,14 +37,14 @@ if grep -nE "$private_forbidden" "$private_writer" ||
 fi
 
 
-# DB inputs add one coordinator-held rb descriptor, never another writer.
+# Administration adds fixed-purpose pinned readers plus one frame writer; no arbitrary-path seam.
 # One audited internal-only private byte ingress/egress seam. Keep its exact
 # resource/persistence primitive inventory explicit rather than globally
 # allowing a new generic filesystem adapter across Bridge Abilities.
 private_stage='src/Support/class-private-transfer-session.php'
 if [[ ! -f "$private_stage" ||
-      "$(grep -cF '@fopen(' "$private_stage" || true)" != "17" ||
-      "$(grep -cF 'fwrite(' "$private_stage" || true)" != "4" ||
+      "$(grep -cF '@fopen(' "$private_stage" || true)" != "21" ||
+      "$(grep -cF 'fwrite(' "$private_stage" || true)" != "5" ||
       "$(grep -cF 'stream_copy_to_stream(' "$private_stage" || true)" != "1" ||
       "$(grep -cF '@mkdir(' "$private_stage" || true)" != "1" ||
       "$(grep -cF 'flock(' "$private_stage" || true)" != "7" ||
@@ -483,6 +475,7 @@ database_connection='src/Support/class-database-connection.php'
 native_options_reader='src/Abilities/class-native-option-abilities.php'
 native_options_writer='src/Abilities/class-native-option-write-abilities.php'
 native_options_journal='src/Support/class-native-option-operation.php'
+native_scheduler='src/Support/class-native-scheduler.php' # Fixed provider table/prefix metadata only; tokenizer rejects calls or writes.
 metadata_store='src/Support/class-post-meta-store.php'
 term_metadata_store='src/Support/class-term-meta-store.php'
 user_comment_metadata_store='src/Support/class-user-comment-meta-store.php'
@@ -539,23 +532,25 @@ if [[ ! -f "$create_claim_store" ||
     echo "ERROR: create receipt store must retain one conditional update, one exclusive insert, and two exact prepared capacity queries." >&2
     exit 1
 fi
-# Run-now is a separate, tightly audited bounded native-option replay store.
-# Exact fixed SQL shapes only: one receipt count, one INSERT IGNORE winner,
-# and one expected-value conditional UPDATE. Do not exempt generic SQL.
+# Permanent targeted-Core replay fences have no lifetime-count admission.
+# Preserve exactly one unique INSERT IGNORE winner and expected-value CAS.
 if [[ ! -f "$cron_run_store" ||
-      "$(grep -cF '$wpdb->get_var(' "$cron_run_store" || true)" != "1" ||
-      "$(grep -cF '$wpdb->prepare(' "$cron_run_store" || true)" != "2" ||
+      "$(grep -cF '$wpdb->get_var(' "$cron_run_store" || true)" != "0" ||
+      "$(grep -cF '$wpdb->prepare(' "$cron_run_store" || true)" != "1" ||
       "$(grep -cF '$wpdb->query(' "$cron_run_store" || true)" != "1" ||
       "$(grep -cF '$wpdb->update(' "$cron_run_store" || true)" != "1" ||
-      "$(grep -cF 'SELECT COUNT(*) FROM ' "$cron_run_store" || true)" != "1" ||
+      "$(grep -cF 'SELECT COUNT(*) FROM ' "$cron_run_store" || true)" != "0" ||
       "$(grep -cF 'INSERT IGNORE INTO ' "$cron_run_store" || true)" != "1" ||
-      "$(grep -cF 'WHERE option_name LIKE %s' "$cron_run_store" || true)" != "1" ||
-      "$(grep -cF 'const MAX_RECEIPTS = 2048;' "$cron_run_store" || true)" != "1" ]]; then
-    echo "ERROR: targeted Cron replay-fence store exceeded the fixed bounded SQL inventory." >&2
+      "$(grep -cF 'WHERE option_name LIKE %s' "$cron_run_store" || true)" != "0" ||
+      "$(grep -cF 'MAX_RECEIPTS' "$cron_run_store" || true)" != "0" ||
+      "$(grep -cF "'option_name'  => \$name," "$cron_run_store" || true)" != "1" ||
+      "$(grep -cF "'option_value' => \$before," "$cron_run_store" || true)" != "1" ||
+      "$(grep -cF "'off'" "$cron_run_store" || true)" != "1" ]]; then
+    echo "ERROR: targeted Cron unique replay-fence/CAS inventory changed or a lifetime ceiling returned." >&2
     exit 1
 fi
 if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$cron_run_store" |
-   grep -vE '\$wpdb->(options|get_var|prepare|esc_like|last_error|query|update)([^A-Za-z0-9_]|$)'; then
+   grep -vE '\$wpdb->(options|prepare|query|update)([^A-Za-z0-9_]|$)'; then
     echo "ERROR: targeted Cron claim store introduced an unreviewed database primitive." >&2
     exit 1
 fi
@@ -577,7 +572,7 @@ if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$native_options_reader" |
     echo "ERROR: native options reader grew unapproved database primitives." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" | grep -vFx "$database_reader" | grep -vFx "$database_connection" | grep -vFx "$native_options_reader" | grep -vFx "$native_options_writer" | grep -vFx "$native_options_journal" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" | grep -vFx "$database_reader" | grep -vFx "$database_connection" | grep -vFx "$native_options_reader" | grep -vFx "$native_options_writer" | grep -vFx "$native_options_journal" | grep -vFx "$native_scheduler" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2

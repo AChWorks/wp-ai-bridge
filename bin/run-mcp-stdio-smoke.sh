@@ -3,14 +3,18 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 compose_file="$root/tests/integration/compose.yml"
-compose=(docker compose -f "$compose_file")
+if [[ -n "${COMPOSE_FILE:-}" ]]; then
+    compose=(docker compose)
+else
+    compose=(docker compose -f "$compose_file")
+fi
 
 command -v jq >/dev/null 2>&1 || {
     echo "ERROR: jq is required for the MCP STDIO integration smoke." >&2
     exit 1
 }
 
-wp=("${compose[@]}" run --rm cli)
+wp=("${compose[@]}" run --no-deps --rm cli)
 output_file="$(mktemp /tmp/wpai-mcp-output.XXXXXX)"
 request_file="$(mktemp /tmp/wpai-mcp-request.XXXXXX)"
 normalized_file="$(mktemp /tmp/wpai-mcp-normalized.XXXXXX)"
@@ -39,7 +43,7 @@ run_mcp() {
     # Each call uses a new STDIO process. Complete the 2025 MCP lifecycle
     # on that stream before executing a tool, as required by Adapter 0.7.0.
     printf '%s\n' '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"wpai-stdio-smoke","version":"1.0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$payload" > "$request_file"
-    "${compose[@]}" run -T --rm cli mcp-adapter serve --server=mcp-adapter-default-server --user=1 --allow-root < "$request_file" > "$output_file" 2>/dev/null
+    "${compose[@]}" run -T --no-deps --rm cli mcp-adapter serve --server=mcp-adapter-default-server --user=1 --allow-root < "$request_file" > "$output_file" 2>/dev/null
 
     # Require an exact successful initialize followed by the requested result.
     if ! jq -se --argjson id "$request_id" 'length == 2 and .[0].id == 0 and .[0].result.protocolVersion == "2025-11-25" and .[1].id == $id and (.[1].error == null)' "$output_file" >/dev/null; then

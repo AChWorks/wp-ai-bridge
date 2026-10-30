@@ -45,7 +45,8 @@ $messages = array_merge(
 	require __DIR__ . '/fa_IR-parts/payload-settings.php',
 	require __DIR__ . '/fa_IR-parts/private-transfer.php',
 	require __DIR__ . '/fa_IR-parts/transfer-consumers.php',
-	require __DIR__ . '/fa_IR-parts/operation-receipts.php'
+	require __DIR__ . '/fa_IR-parts/operation-receipts.php',
+	require __DIR__ . '/fa_IR-parts/administration-completion.php'
 );
 
 return array(
