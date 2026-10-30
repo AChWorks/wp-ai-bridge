@@ -274,6 +274,76 @@ try {
 	}
 	wpai199n_assert( $audit_before_veto === get_option( Mutation_Log::OPTION_NAME ) && $flags_before_veto === get_option( Settings::OPTION_NAME ) && $secret === get_option( $names[0] ) && $actor === get_current_user_id() && $blog_before_veto === get_current_blog_id(), 'Silent audit-veto fixture changed the original log, grants, native option or caller context.' );
 
+	// update_option can return true after a filter persists a different valid
+	// log. Required native audit evidence must be the exact generated entry.
+	foreach ( array( 'drop', 'identity' ) as $transform_mode ) {
+		foreach ( array( 'read', 'snapshot' ) as $transform_action ) {
+			$audit_before_transform = get_option( Mutation_Log::OPTION_NAME, array() );
+			$flags_before_transform = get_option( Settings::OPTION_NAME );
+			$value_before_transform = get_option( $names[0] );
+			$blog_before_transform = get_current_blog_id();
+			$client_before_transform = WP_AI_Bridge\Auth\OAuth_Server::authenticated_mcp_client_id();
+			$files_before_transform = glob( $lease_root . '/*' );
+			$proposed_event = null;
+			$transformed_log = null;
+			$write_events = array();
+			$unexpected_snapshot = '';
+			$transform_audit = static function ( $value, $old_value ) use ( $transform_mode, $transform_action, $other_user, $names, &$proposed_event, &$transformed_log ) {
+				wpai199n_assert( is_array( $value ) && isset( $value[0]['event_ref'] ) && 'wp-ai-bridge/native-options-read' === ( $value[0]['ability'] ?? '' ), 'Transformed-log fixture did not capture the proposed native audit event.' );
+				$proposed_event = $value[0];
+				wpai199n_assert( 1 === preg_match( '/^[a-f0-9]{16}$/D', $proposed_event['event_ref'] ) && 'native_site_' . $transform_action . '_' . substr( hash( 'sha256', $names[0] ), 0, 16 ) === $proposed_event['target_type'], 'Transformed-log fixture captured a different native operation.' );
+				if ( 'drop' === $transform_mode ) {
+					$value = array_values( array_filter( $value, static function ( $entry ) use ( $proposed_event ) { return ( $entry['event_ref'] ?? '' ) !== $proposed_event['event_ref']; } ) );
+					$replacement = $proposed_event;
+					$replacement['ability'] = 'wp-ai-bridge/bridge-info';
+					$replacement['target_type'] = 'synthetic_audit_transform';
+					$replacement['event_ref'] = bin2hex( random_bytes( 8 ) );
+					array_unshift( $value, $replacement );
+				} else {
+					wpai199n_assert( $other_user > 0 && $other_user !== $proposed_event['user_id'], 'Identity-transform fixture lacks a distinct native principal.' );
+					$value[0]['user_id'] = $other_user;
+				}
+				$transformed_log = array_slice( $value, 0, Mutation_Log::LIMIT );
+				wpai199n_assert( $transformed_log !== $old_value, 'Transformed-log fixture accidentally produced a false-returning unchanged write.' );
+				return $transformed_log;
+			};
+			$observe_audit_write = static function ( $option, $old_value, $value ) use ( &$write_events ) {
+				if ( Mutation_Log::OPTION_NAME === $option ) {
+					// Core fires updated_option only after its database update has
+					// succeeded; the native method returns true after this action.
+					$write_events[] = array( 'old' => $old_value, 'value' => $value, 'stored' => get_option( Mutation_Log::OPTION_NAME ) );
+				}
+			};
+			add_filter( 'pre_update_option_' . Mutation_Log::OPTION_NAME, $transform_audit, PHP_INT_MAX, 2 );
+			add_action( 'updated_option', $observe_audit_write, PHP_INT_MAX, 3 );
+			try {
+				$observed = wpai199n_call( array( 'action' => $transform_action, 'scope' => 'site', 'name' => $names[0] ) );
+				if ( is_array( $observed ) && isset( $observed['transfer_id'] ) ) { $unexpected_snapshot = $observed['transfer_id']; }
+				$stored_log = get_option( Mutation_Log::OPTION_NAME );
+				wpai199n_assert( 1 === count( $write_events ) && $audit_before_transform === $write_events[0]['old'] && $transformed_log === $write_events[0]['value'] && $transformed_log === $write_events[0]['stored'] && $stored_log === $transformed_log && $stored_log !== $audit_before_transform, 'Transformed-log regression did not prove a successful true-returning native write and changed stored log.' );
+				$same_ref = array_values( array_filter( $stored_log, static function ( $entry ) use ( $proposed_event ) { return ( $entry['event_ref'] ?? '' ) === $proposed_event['event_ref']; } ) );
+				wpai199n_assert( ! in_array( $proposed_event, $stored_log, true ), 'Exact proposed native audit event unexpectedly survived transformation.' );
+				wpai199n_assert( 'drop' === $transform_mode ? array() === $same_ref : ( 1 === count( $same_ref ) && $other_user === $same_ref[0]['user_id'] && $same_ref[0] !== $proposed_event ), 'Transformed-log regression did not remove the event or preserve its reference with mismatched identity.' );
+				$withheld = wpai199n_error( $observed, 'True-returning transformed audit write exposed a native value/snapshot.', array( 'native_options_audit_unavailable' ) );
+				$failure_data = $withheld->get_error_data();
+				$failure_json = wp_json_encode( array( $withheld->get_error_code(), $withheld->get_error_message(), $failure_data ) );
+				wpai199n_assert( ! str_contains( $failure_json, $secret ) && ! str_contains( $failure_json, $names[0] ) && ( ! is_array( $failure_data ) || ( ! array_key_exists( 'transfer_id', $failure_data ) && ! array_key_exists( 'value_json', $failure_data ) ) ), 'Transformed audit failure exposed a secret, raw name or usable snapshot/value.' );
+				wpai199n_assert( ! array_diff( glob( $lease_root . '/*' ), $files_before_transform ), 'Transformed audit write left new private snapshot bytes/checkpoints/reservations.' );
+			} finally {
+				remove_filter( 'pre_update_option_' . Mutation_Log::OPTION_NAME, $transform_audit, PHP_INT_MAX );
+				remove_action( 'updated_option', $observe_audit_write, PHP_INT_MAX );
+				wp_set_current_user( $actor );
+				wpai199n_restore_option( Settings::OPTION_NAME, $flags_before_transform );
+				wpai199n_restore_option( $names[0], $value_before_transform );
+				// Preserve cleanup even when an older candidate wrongly returns a
+				// usable snapshot, so a negative reproduction leaves no lease.
+				if ( '' !== $unexpected_snapshot ) { wpai199n_call( array( 'action' => 'snapshot_release', 'scope' => 'site', 'transfer_id' => $unexpected_snapshot ) ); }
+				wpai199n_restore_option( Mutation_Log::OPTION_NAME, $audit_before_transform );
+				wpai199n_assert( $audit_before_transform === get_option( Mutation_Log::OPTION_NAME ) && $flags_before_transform === get_option( Settings::OPTION_NAME ) && $value_before_transform === get_option( $names[0] ) && $actor === get_current_user_id() && $blog_before_transform === get_current_blog_id() && $client_before_transform === WP_AI_Bridge\Auth\OAuth_Server::authenticated_mcp_client_id(), 'Transformed-log fixture did not restore its exact audit/grants/value/caller state.' );
+			}
+		}
+	}
+
 	// Exceptions must leave WordPress's dispatcher reusable and never return
 	// the provider's exception text in output or persisted activity.
 	$throw_name = $prefix . 'throw';

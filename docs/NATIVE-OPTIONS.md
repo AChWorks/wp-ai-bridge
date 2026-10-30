@@ -59,7 +59,7 @@ The native getter materializes a complete PHP value. Private chunked output does
 
 ## Integrity, diagnostics and remaining coverage
 
-Hook-capable calls use the existing exception-safe WordPress dispatch recovery boundary. Principal/client/blog/network drift denies sensitive output. Audit metadata uses fixed actions, scope/name fingerprints and unique events; values, raw names and data-bearing provider exception text are not written into general Activity or errors. A sensitive read whose required audit cannot be persisted does not return its value. This remains a finite operational Activity history, not an immutable archival audit.
+Hook-capable calls use the existing exception-safe WordPress dispatch recovery boundary. Principal/client/blog/network drift denies sensitive output. Audit metadata uses fixed actions, scope/name fingerprints and unique events; values, raw names and data-bearing provider exception text are not written into general Activity or errors. A sensitive read whose required audit cannot be confirmed does not return its value. Confirmation requires the exact generated redacted event in bounded native Activity readback under unchanged caller and storage context; a successful write that transforms or drops that event is insufficient. This remains a finite operational Activity history, not an immutable archival audit.
 
 Native reads preserve the filters installed in the current request. They do not execute provider admin screens, run arbitrary UI hooks or prove provider-specific business workflows. No add/update/delete, transaction, atomic CAS or exactly-once mutation claim is made by this read/export contract.
 
