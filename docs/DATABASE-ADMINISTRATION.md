@@ -1,6 +1,6 @@
 # Installation database administration
 
-The database contracts described here are current source functionality **pending release**. A published release, an installed site, MCP exposure and a successful authorized operation are separate facts. Check the actual target build and grants before relying on these tools.
+The database contracts described here are included in v0.7.0. A published release, an installed site, MCP exposure and a successful authorized operation are separate facts. Check the actual target build and grants before relying on these tools.
 
 ## Authorization and scope
 
@@ -128,9 +128,9 @@ The atomic receipt carries the essential redacted event, operation reference, co
 
 The read regressions cover grants/revocation, native/MCP/multisite scope, schema/rows, exact bytes, pagination/windows/staleness and payload/audit behavior. Typed-write acceptance additionally requires native and authenticated MCP execution, actual multisite authority, schema/row concurrency, protected renames, exact normalization/no-op semantics, 4 MiB staged values and oversized keys, atomic last-step rollback, receipt arbitration/recovery and connection/COMMIT ambiguity on genuine MySQL and MariaDB. Source, fixtures, passing exact-candidate checks, independent review, release and installed-client execution are separate evidence; this documentation does not claim pending checks have passed.
 
-[Issue #199](https://github.com/AChWorks/wp-ai-bridge/issues/199) still owns the accepted full administrative program and its validation: additional table/tenant scope, broader native settings/provider workflows, accessible logs, broader queues/provider/Customizer/builder workflows, scoped files and complete database/files backup with verified restore. Typed storage access does not itself prove any provider business lifecycle or disaster-recovery workflow.
+[Issue #199](https://github.com/AChWorks/wp-ai-bridge/issues/199) records the accepted administrative program and its validation. Version 0.7.0 also includes the separately delegated native settings, logs, scheduler, scoped filesystem, configuration/Customizer and complete database/files capture with isolated restore contracts documented in [Administration](./ADMINISTRATION.md). Typed storage access does not itself prove a provider business lifecycle or live disaster-recovery workflow.
 
-[Native Options](NATIVE-OPTIONS.md) separately documents effective native site/network reads and private snapshot export. [Native option mutations](NATIVE-OPTION-MUTATIONS.md), also source pending release, adds one native add/update/delete family, inert complete-value inputs and historical status. It uses Core callbacks with a durable one-dispatch fence, without the typed database writer's atomic target-and-receipt transaction. Raw database writes do not supply native settings lifecycle semantics; the two contracts must not exchange staged input purposes.
+[Native Options](NATIVE-OPTIONS.md) separately documents effective native site/network reads and private snapshot export. [Native option mutations](NATIVE-OPTION-MUTATIONS.md), included in v0.7.0, adds one native add/update/delete family, inert complete-value inputs and historical status. It uses Core callbacks with a durable one-dispatch fence, without the typed database writer's atomic target-and-receipt transaction. Raw database writes do not supply native settings lifecycle semantics; the two contracts must not exchange staged input purposes.
 
 
 ## Typed schema: wp-ai-bridge/database-schema

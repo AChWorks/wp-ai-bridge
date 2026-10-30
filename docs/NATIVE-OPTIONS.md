@@ -1,8 +1,8 @@
 # Native site and network settings reads
 
-This guide describes current source functionality pending release. A source commit, published release, installed plugin, exposed Ability and successful authorized operation are separate facts.
+This guide describes the v0.7.0 contract. A source commit, published release, installed plugin, exposed Ability and successful authorized operation are separate facts.
 
-`wp-ai-bridge/native-options-read` reads the effective native WordPress Options API view and creates complete private value snapshots. Use it for legitimate settings that do not have a registered REST setting, including sensitive provider configuration under explicit administrator consent. The existing registered REST setting Abilities retain their own schemas, permissions and lifecycle. One separately consented native add/update/delete family is documented in [Native option mutations](./NATIVE-OPTION-MUTATIONS.md), also pending release.
+`wp-ai-bridge/native-options-read` reads the effective native WordPress Options API view and creates complete private value snapshots. Use it for legitimate settings that do not have a registered REST setting, including sensitive provider configuration under explicit administrator consent. The existing registered REST setting Abilities retain their own schemas, permissions and lifecycle. One separately consented native add/update/delete family is documented in [Native option mutations](./NATIVE-OPTION-MUTATIONS.md), included in v0.7.0.
 
 ## Consent and scope
 

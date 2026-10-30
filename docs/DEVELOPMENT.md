@@ -207,9 +207,9 @@ docs/           architecture, security, operation contracts and developer guides
 
 ### Pinned published-predecessor ZIP upgrade regression
 
-The currently checked-in fixture exercises the real **published v0.6.10 → v0.6.11** replacement path. It starts from the
-**published v0.6.10 release ZIP, pinned by SHA-256** (the runner checks byte identity; GitHub does not enforce asset immutability) to the current
-candidate, using WordPress Core's normal replacement operation:
+The currently checked-in fixture exercises the real **published v0.6.11 → v0.7.0** replacement path. It starts from the
+**published v0.6.11 release ZIP**, pinned by SHA-256 `0ae118ff79e9091ffdd71b7822846846a08df9ceb17f0fa255c23f9dd41bf856` (the runner checks byte identity; GitHub does not enforce asset immutability), then installs the
+candidate using WordPress Core's normal replacement operation:
 
 ```bash
 bash bin/run-published-upgrade.sh 6.9-php8.4-apache
@@ -225,7 +225,7 @@ must register `workspace-delete`, `diagnostics-read`, and the guarded exact pack
 default-off Users & Destructive authority; registration is not authorization.
 Fixture credentials remain confined to the disposable test environment.
 
-Both supported CI upgrade lanes use this runner. Its pinned **published v0.6.10** predecessor is correct for the **v0.6.11** candidate, not automatically the latest predecessor for a future release. Before validating the next version, advance the pinned predecessor ZIP URL, checksum, expected version and compatible fixture to the actual latest published predecessor. Never label a historical predecessor run as newest-published-to-candidate proof.
+Both supported CI upgrade lanes use this runner. Its pinned **published v0.6.11** predecessor is correct for the **v0.7.0** candidate, not automatically the latest predecessor for a future release. Before validating the next version, advance the pinned predecessor ZIP URL, checksum, expected version and compatible fixture to the actual latest published predecessor. Never label a historical predecessor run as newest-published-to-candidate proof.
 
 ## Canonical GitHub distribution and conditional WordPress.org directory eligibility
 
@@ -238,7 +238,7 @@ Official WordPress.org listing is a **separate, conditional eligibility/reviewer
 Before submitting a frozen and independently reviewed candidate (resolve the policy eligibility **first**, before substantial directory-specific packaging):
 
 1. **Resolve an evidenced Plugin Directory policy conflict before submission.** [Detailed Plugin Guidelines §8](https://developer.wordpress.org/plugins/wordpress-org/detailed-plugin-guidelines/) explicitly lists installing/updating plugins, themes or add-ons from non-WordPress.org servers as disallowed externally loaded executable code, while allowing certain management services that push software through their own domain. The existing administrator-authorized `External Packages` route uses WordPress Core Upgrader but still selects public third-party ZIP sources, so security tests/Core API use **do not establish** directory eligibility. Seek written classification/acceptable architecture from the Plugin Review Team **only with Owner-approved external outreach**, then take an explicit owner-level decision on a single maintainable product/distribution policy. Do not silently remove the existing feature, conceal it from review, create divergent undocumented builds, or claim an automatic exception.
-2. Declare only verified minimum WordPress/PHP versions in the **main plugin header**. Evaluate native `Requires Plugins: mcp-adapter` only after checking the installed/dependency-inactive upgrade and activation behavior in supported WordPress versions; the current plugin remains deliberately usable for its local admin/Workspace while the Adapter is absent, with a clear administrator notice. Do not silently change this behavior or guess a PHP minimum from the single PHP 8.4 CI lane.
+2. Declare only verified minimum WordPress/PHP versions in the **main plugin header**. The `Requires Plugins: mcp-adapter` declaration uses Core's native dependency management; retain actual supported-version coverage for missing, installed-but-inactive and active dependencies, ordinary dependency action links and canonical upgrade. Runtime readiness diagnostics remain a fallback for abnormal manual filesystem removal or bypassed dependency paths, not an alternative activation policy. Do not guess a PHP minimum from the single PHP 8.4 CI lane.
 3. Prepare and validate the required WordPress.org-format **`readme.txt`** (distinct from user/developer `README.md`): truthful features, installation, dependencies, supported/tested versions, privacy/third-party data flows, privilege risks and known limitations, supported license and `Stable tag`. Obtain the actual WordPress.org contributor account/approved slug before presenting either as registered.
 4. Check GPL-compatible sources/assets/translations, privacy/consent and outward HTTP calls, stable upgrade/uninstall/multisite behavior, static asset delivery and absence of development/test/vendor artifacts in the distribution. Treat any required SVN trunk/tag publication and user-facing availability as a separately approved release operation, not a normal GitHub push.
 5. Run official **Plugin Check** (repository/security/performance checks, plus runtime checks where supported) against the **actual installable ZIP**, investigate every finding, and retain explicit evidence for any false positive. The existing repository PHPCS/security script and successful WordPress integration tests do not substitute for the Plugin Directory review.

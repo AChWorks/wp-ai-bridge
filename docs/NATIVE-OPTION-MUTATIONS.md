@@ -1,6 +1,6 @@
 # Native site and network option mutations
 
-This guide describes the current source package **pending release**. Source, release, installed plugin, exposed Ability and successful client execution are separate facts.
+This guide describes the v0.7.0 package. Source, release, installed plugin, exposed Ability and successful client execution are separate facts.
 
 `wp-ai-bridge/native-options-write` adds, updates or deletes one current-site or current-network option through WordPress's native Options API. It also provides historical operation status and private input preparation. WordPress owns sanitization, defaults, serialization, caches, filters, callback effects and races. Use a provider's supported operation when the task requires its business workflow.
 
