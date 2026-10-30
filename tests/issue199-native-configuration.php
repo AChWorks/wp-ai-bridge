@@ -6,6 +6,12 @@
  */
 
 namespace WP_AI_Bridge\Support {
+	/** Model a provider whose early-only dependency is unavailable to late registration. */
+	function wp_generate_uuid4() { return '00000000-0000-4000-8000-000000000001'; }
+	function remove_action( $hook, $callback ) { return true; }
+	function do_action( $hook, $manager ) {
+		if ( 'provider' === $GLOBALS['config_bootstrap_failure'] ) { throw new \Error( 'private-theme-path/provider-secret' ); }
+	}
 	/** Test-only journal model. Real native journal has a separate integration suite. */
 	final class Administration_Operation_Journal {
 		public static $records = array();
@@ -186,5 +192,59 @@ namespace {
 	) as $invalid ) { wpai199n_error( Native_Configuration_Abilities::parse( $invalid ), 'Unrelated/missing/invalid native fields accepted.' ); }
 	wpai199n_assert( ! is_wp_error( Native_Configuration_Abilities::parse( array( 'action' => 'input_append', 'target' => 'transient', 'transfer_id' => str_repeat( 'a', 64 ), 'offset' => 0, 'base64' => 'MA==' ) ) ), 'Byte string zero was treated as empty.' );
 	wpai199n_error( Native_Configuration_Abilities::parse( array( 'action' => 'update', 'expected_stylesheet' => 'test-theme', 'name' => 'setting', 'operation_id' => 'unit-custom-0001', 'value_source' => array( 'value_json' => $value ), 'changeset_uuid' => 'foreign' ), true ), 'Caller-selected Customizer changeset accepted.' );
+
+	// Late registration failures are a typed prerequisite, before any journal
+	// reservation/arm. No provider exception or ambient request state can escape.
+	final class WP_Customize_Manager {
+		public function __construct( array $args ) {
+			++$GLOBALS['config_manager_attempts'];
+			if ( 'constructor' === $GLOBALS['config_bootstrap_failure'] ) { throw new Error( 'private-theme-path/constructor-secret' ); }
+		}
+		public function register_controls() {
+			if ( 'core' === $GLOBALS['config_bootstrap_failure'] ) { throw new RuntimeException( 'private-theme-path/core-secret' ); }
+		}
+		public function get_stylesheet() { return 'test-theme'; }
+		public function is_theme_active() { return true; }
+		public function settings_previewed() { return false; }
+	}
+	wpai_test_reset_state();
+	$GLOBALS['wp_current_filter'] = array(); $GLOBALS['wp_filter'] = array();
+	update_option( 'stylesheet', 'test-theme' );
+	update_option( Settings::OPTION_NAME, $all );
+	update_option( Settings::ADMINISTRATION_OPTION_NAME, array( Settings::GROUP_CUSTOMIZER_WRITE => 1, '_blog_id' => 1, '_network_id' => 1 ) );
+	foreach ( array( 'customize', 'edit_theme_options', 'upload_files', 'edit_posts', 'publish_posts', 'activate_plugins', 'edit_plugins', 'edit_themes', 'install_plugins', 'moderate_comments', 'delete_users' ) as $capability ) { $GLOBALS['wpai_test']['capabilities'][ $capability ] = true; }
+	$fixture_root = sys_get_temp_dir() . '/wpai-customizer-unit-' . bin2hex( random_bytes( 8 ) );
+	mkdir( $fixture_root );
+	file_put_contents( $fixture_root . '/class-wp-customize-manager.php', '<?php // Test manager is declared above.' );
+	define( 'WP_AI_Bridge\\Support\\ABSPATH', $fixture_root . '/' );
+	define( 'WP_AI_Bridge\\Support\\WPINC', '.' );
+	$initialized = new ReflectionProperty( WP_AI_Bridge\Support\Customizer_Context::class, 'initialized' );
+	$prior_post = $_POST; $prior_request = $_REQUEST;
+	$had_global = array_key_exists( 'wp_customize', $GLOBALS ); $prior_global = $GLOBALS['wp_customize'] ?? null;
+	try {
+		foreach ( array( 'constructor', 'core', 'provider' ) as $failure ) {
+			foreach ( array( false, true ) as $null_global ) {
+				$initialized->setValue( null, false ); // Only the test may reset request-static Core isolation.
+				$GLOBALS['config_bootstrap_failure'] = $failure; $GLOBALS['config_manager_attempts'] = 0;
+				if ( $null_global ) { $GLOBALS['wp_customize'] = null; } else { unset( $GLOBALS['wp_customize'] ); }
+				$_POST = array( 'customized' => 'private-ambient-value', 'theme' => 'other-theme', 'sentinel' => array( 0 ) );
+				$_REQUEST = array( 'customize_theme' => 'other-theme', 'customize_changeset_uuid' => 'foreign', 'sentinel' => array( false ) );
+				$ambient_post = $_POST; $ambient_request = $_REQUEST;
+				$records = Administration_Operation_Journal::$records; $arms = Administration_Operation_Journal::$arms;
+				$failed = wpai199n_error( $customizer->execute( array( 'action' => 'update', 'expected_stylesheet' => 'test-theme', 'name' => 'provider_setting', 'operation_id' => 'unit-customizer-' . $failure . ( $null_global ? '-null' : '-absent' ), 'value_source' => array( 'value_json' => $value ) ) ), 'Late bootstrap exception did not return safely.', array( 'customizer_late_bootstrap_unavailable' ) );
+				wpai199n_assert( false === $failed->get_error_data()['dispatch_attempted'] && '' === $failed->get_error_data()['operation_ref'], 'Bootstrap failure claimed a native dispatch.' );
+				wpai199n_assert( $records === Administration_Operation_Journal::$records && $arms === Administration_Operation_Journal::$arms, 'Bootstrap failure reserved or armed a journal.' );
+				wpai199n_assert( $_POST === $ambient_post && $_REQUEST === $ambient_request && array_key_exists( 'wp_customize', $GLOBALS ) === $null_global && null === ( $GLOBALS['wp_customize'] ?? null ), 'Failed bootstrap did not exactly restore request/global state.' );
+				wpai199n_assert( ! str_contains( $failed->get_error_message(), 'private-' ), 'Bootstrap diagnostic leaked provider details.' );
+				$context = new WP_AI_Bridge\Support\Customizer_Context( $permissions, 'test-theme' );
+				wpai199n_error( $context->open(), 'Failed bootstrap allowed another fresh manager.', array( 'customizer_request_context_used' ) );
+				wpai199n_assert( 1 === $GLOBALS['config_manager_attempts'], 'Failed bootstrap was attempted twice in one request.' );
+			}
+		}
+	} finally {
+		$_POST = $prior_post; $_REQUEST = $prior_request;
+		if ( $had_global ) { $GLOBALS['wp_customize'] = $prior_global; } else { unset( $GLOBALS['wp_customize'] ); }
+		unlink( $fixture_root . '/class-wp-customize-manager.php' ); rmdir( $fixture_root );
+	}
 	echo 'PASS: native configuration and stdClass v2 (' . $GLOBALS['wpai199n_checks'] . " checks).\n";
 }

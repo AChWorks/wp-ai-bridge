@@ -135,8 +135,57 @@ try {
 	catch ( RuntimeException $error ) { $rejected_extra = 'backup_restore_extra_files' === $error->getMessage(); }
 	$assert( $rejected_extra, 'Acknowledging entries must retain unexpected-extra detection.' );
 
+	// Exercise the actual raw stat descriptors, including ordinary v1 metadata.
+	$names[] = 'mode-file';
+	file_put_contents( $fixture . '/mode-file', '' );
+	mkdir( $fixture . '/mode-directory', 0750 );
+	chmod( $fixture . '/mode-file', 0640 );
+	chmod( $fixture . '/mode-directory', 0750 );
+	$capture = static function () use ( $filesystem, $checked, $next, $exporter ) {
+		$root = $checked( $filesystem->stat( 'installation', array(), 'backup_export' ) );
+		$capturing = array( 'phase' => 'root', 'mode' => 'capture', 'root_index' => 0, 'chunk_bytes' => 1,
+			'plan' => array( 'roots' => array( array( 'id' => 'installation', 'identity' => $root['identity'], 'mode' => $root['mode'] ) ) ),
+			'files_digest' => hash( 'sha256', 'wpai-backup-files-v1' ) );
+		$records = array();
+		for ( $step = 0; $step < 256; ++$step ) {
+			$args = array( &$capturing );
+			$record = $next->invokeArgs( $exporter, $args );
+			if ( null !== $record ) {
+				$records[] = $record['record'];
+				if ( 'root_end' === $record['record']['type'] ) { return $records; }
+			}
+		}
+		throw new RuntimeException( 'Actual permission fixture did not finish in its finite budget.' );
+	};
+	foreach ( array( '' => 0700, '/mode-file' => 0640, '/mode-directory' => 0750 ) as $relative => $ordinary_mode ) {
+		foreach ( array( 01000, 02000, 04000 ) as $special_bit ) {
+			try {
+				$assert( chmod( $fixture . $relative, $ordinary_mode | $special_bit ), 'Owned permission fixture must accept the requested native mode.' );
+				clearstatcache( true, $fixture . $relative );
+				$assert( $special_bit === ( lstat( $fixture . $relative )['mode'] & 07000 ), 'The special bit must be physically present for the negative regression.' );
+				$rejected = false;
+				try { $capture(); } catch ( RuntimeException $error ) { $rejected = 'backup_permission_metadata_unsupported' === $error->getMessage(); }
+				$assert( $rejected, 'Actual root/file/directory special permissions must reject rather than silently become ordinary archive metadata.' );
+			} finally {
+				chmod( $fixture . $relative, $ordinary_mode );
+			}
+		}
+	}
+	$ordinary_records = $capture();
+	$ordinary_modes = array();
+	foreach ( $ordinary_records as $record ) {
+		if ( in_array( $record['type'], array( 'file', 'directory' ), true ) ) {
+			$ordinary_modes[ base64_decode( end( $record['components'] ), true ) ] = $record['mode'];
+			$record['seq'] = 0;
+			$assert( 0 === strpos( Backup_Archive::encode( $record, '', 16384 ), 'WPAI1:' ), 'Ordinary metadata must retain the existing v1 frame format.' );
+		}
+	}
+	$assert( 0700 === $ordinary_records[0]['mode'] && 0640 === $ordinary_modes['mode-file'] && 0750 === $ordinary_modes['mode-directory'],
+		'Actual ordinary root/file/directory permission bits must remain exact archive metadata.' );
+
 } finally {
 	foreach ( $names as $name ) { if ( is_file( $fixture . '/' . $name ) ) { unlink( $fixture . '/' . $name ); } }
+	if ( is_dir( $fixture . '/mode-directory' ) ) { rmdir( $fixture . '/mode-directory' ); }
 	rmdir( $fixture );
 }
 echo "issue199-backup-entries: {$checks} checks passed\n";

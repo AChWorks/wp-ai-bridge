@@ -267,6 +267,12 @@ bash "$root/bin/run-direct-http-smoke.sh"
 
 bash "$root/bin/run-mcp-stdio-smoke.sh"
 
+# Preserve every positive Core Customizer assertion before optional themes whose
+# registration dependencies require an earlier admin/preview bootstrap.
+wpai199c_bootstrap false mariadb
+wpai199c_eval issue199-native-configuration-smoke.php
+wpai199c_eval issue199-completion-mcp-smoke.php
+
 if [[ "${RUN_OPTIONAL_PROVIDERS:-0}" == "1" ]]; then
     echo "== Code Snippets 3.9.6 provider integration =="
     "${wp[@]}" plugin install code-snippets --version=3.9.6 --activate --allow-root
@@ -282,6 +288,7 @@ if [[ "${RUN_OPTIONAL_PROVIDERS:-0}" == "1" ]]; then
     "${wp[@]}" theme install astra --version=4.13.11 --activate --allow-root
     "${wp[@]}" eval 'Astra_API_Init::update_admin_settings_option("enable_abilities", true);' --allow-root
     "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue4-astra-reuse-smoke.php --user=1 --allow-root
+    wpai199c_eval issue199-customizer-prerequisite-smoke.php
 
     echo "== GFAPI transport contract fixture =="
     "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/mu-plugins
@@ -307,11 +314,8 @@ if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION
     bash "$root/bin/run-issue134-private-portability.sh" "$wordpress_tag"
 fi
 
-# Additive completion coverage runs after historical behavior and before lifecycle preservation.
-wpai199c_bootstrap false mariadb
-wpai199c_eval issue199-native-configuration-smoke.php
+# Scheduler completion coverage also runs with optional providers before lifecycle preservation.
 wpai199c_eval issue199-native-schedulers-smoke.php
-wpai199c_eval issue199-completion-mcp-smoke.php
 if [[ "${RUN_OPTIONAL_PROVIDERS:-0}" == '1' ]]; then
     for as_version in 3.9.3 4.2.0; do
         wpai199c_install_as "$as_version"

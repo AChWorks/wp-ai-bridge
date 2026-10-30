@@ -37,8 +37,9 @@ namespace {
 		public function activity_digest() { return str_repeat( 'c', 64 ); }
 	}
 	final class WPAI_Backup_Plan_Filesystem {
+		public $mode = 0755;
 		public function stat( $id, $parts, $purpose ) {
-			return array( 'type' => 'directory', 'identity' => str_repeat( 'd', 64 ), 'mode' => 0755 );
+			return array( 'type' => 'directory', 'identity' => str_repeat( 'd', 64 ), 'mode' => $this->mode & 0777, 'stat' => array( 'mode' => 0040000 | $this->mode ) );
 		}
 	}
 
@@ -55,11 +56,27 @@ namespace {
 		$exporter = $reflection->newInstanceWithoutConstructor();
 		$permissions = new \WP_AI_Bridge\Support\Permissions();
 		$native = new WPAI_Backup_Plan_Native();
+		$filesystem = new WPAI_Backup_Plan_Filesystem();
 		foreach ( array( 'permissions' => $permissions, 'access' => new \WP_AI_Bridge\Support\Administration_Access( $permissions ),
-			'database' => $native, 'filesystem' => new WPAI_Backup_Plan_Filesystem(), 'policy' => array( 'request' => 131072 ) ) as $name => $value ) {
+			'database' => $native, 'filesystem' => $filesystem, 'policy' => array( 'request' => 131072 ) ) as $name => $value ) {
 			$reflection->getProperty( $name )->setValue( $exporter, $value );
 		}
 		$initial = $exporter->plan( array( 'installation' ) );
+		$assert( 0755 === $initial['roots'][0]['mode'] && \WP_AI_Bridge\Support\Backup_Archive::FORMAT === $initial['format'],
+			'Ordinary root permissions and the existing archive version must remain unchanged.' );
+		foreach ( array( 01777, 02755, 04755 ) as $unsupported_mode ) {
+			$filesystem->mode = $unsupported_mode;
+			foreach ( array( 'plan', 'begin' ) as $action ) {
+				$rejected = false;
+				try {
+					if ( 'plan' === $action ) { $exporter->plan( array( 'installation' ) ); }
+					else { $exporter->begin( array( 'source_roots' => array( 'installation' ), 'expected_plan_hash' => $initial['plan_hash'],
+						'quiescence_confirmed' => true, 'bootstrap_writers_confirmed' => true ) ); }
+				} catch ( \RuntimeException $error ) { $rejected = 'backup_permission_metadata_unsupported' === $error->getMessage(); }
+				$assert( $rejected, 'Unsupported raw root permissions must reject inspect and begin before any archive lease.' );
+			}
+		}
+		$filesystem->mode = 0755;
 		$expected_modes = array( 'ERROR_FOR_DIVISION_BY_ZERO', 'NO_AUTO_CREATE_USER', 'NO_AUTO_VALUE_ON_ZERO', 'NO_ENGINE_SUBSTITUTION' );
 		$assert( implode( ',', $expected_modes ) === $initial['database']['session']['sql_mode'],
 			'The augmented plan must retain every native mode name in deterministic string order.' );

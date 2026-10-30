@@ -44,7 +44,13 @@ final class WPAI_Backup_Page_Native {
 			}
 			return array( 'rows' => $out );
 		}
-		$indexed = false !== strpos( $sql, '=CAST(? AS ' );
+		$indexed = false !== strpos( $sql, '=CAST(' );
+		if ( $indexed && false !== strpos( $sql, '=CAST(? AS UNSIGNED)' ) &&
+			( strlen( $parameters[2] ) > 19 || strlen( $parameters[2] ) === 19 && strcmp( $parameters[2], '9223372036854775807' ) > 0 ) ) {
+			// Actual MySQL8.4 prepared direct-CAST regression: 1292 twice,
+			// zero rows. The existing strict warning fence must reject it.
+			throw new RuntimeException( 'database_write_warning' );
+		}
 		$digest = $parameters[ $indexed ? 3 : 2 ];
 		$group = $groups[ $digest ] ?? null;
 		if ( null === $group || $indexed && $parameters[2] !== $group['locator'] ) { return array( 'rows' => array() ); }
@@ -89,7 +95,7 @@ $assert( is_array( $max_group ), 'Unsigned64 native PK locators must remain exac
 $cell = $db->cell( $s, $max_group['digest'], 1, 0, 4096, $max_group['locator'] );
 $last = end( $native->queries );
 $assert( $cell['value'] === "raw\0\xff:18446744073709551615" && $last[1][2] === '18446744073709551615' &&
-	false !== strpos( $last[0], '`id`=CAST(? AS UNSIGNED) AND ' ) && false !== strpos( $last[0], 'SHA2(CONCAT(' ),
+	false !== strpos( $last[0], '`id`=CAST(CONVERT(? USING ascii) AS UNSIGNED) AND ' ) && false !== strpos( $last[0], 'SHA2(CONCAT(' ),
 	'Integer cell lookup must bind exact native PK type and retain the original full-row hash predicate.' );
 $assert( 'backup_source_stale' === $error( static function () use ( $db, $s, $max_group ) { $db->cell( $s, $max_group['digest'], 1, 0, 4096, '0' ); } ),
 	'A wrong but valid locator must fail the original group identity instead of silently rescanning another row.' );
@@ -114,7 +120,7 @@ foreach ( array( array( 'bigint', 'PRIMARY KEY (`id`)', '-9223372036854775808' )
 	$native->rows = array( array( 'pk' => $case[2], 'values' => array( $case[2], 'signed' ) ) );
 	$group = $db->next_group( $s, '' ); $db->cell( $s, $group['digest'], 1, 0, 4096, $group['locator'] );
 	$last = end( $native->queries );
-	$assert( false !== strpos( $last[0], '=CAST(? AS SIGNED) AND ' ) && $case[2] === $last[1][2], 'Signed native integer boundaries must remain exact and indexed.' );
+	$assert( false !== strpos( $last[0], '=CAST(CONVERT(? USING ascii) AS SIGNED) AND ' ) && $case[2] === $last[1][2], 'Signed native integer boundaries must remain exact and indexed.' );
 }
 foreach ( array(
 	array( 'bigint unsigned', '' ),
@@ -127,7 +133,7 @@ foreach ( array(
 	$native->rows = array( array( 'pk' => '1', 'values' => array( '1', "fallback\0" ) ), array( 'pk' => '1', 'values' => array( '1', "fallback\0" ) ) );
 	$group = $db->next_group( $s, '' ); $db->cell( $s, $group['digest'], 1, 0, 4096, $group['locator'] ?? null );
 	$last = end( $native->queries );
-	$assert( '2' === $group['multiplicity'] && ! isset( $group['locator'] ) && false === strpos( $last[0], '=CAST(? AS ' ),
+	$assert( '2' === $group['multiplicity'] && ! isset( $group['locator'] ) && false === strpos( $last[0], '=CAST(' ),
 		'Keyless/text/composite/unproven keys must keep duplicate multiplicities and the existing exact-hash fallback.' );
 }
 list( $db, $native ) = $make(); $s = $schema(); $native->rows = $native_rows; $native->corrupt_locator = '18446744073709551616';
@@ -202,7 +208,7 @@ $s = array( 'table' => 'wp_escaped_pk', 'hash' => hash( 'sha256', $escaped_ddl )
 	'columns' => array( array( 'name' => 'a`b' ), array( 'name' => 'payload' ) ) );
 list( $db, $native ) = $make(); $native->rows = array( array( 'pk' => '1', 'values' => array( '1', 'escaped' ) ) );
 $group = $db->next_group( $s, '' ); $db->cell( $s, $group['digest'], 1, 0, 20, $group['locator'] ); $query = end( $native->queries );
-$assert( '1' === $group['locator'] && false !== strpos( $query[0], '`a``b`=CAST(? AS UNSIGNED) AND ' ),
+$assert( '1' === $group['locator'] && false !== strpos( $query[0], '`a``b`=CAST(CONVERT(? USING ascii) AS UNSIGNED) AND ' ),
 	'An escaped native integer PK identifier must retain exact quoting and the bounded locator path.' );
 list( $db, $native ) = $make(); $s = $schema(); $native->rows = $native_rows;
 $reflection->getProperty( 'database' )->setValue( $exporter, $db );

@@ -260,6 +260,13 @@ final class Backup_Database {
 		return $value;
 	}
 
+	/** @param array $primary Verified native integer PK. @return string */
+	private function locator_predicate( array $primary ) {
+		// Give the prepared parameter a string context before native integer
+		// conversion; direct CAST(?) loses high unsigned64 values on MySQL.
+		return Database_Connection::quote( $primary['name'] ) . '=CAST(CONVERT(? USING ascii) AS ' . $primary['cast'] . ') AND ';
+	}
+
 	/** @param array $schema Validated schema. @param string $after Prior digest or empty. @param string|null $database Approved database. @return array|null */
 	public function next_group( array $schema, $after, $database = null ) {
 		$database   = null === $database ? $this->connection->database : $database;
@@ -338,7 +345,7 @@ final class Backup_Database {
 			if ( null === $primary ) {
 				throw new \RuntimeException( 'backup_source_locator_invalid' );
 			}
-			$predicate    = Database_Connection::quote( $primary['name'] ) . '=CAST(? AS ' . $primary['cast'] . ') AND ';
+			$predicate    = $this->locator_predicate( $primary );
 			$parameters[] = $this->locator( $locator, $primary );
 		}
 		$parameters[] = $group;
@@ -599,7 +606,7 @@ final class Backup_Database {
 			$primary   = $this->integer_primary( $schema );
 			$locator   = null === $primary ? null : $this->staged_locator( $schema, $cells, $source, $primary );
 			if ( null !== $locator ) {
-				$predicate = Database_Connection::quote( $primary['name'] ) . '=CAST(? AS ' . $primary['cast'] . ') AND ' . $predicate;
+				$predicate = $this->locator_predicate( $primary ) . $predicate;
 				array_unshift( $lookup, $locator );
 			}
 			$this->connection->run( 'INSERT INTO ' . $this->connection->table( $this->connection->options ) . ' (option_name,option_value,autoload) VALUES (?,?,?)', array( $name, $receipt, 'off' ) );

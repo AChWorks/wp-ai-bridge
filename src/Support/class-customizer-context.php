@@ -50,24 +50,33 @@ final class Customizer_Context {
 		foreach ( array( 'customize_changeset_uuid', 'customize_theme', 'theme', 'customize_messenger_channel' ) as $key ) {
 			unset( $_POST[ $key ], $_REQUEST[ $key ] );
 		}
-		require_once ABSPATH . WPINC . '/class-wp-customize-manager.php';
-		$this->manager           = new \WP_Customize_Manager(
-			array(
-				'changeset_uuid'     => wp_generate_uuid4(),
-				'theme'              => $this->stylesheet,
-				'messenger_channel'  => '',
-				'settings_previewed' => false,
-				'autosaved'          => false,
-				'branching'          => true,
-			)
-		);
-		$GLOBALS['wp_customize'] = $this->manager;
-		// The manager is constructed after after_setup_theme/wp_loaded. Calling
-		// wp_loaded() naively reverses same-priority Core/provider ordering.
-		remove_action( 'customize_register', array( $this->manager, 'register_controls' ) );
-		$this->manager->register_controls();
-		do_action( 'customize_register', $this->manager );
-		return $this->current() ? true : $this->error( 'customizer_context_changed' );
+		try {
+			return Hook_Dispatch_Recovery::run(
+				function () {
+					require_once ABSPATH . WPINC . '/class-wp-customize-manager.php';
+					$this->manager           = new \WP_Customize_Manager(
+						array(
+							'changeset_uuid'     => wp_generate_uuid4(),
+							'theme'              => $this->stylesheet,
+							'messenger_channel'  => '',
+							'settings_previewed' => false,
+							'autosaved'          => false,
+							'branching'          => true,
+						)
+					);
+					$GLOBALS['wp_customize'] = $this->manager;
+					// The manager is constructed after after_setup_theme/wp_loaded. Calling
+					// wp_loaded() naively reverses same-priority Core/provider ordering.
+					remove_action( 'customize_register', array( $this->manager, 'register_controls' ) );
+					$this->manager->register_controls();
+					do_action( 'customize_register', $this->manager );
+					return $this->current() ? true : $this->error( 'customizer_context_changed' );
+				}
+			);
+		} catch ( \Throwable $error ) {
+			$this->close();
+			return $this->error( 'customizer_late_bootstrap_unavailable' );
+		}
 	}
 
 	/** @return bool The current operation never previews or switches another theme. */

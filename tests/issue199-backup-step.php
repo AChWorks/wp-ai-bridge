@@ -141,6 +141,7 @@ namespace {
 	}
 	final class WPAI_Backup_Step_Filesystem {
 		public $native;
+		public $root_mode = 0755;
 		public $bytes;
 		public $reads = 0;
 		public $fail_read = false;
@@ -159,7 +160,7 @@ namespace {
 		}
 		public function __construct( $native ) { $this->native = $native; $this->bytes = str_repeat( "b\0\xff", 30000 ); }
 		public function stat( $root, $parts, $purpose ) {
-			return array( 'type' => 'directory', 'identity' => str_repeat( 'b', 64 ), 'components' => array(), 'mode' => 0755 );
+			return array( 'type' => 'directory', 'identity' => str_repeat( 'b', 64 ), 'components' => array(), 'mode' => $this->root_mode & 0777, 'stat' => array( 'mode' => 0040000 | $this->root_mode ) );
 		}
 		public function with_read_stream( $root, $parts, $purpose, $identity, $callback ) {
 			if ( ! $this->native->active ) { throw new \RuntimeException( 'read_outside_admission' ); }
@@ -176,7 +177,7 @@ namespace {
 			$GLOBALS['step_clock'] += 1;
 			$cursor = $budget['cursor'];
 			if ( $cursor < 2 ) { return array( 'cursor' => $cursor + 1, 'complete' => false ); }
-			if ( null !== $this->entry ) { $callback( $this->entry ); }
+			if ( null !== $this->entry ) { $callback( $this->entry + array( 'stat' => array( 'mode' => $this->entry['mode'] ) ) ); }
 			return array( 'cursor' => $cursor, 'complete' => true );
 		}
 	}
@@ -312,6 +313,27 @@ namespace {
 		return array( $exporter, $native, $fs, $store, $r );
 	};
 	try {
+		foreach ( array( 'capture', 'verify' ) as $capture_mode ) {
+			foreach ( array( 'root', 'file', 'directory' ) as $unsupported_type ) {
+				foreach ( array( 01000, 02000, 04000 ) as $special_bit ) {
+					list( $exporter, $native, $fs, $store ) = $make( 'entries' );
+					$store->state['mode'] = $capture_mode;
+					$store->state['status'] = 'verify' === $capture_mode ? 'verifying_source' : 'capturing';
+					if ( 'root' === $unsupported_type ) {
+						$store->state['phase'] = 'root'; $fs->root_mode = 0755 | $special_bit;
+					} else {
+						$store->state['stack'][0]['scan_cursor'] = 2;
+						$fs->entry = array( 'type' => $unsupported_type, 'mode' => 0755, 'bytes' => 0,
+							'components' => array( base64_encode( 'special-mode' ) ), 'identity' => str_repeat( 'c', 64 ),
+							'stat' => array( 'mode' => ( 'file' === $unsupported_type ? 0100000 : 0040000 ) | 0755 | $special_bit ) );
+					}
+					$assert( 'backup_permission_metadata_unsupported' === $error( static function () use ( $exporter ) { $exporter->step( 'fixture' ); } ) &&
+						0 === $store->appends && 0 === $store->checkpoints && 0 === $store->seals &&
+						$native->mode === $native->original && 'SYSTEM' === $native->zone && 'sealed' !== $store->state['status'],
+						'Unsupported root/file/directory metadata must abort capture and verification before an archive record or complete receipt.' );
+				}
+			}
+		}
 		list( $exporter, $native, $fs, $store, $r ) = $make();
 		$db = $r->getProperty( 'database' )->getValue( $exporter );
 		$first = $exporter->step( 'fixture' );

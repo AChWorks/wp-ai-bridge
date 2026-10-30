@@ -108,6 +108,24 @@ try {
 	wpai199b_preflight_integrity_cases( $call, $target_schema, $target_root, 'restore', $deadline );
 	$source_schema = $wpdb->get_var( 'SELECT DATABASE()' );
 	wpai199c_assert( $source_schema !== $target_schema, 'Source and target must be distinct.' );
+	// Prove unsupported root metadata fails before the complete source oracle is taken.
+	$installation_root = rtrim( ABSPATH, '/\\' );
+	$installation_mode = lstat( $installation_root )['mode'] & 07777;
+	try {
+		wpai199c_assert( chmod( $installation_root, 01777 ), 'Owned disposable root special-bit setup failed.' );
+		clearstatcache( true, $installation_root );
+		wpai199c_assert( 01777 === ( lstat( $installation_root )['mode'] & 07777 ), 'Actual sticky root fixture was not installed.' );
+		foreach ( array( 'inspect', 'export_begin' ) as $permission_action ) {
+			$unsupported_permissions = $call( array( 'action' => $permission_action, 'source_roots' => array( 'installation' ),
+				'expected_plan_hash' => str_repeat( '0', 64 ), 'quiescence_confirmed' => true, 'bootstrap_writers_confirmed' => true ) );
+			wpai199c_assert( is_wp_error( $unsupported_permissions ) && 'backup_permission_metadata_unsupported' === $unsupported_permissions->get_error_code(),
+				'Actual sticky source root must reject inspect/begin before an archive reservation or complete claim.' );
+		}
+	} finally {
+		wpai199c_assert( chmod( $installation_root, $installation_mode ), 'Owned disposable root exact permission cleanup failed.' );
+		clearstatcache( true, $installation_root );
+		wpai199c_assert( $installation_mode === ( lstat( $installation_root )['mode'] & 07777 ), 'Owned disposable root exact mode was not restored.' );
+	}
 	$native_session = $wpdb->get_row( 'SELECT DATABASE() AS db,@@SESSION.autocommit AS ac,@@SESSION.foreign_key_checks AS fk,@@SESSION.unique_checks AS uq,@@SESSION.sql_mode AS mode,@@SESSION.time_zone AS tz', ARRAY_A );
 	$expected_db = wpai199c_database_image( $wpdb->dbh, $source_schema );
 	$expected_files = wpai199c_file_image( rtrim( ABSPATH, '/\\' ) );

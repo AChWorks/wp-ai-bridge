@@ -36,6 +36,26 @@ wpai199c_bootstrap() {
     "${wp[@]}" config set WPAI_ADMIN13_DISPOSABLE true --raw --allow-root >/dev/null
     "${wp[@]}" config set WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL "$enable_native_sql" --raw --allow-root >/dev/null
     "${wp[@]}" config set DISABLE_WP_CRON true --raw --allow-root >/dev/null
+    # Only this disposable runner's installed root is normalized for the v1
+    # ordinary-permissions roundtrip. Product source roots are never changed.
+    case "${COMPOSE_PROJECT_NAME:-}" in
+        wpai-integration-*|wpai199-write-*|wpai-issue58-ms-*) ;;
+        *) echo 'ERROR: completion bootstrap requires an owned disposable Compose project.' >&2; return 1 ;;
+    esac
+    "${wp[@]}" eval '
+        global $wpdb;
+        $root = rtrim(ABSPATH, "/\\");
+        if (!defined("WPAI_ADMIN13_DISPOSABLE") || true !== WPAI_ADMIN13_DISPOSABLE ||
+            "/var/www/html" !== $root || realpath($root) !== $root || is_link($root) ||
+            "wordpress" !== $wpdb->get_var("SELECT DATABASE()")) {
+            throw new RuntimeException("Owned disposable installation identity mismatch.");
+        }
+        if (!chmod($root, 0755)) { throw new RuntimeException("Disposable ordinary root permission setup failed."); }
+        clearstatcache(true, $root);
+        if (0755 !== (lstat($root)["mode"] & 07777)) {
+            throw new RuntimeException("Disposable ordinary root permissions were not applied.");
+        }
+    ' --allow-root
     "${compose[@]}" exec -T wordpress sh -ec '
         mkdir -p /var/www/html/wp-content/mu-plugins
         cp /var/www/html/wp-content/plugins/wp-ai-bridge/tests/fixtures/issue199-completion-provider.php /var/www/html/wp-content/mu-plugins/admin13-provider.php

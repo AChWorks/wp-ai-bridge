@@ -174,10 +174,30 @@ function wpai199c_file_image( $root, $max_entries = 100000, $max_bytes = 1073741
 	return $image;
 }
 
+/** Failure-only, bounded relative-path metadata; never include absolute paths or file data. */
+function wpai199c_file_difference( array $expected, array $actual ) {
+	$rows = array();
+	$allowed = array_fill_keys( array( 'type', 'mode', 'bytes', 'sha256' ), true );
+	foreach ( array_unique( array_merge( array_keys( $expected ), array_keys( $actual ) ) ) as $relative ) {
+		if ( ( $expected[ $relative ] ?? null ) === ( $actual[ $relative ] ?? null ) ) { continue; }
+		$row = array( 'path_base64' => base64_encode( (string) $relative ),
+			'expected' => isset( $expected[ $relative ] ) ? array_intersect_key( $expected[ $relative ], $allowed ) : null,
+			'actual' => isset( $actual[ $relative ] ) ? array_intersect_key( $actual[ $relative ], $allowed ) : null );
+		$candidate = json_encode( array_merge( $rows, array( $row ) ), JSON_UNESCAPED_SLASHES );
+		if ( ! is_string( $candidate ) || strlen( $candidate ) > 8000 || count( $rows ) >= 12 ) { break; }
+		$rows[] = $row;
+	}
+	return json_encode( $rows, JSON_UNESCAPED_SLASHES );
+}
+
 function wpai199c_assert_restored( array $expected_database, array $expected_files, mysqli $db, $target_schema, $restored_installation_root ) {
 	$actual_database = wpai199c_database_image( $db, $target_schema );
 	wpai199c_assert( $expected_database === $actual_database, 'Actual restored schema/data/object inventory differs from independent source oracle.' );
 	$actual_files = wpai199c_file_image( $restored_installation_root );
+	if ( $expected_files !== $actual_files ) {
+		// Keep the primary assertion authoritative even if diagnostic output fails.
+		try { fwrite( STDERR, 'Restore file inventory differences (at most 12 entries): ' . wpai199c_file_difference( $expected_files, $actual_files ) . "\n" ); } catch ( Throwable $diagnostic_error ) {}
+	}
 	wpai199c_assert( $expected_files === $actual_files, 'Actual restored path/type/mode/bytes/empty-directory inventory differs from independent source oracle.' );
 	return array( 'tables' => count( $actual_database['tables'] ), 'file_entries' => count( $actual_files ), 'physical_comparison' => 'complete' );
 }

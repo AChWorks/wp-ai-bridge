@@ -85,9 +85,13 @@ namespace {
 			}
 			$this->count_positions[] = ftell( $this->stream );
 			$after = 0 === strpos( $sql, 'SELECT (COUNT(*)=' );
-			$indexed = false !== strpos( $sql, 'WHERE `id`=CAST(? AS ' );
+			$indexed = false !== strpos( $sql, 'WHERE `id`=CAST(' );
 			$offset = $after ? 1 : 0;
 			$pk = $indexed ? $parameters[ $offset++ ] : null;
+			if ( $indexed && false !== strpos( $sql, '=CAST(? AS UNSIGNED)' ) &&
+				( strlen( $pk ) > 19 || strlen( $pk ) === 19 && strcmp( $pk, '9223372036854775807' ) > 0 ) ) {
+				throw new \RuntimeException( 'database_write_warning' );
+			}
 			$group = $parameters[ $offset ];
 			$count = 0;
 			foreach ( $this->rows as $row ) { if ( ( null === $pk || $pk === $row[0] ) && self::digest( $row ) === $group ) { ++$count; } }
@@ -122,8 +126,8 @@ namespace {
 			$db->insert( 'isolated_target', $schema, $cells, $source, $group, 'same-row-' . $pk );
 			$counts = array_values( array_filter( $native->queries, static function ( $query ) { return false !== strpos( $query[0], 'COUNT(*)' ); } ) );
 			$cast = $signed ? 'SIGNED' : 'UNSIGNED';
-			$assert( 2 === count( $counts ) && false !== strpos( $counts[0][0], '`id`=CAST(? AS ' . $cast . ') AND SHA2(CONCAT(' ) &&
-				false !== strpos( $counts[1][0], '`id`=CAST(? AS ' . $cast . ') AND SHA2(CONCAT(' ) &&
+			$assert( 2 === count( $counts ) && false !== strpos( $counts[0][0], '`id`=CAST(CONVERT(? USING ascii) AS ' . $cast . ') AND SHA2(CONCAT(' ) &&
+				false !== strpos( $counts[1][0], '`id`=CAST(CONVERT(? USING ascii) AS ' . $cast . ') AND SHA2(CONCAT(' ) &&
 				array( $pk, $group ) === $counts[0][1] && array( '0', $pk, $group ) === $counts[1][1],
 				'Both counts must use the exact bounded typed PK plus the unchanged row identity, including zero/u64/signed boundaries.' );
 			$assert( array( $values ) === $native->rows && 1 === $native->commits && 0 === $native->rollbacks && 3 === $native->admitted_position && 3 === $native->count_positions[0],
@@ -140,7 +144,7 @@ namespace {
 		try {
 			$db->insert( 'isolated_target', $schema, $cells, $source, $group, 'fallback' );
 			$counts = array_values( array_filter( $native->queries, static function ( $query ) { return false !== strpos( $query[0], 'COUNT(*)' ); } ) );
-			$assert( 2 === count( $counts ) && false === strpos( $counts[0][0], '=CAST(? AS ' ) &&
+			$assert( 2 === count( $counts ) && false === strpos( $counts[0][0], '=CAST(' ) &&
 				array( $group ) === $counts[0][1] && array( '0', $group ) === $counts[1][1], 'Unsupported/keyless locators must retain both generic exact-row count queries.' );
 			if ( '' === $fallback[0] ) {
 				$db->insert( 'isolated_target', $schema, $cells, $source, $group, 'second-duplicate' );

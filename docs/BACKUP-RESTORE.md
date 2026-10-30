@@ -60,7 +60,7 @@ Imported column names, native type and character set must agree with the accepte
 
 Preflight alone is not a restore. No target schema/file effects occur before the complete immutable package passes validation and the ready destination plan is acknowledged. Destination schema/root emptiness and identity are rechecked immediately before starting.
 
-Source logical root `installation`, for example, restores under `<target root>/roots/installation/`. Multiple approved roots retain separate logical namespaces. File bytes, ordinary permission bits, empty files and empty directories are preserved. Destination files and directories are compared again, including unexpected extra entries.
+Source logical root `installation`, for example, restores under `<target root>/roots/installation/`. Multiple approved roots retain separate logical namespaces. File bytes, ordinary permission bits (0777), empty files and empty directories are preserved. Source roots, files and directories must have no setuid, setgid or sticky bits (07000); inspect rejects unsupported root metadata before reserving an archive, and capture/verification aborts with `backup_permission_metadata_unsupported` if any included entry has those bits. Destination files and directories are compared again, including unexpected extra entries.
 
 ## Portable frame integrity
 

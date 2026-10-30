@@ -66,6 +66,7 @@ final class Backup_Exporter {
 			if ( 'directory' !== $root['type'] ) {
 				throw new \RuntimeException( 'backup_source_root_invalid' );
 			}
+			$this->assert_permission_metadata( $root );
 			$roots[] = array(
 				'id'       => $id,
 				'identity' => $root['identity'],
@@ -352,6 +353,7 @@ final class Backup_Exporter {
 			}
 			$root       = $state['plan']['roots'][ $state['root_index'] ];
 			$descriptor = Backup_Operation::checked( $this->filesystem->stat( $root['id'], array(), 'backup_export' ) );
+			$this->assert_permission_metadata( $descriptor );
 			if ( $descriptor['identity'] !== $root['identity'] ) {
 				throw new \RuntimeException( 'backup_source_stale' );
 			}
@@ -383,6 +385,7 @@ final class Backup_Exporter {
 					'backup_export',
 					$cursor['identity'],
 					function ( $entry ) use ( &$candidate, $cursor ) {
+						$this->assert_permission_metadata( $entry );
 						$name  = base64_decode( end( $entry['components'] ), true );
 						$after = null === $cursor['after'] ? null : base64_decode( $cursor['after'], true );
 						if ( ( null === $after || strcmp( $name, $after ) > 0 ) &&
@@ -542,6 +545,13 @@ final class Backup_Exporter {
 			'scan_cursor' => 0,
 			'candidate'   => null,
 		);
+	}
+
+	/** The v1 archive preserves ordinary modes only; reject metadata it cannot retain. */
+	private function assert_permission_metadata( array $descriptor ) {
+		if ( 0 !== ( $descriptor['stat']['mode'] & 07000 ) ) {
+			throw new \RuntimeException( 'backup_permission_metadata_unsupported' );
+		}
 	}
 
 	private function portable_descriptor( array $descriptor ) {
