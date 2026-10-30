@@ -8,7 +8,11 @@ safe_tag="$(printf '%s' "$wordpress_tag" | tr -c 'A-Za-z0-9' '-')"
 export WORDPRESS_TAG="$wordpress_tag"
 export COMPOSE_PROJECT_NAME="wpai-integration-${safe_tag}-$$"
 
-compose=(docker compose -f "$compose_file" -f "$root/tests/integration/compose-completion-private.yml")
+export COMPOSE_FILE="$compose_file:$root/tests/integration/compose-completion-private.yml"
+source "$root/bin/issue199-completion-runtime.sh"
+wpai199c_prepare_node_images
+compose=(docker compose)
+wpai199c_validate_node_mounts
 bash "$root/bin/build-zip.sh"
 cleanup() {
     "${compose[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
@@ -304,7 +308,6 @@ if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION
 fi
 
 # Additive completion coverage runs after historical behavior and before lifecycle preservation.
-source "$root/bin/issue199-completion-runtime.sh"
 wpai199c_bootstrap false mariadb
 wpai199c_eval issue199-native-configuration-smoke.php
 wpai199c_eval issue199-native-schedulers-smoke.php

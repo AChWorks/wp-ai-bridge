@@ -473,6 +473,48 @@ final class Backup_Database {
 		return $result;
 	}
 
+	/** @return string|null Canonical verified staged integer PK, or generic fallback. */
+	private function staged_locator( array $schema, array $cells, array $source, array $primary ) {
+		$index   = array_search( $primary['name'], array_column( $schema['columns'], 'name' ), true );
+		$cell    = false === $index ? null : ( $cells[ $index ] ?? null );
+		$maximum = max( strlen( $primary['positive'] ), null === $primary['negative'] ? 0 : strlen( $primary['negative'] ) + 1 );
+		if ( ! is_array( $cell ) || ! empty( $cell['null'] ) ||
+			! is_int( $cell['bytes'] ?? null ) || $cell['bytes'] < 1 || $cell['bytes'] > $maximum ) {
+			return null;
+		}
+		$stream = $source['stream'] ?? null;
+		if ( ! is_resource( $stream ) || ! is_int( $source['bytes'] ?? null ) ||
+			! is_int( $cell['offset'] ?? null ) || $cell['offset'] < 0 ||
+			$cell['offset'] > $source['bytes'] - $cell['bytes'] || ! Backup_Archive::digest( $cell['sha256'] ?? null ) ) {
+			throw new \RuntimeException( 'backup_restore_row_incomplete' );
+		}
+		$position = ftell( $stream );
+		if ( ! is_int( $position ) || $position < 0 ) {
+			throw new \RuntimeException( 'backup_restore_row_incomplete' );
+		}
+		try {
+			if ( 0 !== fseek( $stream, $cell['offset'] ) ) {
+				throw new \RuntimeException( 'backup_restore_row_incomplete' );
+			}
+			$value = fread( $stream, $cell['bytes'] );
+			if ( ! is_string( $value ) || strlen( $value ) !== $cell['bytes'] ||
+				! hash_equals( $cell['sha256'], hash( 'sha256', $value ) ) ) {
+				throw new \RuntimeException( 'backup_archive_cell_integrity' );
+			}
+		} finally {
+			if ( 0 !== fseek( $stream, $position ) ) {
+				throw new \RuntimeException( 'backup_restore_row_incomplete' );
+			}
+		}
+		try {
+			return $this->locator( $value, $primary );
+		} catch ( \RuntimeException $invalid ) {
+			// Imported noncanonical/out-of-range values still take the generic
+			// INSERT and independent native-normalization check; never coerce.
+			return null;
+		}
+	}
+
 	/**
 	 * One exact row, including duplicate/keyless rows; receipt and target are
 	 * committed together. Stream offsets are server-derived from verified bytes.
@@ -540,12 +582,20 @@ final class Backup_Database {
 				$this->connection->rollback();
 				return;
 			}
+			// Historical receipts remain independent of staged byte replay.
+			$predicate = self::row_expression( $schema['columns'] ) . '=?';
+			$lookup    = array( $group );
+			$primary   = $this->integer_primary( $schema );
+			$locator   = null === $primary ? null : $this->staged_locator( $schema, $cells, $source, $primary );
+			if ( null !== $locator ) {
+				$predicate = Database_Connection::quote( $primary['name'] ) . '=CAST(? AS ' . $primary['cast'] . ') AND ' . $predicate;
+				array_unshift( $lookup, $locator );
+			}
 			$this->connection->run( 'INSERT INTO ' . $this->connection->table( $this->connection->options ) . ' (option_name,option_value,autoload) VALUES (?,?,?)', array( $name, $receipt, 'off' ) );
-			$target     = Backup_Schema::qualified( $database, $schema['table'] );
-			$expression = self::row_expression( $schema['columns'] );
-			$before     = $this->connection->run( 'SELECT COUNT(*) AS n FROM ' . $target . ' WHERE ' . $expression . '=?', array( $group ), array(), 1 )['rows'][0]['n'];
+			$target = Backup_Schema::qualified( $database, $schema['table'] );
+			$before = $this->connection->run( 'SELECT COUNT(*) AS n FROM ' . $target . ' WHERE ' . $predicate, $lookup, array(), 1 )['rows'][0]['n'];
 			$this->connection->run( 'INSERT INTO ' . $target . ' (' . implode( ',', array_map( array( Database_Connection::class, 'quote' ), array_column( $schema['columns'], 'name' ) ) ) . ') VALUES (' . implode( ',', $expressions ) . ')', $parameters, $sources );
-			$verified = $this->connection->run( 'SELECT (COUNT(*)=CAST(? AS DECIMAL(65,0))+1) AS ok FROM ' . $target . ' WHERE ' . $expression . '=?', array( $before, $group ), array(), 1 )['rows'][0]['ok'];
+			$verified = $this->connection->run( 'SELECT (COUNT(*)=CAST(? AS DECIMAL(65,0))+1) AS ok FROM ' . $target . ' WHERE ' . $predicate, array_merge( array( $before ), $lookup ), array(), 1 )['rows'][0]['ok'];
 			if ( '1' !== $verified ) {
 				throw new \RuntimeException( 'backup_restore_value_normalized' );
 			}

@@ -740,7 +740,7 @@ final class Backup_Restore {
 		$schema  = Backup_Exporter::unpack_schema( $s['schemas'][ $table64 ] );
 		if ( ! $s['verify_schema_started'] ) {
 			$current = $this->database->schema( $schema['table'], $s['target_schema'] );
-			if ( ! hash_equals( $schema['hash'], $current['hash'] ) ) {
+			if ( ! hash_equals( $schema['hash'], $current['hash'] ) && ! Backup_Schema::equivalent( $schema['blueprint'], $current['blueprint'] ) ) {
 				throw new \RuntimeException( 'backup_restore_schema_mismatch' );
 			}
 			$s['verify_db']             = hash( 'sha256', $s['verify_db'] . ':table:' . $table64 . ':' . $schema['hash'] );

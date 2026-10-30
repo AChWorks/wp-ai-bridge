@@ -2,7 +2,13 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 compose="$root/tests/integration/compose.yml"
-dc() { docker compose -f "$compose" "$@"; }
+dc() {
+    if [[ -n "${COMPOSE_FILE:-}" ]]; then
+        docker compose "$@"
+    else
+        docker compose -f "$compose" "$@"
+    fi
+}
 fixture=wp-content/plugins/wp-ai-bridge/tests/integration
 modes=(document task)
 if [[ "${WPAI_QUOTA_MULTISITE:-0}" == 1 ]]; then
@@ -18,10 +24,10 @@ for mode in "${modes[@]}"; do
     }
     trap cleanup EXIT
     echo "== Two-process Workspace 199/200 cap: $mode =="
-    dc run --rm -e WPAI_QUOTA_KEY="$key" -e WPAI_QUOTA_MODE="$mode" -e WPAI_QUOTA_ACTION=setup -e WPAI_QUOTA_MULTISITE="${WPAI_QUOTA_MULTISITE:-0}" cli         eval-file "$fixture/issue126-quota-race-state.php" --user=1 --allow-root
-    dc run --rm -e WPAI_QUOTA_KEY="$key" -e WPAI_QUOTA_MODE="$mode" -e WPAI_QUOTA_SLOT=one -e WPAI_QUOTA_MULTISITE="${WPAI_QUOTA_MULTISITE:-0}" cli         eval-file "$fixture/issue126-quota-race-worker.php" --user=1 --allow-root >"$one" 2>&1 &
+    dc run --no-deps --rm -e WPAI_QUOTA_KEY="$key" -e WPAI_QUOTA_MODE="$mode" -e WPAI_QUOTA_ACTION=setup -e WPAI_QUOTA_MULTISITE="${WPAI_QUOTA_MULTISITE:-0}" cli         eval-file "$fixture/issue126-quota-race-state.php" --user=1 --allow-root
+    dc run --no-deps --rm -e WPAI_QUOTA_KEY="$key" -e WPAI_QUOTA_MODE="$mode" -e WPAI_QUOTA_SLOT=one -e WPAI_QUOTA_MULTISITE="${WPAI_QUOTA_MULTISITE:-0}" cli         eval-file "$fixture/issue126-quota-race-worker.php" --user=1 --allow-root >"$one" 2>&1 &
     first=$!
-    dc run --rm -e WPAI_QUOTA_KEY="$key" -e WPAI_QUOTA_MODE="$mode" -e WPAI_QUOTA_SLOT=two -e WPAI_QUOTA_MULTISITE="${WPAI_QUOTA_MULTISITE:-0}" cli         eval-file "$fixture/issue126-quota-race-worker.php" --user=1 --allow-root >"$two" 2>&1 &
+    dc run --no-deps --rm -e WPAI_QUOTA_KEY="$key" -e WPAI_QUOTA_MODE="$mode" -e WPAI_QUOTA_SLOT=two -e WPAI_QUOTA_MULTISITE="${WPAI_QUOTA_MULTISITE:-0}" cli         eval-file "$fixture/issue126-quota-race-worker.php" --user=1 --allow-root >"$two" 2>&1 &
     second=$!
     first_status=0
     second_status=0
@@ -38,7 +44,7 @@ for mode in "${modes[@]}"; do
         echo "ERROR: Workspace must admit exactly one worker at final record slot." >&2
         exit 1
     fi
-    dc run --rm -e WPAI_QUOTA_KEY="$key" -e WPAI_QUOTA_MODE="$mode" -e WPAI_QUOTA_ACTION=verify -e WPAI_QUOTA_MULTISITE="${WPAI_QUOTA_MULTISITE:-0}" cli         eval-file "$fixture/issue126-quota-race-state.php" --user=1 --allow-root
+    dc run --no-deps --rm -e WPAI_QUOTA_KEY="$key" -e WPAI_QUOTA_MODE="$mode" -e WPAI_QUOTA_ACTION=verify -e WPAI_QUOTA_MULTISITE="${WPAI_QUOTA_MULTISITE:-0}" cli         eval-file "$fixture/issue126-quota-race-state.php" --user=1 --allow-root
     cleanup
     trap - EXIT
 done

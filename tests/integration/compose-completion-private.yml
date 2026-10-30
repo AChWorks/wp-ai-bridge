@@ -1,11 +1,14 @@
-# One disposable PHP node: shared nonserved storage, mounted from initial startup.
-# Existing /tmp and historical CLI execution remain unchanged.
+# Completion-only derived images retain official layers/config except image VOLUME.
+# Compose >=2.24.4 !override removes the base child mount explicitly. Both PHP
+# processes see one common mount; private data is a nonserved sibling of HTML.
 services:
   wordpress:
-    volumes:
-      - wpai-completion-private:/wpai-admin13
+    image: ${WPAI_ADMIN13_APACHE_IMAGE:?Prepare completion node images before startup}
+    pull_policy: never
+    volumes: !override
+      - wordpress-data:/var/www
   cli:
-    volumes:
-      - wpai-completion-private:/wpai-admin13
-volumes:
-  wpai-completion-private: {}
+    image: ${WPAI_ADMIN13_CLI_IMAGE:?Prepare completion node images before startup}
+    pull_policy: never
+    volumes: !override
+      - wordpress-data:/var/www

@@ -28,6 +28,12 @@ jobs:
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout image metadata harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check strict image metadata transformation
+        run: python3 tests/issue199-image-metadata.py
+
       - name: Resolve and pull exact Docker Official Image manifests once
         shell: bash
         run: |
@@ -64,7 +70,16 @@ jobs:
             images+=("$ref")
             sleep 2
           done
-          docker save --output "${RUNNER_TEMP}/wpai-ci-images.tar" "${images[@]}"
+          # Metadata-only PHP-node derivatives keep every official filesystem
+          # layer; removing the inherited child VOLUME permits one common mount.
+          derived_images=()
+          for source in "${images[@]}"; do
+            if [[ "$source" == *wordpress:* ]]; then
+              derived="$(python3 bin/issue199-completion-image.py prepare "$source")"
+              derived_images+=("$derived")
+            fi
+          done
+          docker save --output "${RUNNER_TEMP}/wpai-ci-images.tar" "${images[@]}" "${derived_images[@]}"
           ls -lh "${RUNNER_TEMP}/wpai-ci-images.tar"
 
       - name: Share same-run verified images with isolated test jobs

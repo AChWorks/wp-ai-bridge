@@ -178,6 +178,68 @@ final class Backup_Schema {
 		return $derived;
 	}
 
+	/**
+	 * Compare validated native blueprints across a CREATE/SHOW roundtrip.
+	 * Only an explicit CHARACTER SET matching the resolved charset may differ
+	 * on columns retaining the same explicit COLLATE. Raw literals stay opaque.
+	 *
+	 * @return bool
+	 */
+	public static function equivalent( array $expected, array $actual ) {
+		foreach ( array( 'options', 'foreign', 'columns', 'column_metadata' ) as $field ) {
+			if ( $expected[ $field ] !== $actual[ $field ] ) {
+				return false;
+			}
+		}
+		if ( count( $expected['definitions'] ) !== count( $actual['definitions'] ) ) {
+			return false;
+		}
+		$metadata = array_column( $expected['column_metadata'], null, 'name' );
+		foreach ( $expected['definitions'] as $index => $definition ) {
+			if ( $definition === $actual['definitions'][ $index ] ) {
+				continue;
+			}
+			$left  = self::column_signature( $definition, $metadata );
+			$right = self::column_signature( $actual['definitions'][ $index ], $metadata );
+			if ( null === $left || null === $right || $left !== $right ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** @return array|null Tokens with only the proved redundant clause removed. */
+	private static function column_signature( $definition, array $metadata ) {
+		$tokens = self::tokens( $definition );
+		if ( ! isset( $tokens[0] ) || chr( 96 ) !== $tokens[0]['raw'][0] ) {
+			return null;
+		}
+		$name = str_replace( chr( 96 ) . chr( 96 ), chr( 96 ), substr( $tokens[0]['raw'], 1, -1 ) );
+		if ( ! is_string( $metadata[ $name ]['charset'] ?? null ) ) {
+			return null;
+		}
+		$signature  = array();
+		$charsets   = 0;
+		$collations = 0;
+		for ( $i = 0, $count = count( $tokens ); $i < $count; ++$i ) {
+			$word = strtoupper( $tokens[ $i ]['word'] );
+			if ( 'CHARACTER' === $word && 'SET' === strtoupper( $tokens[ $i + 1 ]['word'] ?? '' ) ) {
+				if ( ++$charsets > 1 || strtolower( $tokens[ $i + 2 ]['word'] ?? '' ) !== $metadata[ $name ]['charset'] ) {
+					return null;
+				}
+				$i += 2;
+				continue;
+			}
+			if ( 'COLLATE' === $word ) {
+				if ( ++$collations > 1 || 1 !== preg_match( '/^[a-zA-Z0-9_]+$/D', $tokens[ $i + 1 ]['word'] ?? '' ) ) {
+					return null;
+				}
+			}
+			$signature[] = $tokens[ $i ]['raw'];
+		}
+		return 1 === $collations ? $signature : null;
+	}
+
 	/** @param string $definition Native FK clause. @return array */
 	private static function foreign( $definition ) {
 		$id      = '\x60(?:[^\x60]|\x60\x60)+\x60';

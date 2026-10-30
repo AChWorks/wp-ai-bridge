@@ -6,15 +6,20 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 database_engine="${1:-mariadb}"
 wordpress_tag="${2:-6.9-php8.4-apache}"
-compose=(docker compose -f "$root/tests/integration/compose.yml" -f "$root/tests/integration/compose-completion-private.yml")
+export COMPOSE_FILE="$root/tests/integration/compose.yml:$root/tests/integration/compose-completion-private.yml"
 case "$database_engine" in
     mariadb) ;;
-    mysql) compose+=(-f "$root/tests/integration/compose-database-write-mysql.yml") ;;
+    mysql) export COMPOSE_FILE="$COMPOSE_FILE:$root/tests/integration/compose-database-write-mysql.yml" ;;
     *) echo "ERROR: unsupported typed-write database engine: ${database_engine}" >&2; exit 1 ;;
 esac
 safe_tag="$(printf '%s' "$wordpress_tag" | tr -c 'A-Za-z0-9' '-')"
 export WORDPRESS_TAG="$wordpress_tag"
 export COMPOSE_PROJECT_NAME="wpai199-write-${database_engine}-${safe_tag}-${GITHUB_RUN_ID:-local}-$$"
+
+source "$root/bin/issue199-completion-runtime.sh"
+wpai199c_prepare_node_images
+compose=(docker compose)
+wpai199c_validate_node_mounts
 
 fixtures=(
     issue199-database-write-smoke.php
@@ -111,7 +116,6 @@ for fixture in "${fixtures[@]}"; do
     "${wp[@]}" eval-file "wp-content/plugins/wp-ai-bridge/tests/integration/${fixture}" --user=1 --allow-root
 done
 # New administration families extend these same engine lanes; existing fixtures above remain intact.
-source "$root/bin/issue199-completion-runtime.sh"
 wpai199c_bootstrap true "$database_engine"
 wpai199c_eval issue199-database-administration-smoke.php
 wpai199c_eval issue199-native-configuration-smoke.php
