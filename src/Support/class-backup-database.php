@@ -488,23 +488,34 @@ final class Backup_Database {
 			$cell['offset'] > $source['bytes'] - $cell['bytes'] || ! Backup_Archive::digest( $cell['sha256'] ?? null ) ) {
 			throw new \RuntimeException( 'backup_restore_row_incomplete' );
 		}
-		$position = ftell( $stream );
-		if ( ! is_int( $position ) || $position < 0 ) {
-			throw new \RuntimeException( 'backup_restore_row_incomplete' );
-		}
+		// A warning must not dispatch an installed application handler while
+		// our row journal owns the native transaction, including cleanup I/O.
+		set_error_handler(
+			static function () {
+				return true;
+			}
+		);
 		try {
-			if ( 0 !== fseek( $stream, $cell['offset'] ) ) {
+			$position = ftell( $stream );
+			if ( ! is_int( $position ) || $position < 0 ) {
 				throw new \RuntimeException( 'backup_restore_row_incomplete' );
 			}
-			$value = fread( $stream, $cell['bytes'] );
-			if ( ! is_string( $value ) || strlen( $value ) !== $cell['bytes'] ||
-				! hash_equals( $cell['sha256'], hash( 'sha256', $value ) ) ) {
-				throw new \RuntimeException( 'backup_archive_cell_integrity' );
+			try {
+				if ( 0 !== fseek( $stream, $cell['offset'] ) ) {
+					throw new \RuntimeException( 'backup_restore_row_incomplete' );
+				}
+				$value = fread( $stream, $cell['bytes'] );
+				if ( ! is_string( $value ) || strlen( $value ) !== $cell['bytes'] ||
+					! hash_equals( $cell['sha256'], hash( 'sha256', $value ) ) ) {
+					throw new \RuntimeException( 'backup_archive_cell_integrity' );
+				}
+			} finally {
+				if ( 0 !== fseek( $stream, $position ) ) {
+					throw new \RuntimeException( 'backup_restore_row_incomplete' );
+				}
 			}
 		} finally {
-			if ( 0 !== fseek( $stream, $position ) ) {
-				throw new \RuntimeException( 'backup_restore_row_incomplete' );
-			}
+			restore_error_handler();
 		}
 		try {
 			return $this->locator( $value, $primary );

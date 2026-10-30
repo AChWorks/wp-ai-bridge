@@ -165,7 +165,7 @@ The separate native mutation package, also pending release, uses one durable ind
 
 Source, main, release, installed build, MCP exposure, principal/client grants and actual E2E execution are distinct facts. This inventory describes contracts and limitations; Issues/PRs/CI and Releases own current acceptance and delivery.
 
-## Administration completion candidate (source pending acceptance/release)
+## Administration completion source contracts
 
 The shared `Administration_Access` uses the existing `Permissions` snapshot and exact current user/client/blog/network context. Eleven additional protected default-off flags use a site/network-bound native option; database schema and SQL extend the existing database grant group. `Administration_Configuration` stores operator-approved roots with native device/inode identity, exact extra tables/restore schemas and resumable work budgets. The native WP Administration form is separate from ordinary settings and rejects stale/incomplete submissions.
 

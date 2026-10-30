@@ -153,7 +153,7 @@ The shared internal Administration_Operation_Journal has fixed server-owned sche
 
 ## Explicit native-account SQL proposal: wp-ai-bridge/database-native-sql
 
-This source candidate introduces a deliberately broader access posture for final integration approval. It requires the hosting-side constant WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL to be exactly true, every current database grant including Schema and Native Account SQL, actual administrator/Super Admin/network authority and acknowledge_native_account_scope=true on every request. Ordinary existing database grants cannot enable it.
+This source contract introduces a deliberately broader access posture requiring explicit integration approval. It requires the hosting-side constant WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL to be exactly true, every current database grant including Schema and Native Account SQL, actual administrator/Super Admin/network authority and acknowledge_native_account_scope=true on every request. Ordinary existing database grants cannot enable it.
 
 **Native-account SQL is not installation-confined.** The existing WordPress account may have privileges over other schemas, routines, server files and Bridge authorization/recovery/control storage. This contract does not parse arbitrary SQL into a claimed sandbox. Hosting/account privileges remain the execution boundary. It creates no connection, credentials, PHP/shell proxy, reconnect or hidden multi_query execution.
 

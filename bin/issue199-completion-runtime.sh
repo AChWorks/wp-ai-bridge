@@ -194,7 +194,7 @@ openssl req -x509 -nodes -newkey rsa:2048 -days 1 -subj '/CN=localhost' \
     -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
     -keyout /var/www/wpai-admin13/tls.key -out /var/www/wpai-admin13/tls.crt >/dev/null 2>&1
 chmod 0600 /var/www/wpai-admin13/tls.key
-cat > /etc/apache2/sites-available/var/www/wpai-admin13-ssl.conf <<'VHOST'
+cat > /etc/apache2/sites-available/wpai-admin13-ssl.conf <<'VHOST'
 <IfModule mod_ssl.c>
 <VirtualHost *:443>
     DocumentRoot /var/www/html

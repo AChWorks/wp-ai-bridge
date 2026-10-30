@@ -1,6 +1,6 @@
 # Native theme, transient and Customizer configuration
 
-This guide describes source functionality pending release and native acceptance. A source commit, passing fixture, published release, installed plugin and verified client workflow are separate facts.
+This guide describes source functionality; [Issue #199](https://github.com/AChWorks/wp-ai-bridge/issues/199) tracks exact native acceptance, integration and release evidence. A source commit, passing fixture, published release, installed plugin and verified client workflow are separate facts.
 
 `wp-ai-bridge/native-configuration` uses Core's current-theme Theme Modification API and exact Transients API. `wp-ai-bridge/customizer-settings` discovers and publishes settings registered through the current theme's native Customizer. They complement the existing native Options, registered REST settings, navigation, content/blocks, public Abilities and registered REST contracts.
 

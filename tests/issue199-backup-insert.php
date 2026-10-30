@@ -5,6 +5,22 @@
  * @package WP_AI_Bridge
  */
 namespace WP_AI_Bridge\Support {
+	/** Native-function doubles only; production has no I/O injection hooks. */
+	function wpai_insert_io_double( $operation, $native ) {
+		if ( ! isset( $GLOBALS['wpai_insert_io'] ) ) { return $native(); }
+		$fault = &$GLOBALS['wpai_insert_io'];
+		$fault['calls'][ $operation ] = ( $fault['calls'][ $operation ] ?? 0 ) + 1;
+		if ( $operation === $fault['operation'] && $fault['calls'][ $operation ] === $fault['call'] ) {
+			++$fault['emitted'];
+			trigger_error( 'Synthetic staged native diagnostic.', E_USER_WARNING );
+			if ( 'throw' === $fault['result'] ) { throw new \RuntimeException( 'synthetic_staged_io_exception' ); }
+			if ( 'fail' === $fault['result'] ) { return 'seek' === $operation ? -1 : false; }
+		}
+		return $native();
+	}
+	function ftell( $stream ) { return wpai_insert_io_double( 'tell', static function () use ( $stream ) { return \ftell( $stream ); } ); }
+	function fseek( $stream, $offset, $whence = SEEK_SET ) { return wpai_insert_io_double( 'seek', static function () use ( $stream, $offset, $whence ) { return \fseek( $stream, $offset, $whence ); } ); }
+	function fread( $stream, $length ) { return wpai_insert_io_double( 'read', static function () use ( $stream, $length ) { return \fread( $stream, $length ); } ); }
 	class Database_Control_Storage {
 		public function __construct( $connection, $budget ) {}
 		public function receipt_schema() {}
@@ -31,6 +47,7 @@ namespace {
 		public $stream;
 		public $admitted_position;
 		public $count_positions = array();
+		public $owned = false;
 		private $snapshot;
 		public static function digest( $values ) {
 			$identity = 'wpai-row-v1;';
@@ -39,11 +56,11 @@ namespace {
 		}
 		public function table( $table ) { return Backup_Schema::qualified( $this->database, $table ); }
 		public function begin_callback_journal() {
-			++$this->begins; $this->admitted_position = ftell( $this->stream );
+			++$this->begins; $this->owned = true; $this->admitted_position = ftell( $this->stream );
 			$this->snapshot = array( $this->rows, $this->receipts );
 		}
-		public function commit() { ++$this->commits; $this->snapshot = null; return true; }
-		public function rollback() { ++$this->rollbacks; if ( null !== $this->snapshot ) { list( $this->rows, $this->receipts ) = $this->snapshot; $this->snapshot = null; } return true; }
+		public function commit() { $this->owned = false; ++$this->commits; $this->snapshot = null; return true; }
+		public function rollback() { $this->owned = false; ++$this->rollbacks; if ( null !== $this->snapshot ) { list( $this->rows, $this->receipts ) = $this->snapshot; $this->snapshot = null; } return true; }
 		public function run( $sql, $parameters = array(), $sources = array(), $maximum = 4096 ) {
 			$this->queries[] = array( $sql, $parameters );
 			if ( 0 === strpos( $sql, 'SELECT option_value FROM ' ) ) {
@@ -154,5 +171,40 @@ namespace {
 			1 === $native->begins && 1 === $native->rollbacks && 0 === $native->inserts && array() === $native->receipts && 3 === ftell( $source['stream'] ),
 			'Changed staged PK bytes must reject before receipt/data insertion, roll back the owned journal and restore the stream position.' );
 	} finally { fclose( $source['stream'] ); }
+
+	// Every staged I/O primitive, including the finally seek, executes while the
+	// owned receipt transaction is active. An application handler must never run.
+	foreach ( array(
+		array( 'tell', 1, 'success' ), array( 'seek', 1, 'success' ), array( 'read', 1, 'success' ), array( 'seek', 2, 'success' ),
+		array( 'tell', 1, 'fail' ), array( 'seek', 1, 'fail' ), array( 'read', 1, 'fail' ), array( 'seek', 2, 'fail' ),
+		array( 'tell', 1, 'throw' ), array( 'seek', 2, 'throw' ),
+	) as $case ) {
+		list( $db, $native, $schema, $cells, $source, $group, $values ) = $make( '18446744073709551615' );
+		$GLOBALS['wpai_insert_io'] = array( 'operation' => $case[0], 'call' => $case[1], 'result' => $case[2], 'calls' => array(), 'emitted' => 0 );
+		$application_warnings = 0; $application_owned_callbacks = 0;
+		set_error_handler( static function () use ( &$application_warnings, &$application_owned_callbacks, $native ) {
+			++$application_warnings;
+			if ( $native->owned ) { ++$application_owned_callbacks; }
+			return true;
+		} );
+		try {
+			$observed = $error( static function () use ( $db, $schema, $cells, $source, $group ) { $db->insert( 'isolated_target', $schema, $cells, $source, $group, 'io-guarded' ); } );
+			$assert( 1 === $GLOBALS['wpai_insert_io']['emitted'] && 0 === $application_warnings && 0 === $application_owned_callbacks,
+				'Staged tell/read/seek diagnostics must never re-enter an application handler inside an owned row transaction.' );
+			trigger_error( 'Application handler restoration marker.', E_USER_NOTICE );
+			$assert( 1 === $application_warnings && 0 === $application_owned_callbacks, 'The caller error handler must be restored after success, native failure and thrown cleanup.' );
+			if ( 'success' === $case[2] ) {
+				$assert( null === $observed && array( $values ) === $native->rows && 1 === $native->commits && 0 === $native->rollbacks,
+					'Verified exact bytes and native integer behavior must remain unchanged by the diagnostic boundary.' );
+			} else {
+				$expected = 'throw' === $case[2] ? 'synthetic_staged_io_exception' : ( 'read' === $case[0] ? 'backup_archive_cell_integrity' : 'backup_restore_row_incomplete' );
+				$assert( $expected === $observed && array() === $native->rows && array() === $native->receipts &&
+					0 === $native->inserts && 0 === $native->commits && 1 === $native->rollbacks,
+					'Native staged read/seek failure must roll back owned work before any new receipt or target insertion.' );
+			}
+		} finally {
+			restore_error_handler(); unset( $GLOBALS['wpai_insert_io'] ); fclose( $source['stream'] );
+		}
+	}
 	echo "issue199-backup-insert: {$checks} checks passed\n";
 }

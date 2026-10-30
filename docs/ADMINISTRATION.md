@@ -1,6 +1,6 @@
-# Advanced administration (source pending acceptance and release)
+# Advanced administration
 
-This package adds explicit administration contracts to the existing approved-client and native WordPress capability model. Installation of a published release, release authorization and live activation are separate from the source candidate. Core upgrades remain read-only detection.
+This source package adds explicit administration contracts to the existing approved-client and native WordPress capability model. [Issue #199](https://github.com/AChWorks/wp-ai-bridge/issues/199) tracks exact validation, integration and release evidence. Installation of a published release, release authorization and live activation are separate from the source candidate. Core upgrades remain read-only detection.
 
 ## Configure authority
 

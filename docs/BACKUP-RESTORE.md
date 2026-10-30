@@ -1,6 +1,6 @@
 # Full approved backup and isolated restore
 
-This contract is source functionality pending exact-candidate native validation, independent review and release. It does not imply that an installed client supports archive ingress or egress.
+This contract describes source functionality. [Issue #199](https://github.com/AChWorks/wp-ai-bridge/issues/199) tracks exact-candidate native validation, independent review, integration and release evidence. It does not imply that an installed client supports archive ingress or egress.
 
 `wp-ai-bridge/full-backup` captures the approved installation database and files into a private portable archive, then restores that archive into an explicitly approved **empty separate database schema** and **nonserved filesystem root**. Original table names, table prefix, stored values and logical file roots are preserved. Live activation and in-place disaster recovery are separate operations.
 
