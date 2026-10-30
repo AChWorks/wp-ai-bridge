@@ -7,7 +7,7 @@
 
 The plugin is free and self-hosted. A direct **ChatGPT** connection is tested; a separate Gateway is optional. Other compatible clients and services can use approved connections where their authentication and transport actually interoperate. **Not every administrator operation or future service workflow is available yet.**
 
-**Version 0.7.0 adds explicitly delegated advanced administration.** Separate default-off grants cover database inspection/read/write/delete/schema/native-account SQL; scoped files and sensitive logs; native scheduler management; theme mods/transients/Customizer; and quiescent database/files capture with isolated restore. Configure explicit roots and restore schemas under **WP AI Bridge → Administration**. Native-account SQL additionally requires a hosting constant and explicit acknowledgement of the database account’s broader privileges. See the [administration guide](./docs/ADMINISTRATION.md), [database boundary](./docs/DATABASE-ADMINISTRATION.md) and [backup contract](./docs/BACKUP-RESTORE.md). Check the installed version and current grants before relying on a workflow.
+**Advanced administration uses explicit delegation.** Separate default-off grants cover database inspection/read/write/delete/schema/native-account SQL; scoped files and sensitive logs; native scheduler management; theme mods/transients/Customizer; and quiescent database/files capture with isolated restore. Configure explicit roots and restore schemas under **WP AI Bridge → Settings → Files & backups**. Native-account SQL additionally requires a hosting constant and explicit acknowledgement of the database account’s broader privileges. See the [administration guide](./docs/ADMINISTRATION.md), [database boundary](./docs/DATABASE-ADMINISTRATION.md) and [backup contract](./docs/BACKUP-RESTORE.md). Check the installed version and current grants before relying on a workflow.
 
 **Native settings access includes unregistered and sensitive site/network options.** Separate site/network read and write consents protect effective option reads, complete private snapshots and one native add/update/delete family with durable historical recovery. Native callbacks remain nontransactional. See [reads and snapshots](./docs/NATIVE-OPTIONS.md) and [mutations, complete inputs and recovery](./docs/NATIVE-OPTION-MUTATIONS.md).
 
@@ -65,7 +65,9 @@ The Bridge's WordPress-side file-transfer capabilities do **not** prove that eve
 
 ## Permissions you control
 
-Go to **WP AI Bridge → Settings**. **Only Site Read is enabled by default.** Every other access group is an administrator choice, and none overrides the connected WordPress account's own permissions.
+Go to **WP AI Bridge → Settings**, the last submenu entry. Its eight sections group connection details, access, scopes and limits by task. **Save changes** submits edits across every section, including sections you are not viewing. Workspace export and clear remain separate explicit actions. See [settings and save results](./docs/USER-GUIDE.md#dashboard-and-settings).
+
+**Only Site Read is enabled by default.** Every other access group is an administrator choice, and none overrides the connected WordPress account's own permissions.
 
 | Access group | Intended use |
 | --- | --- |
@@ -99,7 +101,7 @@ Go to **WP AI Bridge → Settings**. **Only Site Read is enabled by default.** E
 | **Full backup export / Full backup restore** | Separate capture and isolated-restore grants, approved scopes and declared quiescence. |
 | **Native appearance and transient settings / Registered Customizer settings** | Separate native configuration and compatible current-theme Customizer authority, plus the required sensitive settings grants. |
 
-Database and advanced-administration grants use protected forms; existing ordinary grants never enable them on upgrade. Configure approved roots and restore schemas under **WP AI Bridge → Administration**; roots start empty. Backup requires all selected database/DDL/file writers to remain quiescent throughout capture and verification. Native-account SQL can reach other schemas and Bridge controls within the account's privileges, so recovery may become unavailable if those controls are changed. Typed raw writes bypass WordPress/plugin business APIs; use native features when their hooks, validation, caches or lifecycle are required.
+Database and advanced-administration grants retain their separate authority checks within the unified settings form; an ordinary edit or upgrade never enables them. Configure approved roots and restore schemas under **Settings → Files & backups**; roots start empty. Backup requires all selected database/DDL/file writers to remain quiescent throughout capture and verification. Native-account SQL can reach other schemas and Bridge controls within the account's privileges, so recovery may become unavailable if those controls are changed. Typed raw writes bypass WordPress/plugin business APIs; use native features when their hooks, validation, caches or lifecycle are required.
 
 **Source Editing and External Packages can execute code with WordPress's ordinary runtime privileges.** They are not sandboxes. Enable high-trust groups only for appropriate accounts and approved clients. See the [security guide](./docs/SECURITY.md) and [user guide](./docs/USER-GUIDE.md).
 

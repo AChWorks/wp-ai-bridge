@@ -2,7 +2,7 @@
 Tags: ai, mcp, abilities, oauth, administration
 Requires at least: 6.9
 Tested up to: 7.1
-Stable tag: 0.7.0
+Stable tag: 0.7.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -12,7 +12,7 @@ Connect compatible AI/MCP clients to WordPress with OAuth, explicit administrato
 
 WP AI Bridge is an administrator-controlled integration for compatible AI/MCP clients. It uses the official WordPress MCP Adapter and Abilities API, WordPress OAuth authentication, and native WordPress permissions. The current direct connection is tested with ChatGPT; other clients require their own compatibility testing and administrator approval.
 
-Capabilities include authorized content, blocks, media, taxonomy, site settings, user operations, persistent private Workspace documents and tasks, registered REST and provider Abilities, and optional high-trust extension and source-management operations. Version 0.7.0 also provides separately delegated database/schema/SQL, native configuration, scoped files/logs, scheduler administration and complete quiescent database/files capture with verified isolated restore. Each sensitive group is separately disabled until a site administrator enables it; WordPress and provider permission checks still apply.
+Capabilities include authorized content, blocks, media, taxonomy, site settings, user operations, persistent private Workspace documents and tasks, registered REST and provider Abilities, and optional high-trust extension and source-management operations. Advanced administration provides separately delegated database/schema/SQL, native configuration, scoped files/logs, scheduler administration and complete quiescent database/files capture with verified isolated restore. Each sensitive group is separately disabled until a site administrator enables it; WordPress and provider permission checks still apply.
 
 The plugin has no required SaaS subscription. The official MCP Adapter is installed separately and declared as a required plugin; WordPress identifies a missing/inactive dependency and requires its activation before WP AI Bridge can be activated. WordPress 6.9 or newer is required. Consult the detailed GitHub documentation for the supported Adapter builds, hosting requirements and limits.
 
@@ -38,7 +38,9 @@ Full backup requires declared all-writer/DDL/file quiescence throughout capture 
 4. Activate WP AI Bridge after MCP Adapter is active, then open **WP AI Bridge > Settings**. If the dependency is missing or inactive, follow WordPress's native Plugins guidance to install/activate it first.
 5. Review the optional access groups and connect a compatible client using the site's HTTPS OAuth/MCP endpoint. OAuth authorization alone does not grant administrative capabilities.
 
-Before updating to 0.7.0, ensure the separate official MCP Adapter is installed and active. WordPress manages normal dependency activation/deactivation controls; readiness notices remain a fallback for abnormal manual filesystem changes or other unsupported paths. Updating an existing installation keeps the canonical plugin folder `wp-ai-bridge` and its WordPress settings/Workspace. Do not substitute GitHub's automatic source-code archive for the installable release asset. For sites still using version 0.3.0 that need legacy Workspace data, first follow the one-time v0.4.0 migration instructions in the GitHub installation guide.
+Before updating, ensure the separate official MCP Adapter is installed and active. WordPress manages normal dependency activation/deactivation controls; readiness notices remain a fallback for abnormal manual filesystem changes or other unsupported paths. Updating an existing installation keeps the canonical plugin folder `wp-ai-bridge` and its WordPress settings/Workspace. Do not substitute GitHub's automatic source-code archive for the installable release asset. For sites still using version 0.3.0 that need legacy Workspace data, first follow the one-time v0.4.0 migration instructions in the GitHub installation guide.
+
+All settings are under **WP AI Bridge > Settings**, the last submenu entry. Choose among Connection, Content & site, Accounts & sensitive settings, Code & integrations, Database, Files & backups, Capacity & limits and Workspace data. **Save changes** submits edits from all sections, including those not currently visible. If a save is rejected, stale or only partly confirmed, review the group results and retained draft, inspect saved settings in another tab, then reload before trying again. Workspace export and destructive clear are independent actions; neither saves settings. The former Administration URL redirects to Settings.
 
 == Frequently Asked Questions ==
 
@@ -74,6 +76,11 @@ WordPress.org may be contacted by WordPress Core for its own routine plugin/them
 WP AI Bridge retains private Workspace data and bounded activity metadata on the WordPress installation. OAuth tokens, connection approvals and revocation remain WordPress-controlled. See the project's Security and OAuth documentation for retention, revocation and advanced permissions.
 
 == Changelog ==
+
+= 0.7.1 =
+* Unify settings in one final Settings submenu with eight task sections, Persian/RTL support, keyboard navigation and a no-JavaScript fallback.
+* Save edits across sections in one submission with preflight validation, current-authority checks and verified results for each native settings store. Preserve unsaved values after rejected, stale or partly confirmed saves for review.
+* Keep existing option stores, OAuth, grants and Workspace data; no settings migration or automatic permission expansion. Workspace export and clear remain separate explicit actions.
 
 = 0.7.0 =
 * Declare the official MCP Adapter as a native WordPress plugin dependency; preserve readiness diagnostics for abnormal missing-provider states.

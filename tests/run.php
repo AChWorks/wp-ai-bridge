@@ -8,10 +8,25 @@ function add_filter( $name, $callback, $priority = 10, $accepted_args = 1 ) {
 	return true;
 }
 
+// Native rendering primitives are scoped to this standalone foundation fixture.
+// Dedicated native and unified-save tests execute real hooks/security checks.
+function nocache_headers() { $GLOBALS['wpai_test']['nocache'] = true; }
+function is_multisite() { return false; }
+function is_super_admin( $user = false ) { return false; }
+function get_current_blog_id() { return 1; }
+function get_current_network_id() { return 1; }
+function get_network_option( $network, $name, $default = false ) { return $default; }
+function apply_filters( $hook, $value, ...$args ) { return $value; }
+function wp_salt( $scheme = 'auth' ) { return 'synthetic-foundation-settings-salt'; }
+function esc_attr__( $value, $domain = '' ) { return esc_attr( $value ); }
+function esc_textarea( $value ) { return htmlspecialchars( (string) $value, ENT_QUOTES, 'UTF-8' ); }
+function wp_max_upload_size() { return 200 * 1024 * 1024; }
+
 use WP_AI_Bridge\Abilities\Ability_Resolver;
 use WP_AI_Bridge\Abilities\Content_Eligibility;
 use WP_AI_Bridge\Abilities\Registrar;
 use WP_AI_Bridge\Admin\Settings_Page;
+use WP_AI_Bridge\Admin\Settings_Save;
 use WP_AI_Bridge\Support\Environment;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
@@ -523,16 +538,37 @@ foreach ( array( "wp-native-builder", "wp-native-builder-documents", "wp-native-
 ob_start();
 $page->render_settings();
 $html = ob_get_clean();
-wpai_assert( in_array( Settings::OPTION_GROUP, $GLOBALS['wpai_test']['settings_fields'], true ), 'Settings page uses WordPress Settings API nonce fields.' );
-wpai_assert( false !== strpos( $html, 'options.php' ), 'Settings page posts access groups through the WordPress Settings API.' );
-wpai_assert( in_array( Payload_Settings::OPTION_GROUP, $GLOBALS['wpai_test']['settings_fields'], true ), 'Dedicated payload settings form must have its own WordPress nonce/action.' );
-wpai_assert( false !== strpos( $html, 'wpai-response-kib' ) &&
-	false !== strpos( $html, 'wpai-text-window-kib' ) &&
-	false !== strpos( $html, 'wpai-document-kib' ) && false !== strpos( $html, 'wpai-notes-kib' ) &&
-	false !== strpos( $html, 'name="' . Payload_Settings::OPTION_NAME . '[' . Payload_Settings::RESPONSE_KEY . ']' . '"' ), 'Admin payload controls not rendered as separately named, labeled inputs.' );
-
-wpai_assert( false !== strpos( $html, 'wpai_workspace_export' ), 'Settings page exposes explicit Workspace export.' );
-wpai_assert( false !== strpos( $html, 'wpai_workspace_clear' ), 'Settings page exposes explicit confirmed Workspace clear.' );
+// Assert the rendered submission boundary and associated controls, independently
+// of how sections are implemented or which native option owns each budget.
+$dom = new DOMDocument();
+$old_xml_errors = libxml_use_internal_errors( true );
+$dom->loadHTML( '<?xml encoding="utf-8" ?>' . $html );
+libxml_clear_errors();
+libxml_use_internal_errors( $old_xml_errors );
+$xpath = new DOMXPath( $dom );
+$form = '//form[@id="wpai-settings-form"]';
+wpai_assert( 1 === $xpath->query( $form . '[@method="post" and @action="' . admin_url( 'admin.php?page=' . Settings_Page::SETTINGS_SLUG ) . '"]' )->length, 'Settings share one same-screen POST form.' );
+wpai_assert( 1 === $xpath->query( $form . '//input[@name="_wpnonce"]' )->length &&
+	1 === $xpath->query( $form . '//input[@name="action" and @value="' . Settings_Save::ACTION . '"]' )->length, 'The unified settings submission has one nonce and the explicit global Save action.' );
+$snapshot = ( new Settings_Save( $settings ) )->snapshot();
+foreach ( array( 'expected_revision' => 'revision', 'blog_id' => 'blog_id', 'network_id' => 'network_id', 'user_id' => 'user_id' ) as $field => $key ) {
+	wpai_assert( 1 === $xpath->query( $form . '//input[@type="hidden" and @name="' . $field . '" and @value="' . $snapshot[ $key ] . '"]' )->length, 'Unified Save is bound to the current settings context: ' . $field );
+}
+wpai_assert( 1 === $xpath->query( $form . '/input[last()][@name="form_complete" and @value="1"]' )->length, 'A final completeness sentinel protects settings POST truncation.' );
+wpai_assert( 1 === $xpath->query( '//button[@id="wpai-settings-save" and @type="submit" and @form="wpai-settings-form"]' )->length, 'The global Save control submits the complete settings form.' );
+wpai_assert( 0 === $xpath->query( '//form[contains(@action,"options.php")]' )->length &&
+	array() === $GLOBALS['wpai_test']['settings_fields'], 'The screen does not split Save across old options.php group forms.' );
+foreach ( array( Payload_Settings::RESPONSE_KEY, Payload_Settings::WINDOW_KEY, Payload_Settings::DOCUMENT_KEY, Payload_Settings::NOTES_KEY, Payload_Settings::INLINE_FILE_KEY, Payload_Settings::INLINE_MEDIA_KEY ) as $key ) {
+	$controls = $xpath->query( $form . '//input[@name="' . Payload_Settings::OPTION_NAME . '[' . $key . ']"]' );
+	wpai_assert( 1 === $controls->length, 'Each payload budget has its own native option field: ' . $key );
+	$id = $controls->length ? $controls->item( 0 )->getAttribute( 'id' ) : '';
+	$labels = $xpath->query( $form . '//label[@for="' . $id . '"]' );
+	wpai_assert( '' !== $id && 1 === $labels->length && '' !== trim( $labels->item( 0 )->textContent ), 'Each payload budget has an explicitly associated visible label: ' . $key );
+}
+wpai_assert( 3 === $xpath->query( '//form' )->length &&
+	0 === $xpath->query( $form . '//input[@name="action" and (@value="wpai_workspace_export" or @value="wpai_workspace_clear")]' )->length, 'Workspace operations have separate forms and cannot be submitted by Save changes.' );
+wpai_assert( 1 === $xpath->query( '//form[not(@id="wpai-settings-form")]//input[@name="action" and @value="wpai_workspace_export"]' )->length, 'Settings page exposes explicit separate Workspace export.' );
+wpai_assert( 1 === $xpath->query( '//form[.//input[@name="action" and @value="wpai_workspace_clear"]]//input[@name="confirm_clear" and @value="clear" and @required]' )->length, 'Workspace clear remains a separate action requiring explicit confirmation.' );
 
 $GLOBALS['wpai_test']['capabilities']['manage_options'] = false;
 try {

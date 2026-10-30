@@ -7,6 +7,7 @@
 
 use WP_AI_Bridge\Abilities\Database_Abilities;
 use WP_AI_Bridge\Admin\Settings_Page;
+use WP_AI_Bridge\Admin\Settings_Save;
 use WP_AI_Bridge\Support\Environment;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
@@ -59,23 +60,38 @@ function wpai199ms_render_controls( Settings $settings ) {
 	} finally {
 		ob_end_clean();
 	}
+	wpai199ms_assert( 1 === preg_match( '~<form\\b[^>]*\\bid="wpai-settings-form"[^>]*>(.*?)</form>~s', $html, $form ), 'Ordinary and database grants must share the unified native settings form.' );
 	$controls = array();
-	$groups = array();
-	$processor = new WP_HTML_Tag_Processor( $html );
+	$context = array();
+	$processor = new WP_HTML_Tag_Processor( $form[1] );
+	$values = $settings->all();
 	while ( $processor->next_tag( 'INPUT' ) ) {
 		$name = $processor->get_attribute( 'name' );
-		if ( 'option_page' === $name ) {
-			$groups[] = $processor->get_attribute( 'value' );
+		if ( in_array( $name, array( 'action', '_wpnonce', 'expected_revision', 'blog_id', 'network_id', 'user_id' ), true ) ) {
+			$context[ $name ][] = $processor->get_attribute( 'value' );
+		}
+		if ( 'checkbox' !== $processor->get_attribute( 'type' ) ) {
+			continue;
 		}
 		foreach ( array( Settings::GROUP_DATABASE_INSPECTION, Settings::GROUP_DATABASE_READ, Settings::GROUP_SITE_READ ) as $key ) {
-			$option = Settings::GROUP_SITE_READ === $key ? Settings::OPTION_NAME : Settings::DATABASE_OPTION_NAME;
-			if ( $option . '[' . $key . ']' === $name ) {
-				$controls[ $key ] = null !== $processor->get_attribute( 'disabled' );
+			if ( 'wpai-grant-' . $key !== $processor->get_attribute( 'id' ) ) {
+				continue;
 			}
+			$option = Settings::GROUP_SITE_READ === $key ? Settings::OPTION_NAME : Settings::DATABASE_OPTION_NAME;
+			$disabled = null !== $processor->get_attribute( 'disabled' );
+			$controls[ $key ] = $disabled;
+			wpai199ms_assert( $disabled ? ( null === $name || $option . '[' . $key . ']' === $name ) : $option . '[' . $key . ']' === $name, 'The grant input lost its native option name or became actionable without authority.' );
+			wpai199ms_assert( ( ! empty( $values[ $key ] ) ) === ( null !== $processor->get_attribute( 'checked' ) ), 'The visible grant does not reflect its current saved state.' );
 		}
 	}
-	wpai199ms_assert( 3 === count( $controls ), 'Native Settings page omitted correctly named database/ordinary inputs.' );
-	wpai199ms_assert( Settings::OPTION_GROUP !== Settings::DATABASE_OPTION_GROUP && in_array( Settings::OPTION_GROUP, $groups, true ) && in_array( Settings::DATABASE_OPTION_GROUP, $groups, true ), 'Database access did not use its distinct native settings form/group.' );
+	wpai199ms_assert( 3 === count( $controls ), 'Native Settings page omitted database/ordinary grant controls.' );
+	$save = new Settings_Save( $settings );
+	$snapshot = $save->snapshot();
+	foreach ( array( 'action' => Settings_Save::ACTION, 'expected_revision' => $snapshot['revision'], 'blog_id' => (string) get_current_blog_id(), 'network_id' => (string) get_current_network_id(), 'user_id' => (string) get_current_user_id() ) as $field => $expected ) {
+		wpai199ms_assert( array( $expected ) === ( $context[ $field ] ?? array() ), 'The unified database settings form lost its unique current-context field: ' . $field );
+	}
+	wpai199ms_assert( 1 === count( $context['_wpnonce'] ?? array() ) && wp_verify_nonce( $context['_wpnonce'][0], $save->nonce_action() ), 'Unified database settings lost its contextual native nonce.' );
+	wpai199ms_assert( Settings::OPTION_NAME !== Settings::DATABASE_OPTION_NAME && Settings::OPTION_GROUP !== Settings::DATABASE_OPTION_GROUP, 'Unified presentation must retain separate native grant stores and registered groups.' );
 	return array( $controls, $html );
 }
 
@@ -145,7 +161,7 @@ try {
 	wpai199ms_expect_denied( static function () use ( $grants ) { update_option( Settings::DATABASE_OPTION_NAME, $grants, false ); } );
 	wpai199ms_assert( $settings->database_defaults() === get_option( Settings::DATABASE_OPTION_NAME ), 'Unauthorized native database save changed its dedicated row.' );
 	list( $local_controls, $local_html ) = wpai199ms_render_controls( $settings );
-	$explanation = __( 'Changing database access requires a current WordPress administrator and, on multisite, actual Super Admin and network authority.', 'wp-ai-bridge' );
+	$explanation = __( 'Changing this grant requires current administrator authority and, on multisite, actual Super Admin and network authority.', 'wp-ai-bridge' );
 	wpai199ms_assert( $local_controls[ Settings::GROUP_DATABASE_INSPECTION ] && $local_controls[ Settings::GROUP_DATABASE_READ ] && ! $local_controls[ Settings::GROUP_SITE_READ ] && str_contains( $local_html, esc_html( $explanation ) ), 'Local Settings UI did not disable/explain database controls while retaining ordinary fields.' );
 	wpai199ms_assert( ! $provider->can_read() && is_wp_error( $inspect->execute( array( 'action' => 'schema', 'table' => $GLOBALS['wpdb']->base_prefix . 'users' ) ) ), 'Local site administrator gained network database execution authority.' );
 

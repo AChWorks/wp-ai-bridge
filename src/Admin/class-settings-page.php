@@ -9,6 +9,7 @@ namespace WP_AI_Bridge\Admin;
 
 use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Environment;
+use WP_AI_Bridge\Support\Administration_Configuration;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Native_Option_Access;
 use WP_AI_Bridge\Support\Hook_Dispatch_Recovery;
@@ -34,6 +35,19 @@ final class Settings_Page {
 	const ACTIVITY_SLUG  = 'wp-ai-bridge-activity';
 	const SETTINGS_SLUG  = 'wp-ai-bridge-settings';
 
+
+	/** @var bool */
+	private $settings_prepared = false;
+	/** @var array */
+	private $save_snapshot = array();
+	/** @var array */
+	private $save_result = array();
+	/** @var array */
+	private $settings_draft = array();
+	/** @var string */
+	private $draft_revision = '';
+	/** @var string */
+	private $selected_section = 'connection';
 
 	/** @var Environment */
 	private $environment;
@@ -121,6 +135,21 @@ final class Settings_Page {
 		global $submenu;
 		if ( isset( $submenu[ self::PAGE_SLUG ][0][0] ) ) {
 			$submenu[ self::PAGE_SLUG ][0][0] = __( 'Dashboard', 'wp-ai-bridge' );
+		}
+	}
+
+	/** Move the existing Settings row after submenus registered by other owners. @return void */
+	public function order_settings_submenu() {
+		global $submenu;
+		if ( ! isset( $submenu[ self::PAGE_SLUG ] ) || ! is_array( $submenu[ self::PAGE_SLUG ] ) ) {
+			return;
+		}
+		foreach ( $submenu[ self::PAGE_SLUG ] as $index => $entry ) {
+			if ( isset( $entry[2] ) && self::SETTINGS_SLUG === $entry[2] ) {
+				unset( $submenu[ self::PAGE_SLUG ][ $index ] );
+				$submenu[ self::PAGE_SLUG ][] = $entry;
+				return;
+			}
 		}
 	}
 
@@ -365,367 +394,638 @@ final class Settings_Page {
 	 *
 	 * @return void
 	 */
+	/**
+	 * Handles same-screen settings POSTs before the WordPress admin header.
+	 *
+	 * @return void
+	 */
+	public function prepare_settings_screen() {
+		if ( isset( $_GET['page'] ) && self::SETTINGS_SLUG === $_GET['page'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Route selection only.
+			$this->prepare_settings_state();
+		}
+	}
+
+	/** @param string $hook_suffix Current admin screen. @return void */
+	public function enqueue_settings_assets( $hook_suffix ) {
+		if ( 'wp-ai-bridge_page_' . self::SETTINGS_SLUG !== $hook_suffix ) {
+			return;
+		}
+		wp_enqueue_style( 'wp-ai-bridge-settings', plugins_url( 'src/Admin/settings.css', WP_AI_BRIDGE_FILE ), array(), WP_AI_BRIDGE_VERSION );
+		wp_enqueue_script( 'wp-ai-bridge-settings', plugins_url( 'src/Admin/settings.js', WP_AI_BRIDGE_FILE ), array(), WP_AI_BRIDGE_VERSION, true );
+		wp_localize_script(
+			'wp-ai-bridge-settings',
+			'wpaiSettingsStrings',
+			array(
+				'clean'    => __( 'No unsaved changes.', 'wp-ai-bridge' ),
+				'dirty'    => __( 'Unsaved changes.', 'wp-ai-bridge' ),
+				'saving'   => __( 'Saving changes…', 'wp-ai-bridge' ),
+				'changed'  => __( 'Unsaved changes', 'wp-ai-bridge' ),
+				'remove'   => __( 'Remove this scope on save', 'wp-ai-bridge' ),
+				'undo'     => __( 'Keep this scope', 'wp-ai-bridge' ),
+				'newScope' => __( 'New directory scope', 'wp-ai-bridge' ),
+				'review'   => __( 'Review required', 'wp-ai-bridge' ),
+				'leave'    => __( 'You have unsaved settings changes.', 'wp-ai-bridge' ),
+			)
+		);
+	}
+
+	/** Load a request-local draft; no transient or URL ever stores submitted values. @return void */
+	private function prepare_settings_state() {
+		if ( $this->settings_prepared ) {
+			return;
+		}
+		$this->settings_prepared = true;
+		$this->require_admin();
+		nocache_headers();
+		$save                = new Settings_Save( $this->settings );
+		$this->save_snapshot = $save->snapshot();
+		if ( 'POST' !== ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) {
+			return;
+		}
+		$posted = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Settings_Save verifies nonce and exact context before effects.
+		if ( Settings_Save::ACTION !== ( $posted['action'] ?? null ) ) {
+			return;
+		}
+		$section = isset( $posted['selected_section'] ) && is_string( $posted['selected_section'] ) ? $posted['selected_section'] : '';
+		if ( isset( $this->settings_sections()[ $section ] ) ) {
+			$this->selected_section = $section;
+		}
+		if ( isset( $posted['wpai_add_scope'] ) ) {
+			$this->prepare_scope_draft( $posted, $save );
+		} else {
+			$this->save_result = $save->save( $posted );
+		}
+		if ( ! in_array( $this->save_result['status'] ?? '', array( 'saved', 'unchanged' ), true ) ) {
+			$this->settings_draft = $this->save_result['draft'] ?? array();
+			$this->draft_revision = is_string( $posted['expected_revision'] ?? null ) ? $posted['expected_revision'] : '';
+		}
+		$this->save_snapshot = $save->snapshot();
+	}
+
+	/** Add a row without persisting any setting, including when JavaScript is unavailable. @param array $posted Draft. @param Settings_Save $save Controller. @return void */
+	private function prepare_scope_draft( array $posted, Settings_Save $save ) {
+		$snapshot = $this->save_snapshot;
+		$valid    = $snapshot['valid'] && is_string( $posted['_wpnonce'] ?? null ) && wp_verify_nonce( $posted['_wpnonce'], $save->nonce_action() );
+		foreach ( array( 'blog_id', 'network_id', 'user_id' ) as $key ) {
+			$valid = $valid && ( $posted[ $key ] ?? null ) === (string) $snapshot[ $key ];
+		}
+		$valid = $valid && '1' === ( $posted['form_complete'] ?? null ) && is_string( $posted['expected_revision'] ?? null ) && hash_equals( $snapshot['revision'], $posted['expected_revision'] );
+		$draft = array_intersect_key( $posted, array_fill_keys( $snapshot['editable_options'], true ) );
+		if ( ! $valid || ! in_array( Administration_Configuration::OPTION_NAME, $snapshot['editable_options'], true ) ) {
+			$this->save_result = array(
+				'status' => 'stale',
+				'draft'  => $draft,
+				'errors' => array( '_form' => __( 'The scope draft could not be added. Settings or administrator authority changed; reload and review before saving.', 'wp-ai-bridge' ) ),
+			);
+			return;
+		}
+		if ( ! isset( $draft[ Administration_Configuration::OPTION_NAME ] ) || ! is_array( $draft[ Administration_Configuration::OPTION_NAME ] ) ) {
+			$draft[ Administration_Configuration::OPTION_NAME ] = ( new Administration_Configuration() )->all();
+		}
+		$roots   = $draft[ Administration_Configuration::OPTION_NAME ]['roots'] ?? array();
+		$roots   = is_array( $roots ) ? array_values( $roots ) : array();
+		$roots[] = array();
+		$draft[ Administration_Configuration::OPTION_NAME ]['roots'] = $roots;
+		$this->save_result      = array(
+			'status' => 'draft',
+			'draft'  => $draft,
+			'errors' => array(),
+		);
+		$this->selected_section = 'files-backups';
+	}
+
+	/** @return array Stable section identity and localized labels. */
+	private function settings_sections() {
+		return array(
+			'connection'        => __( 'Connection', 'wp-ai-bridge' ),
+			'content-site'      => __( 'Content & site', 'wp-ai-bridge' ),
+			'accounts-settings' => __( 'Accounts & sensitive settings', 'wp-ai-bridge' ),
+			'code-integrations' => __( 'Code & integrations', 'wp-ai-bridge' ),
+			'database'          => __( 'Database', 'wp-ai-bridge' ),
+			'files-backups'     => __( 'Files & backups', 'wp-ai-bridge' ),
+			'capacity'          => __( 'Capacity & limits', 'wp-ai-bridge' ),
+			'workspace-data'    => __( 'Workspace data', 'wp-ai-bridge' ),
+		);
+	}
+
+	/** @param string $option Native store. @return bool Whether it is editable in this exact context. */
+	private function editable_option( $option ) {
+		return in_array( $option, $this->save_snapshot['editable_options'] ?? array(), true );
+	}
+
+	/** @param string $option Native store. @param mixed $saved Current value. @return mixed Escaped at the output boundary. */
+	private function draft_option( $option, $saved ) {
+		if ( ! array_key_exists( $option, $this->settings_draft ) || ! $this->editable_option( $option ) ) {
+			return $saved;
+		}
+		$draft = $this->settings_draft[ $option ];
+		return is_array( $saved ) && is_array( $draft ) ? array_replace( $saved, $draft ) : $draft;
+	}
+
+	/** @return array Native stores can span multiple visual sections. */
+	private function option_sections() {
+		return array(
+			Settings::OPTION_NAME                     => array( 'content-site', 'accounts-settings', 'code-integrations' ),
+			Settings::DATABASE_OPTION_NAME            => array( 'database' ),
+			Settings::ADMINISTRATION_OPTION_NAME      => array( 'content-site', 'code-integrations', 'files-backups' ),
+			Native_Option_Access::NETWORK_OPTION_NAME => array( 'accounts-settings' ),
+			Native_Option_Access::NETWORK_WRITE_OPTION_NAME => array( 'accounts-settings' ),
+			Administration_Configuration::OPTION_NAME => array( 'files-backups', 'capacity' ),
+			Payload_Settings::OPTION_NAME             => array( 'capacity' ),
+			Transfer_Settings::OPTION_NAME            => array( 'capacity' ),
+			Workspace_Limits::OPTION_NAME             => array( 'capacity' ),
+			Operation_Receipt_Limits::OPTION_NAME     => array( 'capacity' ),
+			Operation_Content_Limits::OPTION_NAME     => array( 'capacity' ),
+			REST_Invocation_Input_Limits::OPTION_NAME => array( 'capacity' ),
+			External_Package_Limits::OPTION_NAME      => array( 'capacity' ),
+		);
+	}
+
+	/** @param string $field Error key. @return array Affected visual sections. */
+	private function error_sections( $field ) {
+		foreach ( $this->option_sections() as $option => $sections ) {
+			if ( $field === $option || 0 === strpos( $field, $option . '[' ) || 0 === strpos( $field, $option . '.' ) ) {
+				return $sections;
+			}
+		}
+		return array();
+	}
+
+	/** @return void */
 	public function render_settings() {
 		$this->require_admin();
-		$values = $this->settings->all();
-		$notice = isset( $_GET['wpai_notice'] ) ? sanitize_key( wp_unslash( $_GET['wpai_notice'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Redirect status notice only.
+		$this->prepare_settings_state();
+		$sections = $this->settings_sections();
+		$status   = $this->save_result['status'] ?? '';
+		$pending  = in_array( $status, array( 'draft', 'invalid', 'forbidden', 'stale', 'partial', 'rejected' ), true );
+		$blocked  = ! ( $this->save_snapshot['valid'] ?? false ) || in_array( $status, array( 'forbidden', 'stale', 'partial', 'rejected' ), true );
+		$errors   = $this->save_result['errors'] ?? array();
+		$affected = array();
+		foreach ( array_keys( $errors ) as $field ) {
+			$affected = array_merge( $affected, $this->error_sections( $field ) );
+		}
+		$save     = new Settings_Save( $this->settings );
+		$revision = $pending ? $this->draft_revision : ( $this->save_snapshot['revision'] ?? '' );
 		?>
-		<div class="wrap">
+		<div class="wrap wpai-settings" data-section="<?php echo esc_attr( $this->selected_section ); ?>" data-pending="<?php echo $pending ? '1' : '0'; ?>" data-blocked="<?php echo $blocked ? '1' : '0'; ?>">
 			<h1><?php echo esc_html__( 'WP AI Bridge Settings', 'wp-ai-bridge' ); ?></h1>
-			<?php
-			if ( 'workspace-cleared' === $notice ) :
-				?>
-				<div class="notice notice-success is-dismissible"><p><?php echo esc_html__( 'Workspace documents and tasks were cleared.', 'wp-ai-bridge' ); ?></p></div><?php endif; ?>
+			<p class="wpai-settings-intro"><?php echo esc_html__( 'Choose a section. Save changes applies your edits in all sections together.', 'wp-ai-bridge' ); ?></p>
+			<?php $this->render_save_feedback( $status, $errors, $blocked ); ?>
+			<div class="wpai-settings-layout">
+				<nav class="wpai-settings-nav" aria-label="<?php echo esc_attr__( 'Settings sections', 'wp-ai-bridge' ); ?>">
+					<ul>
+					<?php foreach ( $sections as $id => $label ) : ?>
+						<li><a href="#<?php echo esc_attr( $id ); ?>" data-section-link="<?php echo esc_attr( $id ); ?>"<?php echo $id === $this->selected_section ? ' aria-current="location"' : ''; ?>><?php echo esc_html( $label ); ?><span class="wpai-section-dirty" hidden> — <?php echo esc_html__( 'Unsaved changes', 'wp-ai-bridge' ); ?></span>
+						<?php
+						if ( in_array( $id, $affected, true ) ) :
+							?>
+							<span class="wpai-section-error"> — <?php echo esc_html__( 'Review required', 'wp-ai-bridge' ); ?></span><?php endif; ?></a></li>
+					<?php endforeach; ?>
+					</ul>
+				</nav>
+				<div class="wpai-settings-content">
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=' . self::SETTINGS_SLUG ) ); ?>" id="wpai-settings-form">
+						<?php // The first native submitter owns implicit Enter in both JS and no-JS. It has no name, so only the global action is submitted. ?>
+						<input type="submit" id="wpai-settings-default-submit" hidden tabindex="-1" value="" <?php disabled( $blocked ); ?>>
+						<input type="hidden" name="action" value="<?php echo esc_attr( Settings_Save::ACTION ); ?>">
+						<?php wp_nonce_field( $save->nonce_action() ); ?>
+						<input type="hidden" name="expected_revision" value="<?php echo esc_attr( $revision ); ?>">
+						<?php foreach ( array( 'blog_id', 'network_id', 'user_id' ) as $context ) : ?>
+							<input type="hidden" name="<?php echo esc_attr( $context ); ?>" value="<?php echo esc_attr( (string) ( $this->save_snapshot[ $context ] ?? 0 ) ); ?>">
+						<?php endforeach; ?>
+						<input type="hidden" name="selected_section" id="wpai-selected-section" value="<?php echo esc_attr( $this->selected_section ); ?>">
+						<section id="connection" class="wpai-settings-section" aria-labelledby="connection-heading">
+							<h2 id="connection-heading" tabindex="-1"><?php echo esc_html( $sections['connection'] ); ?></h2>
+							<p><?php echo esc_html__( 'These are local configuration observations, not a live client connection check. Configure a compatible authenticated OAuth/MCP client using the endpoint shown below.', 'wp-ai-bridge' ); ?></p>
+							<?php $this->render_connection_diagnostics(); ?>
+							<p><strong><?php echo esc_html__( 'Client setup:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html__( 'After resolving local prerequisites, configure the MCP URL in your client, choose OAuth, authenticate with WordPress, then rescan its tools. Successful OAuth does not grant WordPress or Bridge permissions.', 'wp-ai-bridge' ); ?></p>
+						</section>
+						<?php $this->render_permission_sections(); ?>
+						<section id="files-backups" class="wpai-settings-section" aria-labelledby="files-backups-heading">
+							<h2 id="files-backups-heading" tabindex="-1"><?php echo esc_html( $sections['files-backups'] ); ?></h2>
+							<?php $this->render_grant_group( __( 'Allowed operations', 'wp-ai-bridge' ), array( Settings::GROUP_FILESYSTEM_READ, Settings::GROUP_FILESYSTEM_WRITE, Settings::GROUP_FILESYSTEM_DELETE, Settings::GROUP_FILESYSTEM_EXECUTE, Settings::GROUP_LOGS_READ, Settings::GROUP_BACKUP_EXPORT, Settings::GROUP_BACKUP_RESTORE ) ); ?>
+							<?php $this->render_scope_settings(); ?>
+						</section>
+						<section id="capacity" class="wpai-settings-section" aria-labelledby="capacity-heading">
+							<h2 id="capacity-heading" tabindex="-1"><?php echo esc_html( $sections['capacity'] ); ?></h2>
+							<?php $this->render_capacity_settings(); ?>
+						</section>
+						<input type="hidden" name="form_complete" value="1">
+					</form>
+					<section id="workspace-data" class="wpai-settings-section" aria-labelledby="workspace-data-heading">
+						<h2 id="workspace-data-heading" tabindex="-1"><?php echo esc_html( $sections['workspace-data'] ); ?></h2>
+						<?php $this->render_workspace_operations(); ?>
+					</section>
+				</div>
+			</div>
+			<div class="wpai-settings-savebar">
+				<button type="submit" form="wpai-settings-form" class="button button-primary" id="wpai-settings-save"<?php disabled( $blocked ); ?>><?php echo esc_html__( 'Save changes', 'wp-ai-bridge' ); ?></button>
+				<div><strong id="wpai-settings-dirty" role="status" aria-live="polite"><?php echo $pending ? esc_html__( 'Unsaved changes.', 'wp-ai-bridge' ) : esc_html__( 'No unsaved changes.', 'wp-ai-bridge' ); ?></strong><span class="description"><?php echo esc_html__( 'Saves changes in all sections. Workspace export and clear are separate actions.', 'wp-ai-bridge' ); ?></span></div>
+			</div>
+		</div>
+		<?php
+	}
 
-			<h2><?php echo esc_html__( 'AI/MCP client connections', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'These are local configuration observations, not a live client connection check. Configure a compatible authenticated OAuth/MCP client using the endpoint shown below.', 'wp-ai-bridge' ); ?></p>
-			<?php $this->render_connection_diagnostics(); ?>
-			<p><strong><?php echo esc_html__( 'Client setup:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html__( 'After resolving local prerequisites, configure the MCP URL in your client, choose OAuth, authenticate with WordPress, then rescan its tools. Successful OAuth does not grant WordPress or Bridge permissions.', 'wp-ai-bridge' ); ?></p>
-
-			<h2><?php echo esc_html__( 'Access groups', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'An enabled group only makes matching bridge abilities technically available. The connected WordPress user must also have the required WordPress capabilities. OAuth authorization does not bypass these checks.', 'wp-ai-bridge' ); ?></p>
-			<form action="options.php" method="post">
-				<?php settings_fields( Settings::OPTION_GROUP ); ?>
-				<table class="form-table" role="presentation"><tbody>
-				<?php
-				foreach ( $this->settings->groups() as $key => $group ) {
-					if ( ! in_array( $key, array( Settings::GROUP_NATIVE_NETWORK_READ, Settings::GROUP_NATIVE_NETWORK_WRITE ), true ) && ! in_array( $key, Settings::DATABASE_GROUPS, true ) && ! in_array( $key, Settings::ADMINISTRATION_GROUPS, true ) ) {
-						$this->render_access_group_row( Settings::OPTION_NAME, $key, $group, $values );
-					}
-				}
-				?>
-				</tbody></table>
-				<?php submit_button(); ?>
-			</form>
-
-			<p><a href="<?php echo esc_url( admin_url( 'admin.php?page=' . Administration_Page::SLUG ) ); ?>"><?php echo esc_html__( 'Configure advanced administration access, directory scopes and backup destinations.', 'wp-ai-bridge' ); ?></a></p>
-			<?php $this->render_native_network_read_form(); ?>
-			<?php $this->render_native_network_write_form(); ?>
-
-			<h2><?php echo esc_html__( 'Database access', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'Configure database inspection, sensitive reading, typed writes and deletion independently. Changing these grants requires administrator authority and, on multisite, actual Super Admin and network authority.', 'wp-ai-bridge' ); ?></p>
-			<p><?php echo esc_html__( 'Typed database writes bypass WordPress and plugin business APIs. Review the exact schema and row state before changing live data; use the matching native feature when its lifecycle is required.', 'wp-ai-bridge' ); ?></p>
-			<form action="options.php" method="post">
-				<?php settings_fields( Settings::DATABASE_OPTION_GROUP ); ?>
-				<table class="form-table" role="presentation"><tbody>
-				<?php
-				$definitions = $this->settings->groups();
-				foreach ( Settings::DATABASE_GROUPS as $key ) {
-					$this->render_access_group_row( Settings::DATABASE_OPTION_NAME, $key, $definitions[ $key ], $values );
-				}
-				?>
-				</tbody></table>
-				<?php submit_button( __( 'Save database access', 'wp-ai-bridge' ), 'primary', 'submit', true, $this->settings->can_configure_group( Settings::GROUP_DATABASE_INSPECTION ) ? array() : array( 'disabled' => 'disabled' ) ); ?>
-			</form>
-
-			<?php
-			// This is intentionally a separate native Settings API form: changing
-			// a payload budget must never toggle an existing access group.
-			$payload_settings = new Payload_Settings();
-			$payload_limits   = $payload_settings->all();
+	/** @param string $status Save status. @param array $errors Error text. @param bool $blocked Reload required. @return void */
+	private function render_save_feedback( $status, array $errors, $blocked ) {
+		if ( in_array( $status, array( 'saved', 'unchanged' ), true ) ) {
 			?>
-			<h2><?php echo esc_html__( 'MCP response and text budgets', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'These are per-request response and text-window budgets, not limits on the size of a WordPress document or transferred file. No capacity is preallocated when idle.', 'wp-ai-bridge' ); ?></p>
-			<p><?php echo esc_html__( 'Workspace record storage limits below are separate quotas; they do not change the maximum MCP request size or create a file upload path.', 'wp-ai-bridge' ); ?></p>
-			<p class="description"><?php echo esc_html__( 'Units: 1 KiB = 1,024 bytes; 1 MiB = 1,024 KiB; 128 KiB is about 131 KB.', 'wp-ai-bridge' ); ?></p>
-			<form action="options.php" method="post">
-				<?php settings_fields( Payload_Settings::OPTION_GROUP ); ?>
-				<table class="form-table" role="presentation"><tbody>
-					<tr>
-						<th scope="row"><label for="wpai-response-kib"><?php echo esc_html__( 'MCP JSON response budget (KiB)', 'wp-ai-bridge' ); ?></label></th>
-						<td>
-							<input type="number" class="small-text" id="wpai-response-kib" name="<?php echo esc_attr( Payload_Settings::OPTION_NAME . '[' . Payload_Settings::RESPONSE_KEY . ']' ); ?>" value="<?php echo esc_attr( (string) $payload_limits[ Payload_Settings::RESPONSE_KEY ] ); ?>" min="<?php echo esc_attr( (string) Payload_Settings::MIN_RESPONSE_KIB ); ?>" max="<?php echo esc_attr( (string) Payload_Settings::MAX_RESPONSE_KIB ); ?>" step="1" required>
-							<p class="description"><?php echo esc_html__( 'Encoded result size, including Unicode JSON escaping. Default: 128 KiB; configurable from 16 to 1024 KiB. Older Gateways with a 64 KiB limit require a smaller value (such as 48 KiB) until upgraded.', 'wp-ai-bridge' ); ?></p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="wpai-text-window-kib"><?php echo esc_html__( 'Maximum UTF-8 text window (KiB)', 'wp-ai-bridge' ); ?></label></th>
-						<td>
-							<input type="number" class="small-text" id="wpai-text-window-kib" name="<?php echo esc_attr( Payload_Settings::OPTION_NAME . '[' . Payload_Settings::WINDOW_KEY . ']' ); ?>" value="<?php echo esc_attr( (string) $payload_limits[ Payload_Settings::WINDOW_KEY ] ); ?>" min="<?php echo esc_attr( (string) Payload_Settings::MIN_WINDOW_KIB ); ?>" max="<?php echo esc_attr( (string) Payload_Settings::MAX_WINDOW_KIB ); ?>" step="1" required>
-							<p class="description"><?php echo esc_html__( 'Maximum source bytes per requested text window. Default: 128 KiB; configurable from 4 to 512 KiB. A response may return a shorter window to fit JSON encoding. The entire text remains readable using offsets and hashes.', 'wp-ai-bridge' ); ?></p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="wpai-document-kib"><?php echo esc_html__( 'Workspace document storage limit (KiB per document)', 'wp-ai-bridge' ); ?></label></th>
-						<td>
-							<input type="number" class="small-text" id="wpai-document-kib" name="<?php echo esc_attr( Payload_Settings::OPTION_NAME . '[' . Payload_Settings::DOCUMENT_KEY . ']' ); ?>" value="<?php echo esc_attr( (string) $payload_limits[ Payload_Settings::DOCUMENT_KEY ] ); ?>" min="<?php echo esc_attr( (string) Payload_Settings::MIN_DOCUMENT_KIB ); ?>" max="<?php echo esc_attr( (string) Payload_Settings::MAX_DOCUMENT_KIB ); ?>" step="1" required>
-							<p class="description"><?php echo esc_html__( 'Default: 512 KiB; configurable from 64 to 1024 KiB. This bounds one private Workspace document, not WordPress posts or file transport.', 'wp-ai-bridge' ); ?></p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="wpai-notes-kib"><?php echo esc_html__( 'Workspace task notes storage limit (KiB per task)', 'wp-ai-bridge' ); ?></label></th>
-						<td>
-							<input type="number" class="small-text" id="wpai-notes-kib" name="<?php echo esc_attr( Payload_Settings::OPTION_NAME . '[' . Payload_Settings::NOTES_KEY . ']' ); ?>" value="<?php echo esc_attr( (string) $payload_limits[ Payload_Settings::NOTES_KEY ] ); ?>" min="<?php echo esc_attr( (string) Payload_Settings::MIN_NOTES_KIB ); ?>" max="<?php echo esc_attr( (string) Payload_Settings::MAX_NOTES_KIB ); ?>" step="1" required>
-							<p class="description"><?php echo esc_html__( 'Default: 128 KiB; configurable from 16 to 256 KiB. Lowering a limit does not erase existing longer notes, but blocks oversized replacements.', 'wp-ai-bridge' ); ?></p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="wpai-inline-file-mib"><?php echo esc_html__( 'Inline MCP file-read source ceiling (MiB)', 'wp-ai-bridge' ); ?></label></th>
-						<td>
-							<input type="number" class="small-text" id="wpai-inline-file-mib" name="<?php echo esc_attr( Payload_Settings::OPTION_NAME . '[' . Payload_Settings::INLINE_FILE_KEY . ']' ); ?>" value="<?php echo esc_attr( (string) $payload_limits[ Payload_Settings::INLINE_FILE_KEY ] ); ?>" min="<?php echo esc_attr( (string) Payload_Settings::MIN_INLINE_FILE_MIB ); ?>" max="<?php echo esc_attr( (string) Payload_Settings::max_inline_file_mib() ); ?>" step="1" required>
-							<p class="description"><?php echo esc_html__( 'Fallback only: maximum existing Media Library source accepted for hash-bound, byte-exact MCP Base64 windows. Default 128 MiB; administrator-adjustable up to the effective PHP numeric maximum. The per-response budget controls each window separately; source size never becomes the total file-transfer limit.', 'wp-ai-bridge' ); ?></p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="wpai-inline-media-mib"><?php echo esc_html__( 'Inline Base64 Media upload budget (MiB)', 'wp-ai-bridge' ); ?></label></th>
-						<td>
-							<input type="number" class="small-text" id="wpai-inline-media-mib" name="<?php echo esc_attr( Payload_Settings::OPTION_NAME . '[' . Payload_Settings::INLINE_MEDIA_KEY . ']' ); ?>" value="<?php echo esc_attr( (string) $payload_limits[ Payload_Settings::INLINE_MEDIA_KEY ] ); ?>" min="<?php echo esc_attr( (string) Payload_Settings::MIN_INLINE_MEDIA_MIB ); ?>" max="<?php echo esc_attr( (string) Payload_Settings::max_inline_media_mib() ); ?>" step="1" required>
-							<p class="description"><?php echo esc_html__( 'Default 20 MiB; administrator maximum is derived from current PHP memory rather than a fixed Bridge-side file cap. This legacy one-shot Base64 Media upload also remains bounded by WordPress upload_max_filesize/post_max_size, client request and proxy limits; use private chunked transfer for large files.', 'wp-ai-bridge' ); ?></p>
-						</td>
-					</tr>
-				</tbody></table>
-				<p class="description"><?php echo esc_html__( 'Bridge cannot change MCP client, Gateway, proxy, PHP or hosting limits. Increase those separately where supported; large private files still require an authenticated binary transport.', 'wp-ai-bridge' ); ?></p>
-				<?php submit_button( __( 'Save response and text budgets', 'wp-ai-bridge' ) ); ?>
-			</form>
-
-
+			<div class="notice notice-success"><p><?php echo 'saved' === $status ? esc_html__( 'Changes saved.', 'wp-ai-bridge' ) : esc_html__( 'Settings are unchanged.', 'wp-ai-bridge' ); ?></p></div>
 			<?php
-			// Workspace record-count policy is separate from MIME/byte budgets,
-			// WordPress permissions and irreversible cleanup.
-			$workspace_limits = new Workspace_Limits();
-			$workspace_values = $workspace_limits->all();
-			$workspace_usage  = $this->workspace->capacity_counts();
+		}
+		if ( 'draft' === $status ) {
 			?>
-			<h2><?php echo esc_html__( 'Workspace document and task capacity', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'Record counts are independent of per-document KiB size and MCP JSON budgets. Archived records remain preserved and count toward each per-site limit. Lowering a limit never removes existing records; it only blocks new creates once usage meets the limit.', 'wp-ai-bridge' ); ?></p>
-			<form action="options.php" method="post">
-				<?php settings_fields( Workspace_Limits::OPTION_GROUP ); ?>
-				<table class="form-table" role="presentation"><tbody>
+			<div class="notice notice-info"><p><?php echo esc_html__( 'Directory scope added to your draft. No settings have been saved.', 'wp-ai-bridge' ); ?></p></div>
+			<?php
+		}
+		if ( $errors || $blocked ) {
+			?>
+			<div class="notice notice-error wpai-settings-errors" id="wpai-settings-errors" tabindex="-1" role="alert">
+				<p><strong><?php echo 'partial' === $status ? esc_html__( 'Some changes could not be confirmed.', 'wp-ai-bridge' ) : esc_html__( 'Review settings before saving.', 'wp-ai-bridge' ); ?></strong></p>
+				<?php
+				if ( $errors ) :
+					?>
+					<ul>
+					<?php foreach ( $errors as $field => $message ) : ?>
+						<?php $sections = $this->error_sections( $field ); ?>
+					<li>
+						<?php
+						if ( $sections ) :
+							?>
+						<a href="#<?php echo esc_attr( $sections[0] ); ?>" data-error-option="<?php echo esc_attr( $field ); ?>"><?php echo esc_html( $message ); ?></a>
+							<?php
+else :
+	?>
+						<?php echo esc_html( $message ); ?><?php endif; ?></li>
+				<?php endforeach; ?>
+				</ul><?php endif; ?>
+				<?php
+				if ( $blocked ) :
+					?>
+					<p><?php echo esc_html__( 'Your submitted values remain below. Review the stored settings in another tab, then reload this screen to reconcile before saving again.', 'wp-ai-bridge' ); ?> <a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::SETTINGS_SLUG ) ); ?>" target="_blank" rel="noopener"><?php echo esc_html__( 'Open saved settings', 'wp-ai-bridge' ); ?></a> · <a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::SETTINGS_SLUG ) ); ?>"><?php echo esc_html__( 'Reload and discard this draft', 'wp-ai-bridge' ); ?></a></p><?php endif; ?>
+			</div>
+			<?php
+		}
+		if ( ! empty( $this->save_result['outcomes'] ) && ! in_array( $status, array( 'saved', 'unchanged' ), true ) ) {
+			$labels = array(
+				'saved'         => __( 'Saved and verified', 'wp-ai-bridge' ),
+				'unchanged'     => __( 'Unchanged', 'wp-ai-bridge' ),
+				'rejected'      => __( 'Rejected', 'wp-ai-bridge' ),
+				'unverified'    => __( 'Result unverified', 'wp-ai-bridge' ),
+				'not_attempted' => __( 'Not saved', 'wp-ai-bridge' ),
+			);
+			?>
+			<details class="wpai-save-outcomes"><summary><?php echo esc_html__( 'Save results by settings group', 'wp-ai-bridge' ); ?></summary><ul>
+			<?php
+			foreach ( $this->save_result['outcomes'] as $option => $outcome ) {
+				$ids    = $this->option_sections()[ $option ] ?? array();
+				$titles = array_intersect_key( $this->settings_sections(), array_fill_keys( $ids, true ) );
+				?>
+				<li><?php echo esc_html( implode( ', ', $titles ) . ': ' . ( $labels[ $outcome ] ?? __( 'Result unverified', 'wp-ai-bridge' ) ) ); ?></li>
+				<?php
+			}
+			?>
+			</ul></details>
+			<?php
+		}
+	}
+
+	/** @return void */
+	private function render_permission_sections() {
+		$sections = $this->settings_sections();
+		$groups   = array(
+			'content-site'      => array(
+				array( __( 'Content and media', 'wp-ai-bridge' ), array( Settings::GROUP_SITE_READ, Settings::GROUP_BUILDER_WRITE, Settings::GROUP_REMOTE_MEDIA, Settings::GROUP_LIVE_CONTENT, Settings::GROUP_COMMENTS ) ),
+				array( __( 'Site configuration', 'wp-ai-bridge' ), array( Settings::GROUP_SITE_CONFIG, Settings::GROUP_ADVANCED_METADATA, Settings::GROUP_NATIVE_CONFIGURATION, Settings::GROUP_CUSTOMIZER_WRITE ) ),
+			),
+			'accounts-settings' => array(
+				array( __( 'Accounts and destructive operations', 'wp-ai-bridge' ), array( Settings::GROUP_AUTHENTICATION, Settings::GROUP_USERS_DESTRUCTIVE ) ),
+				array( __( 'Current site settings', 'wp-ai-bridge' ), array( Settings::GROUP_NATIVE_OPTIONS_READ, Settings::GROUP_NATIVE_OPTIONS_WRITE ) ),
+				array( __( 'Current network settings', 'wp-ai-bridge' ), array( Settings::GROUP_NATIVE_NETWORK_READ, Settings::GROUP_NATIVE_NETWORK_WRITE ) ),
+			),
+			'code-integrations' => array(
+				array( __( 'Code and extensions', 'wp-ai-bridge' ), array( Settings::GROUP_CODE_EXTENSIONS, Settings::GROUP_EXTERNAL_PACKAGES, Settings::GROUP_SOURCE_EDITING ) ),
+				array( __( 'Registered operations', 'wp-ai-bridge' ), array( Settings::GROUP_NATIVE_ABILITIES, Settings::GROUP_REST_DISCOVERY, Settings::GROUP_REST_INVOCATION ) ),
+				array( __( 'Scheduled actions', 'wp-ai-bridge' ), array( Settings::GROUP_SCHEDULER_MANAGE, Settings::GROUP_SCHEDULER_RUN ) ),
+			),
+			'database'          => array( array( __( 'Database authority', 'wp-ai-bridge' ), Settings::DATABASE_GROUPS ) ),
+		);
+		foreach ( $groups as $id => $fieldsets ) {
+			?>
+			<section id="<?php echo esc_attr( $id ); ?>" class="wpai-settings-section" aria-labelledby="<?php echo esc_attr( $id . '-heading' ); ?>">
+				<h2 id="<?php echo esc_attr( $id . '-heading' ); ?>" tabindex="-1"><?php echo esc_html( $sections[ $id ] ); ?></h2>
+				<p><?php echo esc_html__( 'Enabled grants make matching Bridge abilities available. The connected WordPress user still needs the required native capabilities. OAuth authorization does not bypass these checks.', 'wp-ai-bridge' ); ?></p>
+				<?php if ( 'database' === $id ) : ?>
+					<p><?php echo esc_html__( 'Typed database writes bypass WordPress and plugin business APIs. Review the exact schema and row state before changing live data; use the matching native feature when its lifecycle is required.', 'wp-ai-bridge' ); ?></p>
+					<p class="wpai-policy-status"><strong><?php echo esc_html__( 'Server SQL policy:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html( defined( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL' ) && true === WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL ? __( 'Native-account SQL is allowed by server policy. The separate grant and native privileges are still required.', 'wp-ai-bridge' ) : __( 'Native-account SQL is disabled by server policy. The hosting operator must explicitly enable WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL before this grant can be used.', 'wp-ai-bridge' ) ); ?></p>
+				<?php endif; ?>
+				<?php foreach ( $fieldsets as $fieldset ) : ?>
+					<?php $this->render_grant_group( $fieldset[0], $fieldset[1] ); ?>
+				<?php endforeach; ?>
+			</section>
+			<?php
+		}
+	}
+
+	/** @param string $title Task group. @param array $keys Grant keys. @return void */
+	private function render_grant_group( $title, array $keys ) {
+		$definitions = $this->settings->groups();
+		$values      = $this->settings->all();
+		?>
+		<fieldset class="wpai-settings-group"><legend><h3><?php echo esc_html( $title ); ?></h3></legend>
+		<?php foreach ( $keys as $key ) : ?>
+			<?php
+			$option = in_array( $key, Settings::DATABASE_GROUPS, true ) ? Settings::DATABASE_OPTION_NAME : ( in_array( $key, Settings::ADMINISTRATION_GROUPS, true ) ? Settings::ADMINISTRATION_OPTION_NAME : Settings::OPTION_NAME );
+			$scalar = false;
+			if ( Settings::GROUP_NATIVE_NETWORK_READ === $key || Settings::GROUP_NATIVE_NETWORK_WRITE === $key ) {
+				$option = Settings::GROUP_NATIVE_NETWORK_READ === $key ? Native_Option_Access::NETWORK_OPTION_NAME : Native_Option_Access::NETWORK_WRITE_OPTION_NAME;
+				$scalar = true;
+			}
+			$value   = $this->draft_option( $option, $scalar ? ( $values[ $key ] ?? 0 ) : $values );
+			$enabled = $scalar ? '1' === $this->input_value( $value ) : is_array( $value ) && ! empty( $value[ $key ] );
+			$name    = $scalar ? $option : $option . '[' . $key . ']';
+			$allowed = $this->editable_option( $option ) && $this->settings->can_configure_group( $key );
+			?>
+			<div class="wpai-grant" data-option="<?php echo esc_attr( $option ); ?>">
+				<?php
+				if ( $allowed ) :
+					?>
+					<input type="hidden" name="<?php echo esc_attr( $name ); ?>" value="0"><?php endif; ?>
+				<label for="<?php echo esc_attr( 'wpai-grant-' . $key ); ?>"><input type="checkbox" id="<?php echo esc_attr( 'wpai-grant-' . $key ); ?>"
+				<?php
+				if ( $allowed ) :
+					?>
+					name="<?php echo esc_attr( $name ); ?>"<?php endif; ?> value="1" <?php checked( $enabled ); ?> <?php disabled( ! $allowed ); ?> aria-describedby="<?php echo esc_attr( 'wpai-grant-help-' . $key ); ?>"> <strong><?php echo esc_html( $definitions[ $key ]['label'] ); ?></strong></label>
+				<div id="<?php echo esc_attr( 'wpai-grant-help-' . $key ); ?>"><p class="description"><?php echo esc_html( $definitions[ $key ]['description'] ); ?></p>
+				<?php
+				if ( ! $allowed ) :
+					?>
+					<p class="description"><?php echo $scalar ? esc_html__( 'Only a current Super Admin with network and site administration authority can change this consent. Network settings are available only on multisite.', 'wp-ai-bridge' ) : esc_html__( 'Changing this grant requires current administrator authority and, on multisite, actual Super Admin and network authority.', 'wp-ai-bridge' ); ?></p><?php endif; ?>
+				<?php
+				if ( ! empty( $definitions[ $key ]['warning'] ) ) :
+					?>
+					<p class="description wpai-grant-warning"><?php echo esc_html__( 'Enable only when you intend to expose this class of changes to authenticated MCP clients.', 'wp-ai-bridge' ); ?></p><?php endif; ?>
+				</div>
+			</div>
+		<?php endforeach; ?>
+		</fieldset>
+		<?php
+	}
+	/** @return void */
+	private function render_scope_settings() {
+		$owner   = new Administration_Configuration();
+		$config  = $this->draft_option( Administration_Configuration::OPTION_NAME, $owner->all() );
+		$config  = is_array( $config ) ? $config : $owner->all();
+		$allowed = $this->editable_option( Administration_Configuration::OPTION_NAME );
+		$roots   = is_array( $config['roots'] ?? null ) ? array_values( $config['roots'] ) : array();
+		if ( ! $roots || '' !== ( $roots[ count( $roots ) - 1 ]['id'] ?? '' ) || '' !== ( $roots[ count( $roots ) - 1 ]['path'] ?? '' ) ) {
+			$roots[] = array();
+		}
+		?>
+		<fieldset class="wpai-settings-group" <?php disabled( ! $allowed ); ?> data-option="<?php echo esc_attr( Administration_Configuration::OPTION_NAME ); ?>">
+			<legend><h3><?php echo esc_html__( 'Approved locations', 'wp-ai-bridge' ); ?></h3></legend>
+			<p><?php echo esc_html__( 'Roots start empty. Use existing directories whose writers you trust. Removing a root revokes that scope when you save; it does not delete its files. A data root is not a PHP sandbox.', 'wp-ai-bridge' ); ?></p>
+			<?php
+			if ( ! $allowed ) :
+				?>
+				<p class="description"><?php echo esc_html__( 'Changing scopes requires current administrator authority and, on multisite, actual Super Admin and network authority.', 'wp-ai-bridge' ); ?></p><?php endif; ?>
+			<input type="hidden" name="<?php echo esc_attr( Administration_Configuration::OPTION_NAME . '[roots]' ); ?>" value="">
+			<div id="wpai-settings-roots">
+				<?php foreach ( $roots as $index => $root ) : ?>
+					<?php $this->render_scope_row( $index, is_array( $root ) ? $root : array() ); ?>
+				<?php endforeach; ?>
+			</div>
+			<?php
+			if ( $allowed ) :
+				?>
+				<p><button type="submit" name="wpai_add_scope" value="1" class="button" id="wpai-settings-add-scope" formnovalidate><?php echo esc_html__( 'Add directory scope', 'wp-ai-bridge' ); ?></button></p>
+				<p class="description"><?php echo esc_html__( 'Adding a row does not save settings. An empty new row is ignored when you save.', 'wp-ai-bridge' ); ?></p>
+			<?php endif; ?>
+			<?php
+			foreach ( array(
+				'restore_schemas' => array( __( 'Empty restore database schemas', 'wp-ai-bridge' ), __( 'Exact database names, one per line. Restore additionally requires an empty destination and the existing database account’s native privileges. No new database connection is created.', 'wp-ai-bridge' ) ),
+				'backup_tables'   => array( __( 'Additional approved backup tables', 'wp-ai-bridge' ), __( 'Exact current-database provider tables outside the installation prefix, one per line. Required dependencies must also be approved.', 'wp-ai-bridge' ) ),
+			) as $key => $field ) :
+				$value = $config[ $key ] ?? array();
+				$value = is_array( $value ) ? implode( "\n", array_filter( $value, 'is_string' ) ) : $this->input_value( $value );
+				?>
+				<div class="wpai-setting-field">
+					<label for="<?php echo esc_attr( 'wpai-scopes-' . $key ); ?>"><strong><?php echo esc_html( $field[0] ); ?></strong></label>
+					<textarea class="large-text code" dir="ltr" rows="3" id="<?php echo esc_attr( 'wpai-scopes-' . $key ); ?>" name="<?php echo esc_attr( Administration_Configuration::OPTION_NAME . '[' . $key . ']' ); ?>" aria-describedby="<?php echo esc_attr( 'wpai-scopes-help-' . $key ); ?>"><?php echo esc_textarea( $value ); ?></textarea>
+					<p class="description" id="<?php echo esc_attr( 'wpai-scopes-help-' . $key ); ?>"><?php echo esc_html( $field[1] ); ?></p>
+				</div>
+			<?php endforeach; ?>
+		</fieldset>
+		<?php
+		if ( $allowed ) :
+			?>
+			<template id="wpai-settings-root-template"><?php $this->render_scope_row( '__INDEX__', array() ); ?></template><?php endif; ?>
+		<?php
+	}
+
+	/** @param int|string $index Unique row identity. @param array $root Saved or draft row. @return void */
+	private function render_scope_row( $index, array $root ) {
+		$base   = Administration_Configuration::OPTION_NAME . '[roots][' . $index . ']';
+		$prefix = 'wpai-scope-' . $index . '-';
+		$label  = $this->input_value( $root['label'] ?? '' );
+		?>
+		<fieldset class="wpai-scope-row">
+			<legend><strong><?php echo esc_html( '' !== $label ? $label : __( 'Directory scope', 'wp-ai-bridge' ) ); ?></strong></legend>
+			<div class="wpai-scope-fields">
+			<?php
+			foreach ( array(
+				'id'    => __( 'Stable ID', 'wp-ai-bridge' ),
+				'label' => __( 'Label', 'wp-ai-bridge' ),
+				'path'  => __( 'Existing absolute directory', 'wp-ai-bridge' ),
+			) as $key => $title ) :
+				?>
+				<p><label for="<?php echo esc_attr( $prefix . $key ); ?>"><?php echo esc_html( $title ); ?></label>
+					<input type="text" class="<?php echo 'label' === $key ? 'regular-text' : 'large-text code'; ?>"
 					<?php
-					foreach ( array(
-						Workspace_Limits::DOCUMENTS_KEY => array( __( 'Maximum Workspace documents', 'wp-ai-bridge' ), Workspace_Limits::MIN_DOCUMENTS, Workspace_Limits::MAX_DOCUMENTS ),
-						Workspace_Limits::TASKS_KEY     => array( __( 'Maximum Workspace tasks', 'wp-ai-bridge' ), Workspace_Limits::MIN_TASKS, Workspace_Limits::MAX_TASKS ),
-					) as $key => $field ) :
+					if ( 'label' !== $key ) :
 						?>
-						<tr>
-							<th scope="row"><label for="<?php echo esc_attr( 'wpai-workspace-count-' . $key ); ?>"><?php echo esc_html( $field[0] ); ?></label></th>
-							<td>
-								<input type="number" class="small-text" id="<?php echo esc_attr( 'wpai-workspace-count-' . $key ); ?>" name="<?php echo esc_attr( Workspace_Limits::OPTION_NAME . '[' . $key . ']' ); ?>" value="<?php echo esc_attr( (string) $workspace_values[ $key ] ); ?>" min="<?php echo esc_attr( (string) $field[1] ); ?>" max="<?php echo esc_attr( (string) $field[2] ); ?>" step="1" required>
-								<p class="description">
-									<?php
-									/* translators: 1: current Workspace records, 2: minimum count setting, 3: maximum count setting. */
-									echo esc_html( sprintf( __( 'Current record usage: %1$s; allowed range: %2$s to %3$s. Increases need real WordPress database capacity.', 'wp-ai-bridge' ), is_wp_error( $workspace_usage ) ? __( 'Unavailable', 'wp-ai-bridge' ) : (string) $workspace_usage[ $key ], (string) $field[1], (string) $field[2] ) );
-									?>
-								</p>
-							</td>
-						</tr>
-					<?php endforeach; ?>
-				</tbody></table>
-				<?php submit_button( __( 'Save Workspace record capacity', 'wp-ai-bridge' ) ); ?>
-			</form>
-
-			<?php
-			// Generic keyed create receipts have a separate admission domain from
-			// canonical Workspace keys and are never removed by capacity changes.
-			$operation_limits = new Operation_Receipt_Limits();
-			$operation_usage  = Create_Claim_Store::count_domain( Create_Claim::DOMAIN_OPERATION );
-			?>
-			<h2><?php echo esc_html__( 'Keyed create recovery capacity', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'This setting limits the number of new durable generic operation_id receipts on this WordPress site. It does not change Workspace document-key reservations or access permissions. Old receipts stay reserved, including after expiry; lowering the setting never deletes receipts or prevents authorized retry readback.', 'wp-ai-bridge' ); ?></p>
-			<form action="options.php" method="post">
-				<?php settings_fields( Operation_Receipt_Limits::OPTION_GROUP ); ?>
-				<table class="form-table" role="presentation"><tbody><tr>
-					<th scope="row"><label for="wpai-operation-receipt-capacity"><?php echo esc_html__( 'Maximum generic create receipts per site', 'wp-ai-bridge' ); ?></label></th>
-					<td>
-						<input type="number" class="regular-text" id="wpai-operation-receipt-capacity" name="<?php echo esc_attr( Operation_Receipt_Limits::OPTION_NAME ); ?>" value="<?php echo esc_attr( (string) $operation_limits->limit() ); ?>" min="<?php echo esc_attr( (string) Operation_Receipt_Limits::MIN_RECEIPTS ); ?>" max="<?php echo esc_attr( (string) Operation_Receipt_Limits::MAX_RECEIPTS ); ?>" step="1" required>
-						<p class="description">
-							<?php
-							echo esc_html(
-								sprintf(
-									/* translators: 1: current typed receipts or unavailable, 2: minimum allowed, 3: maximum allowed. */
-									__( 'Current typed receipts: %1$s; allowed range: %2$s to %3$s. Default: 2048. Larger settings need sufficient database capacity and may increase count-query time.', 'wp-ai-bridge' ),
-									PHP_INT_MAX === $operation_usage ? __( 'Unavailable', 'wp-ai-bridge' ) : (string) $operation_usage,
-									(string) Operation_Receipt_Limits::MIN_RECEIPTS,
-									(string) Operation_Receipt_Limits::MAX_RECEIPTS
-								)
-							);
+						dir="ltr"<?php endif; ?> id="<?php echo esc_attr( $prefix . $key ); ?>" name="<?php echo esc_attr( $base . '[' . $key . ']' ); ?>" value="<?php echo esc_attr( $this->input_value( $root[ $key ] ?? '' ) ); ?>"
+						<?php
+						if ( 'id' === $key ) :
 							?>
-						</p>
-					</td>
-				</tr></tbody></table>
-				<?php submit_button( __( 'Save keyed create recovery capacity', 'wp-ai-bridge' ) ); ?>
-			</form>
+						pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"<?php endif; ?>></p>
+			<?php endforeach; ?>
+			<p><label for="<?php echo esc_attr( $prefix . 'scope' ); ?>"><?php echo esc_html__( 'Authority scope', 'wp-ai-bridge' ); ?></label>
+				<select id="<?php echo esc_attr( $prefix . 'scope' ); ?>" name="<?php echo esc_attr( $base . '[scope]' ); ?>">
+					<option value="site" <?php selected( 'site', $root['scope'] ?? 'site' ); ?>><?php echo esc_html__( 'Current site', 'wp-ai-bridge' ); ?></option>
+					<option value="network" <?php selected( 'network', $root['scope'] ?? 'site' ); ?>><?php echo esc_html__( 'Current network', 'wp-ai-bridge' ); ?></option>
+				</select></p>
+			<fieldset class="wpai-scope-choices"><legend><?php echo esc_html__( 'Purposes', 'wp-ai-bridge' ); ?></legend>
+				<input type="hidden" name="<?php echo esc_attr( $base . '[purposes]' ); ?>" value="">
+				<?php
+				foreach ( array(
+					'filesystem'     => __( 'File management', 'wp-ai-bridge' ),
+					'logs'           => __( 'Log reading', 'wp-ai-bridge' ),
+					'backup_export'  => __( 'Backup source', 'wp-ai-bridge' ),
+					'backup_restore' => __( 'Restore destination', 'wp-ai-bridge' ),
+				) as $purpose => $title ) :
+					?>
+					<label><input type="checkbox" name="<?php echo esc_attr( $base . '[purposes][]' ); ?>" value="<?php echo esc_attr( $purpose ); ?>" <?php checked( is_array( $root['purposes'] ?? null ) && in_array( $purpose, $root['purposes'], true ) ); ?>> <?php echo esc_html( $title ); ?></label>
+				<?php endforeach; ?>
+			</fieldset>
+			<fieldset class="wpai-scope-choices"><legend><?php echo esc_html__( 'Allowed access', 'wp-ai-bridge' ); ?></legend>
+				<?php
+				foreach ( array(
+					'read'        => __( 'Read', 'wp-ai-bridge' ),
+					'write'       => __( 'Create and replace', 'wp-ai-bridge' ),
+					'destructive' => __( 'Delete and move', 'wp-ai-bridge' ),
+					'executable'  => __( 'Code and configuration', 'wp-ai-bridge' ),
+				) as $flag => $title ) :
+					?>
+					<input type="hidden" name="<?php echo esc_attr( $base . '[' . $flag . ']' ); ?>" value="0">
+					<label><input type="checkbox" name="<?php echo esc_attr( $base . '[' . $flag . ']' ); ?>" value="1" <?php checked( ! empty( $root[ $flag ] ) ); ?>> <?php echo esc_html( $title ); ?></label>
+				<?php endforeach; ?>
+			</fieldset>
+			<p><input type="hidden" name="<?php echo esc_attr( $base . '[nonserved]' ); ?>" value="0"><label><input type="checkbox" name="<?php echo esc_attr( $base . '[nonserved]' ); ?>" value="1" <?php checked( ! empty( $root['nonserved'] ) ); ?>> <?php echo esc_html__( 'The restore destination is not served by this or another website.', 'wp-ai-bridge' ); ?></label></p>
+			</div>
+			<p class="wpai-scope-remove"><input type="hidden" name="<?php echo esc_attr( $base . '[remove]' ); ?>" value="0"><label><input type="checkbox" name="<?php echo esc_attr( $base . '[remove]' ); ?>" value="1" <?php checked( ! empty( $root['remove'] ) ); ?>> <span><?php echo esc_html__( 'Remove this scope on save', 'wp-ai-bridge' ); ?></span></label></p>
+		</fieldset>
+		<?php
+	}
 
+	/** @param mixed $value Submitted scalar. @return string Safe renderable input; escaping remains at output. */
+	private function input_value( $value ) {
+		return is_scalar( $value ) ? (string) $value : '';
+	}
 
-
+	/** @param string $option Store. @param string|null $key Field or scalar. @param string $label Label. @param mixed $saved Stored value. @param int $min Lower bound. @param int $max Upper bound. @param string $description Help. @return void */
+	private function render_limit_field( $option, $key, $label, $saved, $min, $max, $description ) {
+		$values  = $this->draft_option( $option, $saved );
+		$value   = null === $key ? $values : ( is_array( $values ) ? ( $values[ $key ] ?? '' ) : '' );
+		$name    = null === $key ? $option : $option . '[' . $key . ']';
+		$id      = 'wpai-limit-' . sanitize_key( $option . '-' . ( $key ?? 'value' ) );
+		$allowed = $this->editable_option( $option );
+		?>
+		<div class="wpai-setting-field" data-option="<?php echo esc_attr( $option ); ?>">
+			<label for="<?php echo esc_attr( $id ); ?>"><strong><?php echo esc_html( $label ); ?></strong></label>
+			<input type="text" inputmode="numeric" pattern="[1-9][0-9]*" class="regular-text wpai-limit-input" dir="ltr" id="<?php echo esc_attr( $id ); ?>"
 			<?php
-			// Independent native site-operator budgets for content that must be
-			// materialized in one protected PHP operation, not file transfer.
-			$content_limits = new Operation_Content_Limits();
-			$content_values = $content_limits->all();
-			$content_maxima = $content_limits->upper_bounds();
-			$content_fields = array(
-				Operation_Content_Limits::SOURCE_MIB  => array(
-					__( 'Installed plugin/theme source preimage and candidate (MiB)', 'wp-ai-bridge' ),
-					__( 'Default 2 MiB. One complete source file is held for preview, exact write and crash recovery. Increasing needs PHP memory, database and client request/response capacity; it does not bypass Source Editing consent.', 'wp-ai-bridge' ),
-				),
-				Operation_Content_Limits::SETTING_VALUE_KIB => array(
-					__( 'Registered REST setting JSON value (KiB)', 'wp-ai-bridge' ),
-					__( 'Default 1024 KiB. Native WordPress settings authority, provider schemas and incoming MCP message limits still apply.', 'wp-ai-bridge' ),
-				),
-				Operation_Content_Limits::SETTING_SCHEMA_KIB => array(
-					__( 'Registered REST setting public schema (KiB)', 'wp-ai-bridge' ),
-					__( 'Default 256 KiB. Oversized schemas remain unavailable rather than being silently truncated or leaking provider defaults.', 'wp-ai-bridge' ),
-				),
-				Operation_Content_Limits::CATALOG_KIB => array(
-					__( 'Public Ability catalog response (KiB)', 'wp-ai-bridge' ),
-					__( 'Default 1024 KiB. Contract inspection stays read-only; use pagination and check the configured MCP response limit when a larger catalog does not fit.', 'wp-ai-bridge' ),
-				),
-			);
-			?>
-			<h2><?php echo esc_html__( 'High-trust operation content capacity', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'These independent site budgets are finite and bounded by the effective PHP memory limit. They do not enable an Ability, alter user permissions, remove native provider constraints or turn one MCP message into a whole-file transfer.', 'wp-ai-bridge' ); ?></p>
-			<form action="options.php" method="post">
-				<?php settings_fields( Operation_Content_Limits::OPTION_GROUP ); ?>
-				<table class="form-table" role="presentation"><tbody>
-					<?php foreach ( $content_fields as $key => $field ) : ?>
-						<tr>
-							<th scope="row"><label for="<?php echo esc_attr( 'wpai-operation-content-' . $key ); ?>"><?php echo esc_html( $field[0] ); ?></label></th>
-							<td>
-								<input type="number" class="regular-text" id="<?php echo esc_attr( 'wpai-operation-content-' . $key ); ?>" name="<?php echo esc_attr( Operation_Content_Limits::OPTION_NAME . '[' . $key . ']' ); ?>" value="<?php echo esc_attr( (string) $content_values[ $key ] ); ?>" min="1" max="<?php echo esc_attr( (string) $content_maxima[ $key ] ); ?>" step="1" required>
-								<p class="description"><?php echo esc_html( $field[1] ); ?></p>
-							</td>
-						</tr>
-					<?php endforeach; ?>
-				</tbody></table>
-				<?php submit_button( __( 'Save operation content capacity', 'wp-ai-bridge' ) ); ?>
-			</form>
+			if ( $allowed ) :
+				?>
+				name="<?php echo esc_attr( $name ); ?>"<?php endif; ?> value="<?php echo esc_attr( $this->input_value( $value ) ); ?>" <?php disabled( ! $allowed ); ?> required aria-describedby="<?php echo esc_attr( $id . '-help' ); ?>">
+			<div id="<?php echo esc_attr( $id . '-help' ); ?>"><p class="description"><?php echo esc_html( $description ); ?></p>
+				<p class="description">
+				<?php
+				/* translators: 1: minimum setting, 2: maximum setting. */
+				echo esc_html( sprintf( __( 'Allowed range: %1$s to %2$s.', 'wp-ai-bridge' ), (string) $min, (string) $max ) );
+				?>
+				</p></div>
+		</div>
+		<?php
+	}
 
-
+	/** @return void */
+	private function render_capacity_settings() {
+		$p_owner  = new Payload_Settings();
+		$p        = $p_owner->all();
+		$t_owner  = new Transfer_Settings();
+		$t        = $t_owner->all();
+		$t_max    = $t_owner->upper_bounds();
+		$w_owner  = new Workspace_Limits();
+		$w        = $w_owner->all();
+		$usage    = $this->workspace->capacity_counts();
+		$r_owner  = new Operation_Receipt_Limits();
+		$receipts = Create_Claim_Store::count_domain( Create_Claim::DOMAIN_OPERATION );
+		$o_owner  = new Operation_Content_Limits();
+		$o        = $o_owner->all();
+		$o_max    = $o_owner->upper_bounds();
+		$rest     = new REST_Invocation_Input_Limits();
+		$package  = new External_Package_Limits();
+		$config   = ( new Administration_Configuration() )->all();
+		?>
+		<p><?php echo esc_html__( 'These limits control separate resources. Changing a limit never enables an ability or grants WordPress authority. No capacity is preallocated when idle.', 'wp-ai-bridge' ); ?></p>
+		<p class="description"><?php echo esc_html__( 'Units: 1 KiB = 1,024 bytes; 1 MiB = 1,024 KiB; 128 KiB is about 131 KB.', 'wp-ai-bridge' ); ?></p>
+		<fieldset class="wpai-settings-group"><legend><h3><?php echo esc_html__( 'Requests and responses', 'wp-ai-bridge' ); ?></h3></legend>
+		<?php
+		$this->render_limit_field( Transfer_Settings::OPTION_NAME, Transfer_Settings::REQUEST_KIB, __( 'Incoming MCP request budget (KiB)', 'wp-ai-bridge' ), $t, 1, $t_max[ Transfer_Settings::REQUEST_KIB ], __( 'Bounds one encoded inbound tool message, not the aggregate file. Larger WordPress, proxy or MCP client limits must be configured separately.', 'wp-ai-bridge' ) );
+		$this->render_limit_field( Payload_Settings::OPTION_NAME, Payload_Settings::RESPONSE_KEY, __( 'MCP JSON response budget (KiB)', 'wp-ai-bridge' ), $p, Payload_Settings::MIN_RESPONSE_KIB, Payload_Settings::MAX_RESPONSE_KIB, __( 'Encoded result size, including Unicode JSON escaping. Default: 128 KiB. Older Gateways with a 64 KiB limit require a smaller value (such as 48 KiB) until upgraded.', 'wp-ai-bridge' ) );
+		$this->render_limit_field( Payload_Settings::OPTION_NAME, Payload_Settings::WINDOW_KEY, __( 'Maximum UTF-8 text window (KiB)', 'wp-ai-bridge' ), $p, Payload_Settings::MIN_WINDOW_KIB, Payload_Settings::MAX_WINDOW_KIB, __( 'Maximum source bytes per requested text window. Default: 128 KiB. A response may return a shorter window to fit JSON encoding. The entire text remains readable using offsets and hashes.', 'wp-ai-bridge' ) );
+		?>
+		</fieldset>
+		<fieldset class="wpai-settings-group"><legend><h3><?php echo esc_html__( 'Workspace storage and recovery', 'wp-ai-bridge' ); ?></h3></legend>
+			<p><?php echo esc_html__( 'Record counts are independent of byte limits. Archived records count toward each per-site limit. Lowering a limit does not delete records, notes or receipts; it can block new creates or oversized replacements. Expired create receipts remain reserved and authorized retry readback remains available.', 'wp-ai-bridge' ); ?></p>
+		<?php
+		foreach ( array(
+			Workspace_Limits::DOCUMENTS_KEY => array( __( 'Maximum Workspace documents', 'wp-ai-bridge' ), Workspace_Limits::MIN_DOCUMENTS, Workspace_Limits::MAX_DOCUMENTS ),
+			Workspace_Limits::TASKS_KEY     => array( __( 'Maximum Workspace tasks', 'wp-ai-bridge' ), Workspace_Limits::MIN_TASKS, Workspace_Limits::MAX_TASKS ),
+		) as $key => $field ) {
+			/* translators: %s: current record count or unavailable. */
+			$help = sprintf( __( 'Current record usage: %s. Increases need real WordPress database capacity.', 'wp-ai-bridge' ), is_wp_error( $usage ) ? __( 'Unavailable', 'wp-ai-bridge' ) : (string) $usage[ $key ] );
+			$this->render_limit_field( Workspace_Limits::OPTION_NAME, $key, $field[0], $w, $field[1], $field[2], $help );
+		}
+		$this->render_limit_field( Payload_Settings::OPTION_NAME, Payload_Settings::DOCUMENT_KEY, __( 'Workspace document storage limit (KiB per document)', 'wp-ai-bridge' ), $p, Payload_Settings::MIN_DOCUMENT_KIB, Payload_Settings::MAX_DOCUMENT_KIB, __( 'Default: 512 KiB. This bounds one private Workspace document, not WordPress posts, MCP message size or file transport.', 'wp-ai-bridge' ) );
+		$this->render_limit_field( Payload_Settings::OPTION_NAME, Payload_Settings::NOTES_KEY, __( 'Workspace task notes storage limit (KiB per task)', 'wp-ai-bridge' ), $p, Payload_Settings::MIN_NOTES_KIB, Payload_Settings::MAX_NOTES_KIB, __( 'Default: 128 KiB. Lowering a limit does not erase existing longer notes, but blocks oversized replacements.', 'wp-ai-bridge' ) );
+		/* translators: %s: typed receipt count or unavailable. */
+		$help = sprintf( __( 'Default: 2048. Current typed receipts: %s. This does not change Workspace document-key reservations. Larger settings need database capacity and may increase count-query time.', 'wp-ai-bridge' ), PHP_INT_MAX === $receipts ? __( 'Unavailable', 'wp-ai-bridge' ) : (string) $receipts );
+		$this->render_limit_field( Operation_Receipt_Limits::OPTION_NAME, null, __( 'Maximum generic create receipts per site', 'wp-ai-bridge' ), $r_owner->limit(), Operation_Receipt_Limits::MIN_RECEIPTS, Operation_Receipt_Limits::MAX_RECEIPTS, $help );
+		?>
+		</fieldset>
+		<fieldset class="wpai-settings-group"><legend><h3><?php echo esc_html__( 'File transfers and packages', 'wp-ai-bridge' ); ?></h3></legend>
+			<p><?php echo esc_html__( 'Finite private transfer reservations are separate from MCP message sizes. WordPress, PHP, filesystem, client and Gateway constraints still apply; Bridge cannot change those limits.', 'wp-ai-bridge' ); ?></p>
+		<?php
+		foreach ( array(
+			Transfer_Settings::CHUNK_KIB  => array( __( 'Maximum raw transfer chunk (KiB)', 'wp-ai-bridge' ), __( 'Chunk bytes are reduced automatically to fit the effective incoming MCP JSON budget. This is not a total file-size ceiling.', 'wp-ai-bridge' ) ),
+			Transfer_Settings::FILE_MIB   => array( __( 'One staged transfer reservation (MiB)', 'wp-ai-bridge' ), __( 'Adjust for actual private disk capacity and workloads. No archive, document or file extension has a universal Bridge-side aggregate cap.', 'wp-ai-bridge' ) ),
+			Transfer_Settings::ACTIVE_MIB => array( __( 'Aggregate live reservation budget (MiB)', 'wp-ai-bridge' ), __( 'Limits total outstanding private storage reservations per WordPress site independently of the per-file budget.', 'wp-ai-bridge' ) ),
+			Transfer_Settings::SESSIONS   => array( __( 'Concurrent private transfer sessions', 'wp-ai-bridge' ), __( 'Maximum non-expired transfers; expired sessions are cleaned on subsequent admissions.', 'wp-ai-bridge' ) ),
+			Transfer_Settings::LEASE_MIN  => array( __( 'Private transfer lease lifetime (minutes)', 'wp-ai-bridge' ), __( 'Retention is finite and separate from one HTTP request timeout. The host must preserve temporary storage across requests.', 'wp-ai-bridge' ) ),
+		) as $key => $field ) {
+			$this->render_limit_field( Transfer_Settings::OPTION_NAME, $key, $field[0], $t, 1, $t_max[ $key ], $field[1] );
+		}
+		$this->render_limit_field( Payload_Settings::OPTION_NAME, Payload_Settings::INLINE_FILE_KEY, __( 'Inline MCP file-read source ceiling (MiB)', 'wp-ai-bridge' ), $p, Payload_Settings::MIN_INLINE_FILE_MIB, Payload_Settings::max_inline_file_mib(), __( 'Fallback only: existing Media Library source accepted for hash-bound, byte-exact MCP Base64 windows. Default: 128 MiB. Per-response windows are bounded separately; source size is not the total file-transfer limit.', 'wp-ai-bridge' ) );
+		$this->render_limit_field( Payload_Settings::OPTION_NAME, Payload_Settings::INLINE_MEDIA_KEY, __( 'Inline Base64 Media upload budget (MiB)', 'wp-ai-bridge' ), $p, Payload_Settings::MIN_INLINE_MEDIA_MIB, Payload_Settings::max_inline_media_mib(), __( 'Default: 20 MiB. Legacy one-shot upload remains bounded by PHP memory, WordPress upload limits, client and proxy limits. Use private chunked transfer for large files.', 'wp-ai-bridge' ) );
+		/* translators: 1: WordPress upload bytes, 2: effective package bytes. */
+		$help = sprintf( __( 'Default: 100 MiB. WordPress upload allowance: %1$s bytes; effective package budget: %2$s bytes. Only streamed external HTTPS packages are affected. Native install permissions, Code & Extensions and External Packages grants remain required. Host resources can reduce the allowance or cause timeouts.', 'wp-ai-bridge' ), (string) wp_max_upload_size(), (string) $package->effective_bytes() );
+		$this->render_limit_field( External_Package_Limits::OPTION_NAME, null, __( 'Maximum external extension package (MiB)', 'wp-ai-bridge' ), $package->requested_mib(), External_Package_Limits::MIN_MIB, External_Package_Limits::max_mib(), $help );
+		?>
+		</fieldset>
+		<fieldset class="wpai-settings-group"><legend><h3><?php echo esc_html__( 'Native operation processing', 'wp-ai-bridge' ); ?></h3></legend>
+			<p><?php echo esc_html__( 'Independent budgets for content materialized in protected native operations. PHP memory, provider schemas, permissions and incoming MCP limits remain binding; these budgets do not create whole-file transfer paths.', 'wp-ai-bridge' ); ?></p>
+		<?php
+		foreach ( array(
+			Operation_Content_Limits::SOURCE_MIB         => array( __( 'Installed plugin/theme source preimage and candidate (MiB)', 'wp-ai-bridge' ), __( 'Default: 2 MiB. One complete source file is held for preview, exact write and crash recovery. Increasing needs PHP memory, database and client capacity; Source Editing consent is still required.', 'wp-ai-bridge' ) ),
+			Operation_Content_Limits::SETTING_VALUE_KIB  => array( __( 'Registered REST setting JSON value (KiB)', 'wp-ai-bridge' ), __( 'Default: 1024 KiB. Native WordPress settings authority, provider schemas and incoming MCP message limits still apply.', 'wp-ai-bridge' ) ),
+			Operation_Content_Limits::SETTING_SCHEMA_KIB => array( __( 'Registered REST setting public schema (KiB)', 'wp-ai-bridge' ), __( 'Default: 256 KiB. Oversized schemas remain unavailable rather than being silently truncated or leaking provider defaults.', 'wp-ai-bridge' ) ),
+			Operation_Content_Limits::CATALOG_KIB        => array( __( 'Public Ability catalog response (KiB)', 'wp-ai-bridge' ), __( 'Default: 1024 KiB. Contract inspection stays read-only. Use pagination and check the MCP response limit when a larger catalog does not fit.', 'wp-ai-bridge' ) ),
+		) as $key => $field ) {
+			$this->render_limit_field( Operation_Content_Limits::OPTION_NAME, $key, $field[0], $o, 1, $o_max[ $key ], $field[1] );
+		}
+		/* translators: 1: effective input bytes, 2: current incoming MCP allowance. */
+		$help = sprintf( __( 'Default: 16 KiB. Effective input allowance: %1$s bytes; incoming MCP request allowance: %2$s bytes. This does not enable REST invocation or bypass sensitive route exclusions and native permissions. Host, client, memory and provider JSON validation remain binding.', 'wp-ai-bridge' ), (string) $rest->effective_bytes(), (string) $t_owner->bytes()['request'] );
+		$this->render_limit_field( REST_Invocation_Input_Limits::OPTION_NAME, null, __( 'Maximum registered REST JSON input (KiB)', 'wp-ai-bridge' ), $rest->requested_kib(), REST_Invocation_Input_Limits::MIN_KIB, REST_Invocation_Input_Limits::max_kib(), $help );
+		$this->render_limit_field( Administration_Configuration::OPTION_NAME, 'step_bytes', __( 'Work bytes per step', 'wp-ai-bridge' ), $config, 1, PHP_INT_MAX, __( 'A resumable processing budget, not a total file or backup-size ceiling. Actual PHP, disk and transfer policies still apply.', 'wp-ai-bridge' ) );
+		$this->render_limit_field( Administration_Configuration::OPTION_NAME, 'step_seconds', __( 'Work seconds per step', 'wp-ai-bridge' ), $config, 1, PHP_INT_MAX, __( 'A resumable processing time budget, separate from total operation size and the host request timeout.', 'wp-ai-bridge' ) );
+		?>
+		</fieldset>
+		<?php
+	}
+	/** @return void */
+	private function render_workspace_operations() {
+		?>
 			<?php
-			// Generic REST calls carry unclassified high-trust native effects:
-			// keep their request pacing independent of authorization and
-			// bounded by the existing incoming MCP message policy.
-			$rest_input = new REST_Invocation_Input_Limits();
-			?>
-			<h2><?php echo esc_html__( 'Registered REST request input capacity', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'This is one high-trust local registered REST invocation JSON input, not the total transferable file capacity. It does not enable REST invocation, change sensitive route and parameter exclusions, or bypass native WordPress permissions. Its effective budget cannot exceed the separately configured incoming MCP request budget.', 'wp-ai-bridge' ); ?></p>
-			<form action="options.php" method="post">
-				<?php settings_fields( REST_Invocation_Input_Limits::OPTION_GROUP ); ?>
-				<table class="form-table" role="presentation"><tbody><tr>
-					<th scope="row"><label for="wpai-rest-invocation-input-kib"><?php echo esc_html__( 'Maximum registered REST JSON input (KiB)', 'wp-ai-bridge' ); ?></label></th>
-					<td>
-						<input type="number" class="regular-text" id="wpai-rest-invocation-input-kib" name="<?php echo esc_attr( REST_Invocation_Input_Limits::OPTION_NAME ); ?>" value="<?php echo esc_attr( (string) $rest_input->requested_kib() ); ?>" min="<?php echo esc_attr( (string) REST_Invocation_Input_Limits::MIN_KIB ); ?>" max="<?php echo esc_attr( (string) REST_Invocation_Input_Limits::max_kib() ); ?>" step="1" required>
-						<p class="description">
-							<?php
-							echo esc_html(
-								sprintf(
-									/* translators: 1: requested KiB, 2: effective bytes, 3: current shared inbound MCP request bytes. */
-									__( 'Default 16 KiB. Requested: %1$s KiB; effective input allowance: %2$s bytes; current incoming MCP request allowance: %3$s bytes. Host, client, PHP memory and provider JSON validation remain independently binding. Raise the incoming MCP limit separately when needed.', 'wp-ai-bridge' ),
-									(string) $rest_input->requested_kib(),
-									(string) $rest_input->effective_bytes(),
-									(string) ( new Transfer_Settings() )->bytes()['request']
-								)
-							);
-							?>
-						</p>
-					</td>
-				</tr></tbody></table>
-				<?php submit_button( __( 'Save registered REST input capacity', 'wp-ai-bridge' ) ); ?>
-			</form>
-
-
-			<?php
-			// Private external package download capacity is distinct from
-			// Bridge authority grants, WordPress host upload policy and
-			// the raw authenticated private transfer budget.
-			$external_packages  = new External_Package_Limits();
-			$host_package_bytes = function_exists( 'wp_max_upload_size' ) ? wp_max_upload_size() : 0;
-			?>
-			<h2><?php echo esc_html__( 'External HTTPS extension package capacity', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'The configured MiB budget limits streamed HTTPS plugin/theme package downloads made by this Bridge, not ordinary WordPress.org installs. WordPress host upload limits can reduce the effective allowance. Native install permissions and Code & Extensions plus External Packages grants remain mandatory; this setting never enables them.', 'wp-ai-bridge' ); ?></p>
-			<form action="options.php" method="post">
-				<?php settings_fields( External_Package_Limits::OPTION_GROUP ); ?>
-				<table class="form-table" role="presentation"><tbody><tr>
-					<th scope="row"><label for="wpai-external-package-capacity"><?php echo esc_html__( 'Maximum external extension package (MiB)', 'wp-ai-bridge' ); ?></label></th>
-					<td>
-						<input type="number" class="regular-text" id="wpai-external-package-capacity" name="<?php echo esc_attr( External_Package_Limits::OPTION_NAME ); ?>" value="<?php echo esc_attr( (string) $external_packages->requested_mib() ); ?>" min="<?php echo esc_attr( (string) External_Package_Limits::MIN_MIB ); ?>" max="<?php echo esc_attr( (string) External_Package_Limits::max_mib() ); ?>" step="1" required>
-						<p class="description">
-							<?php
-							echo esc_html(
-								sprintf(
-									/* translators: 1: configured budget, 2: WordPress host upload bytes or unavailable, 3: effective permitted bytes. */
-									__( 'Default 100 MiB; configured: %1$s MiB; WordPress upload allowance: %2$s bytes; effective package budget: %3$s bytes. Increase host/PHP upload, temporary disk and execution resources separately where supported. Larger packages may still fail in Core/hosting or time out.', 'wp-ai-bridge' ),
-									(string) $external_packages->requested_mib(),
-									is_int( $host_package_bytes ) && $host_package_bytes > 0 ? (string) $host_package_bytes : __( 'Unavailable', 'wp-ai-bridge' ),
-									(string) $external_packages->effective_bytes()
-								)
-							);
-							?>
-						</p>
-					</td>
-				</tr></tbody></table>
-				<?php submit_button( __( 'Save external package capacity', 'wp-ai-bridge' ) ); ?>
-			</form>
-
-
-			<?php
-			// Separate native Settings API option: transfer capacity must not
-			// alter either WordPress authority groups or legacy inline quotas.
-			$transfer_settings = new Transfer_Settings();
-			$transfer_values   = $transfer_settings->all();
-			$transfer_maxima   = $transfer_settings->upper_bounds();
-			$transfer_fields   = array(
-				Transfer_Settings::REQUEST_KIB => array(
-					__( 'Incoming MCP request budget (KiB)', 'wp-ai-bridge' ),
-					__( 'Bounds one encoded inbound tool message, not the aggregate file. Larger WordPress, proxy or MCP client limits must be configured separately.', 'wp-ai-bridge' ),
-				),
-				Transfer_Settings::CHUNK_KIB   => array(
-					__( 'Maximum raw transfer chunk (KiB)', 'wp-ai-bridge' ),
-					__( 'Chunk bytes are also reduced automatically to fit the effective incoming MCP JSON budget. This is not a total file-size ceiling.', 'wp-ai-bridge' ),
-				),
-				Transfer_Settings::FILE_MIB    => array(
-					__( 'One staged transfer reservation (MiB)', 'wp-ai-bridge' ),
-					__( 'Adjust for actual private disk capacity and workloads. No archive, document or file extension has a universal Bridge-side aggregate cap.', 'wp-ai-bridge' ),
-				),
-				Transfer_Settings::ACTIVE_MIB  => array(
-					__( 'Aggregate live reservation budget (MiB)', 'wp-ai-bridge' ),
-					__( 'Limits total outstanding private storage reservations per WordPress site independently of the per-file budget.', 'wp-ai-bridge' ),
-				),
-				Transfer_Settings::SESSIONS    => array(
-					__( 'Concurrent private transfer sessions', 'wp-ai-bridge' ),
-					__( 'Maximum non-expired transfers; expired sessions are cleaned on subsequent admissions.', 'wp-ai-bridge' ),
-				),
-				Transfer_Settings::LEASE_MIN   => array(
-					__( 'Private transfer lease lifetime (minutes)', 'wp-ai-bridge' ),
-					__( 'Retention is finite and separate from one HTTP request timeout. The host must preserve temporary storage across requests.', 'wp-ai-bridge' ),
-				),
-			);
-			?>
-			<h2><?php echo esc_html__( 'Private file transfer capacity', 'wp-ai-bridge' ); ?></h2>
-			<p><?php echo esc_html__( 'Adjust these values without changing plugin source. They reserve finite, revocable private transfer resources; WordPress, PHP, filesystem, client and Gateway constraints still apply.', 'wp-ai-bridge' ); ?></p>
-			<form action="options.php" method="post">
-				<?php settings_fields( Transfer_Settings::OPTION_GROUP ); ?>
-				<table class="form-table" role="presentation"><tbody>
-					<?php foreach ( $transfer_fields as $key => $field ) : ?>
-						<tr>
-							<th scope="row"><label for="<?php echo esc_attr( 'wpai-transfer-' . $key ); ?>"><?php echo esc_html( $field[0] ); ?></label></th>
-							<td>
-								<input type="text" inputmode="numeric" pattern="[1-9][0-9]*" class="regular-text" id="<?php echo esc_attr( 'wpai-transfer-' . $key ); ?>" name="<?php echo esc_attr( Transfer_Settings::OPTION_NAME . '[' . $key . ']' ); ?>" value="<?php echo esc_attr( (string) $transfer_values[ $key ] ); ?>" required>
-								<p class="description"><?php echo esc_html( $field[1] ); ?></p>
-								<p class="description"><?php echo esc_html__( 'Current PHP-derived maximum:', 'wp-ai-bridge' ); ?> <?php echo esc_html( (string) $transfer_maxima[ $key ] ); ?></p>
-							</td>
-						</tr>
-					<?php endforeach; ?>
-				</tbody></table>
-				<?php submit_button( __( 'Save private transfer capacity', 'wp-ai-bridge' ) ); ?>
-			</form>
-
-			<h2><?php echo esc_html__( 'Workspace data lifecycle', 'wp-ai-bridge' ); ?></h2>
+			if ( isset( $_GET['wpai_notice'] ) && 'workspace-cleared' === $_GET['wpai_notice'] ) :
+				// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Status display only.
+				?>
+				<div class="notice notice-success"><p><?php echo esc_html__( 'Workspace documents and tasks were cleared.', 'wp-ai-bridge' ); ?></p></div><?php endif; ?>
 			<p><?php echo esc_html__( 'Workspace data is preserved when the plugin is deactivated or uninstalled. Export it at any time. Clear is the explicit deletion path and cannot be undone.', 'wp-ai-bridge' ); ?></p>
 			<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="display:inline-block; margin-inline-end: 1em">
 				<input type="hidden" name="action" value="wpai_workspace_export">
 				<?php wp_nonce_field( 'wpai_workspace_export' ); ?>
 				<?php submit_button( __( 'Export Workspace', 'wp-ai-bridge' ), 'secondary', 'submit', false ); ?>
 			</form>
-			<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-top: 1em">
+			<p class="description"><?php echo esc_html__( 'When settings edits are pending, Clear opens in a new tab so your draft stays here. Neither Workspace action saves settings.', 'wp-ai-bridge' ); ?></p>
+			<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" class="wpai-workspace-clear" target="_blank" rel="noopener">
 				<input type="hidden" name="action" value="wpai_workspace_clear">
 				<?php wp_nonce_field( 'wpai_workspace_clear' ); ?>
 				<label><input type="checkbox" name="confirm_clear" value="clear" required> <?php echo esc_html__( 'I understand that Clear Workspace permanently deletes all Workspace documents and tasks.', 'wp-ai-bridge' ); ?></label>
 				<p class="description"><?php echo esc_html__( 'Clear also requires the Users & Destructive access group to be enabled. It does not delete normal WordPress content.', 'wp-ai-bridge' ); ?></p>
 				<?php submit_button( __( 'Clear Workspace', 'wp-ai-bridge' ), 'delete', 'submit', false ); ?>
 			</form>
-		</div>
 		<?php
 	}
 

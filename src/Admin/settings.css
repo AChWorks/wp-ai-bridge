@@ -1,0 +1,283 @@
+.wpai-settings {
+    --wpai-border: #c3c4c7;
+    --wpai-muted: #50575e;
+    --wpai-accent: var(--wp-admin-theme-color, #2271b1);
+    max-inline-size: 1280px;
+    padding-block-end: 20px;
+}
+.wpai-settings .wpai-settings-intro {
+    margin-block: 12px 24px;
+}
+.wpai-settings .wpai-settings-layout {
+    display: grid;
+    grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
+    align-items: start;
+    gap: 28px;
+}
+.wpai-settings .wpai-settings-nav {
+    position: sticky;
+    inset-block-start: 48px;
+}
+.wpai-settings .wpai-settings-nav ul {
+    margin: 0;
+    border-block-start: 1px solid var(--wpai-border);
+}
+.wpai-settings .wpai-settings-nav li {
+    margin: 0;
+}
+.wpai-settings .wpai-settings-nav a {
+    display: block;
+    padding: 12px 14px;
+    border-inline-start: 3px solid transparent;
+    border-block-end: 1px solid #dcdcde;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+}
+.wpai-settings .wpai-settings-nav a:hover {
+    background: #fff;
+}
+.wpai-settings .wpai-settings-nav a[aria-current] {
+    border-inline-start-color: var(--wpai-accent);
+    background: #fff;
+    color: #1d2327;
+    font-weight: 600;
+}
+.wpai-settings .wpai-section-dirty,
+.wpai-settings .wpai-section-error {
+    display: block;
+    font-size: 12px;
+    font-weight: 400;
+}
+.wpai-settings .wpai-section-error {
+    color: #b32d2e;
+}
+.wpai-settings [hidden] {
+    display: none !important;
+}
+.wpai-settings .wpai-settings-section {
+    padding: 22px 24px;
+    margin-block-end: 24px;
+    border: 1px solid var(--wpai-border);
+    background: #fff;
+    min-inline-size: 0;
+    scroll-margin-block-start: 60px;
+}
+.wpai-settings .wpai-settings-section > h2 {
+    margin-block: 0 18px;
+    font-size: 20px;
+    line-height: 1.5;
+}
+.wpai-settings .wpai-settings-section h2:focus {
+    outline: 2px solid var(--wpai-accent);
+    outline-offset: 4px;
+}
+.wpai-settings .wpai-settings-section p,
+.wpai-settings .wpai-settings-section li {
+    line-height: 1.7;
+}
+.wpai-settings .wpai-settings-group {
+    border: 0;
+    border-block-start: 1px solid #dcdcde;
+    margin-block: 24px 0;
+    padding: 16px 0 0;
+    min-inline-size: 0;
+}
+.wpai-settings .wpai-settings-group > legend {
+    padding: 0;
+}
+.wpai-settings .wpai-settings-group h3 {
+    margin: 0;
+    padding-inline-end: 12px;
+    font-size: 15px;
+    line-height: 1.7;
+}
+.wpai-settings .wpai-settings-group > p:first-of-type {
+    margin-block-start: 0;
+}
+.wpai-settings .wpai-grant {
+    padding-block: 14px;
+    border-block-end: 1px solid #f0f0f1;
+}
+.wpai-settings .wpai-grant:last-child {
+    border-block-end: 0;
+}
+.wpai-settings .wpai-grant label {
+    display: inline-block;
+    line-height: 1.7;
+}
+.wpai-settings .wpai-grant .description {
+    margin-block: 6px 0;
+    margin-inline-start: 26px;
+    max-inline-size: 75ch;
+}
+.wpai-settings .wpai-grant-warning,
+.wpai-settings .wpai-policy-status {
+    border-inline-start: 3px solid #dba617;
+    padding-inline-start: 10px;
+}
+.wpai-settings .wpai-setting-field {
+    margin-block: 22px;
+}
+.wpai-settings .wpai-setting-field > label {
+    display: block;
+    margin-block-end: 7px;
+    line-height: 1.7;
+}
+.wpai-settings .wpai-setting-field .description {
+    max-inline-size: 75ch;
+    margin-block: 6px 0;
+}
+.wpai-settings .wpai-limit-input {
+    inline-size: 14ch;
+    max-inline-size: 100%;
+}
+.wpai-settings input[type="text"],
+.wpai-settings textarea,
+.wpai-settings select {
+    max-inline-size: 100%;
+}
+.wpai-settings input.large-text,
+.wpai-settings textarea.large-text {
+    inline-size: 100%;
+}
+.wpai-settings .wpai-scope-row {
+    border: 1px solid var(--wpai-border);
+    padding: 16px;
+    margin-block: 16px;
+    min-inline-size: 0;
+}
+.wpai-settings .wpai-scope-row > legend {
+    padding-inline: 7px;
+}
+.wpai-settings .wpai-scope-row p > label:first-child,
+.wpai-settings .wpai-scope-fields > p > label:first-child {
+    display: block;
+    margin-block-end: 5px;
+}
+.wpai-settings .wpai-scope-choices {
+    margin-block: 16px;
+}
+.wpai-settings .wpai-scope-choices legend {
+    margin-block-end: 6px;
+}
+.wpai-settings .wpai-scope-choices label {
+    display: inline-block;
+    margin-inline-end: 18px;
+    margin-block-end: 9px;
+}
+.wpai-settings .wpai-scope-pending-removal {
+    border-style: dashed;
+    background: #f6f7f7;
+}
+.wpai-settings .wpai-scope-undo {
+    display: inline-block;
+    margin-inline-start: 14px;
+}
+.wpai-settings .wpai-settings-savebar {
+    position: sticky;
+    inset-block-end: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    border: 1px solid var(--wpai-border);
+    border-block-start: 2px solid var(--wpai-accent);
+    background: #fff;
+}
+.wpai-settings .wpai-settings-savebar > div {
+    min-inline-size: 0;
+}
+.wpai-settings .wpai-settings-savebar .description {
+    display: block;
+    margin-block-start: 3px;
+    line-height: 1.6;
+}
+.wpai-settings .wpai-settings-content {
+    min-inline-size: 0;
+    padding-block-end: 12px;
+}
+.wpai-settings .wpai-settings-section :is(input, select, textarea, button, a) {
+    scroll-margin-block: 100px 150px;
+}
+.wpai-settings .wpai-settings-section code {
+    direction: ltr;
+    unicode-bidi: isolate;
+    display: inline-block;
+    max-inline-size: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+.wpai-settings .widefat th {
+    inline-size: 32%;
+}
+.wpai-settings .widefat td {
+    overflow-wrap: anywhere;
+}
+.wpai-settings .wpai-save-outcomes {
+    margin-block: 16px;
+}
+.wpai-settings .wpai-settings-errors ul {
+    list-style: disc;
+    margin-inline-start: 20px;
+}
+.wpai-settings .wpai-workspace-clear {
+    border-block-start: 1px solid var(--wpai-border);
+    padding-block-start: 18px;
+}
+@media (max-width: 1000px) {
+    .wpai-settings .wpai-settings-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 16px;
+    }
+    .wpai-settings .wpai-settings-nav {
+        position: static;
+    }
+    .wpai-settings .wpai-settings-nav ul {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (max-width: 600px) {
+    .wpai-settings .wpai-settings-section {
+        padding: 16px;
+    }
+    .wpai-settings .wpai-settings-nav a {
+        padding: 10px;
+    }
+    .wpai-settings .wpai-settings-savebar {
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px;
+    }
+    .wpai-settings .wpai-settings-savebar .button {
+        white-space: nowrap;
+    }
+    .wpai-settings .widefat,
+    .wpai-settings .widefat tbody,
+    .wpai-settings .widefat tr,
+    .wpai-settings .widefat th,
+    .wpai-settings .widefat td {
+        display: block;
+        inline-size: auto;
+    }
+    .wpai-settings .widefat th {
+        padding-block-end: 0;
+    }
+    .wpai-settings .widefat td {
+        padding-block-start: 3px;
+    }
+}
+@media (max-width: 360px) {
+    .wpai-settings .wpai-settings-nav ul {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .wpai-settings .wpai-settings-savebar {
+        flex-direction: column;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .wpai-settings * {
+        scroll-behavior: auto;
+    }
+}

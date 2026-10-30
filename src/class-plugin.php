@@ -102,8 +102,13 @@ final class Plugin {
 		add_action( 'admin_init', array( new Operation_Content_Limits(), 'register' ) );
 		add_action( 'admin_init', array( new External_Package_Limits(), 'register' ) );
 		add_action( 'admin_init', array( new REST_Invocation_Input_Limits(), 'register' ) );
+		add_action( 'admin_init', array( $this->settings_page, 'prepare_settings_screen' ) );
+		add_action( 'admin_enqueue_scripts', array( $this->settings_page, 'enqueue_settings_assets' ) );
 		add_action( 'admin_menu', array( $this->settings_page, 'register_menu' ) );
+		add_action( 'admin_menu', array( $this->settings_page, 'order_settings_submenu' ), 999 );
 		$administration_page = new Administration_Page( $this->settings );
+		// Core checks hidden-page access while building the menu, before admin_init.
+		add_action( 'admin_menu', array( $administration_page, 'redirect_legacy' ), 1000 );
 		add_action( 'admin_menu', array( $administration_page, 'register_menu' ), 20 );
 		add_action( 'admin_post_wpai_administration_configuration', array( $administration_page, 'save_configuration' ) );
 		add_action( 'admin_post_wpai_workspace_export', array( $this->settings_page, 'handle_export' ) );

@@ -1,6 +1,6 @@
 <?php
 /**
- * Published v0.6.11 -> current release-candidate upgrade acceptance.
+ * Published v0.7.0 -> current release-candidate upgrade acceptance.
  *
  * Runs ONLY in an isolated disposable WordPress/official Adapter test lane.
  * Test credentials live only in one non-autoloading test-option row shared by
@@ -14,7 +14,14 @@ use WP_AI_Bridge\Auth\Approved_OAuth_Clients;
 use WP_AI_Bridge\Auth\Client_Assertion_Validator;
 use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Auth\OAuth_Store;
+use WP_AI_Bridge\Support\Administration_Configuration;
+use WP_AI_Bridge\Support\External_Package_Limits;
+use WP_AI_Bridge\Support\Native_Option_Access;
+use WP_AI_Bridge\Support\Operation_Content_Limits;
+use WP_AI_Bridge\Support\Payload_Settings;
+use WP_AI_Bridge\Support\REST_Invocation_Input_Limits;
 use WP_AI_Bridge\Support\Settings;
+use WP_AI_Bridge\Support\Transfer_Settings;
 use WP_AI_Bridge\Support\Workspace_Limits;
 use WP_AI_Bridge\Support\Operation_Receipt_Limits;
 use WP_AI_Bridge\Workspace\Store;
@@ -23,6 +30,45 @@ function wpai124_assert( $condition, $message ) {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message );
 	}
+}
+
+/**
+ * Preserve native option values separately from Settings::all()'s effective
+ * grants. Explicit defaults keep absent rows distinct from registered defaults.
+ *
+ * @return array<string,mixed> Observed option values, with strict array types/order.
+ */
+function wpai124_stored_settings() {
+	$values = array();
+	foreach ( array(
+		Settings::OPTION_NAME,
+		Settings::DATABASE_OPTION_NAME,
+		Settings::ADMINISTRATION_OPTION_NAME,
+		Administration_Configuration::OPTION_NAME,
+		Payload_Settings::OPTION_NAME,
+		Transfer_Settings::OPTION_NAME,
+		Workspace_Limits::OPTION_NAME,
+		Operation_Receipt_Limits::OPTION_NAME,
+		Operation_Content_Limits::OPTION_NAME,
+		REST_Invocation_Input_Limits::OPTION_NAME,
+		External_Package_Limits::OPTION_NAME,
+	) as $name ) {
+		$values[ $name ] = get_option( $name, null );
+	}
+	return $values;
+}
+
+/** @return array Current network identity and independently stored consent. */
+function wpai124_stored_network_settings() {
+	$network = get_current_network_id();
+	$values  = array();
+	foreach ( array( Native_Option_Access::NETWORK_OPTION_NAME, Native_Option_Access::NETWORK_WRITE_OPTION_NAME ) as $name ) {
+		$values[ $name ] = is_multisite() ? get_network_option( $network, $name, null ) : null;
+	}
+	return array(
+		'network_id' => $network,
+		'values'     => $values,
+	);
 }
 
 function wpai124_b64( $value ) {
@@ -136,13 +182,24 @@ $oauth = new OAuth_Server( $oauth_store, $registry );
 $workspace = new Store();
 
 if ( 'before' === $phase ) {
-	wpai124_assert( '0.6.11' === WP_AI_BRIDGE_VERSION, 'Published baseline plugin version was not 0.6.11.' );
+	wpai124_assert( '0.7.0' === WP_AI_BRIDGE_VERSION, 'Published baseline plugin version was not 0.7.0.' );
 	wpai124_assert( false === get_option( $state_option, false ), 'Published-upgrade test state unexpectedly exists.' );
-	$old_settings = $settings->defaults();
+	$old_settings = $settings->sanitize( $settings->defaults() );
 	$old_settings[ Settings::GROUP_BUILDER_WRITE ] = 1;
 	$old_settings[ Settings::GROUP_NATIVE_ABILITIES ] = 1;
 	update_option( Settings::OPTION_NAME, $old_settings, false );
-	wpai124_assert( $settings->all() === $old_settings, 'Published baseline Bridge settings were not persisted.' );
+	wpai124_assert( get_option( Settings::OPTION_NAME ) === $old_settings, 'Published baseline ordinary Bridge settings were not persisted exactly.' );
+	// v0.7.0 already excludes protected grants from the ordinary row and adds
+	// both independent native network consents to its effective settings view.
+	$old_effective_settings = array_replace(
+		$settings->defaults(),
+		$old_settings,
+		array(
+			Settings::GROUP_NATIVE_NETWORK_READ  => 0,
+			Settings::GROUP_NATIVE_NETWORK_WRITE => 0,
+		)
+	);
+	wpai124_assert( $settings->all() === $old_effective_settings, 'Published baseline effective grants differ from the explicitly seeded ordinary grants and disabled protected defaults.' );
 
 	$approved = $registry->sanitize( array( $client_id ) );
 	wpai124_assert( array( $client_id ) === $approved, 'Published baseline did not accept the fixture OAuth client ID.' );
@@ -150,7 +207,7 @@ if ( 'before' === $phase ) {
 	$revision = $registry->revision();
 	wpai124_assert( $registry->is_approved( $client_id ), 'Published baseline did not retain the approved OAuth client.' );
 
-	$doc = $workspace->create_document( array( 'key' => 'published-upgrade', 'title' => 'Published upgrade document', 'content' => 'Persisted across v0.6.11 to candidate.' ) );
+	$doc = $workspace->create_document( array( 'key' => 'published-upgrade', 'title' => 'Published upgrade document', 'content' => 'Persisted across v0.7.0 to candidate.' ) );
 	$task = $workspace->create_task( array( 'title' => 'Published upgrade task', 'progress' => 'in_progress', 'review' => 'not_required', 'delivery' => 'not_applicable' ) );
 	wpai124_assert( ! is_wp_error( $doc ) && ! is_wp_error( $task ), 'Published baseline Workspace seed failed.' );
 
@@ -187,16 +244,19 @@ if ( 'before' === $phase ) {
 		)
 	);
 	$remove_mock();
-	wpai124_assert( 200 === $response->get_status(), 'Published 0.6.11 signed-client PKCE token exchange did not succeed.' );
+	wpai124_assert( 200 === $response->get_status(), 'Published 0.7.0 signed-client PKCE token exchange did not succeed.' );
 	$data = wpai124_response_data( $response );
-	wpai124_assert( ! empty( $data['access_token'] ) && ! empty( $data['refresh_token'] ), 'Published 0.6.11 did not mint access and refresh credentials.' );
-	wpai124_assert( false !== $oauth_store->read( OAuth_Store::TYPE_ACCESS, $data['access_token'], false, $client_id ), 'Published 0.6.11 access token is unusable.' );
-	wpai124_assert( false !== $oauth_store->read( OAuth_Store::TYPE_REFRESH, $data['refresh_token'], false, $client_id ), 'Published 0.6.11 refresh token is unusable.' );
+	wpai124_assert( ! empty( $data['access_token'] ) && ! empty( $data['refresh_token'] ), 'Published 0.7.0 did not mint access and refresh credentials.' );
+	wpai124_assert( false !== $oauth_store->read( OAuth_Store::TYPE_ACCESS, $data['access_token'], false, $client_id ), 'Published 0.7.0 access token is unusable.' );
+	wpai124_assert( false !== $oauth_store->read( OAuth_Store::TYPE_REFRESH, $data['refresh_token'], false, $client_id ), 'Published 0.7.0 refresh token is unusable.' );
 
 	$fixture = array(
-		'baseline'            => '0.6.11',
+		'baseline'            => '0.7.0',
 		'wordpress_user'      => get_current_user_id(),
 		'settings'            => $old_settings,
+		'effective_settings'  => $old_effective_settings,
+		'stored_settings'     => wpai124_stored_settings(),
+		'network_settings'    => wpai124_stored_network_settings(),
 		'client_id'           => $client_id,
 		'client_revision'     => $revision,
 		'instance_id'         => $oauth_store->instance_id(),
@@ -211,19 +271,23 @@ if ( 'before' === $phase ) {
 	);
 	wpai124_assert( add_option( $state_option, $fixture, '', false ), 'Could not persist isolated test-only continuity state.' );
 	wpai124_assert( $fixture === get_option( $state_option, false ), 'Test-only upgrade state was not stored byte-exactly.' );
-	echo "PASS: published v0.6.11 seeded canonical settings, Workspace and signed-client OAuth/PKCE credentials.\n";
+	echo "PASS: published v0.7.0 seeded canonical settings, Workspace and signed-client OAuth/PKCE credentials.\n";
 	return;
 }
 
 wpai124_assert( 'after' === $phase, 'Unsupported published-upgrade fixture phase.' );
 $candidate_version = (string) getenv( 'WPAI_UPGRADE_CANDIDATE_VERSION' );
-wpai124_assert( preg_match( '/^[0-9]+\.[0-9]+\.[0-9]+$/', $candidate_version ) && version_compare( $candidate_version, '0.6.11', '>' ), 'Expected candidate version is missing or not newer than the pinned baseline.' );
+wpai124_assert( preg_match( '/^[0-9]+\.[0-9]+\.[0-9]+$/', $candidate_version ) && version_compare( $candidate_version, '0.7.0', '>' ), 'Expected candidate version is missing or not newer than the pinned baseline.' );
 wpai124_assert( $candidate_version === WP_AI_BRIDGE_VERSION, 'Upgraded source did not report the exact expected candidate version.' );
 $fixture = get_option( $state_option, false );
-wpai124_assert( false !== $fixture, 'Published v0.6.11 continuity evidence is absent.' );
-wpai124_assert( is_array( $fixture ) && '0.6.11' === ( $fixture['baseline'] ?? '' ), 'Published baseline continuity data is invalid.' );
+wpai124_assert( false !== $fixture, 'Published v0.7.0 continuity evidence is absent.' );
+wpai124_assert( is_array( $fixture ) && '0.7.0' === ( $fixture['baseline'] ?? '' ), 'Published baseline continuity data is invalid.' );
 wpai124_assert( (int) $fixture['wordpress_user'] === get_current_user_id(), 'Upgraded WordPress principal changed.' );
 wpai124_assert( $fixture['settings'] === get_option( Settings::OPTION_NAME ), 'Stored canonical Bridge delegation settings were changed on upgrade.' );
+wpai124_assert( isset( $fixture['effective_settings'], $fixture['stored_settings'], $fixture['network_settings'] ), 'Published baseline independent settings continuity evidence is absent.' );
+wpai124_assert( $fixture['effective_settings'] === $settings->all(), 'Published baseline effective grants changed on upgrade.' );
+wpai124_assert( wpai124_stored_settings() === $fixture['stored_settings'], 'An independent native settings, protected grant, scope or budget option changed on upgrade.' );
+wpai124_assert( wpai124_stored_network_settings() === $fixture['network_settings'], 'Current network identity or independently stored native consent changed on upgrade.' );
 $workspace_limits = ( new Workspace_Limits() )->all();
 wpai124_assert( Workspace_Limits::DEFAULT_DOCUMENTS === $workspace_limits[ Workspace_Limits::DOCUMENTS_KEY ], 'Candidate upgrade changed the default document admission limit.' );
 wpai124_assert( Workspace_Limits::DEFAULT_TASKS === $workspace_limits[ Workspace_Limits::TASKS_KEY ], 'Candidate upgrade changed the default task admission limit.' );
@@ -231,7 +295,7 @@ wpai124_assert( Operation_Receipt_Limits::DEFAULT_RECEIPTS === ( new Operation_R
 wpai124_assert( false === $settings->is_enabled( Settings::GROUP_REST_DISCOVERY ), 'REST Discovery was silently enabled after upgrade.' );
 wpai124_assert( false === $settings->is_enabled( Settings::GROUP_REST_INVOCATION ), 'REST Invocation was silently enabled after upgrade.' );
 foreach ( array_merge( Settings::DATABASE_GROUPS, Settings::ADMINISTRATION_GROUPS, array( Settings::GROUP_NATIVE_OPTIONS_READ, Settings::GROUP_NATIVE_OPTIONS_WRITE, Settings::GROUP_NATIVE_NETWORK_READ, Settings::GROUP_NATIVE_NETWORK_WRITE ) ) as $group ) {
-	wpai124_assert( false === $settings->is_enabled( $group ), 'New protected administration grant was silently enabled on upgrade: ' . $group );
+	wpai124_assert( false === $settings->is_enabled( $group ), 'Previously disabled protected administration grant was silently enabled on upgrade: ' . $group );
 }
 $administration_configuration = ( new \WP_AI_Bridge\Support\Administration_Configuration() )->all();
 wpai124_assert( array() === $administration_configuration['roots'] && array() === $administration_configuration['restore_schemas'], 'Upgrade silently approved filesystem roots or restore schemas.' );
@@ -258,7 +322,7 @@ wpai124_assert( false !== $oauth_store->read( OAuth_Store::TYPE_REFRESH, $old_re
 
 $routes = rest_get_server()->get_routes();
 wpai124_assert( isset( $routes[ OAuth_Server::MCP_REQUEST_ROUTE ], $routes['/wp-ai-bridge/v1/oauth/token'] ), 'Official Adapter/Bridge canonical MCP or token route is missing after upgrade.' );
-wpai124_assert( wp_get_ability( 'wp-ai-bridge/rest-routes-read' ) instanceof WP_Ability, 'New bounded REST discovery is missing after upgrade.' );
+wpai124_assert( wp_get_ability( 'wp-ai-bridge/rest-routes-read' ) instanceof WP_Ability, 'Existing bounded REST discovery was lost after upgrade.' );
 wpai124_assert( wp_get_ability( 'wp-ai-bridge/rest-route-invoke' ) instanceof WP_Ability, 'Guarded REST invocation was lost after upgrade.' );
 foreach (
 	array(
@@ -286,7 +350,7 @@ wpai124_assert( ! wp_get_ability( 'wp-ai-bridge/private-packages-read' ), 'Remov
 wpai124_assert( ! wp_get_ability( 'wp-ai-bridge/private-package-install' ), 'Removed ZIP installer Ability survived upgrade.' );
 wpai124_assert( false === has_action( 'admin_post_wpai_private_zip_upload' ), 'Removed admin ZIP staging route survived upgrade.' );
 
-// Exercise the real official Adapter transport with the v0.6.11 access token,
+// Exercise the real official Adapter transport with the v0.7.0 access token,
 // not a newly minted candidate-only token or a mocked MCP tool response.
 $before_sessions = class_exists( '\WP\MCP\Transport\Infrastructure\SessionManager' )
 	? \WP\MCP\Transport\Infrastructure\SessionManager::get_all_user_sessions( get_current_user_id() )
@@ -339,7 +403,7 @@ if ( ! is_array( $structured ) ) {
 wpai124_assert( is_array( $structured ) && true === ( $structured['success'] ?? false ), 'Official Adapter returned unsuccessful bridge-info result after upgrade.' );
 wpai124_assert( $candidate_version === ( $structured['data']['plugin_version'] ?? '' ), 'Official Adapter reported the wrong upgraded plugin version.' );
 
-// Finish the existing v0.6.11 authorization lifecycle through the candidate's real
+// Finish the existing v0.7.0 authorization lifecycle through the candidate's real
 // signed-client OAuth token endpoint and bounded refresh-token rotation.
 $key = openssl_pkey_get_private( (string) $fixture['private_key_pem'] );
 wpai124_assert( false !== $key, 'Could not restore the isolated test client key.' );
@@ -352,7 +416,7 @@ $response = wpai124_token_request(
 	array( 'refresh_token' => $old_refresh, 'resource' => $fixture['resource'] )
 );
 $remove_mock();
-wpai124_assert( 200 === $response->get_status(), 'Published v0.6.11 refresh token failed signed-client renewal after upgrade.' );
+wpai124_assert( 200 === $response->get_status(), 'Published v0.7.0 refresh token failed signed-client renewal after upgrade.' );
 $data = wpai124_response_data( $response );
 wpai124_assert( ! empty( $data['access_token'] ) && ! empty( $data['refresh_token'] ), 'Upgraded OAuth endpoint did not produce a successor token pair.' );
 wpai124_assert( ! hash_equals( $old_refresh, (string) $data['refresh_token'] ), 'Upgraded OAuth endpoint reused the old refresh token.' );
@@ -364,5 +428,5 @@ $oauth_store->revoke( $old_access, $client_id );
 $oauth_store->revoke( $data['access_token'], $client_id );
 $oauth_store->revoke( $data['refresh_token'], $client_id );
 wpai124_assert( delete_option( $state_option ), 'Test-only bearer and private key continuity state could not be retired.' );
-echo "PASS: published v0.6.11 -> candidate {$candidate_version} canonical state, Workspace, OAuth rotation, default-off REST, and official authenticated MCP Adapter.\n";
+echo "PASS: published v0.7.0 -> candidate {$candidate_version} canonical state, Workspace, OAuth rotation, default-off REST, and official authenticated MCP Adapter.\n";
 

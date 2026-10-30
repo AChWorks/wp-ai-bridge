@@ -14,7 +14,7 @@
 3. Upload the ZIP. Install and activate the separate official **MCP Adapter** from WordPress.org if it is not already active; the native Plugins screen identifies a missing or inactive required dependency.
 4. Activate **WP AI Bridge**, then open **WP AI Bridge → Settings**.
 
-The settings screen reports whether the WordPress Abilities API, MCP Adapter, and public HTTPS endpoint are available.
+The **Connection** section of Settings reports whether the WordPress Abilities API, MCP Adapter, and public HTTPS endpoint are available. Settings is the last plugin submenu entry; the former Administration URL redirects there.
 
 Canonical builds install with the `wp-ai-bridge/` directory and `wp-ai-bridge.php` entrypoint. Version 0.4.1 established the native canonical baseline; later releases retain the identity and do not contain the retired pre-0.4.0 migration runtime. The GitHub source branch or release candidate is not evidence of an installed build.
 
@@ -28,9 +28,11 @@ Native WXR import is non-atomic; it returns a durable receipt and disallows blin
 
 An existing canonical 0.4.0-or-newer installation can be updated normally with WordPress's replace/update flow, subject to the selected release's compatibility and hosting notes. The plugin directory, Workspace identifiers, settings identity, OAuth routes and Ability namespace remain canonical; the version number alone is not a reason to erase persistent Workspace data or reset a working OAuth client. Verify actual post-upgrade OAuth health and current Bridge delegation rather than inferring it from source or a successful ZIP upload.
 
-Before any production plugin update, keep a normal WordPress/database backup appropriate to the site. For v0.7.0, ensure the official MCP Adapter is installed and active before replacing the Bridge package. WordPress owns normal dependency activation/deactivation controls; the Bridge keeps readiness diagnostics for abnormal manual filesystem removal or other paths outside those controls. An upload or activation does not silently install/activate the Adapter. Core does not automatically deactivate an already-active Bridge solely because this dependency metadata was added or the Adapter was manually removed; the Plugins screen shows the missing/inactive dependency, and Bridge readiness diagnostics remain available outside that screen. Restore the official Adapter before relying on MCP operations.
+Before any production plugin update, keep a normal WordPress/database backup appropriate to the site. Ensure the official MCP Adapter is installed and active before replacing the Bridge package. WordPress owns normal dependency activation/deactivation controls; the Bridge keeps readiness diagnostics for abnormal manual filesystem removal or other paths outside those controls. An upload or activation does not silently install/activate the Adapter. Core does not automatically deactivate an already-active Bridge solely because this dependency metadata was added or the Adapter was manually removed; the Plugins screen shows the missing/inactive dependency, and Bridge readiness diagnostics remain available outside that screen. Restore the official Adapter before relying on MCP operations.
 
-The v0.7.0 package adds separately protected database, native settings and advanced-administration grants; existing ordinary grants do not enable them on upgrade. Approved filesystem roots and restore-schema lists start empty. Open **WP AI Bridge → Administration** to configure intended scopes and consult the [administration guide](./ADMINISTRATION.md) before enabling SQL, filesystem, scheduler or backup workflows. Native-account SQL requires an additional hosting opt-in and account-scope acknowledgement. Full capture requires declared writer quiescence; verified restore is isolated and does not activate the restored site. Keep the source installation authoritative during recovery.
+Database, native settings and advanced-administration grants remain separately protected; existing ordinary grants do not enable them on upgrade. Approved filesystem roots and restore-schema lists start empty. Open **WP AI Bridge → Settings → Files & backups** to configure intended scopes and consult the [administration guide](./ADMINISTRATION.md) before enabling SQL, filesystem, scheduler or backup workflows. Native-account SQL requires an additional hosting opt-in and account-scope acknowledgement. Full capture requires declared writer quiescence; verified restore is isolated and does not activate the restored site. Keep the source installation authoritative during recovery.
+
+For a **v0.7.0 → v0.7.1** replacement, use the official installable ZIP once v0.7.1 is published, retain the canonical plugin directory and do not uninstall first. This settings redesign uses the existing option stores and needs no data migration. After replacement, check the installed version, OAuth connection, Workspace and existing grants. Review the eight Settings sections and use **Save changes** for intended edits; existing stored values do not need to be resaved merely to move them to the new screen.
 
 ### GitHub release updates in the WordPress dashboard (v0.6.8 and later)
 
@@ -92,7 +94,7 @@ The MCP endpoint returns an authentication challenge pointing to the canonical p
 
 ## Configure access
 
-Open **WP AI Bridge → Settings** and enable only the groups required by the intended workflow.
+Open **WP AI Bridge → Settings** and enable only the groups required by the intended workflow. Choose the relevant task section, review its current grant state and prerequisites, then use **Save changes**. The action submits edits from every section, including hidden sections; disabled or unauthorized groups are preserved. A stale, rejected or partly confirmed save requires reviewing stored values and the retained draft before reloading and saving again. See [the settings guide](./USER-GUIDE.md#dashboard-and-settings).
 
 A conservative starting point is:
 

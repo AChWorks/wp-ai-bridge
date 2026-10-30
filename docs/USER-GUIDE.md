@@ -5,9 +5,26 @@ WP AI Bridge provides a WordPress administrator interface and a private project 
 ## Dashboard and Settings
 
 - Open **WP AI Bridge → Dashboard** to inspect Workspace orientation and the locally configured Bridge connection environment.
-- Open **WP AI Bridge → Settings** to review connection details, dependency/HTTPS checks, Bridge access groups and administrator-adjustable resource budgets.
+- Open **WP AI Bridge → Settings**, the last submenu entry, to review all connection, permission, scope and resource controls. The old Administration URL redirects here.
 - **Only Site Read is enabled by default.** Turn on write, publishing, source-editing, external-package or destructive grants only when the connected WordPress principal and trusted client need them. Every action still requires its own native WordPress/provider permission.
 - A configured HTTPS endpoint is **not** proof that an external client can reach it or complete OAuth. Confirm the real client connection; use [Troubleshooting](./TROUBLESHOOTING.md) if discovery or authorization fails.
+
+Use the section links to move around the screen. The active section is identified, keyboard users can follow the links, and all sections remain available when JavaScript is disabled.
+
+| Section | Controls |
+| --- | --- |
+| **Connection** | MCP endpoint, dependency and HTTPS readiness. |
+| **Content & site** | Content/media and site-configuration grants. |
+| **Accounts & sensitive settings** | Users, credentials, destructive actions and sensitive site/network settings grants. |
+| **Code & integrations** | Code/extensions, registered operations and scheduled actions. |
+| **Database** | Inspection, exact reads, writes, deletion, schema and native-account SQL grants and server policy. |
+| **Files & backups** | File/log/backup grants, approved directory scopes, restore schemas and backup tables. |
+| **Capacity & limits** | Separate request, Workspace, transfer, package and operation-processing budgets. |
+| **Workspace data** | Independent export and destructive clear actions. |
+
+**Save changes** submits your editable settings across all sections, including fields in sections you are not currently viewing. Navigation does not save anything. Adding or marking a directory scope for removal only changes the draft until you save; removing a scope does not delete its files. Disabled or unauthorized groups keep their stored values. Enabling a grant still requires its displayed WordPress authority, scope, hosting policy and provider prerequisites.
+
+The form validates before writing and reports verified results by native settings group. Native option writes are separate operations: a later rejection cannot roll back an earlier verified write. On a validation error, correct the highlighted fields. If the screen requires review after a stale, rejected or partly confirmed save, keep the retained draft visible, use **Open saved settings** to inspect stored values in another tab, then review before choosing **Reload and discard this draft** and re-entering the remaining intended edits. The draft belongs to this page request; it is not a durable backup and reloading or leaving the screen can discard it.
 
 For the full list of access groups and risks, see the [user README](../README.md#permissions-you-control); for exact tool schemas and permissions, see the [Ability reference](./ABILITIES.md).
 
@@ -22,7 +39,7 @@ Use **WP AI Bridge → Documents** and **WP AI Bridge → Tasks** to inspect pri
 
 ### Capacity controls
 
-Settings provide **separate per-site Workspace document and task count limits**, initially **200 documents and 200 tasks**. Administrators may choose validated finite capacities of **10–20,000 documents** and **10–50,000 tasks**. Record sizes, network-message size and available hosting resources are independent constraints. These ranges describe **current release implementation guardrails**, not the long-term product ceiling; expanding them safely requires corresponding bounded-query and hosting-capacity evidence.
+**Settings → Capacity & limits** provides **separate per-site Workspace document and task count limits**, initially **200 documents and 200 tasks**. Administrators may choose validated finite capacities of **10–20,000 documents** and **10–50,000 tasks**. Record sizes, network-message size and available hosting resources are independent constraints. These ranges describe **current release implementation guardrails**, not the long-term product ceiling; expanding them safely requires corresponding bounded-query and hosting-capacity evidence.
 
 Lowering a count limit does **not** delete or conceal existing records; it limits further creation until usage is below the selected budget. Raising quotas increases real database work and does not guarantee throughput on a resource-constrained host. Use normal WordPress database backups for disaster recovery.
 
@@ -49,6 +66,8 @@ An authorized administrator with **Site Read** can use `diagnostics-read` for sa
 WordPress **Tools → Site Health** remains the native full diagnostic interface. The Bridge's Site Health tools require the relevant default-off **Site Configuration** permission. `core-update-status` can inspect cached available **WordPress Core update status**, but cannot install or schedule a WordPress Core upgrade. Supported WP-Cron inventory and provider-authorized management depend on registered provider capabilities and the proper grants; they are not a generic callback executor.
 
 ## Export, backups and destructive clearing
+
+Open **Settings → Workspace data** for export and clear. Both are explicit operations independent of **Save changes**, and neither saves pending settings edits. When edits are pending, Clear opens in a new tab so the settings draft remains visible.
 
 Workspace export is an administrator-visible data-export workflow, **not** an automatic Bridge JSON restore or complete WordPress backup. A large export may be refused when it cannot fit within the real bounded response/memory envelope rather than silently returning an incomplete collection.
 

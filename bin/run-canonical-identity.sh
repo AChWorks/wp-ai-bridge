@@ -51,6 +51,10 @@ mcp_adapter_url="${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/rel
 run_dependency_phase inactive
 "${wp[@]}" plugin activate mcp-adapter wp-ai-bridge --allow-root
 run_dependency_phase active
+# Native unified-save hooks and exact restoration on the installed candidate.
+"${compose[@]}" cp "$root/tests/integration/issue206-settings-save-smoke.php" wordpress:/var/www/html/wpai206-settings-save-smoke.php
+"${compose[@]}" run --rm -e WPAI206_EXPECT_DATABASE=wordpress cli eval 'define("WPAI206_DISPOSABLE", true); require ABSPATH . "wpai206-settings-save-smoke.php";' --user=1 --allow-root
+"${compose[@]}" exec -T wordpress rm -f /var/www/html/wpai206-settings-save-smoke.php
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge.zip
 
 actual_wp="$("${wp[@]}" core version --allow-root | tail -n 1)"
