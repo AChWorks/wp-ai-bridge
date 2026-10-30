@@ -442,6 +442,47 @@ final class Backup_Database {
 		}
 	}
 
+	/**
+	 * Read-only invariant after hook-capable private/authority boundaries.
+	 * This observes selected DB and named session variables; it does not prove
+	 * absence of an explicit empty transaction or SQL table locks. Native DDL
+	 * and row-journal admission retain their existing positive clean fences.
+	 *
+	 * @param array $expected Admitted archive/capture representation.
+	 * @return true
+	 */
+	public function assert_session( array $expected ) {
+		$rows   = $this->connection->run(
+			'SELECT DATABASE() AS db,@@SESSION.sql_mode AS sql_mode,@@SESSION.time_zone AS time_zone,@@SESSION.autocommit AS ac,@@SESSION.foreign_key_checks AS fk,@@SESSION.unique_checks AS uq',
+			array(),
+			array(),
+			1
+		)['rows'];
+		$actual = 1 === count( $rows ) ? $rows[0] : array();
+		if ( ! is_string( $actual['db'] ?? null ) || ! hash_equals( $this->connection->database, $actual['db'] ) ||
+			'1' !== ( $actual['ac'] ?? null ) || '1' !== ( $actual['fk'] ?? null ) || '1' !== ( $actual['uq'] ?? null ) ||
+			! is_string( $expected['time_zone'] ?? null ) || ( $actual['time_zone'] ?? null ) !== $expected['time_zone'] ) {
+			throw new \RuntimeException( 'backup_native_session_changed' );
+		}
+		$sets = array();
+		foreach ( array( $expected['sql_mode'] ?? null, $actual['sql_mode'] ?? null ) as $mode ) {
+			if ( ! is_string( $mode ) || strlen( $mode ) > 4096 ||
+				( '' !== $mode && 1 !== preg_match( '/^[A-Z][A-Z0-9_]*(?:,[A-Z][A-Z0-9_]*)*$/D', $mode ) ) ) {
+				throw new \RuntimeException( 'backup_native_session_changed' );
+			}
+			$names = '' === $mode ? array() : explode( ',', $mode );
+			if ( count( $names ) !== count( array_unique( $names ) ) ) {
+				throw new \RuntimeException( 'backup_native_session_changed' );
+			}
+			sort( $names, SORT_STRING );
+			$sets[] = $names;
+		}
+		if ( $sets[0] !== $sets[1] ) {
+			throw new \RuntimeException( 'backup_native_session_changed' );
+		}
+		return true;
+	}
+
 	/** @param array $session Archive native session. @param callable $callback Verified restore action. @return mixed */
 	public function with_session( array $session, callable $callback ) {
 		$original = $this->identity()['session'];

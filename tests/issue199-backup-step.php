@@ -55,8 +55,14 @@ namespace {
 		public $prefix = 'wp_';
 		public $mode = 'ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
 		public $original = 'ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
+		public $selected = 'step_source';
+		public $ac = '1';
+		public $fk = '1';
+		public $uq = '1';
+		public $guard_reads = 0;
 		public $zone = 'SYSTEM';
 		public $admissions = 0;
+		public $identity_reads = 0;
 		public $mode_sets = 0;
 		public $zone_sets = 0;
 		public $quarantined = false;
@@ -78,7 +84,12 @@ namespace {
 		}
 		public function quarantine_backup_session() { $this->quarantined = true; $this->events[] = 'quarantine'; }
 		public function run( $sql, $parameters = array(), $sources = array(), $rows = 4096 ) {
+			if ( 0 === strpos( $sql, 'SELECT DATABASE() AS db,@@SESSION.sql_mode' ) ) {
+				++$this->guard_reads;
+				return array( 'rows' => array( array( 'db' => $this->selected, 'sql_mode' => $this->mode, 'time_zone' => $this->zone, 'ac' => $this->ac, 'fk' => $this->fk, 'uq' => $this->uq ) ) );
+			}
 			if ( 0 === strpos( $sql, 'SELECT @@SESSION.sql_mode AS sql_mode' ) ) {
+				++$this->identity_reads;
 				return array( 'rows' => array( array( 'sql_mode' => $this->mode, 'time_zone' => $this->zone, 'version' => 'step-native-fixture' ) ) );
 			}
 			if ( 'SET SESSION time_zone=?' !== $sql ) { throw new \LogicException( 'Unexpected native SQL.' ); }
@@ -94,6 +105,10 @@ namespace {
 		public $native;
 		public $session_database;
 		public $ddl_calls = 0;
+		public $cell_calls = 0;
+		public $insert_calls = 0;
+		public function cell( $schema, $group, $column, $offset, $length ) { ++$this->cell_calls; $GLOBALS['step_clock'] += 1; $value = '+00:00' === $this->native->zone ? '2026-10-30 12:00:00' : '2026-10-30 13:00:00'; return array( 'bytes' => strlen( $value ), 'value' => $value, 'digest' => hash( 'sha256', $value ) ); }
+		public function insert( $database, $schema, $cells, $source, $group, $operation ) { ++$this->insert_calls; }
 		public $schema_calls = 0;
 		public $group_calls = 0;
 		public $inventory_calls = 0;
@@ -110,6 +125,7 @@ namespace {
 			$r->getProperty( 'budget' )->setValue( $this->session_database, 1048576 );
 		}
 		public function with_session( $session, $callback ) { return $this->session_database->with_session( $session, $callback ); }
+		public function assert_session( $session ) { return $this->session_database->assert_session( $session ); }
 		public function identity() { return $this->session_database->identity(); }
 		public function inventory( $extras ) { return array(); }
 		public function activity_digest() { return null; }
@@ -123,6 +139,7 @@ namespace {
 		public $scan = false;
 		public $entry = null;
 		public $wrapper_counts = false;
+		public $on_iterate;
 		public $publications = 0;
 		public $published_bytes;
 		public function status( $root, $purpose, $operation ) { return null; }
@@ -146,7 +163,7 @@ namespace {
 		}
 		public function iterate_entries( $root, $parts, $purpose, $identity, $callback, $budget ) {
 			if ( ! $this->native->active ) { throw new \RuntimeException( 'scan_outside_admission' ); }
-			if ( $this->wrapper_counts ) { $callback( array() ); return array( 'cursor' => 1, 'complete' => true ); }
+			if ( $this->wrapper_counts ) { $callback( array() ); if ( $this->on_iterate ) { ( $this->on_iterate )(); } return array( 'cursor' => 1, 'complete' => true ); }
 			$GLOBALS['step_clock'] += 1;
 			$cursor = $budget['cursor'];
 			if ( $cursor < 2 ) { return array( 'cursor' => $cursor + 1, 'complete' => false ); }
@@ -173,6 +190,8 @@ namespace {
 		public $recoveries = 0;
 		public $changes = array();
 		public $read_advance = 0;
+		public $on_checkpoint;
+		public $on_source;
 		public $is_archive = false;
 		public function __construct( $native ) { $this->native = $native; $this->chain = Backup_Archive::initial_chain(); }
 		private function denied() { return $this->denied ? new WP_Error( 'transfer_denied' ) : null; }
@@ -203,6 +222,7 @@ namespace {
 			$this->changes[] = $this->state;
 			++$this->revision;
 			$this->native->events[] = 'checkpoint:' . $state['status'];
+			if ( $this->on_checkpoint ) { ( $this->on_checkpoint )(); }
 			return array( 'state' => $this->state, 'revision' => $this->revision );
 		}
 		public function seal_administration_stream( $id, $offset, $chain ) {
@@ -218,6 +238,7 @@ namespace {
 		}
 		public function with_administration_source( $id, $callback ) {
 			$GLOBALS['step_clock'] += $this->read_advance;
+			if ( $this->on_source ) { ( $this->on_source )(); }
 			$stream = fopen( 'php://memory', 'w+b' );
 			try { fwrite( $stream, $this->corrupt_source ? str_repeat( 'x', strlen( $this->raw ) ) : $this->raw ); rewind( $stream ); return $callback( array( 'stream' => $stream, 'bytes' => strlen( $this->raw ), 'sha256' => $this->chain, 'integrity' => Backup_Archive::CHAIN_FORMAT ) ); }
 			finally { fclose( $stream ); }
@@ -231,10 +252,11 @@ namespace {
 		public $appends = 0;
 		public $cancels = 0;
 		public $fail_cancel = false;
+		public $on_source;
 		public function begin_administration_stream( $maximum, $policy ) { $id = 'stage-' . count( $this->raw ); $this->raw[ $id ] = ''; $this->chain[ $id ] = Backup_Archive::initial_chain(); return array( 'id' => $id ); }
 		public function append_verified_frame( $id, $offset, $bytes, $sha ) { if ( strlen( $this->raw[ $id ] ) !== $offset || hash( 'sha256', $bytes ) !== $sha ) { throw new \RuntimeException( 'stage_offset_changed' ); } ++$this->appends; $this->raw[ $id ] .= $bytes; $this->chain[ $id ] = Backup_Archive::fold( $this->chain[ $id ], $bytes ); return true; }
 		public function seal_administration_stream( $id, $offset, $chain ) { if ( strlen( $this->raw[ $id ] ) !== $offset || $chain !== $this->chain[ $id ] ) { throw new \RuntimeException( 'stage_changed' ); } return true; }
-		public function with_administration_source( $id, $callback ) { $stream = fopen( 'php://memory', 'w+b' ); try { fwrite( $stream, $this->raw[ $id ] ); rewind( $stream ); return $callback( array( 'stream' => $stream, 'bytes' => strlen( $this->raw[ $id ] ), 'sha256' => $this->chain[ $id ], 'integrity' => Backup_Archive::CHAIN_FORMAT ) ); } finally { fclose( $stream ); } }
+		public function with_administration_source( $id, $callback ) { if ( $this->on_source ) { ( $this->on_source )(); } $stream = fopen( 'php://memory', 'w+b' ); try { fwrite( $stream, $this->raw[ $id ] ); rewind( $stream ); return $callback( array( 'stream' => $stream, 'bytes' => strlen( $this->raw[ $id ] ), 'sha256' => $this->chain[ $id ], 'integrity' => Backup_Archive::CHAIN_FORMAT ) ); } finally { fclose( $stream ); } }
 		public function cancel( $id ) { if ( $this->fail_cancel ) { return new WP_Error( 'transfer_cleanup_uncertain' ); } if ( ( $this->job->state['release_stage'] ?? null ) !== $id || isset( $this->job->state['file_stage'] ) ) { throw new \RuntimeException( 'stage_released_before_cursor' ); } ++$this->cancels; unset( $this->raw[ $id ] ); return true; }
 	}
 
@@ -283,7 +305,7 @@ namespace {
 	try {
 		list( $exporter, $native, $fs, $store ) = $make();
 		$first = $exporter->step( 'fixture' );
-		$assert( 1 === $native->admissions && 2 === $native->mode_sets && 2 === $native->zone_sets && $fs->reads > 1,
+		$assert( 1 === $native->admissions && 2 === $native->mode_sets && 2 === $native->zone_sets && $fs->reads > 1 && 0 === $native->guard_reads,
 			'Many file frames must use one actual Backup_Database admission and one setter/restoration pair per step.' );
 		$assert( ! $first['complete'] && $first['bytes'] >= 25000 && $first['bytes'] < 25000 + 16384 &&
 			$store->checkpoints === $store->appends && $store->revision === $store->checkpoints,
@@ -493,7 +515,7 @@ namespace {
 			if ( '' === $fault ) {
 				$ready = $restore->step( 'fixture' );
 				$assert( 'ready' === $ready['state'] && ! $ready['complete'] && isset( $job->state['header'] ) && 0 === $native->admissions &&
-					0 === $native->mode_sets && 0 === $fs->publications, 'Complete valid package preflight must reach ready without native session admission or effects.' );
+					0 === $native->mode_sets && 0 === $native->guard_reads && 0 === $fs->publications, 'Complete valid package preflight must reach ready without native session admission or effects.' );
 				$restore->step( 'fixture' );
 				$assert( 0 === $native->admissions, 'Ready requires separate begin approval and cannot silently admit restoration.' );
 			} else {
@@ -502,6 +524,90 @@ namespace {
 					'Malformed untrusted cell settings/data must reject in preflight before any native admission/effects.' );
 			}
 		}
+
+		$timestamp_ddl = 'CREATE TABLE `wp_session_cells` (`first` timestamp NULL DEFAULT NULL,`second` timestamp NULL DEFAULT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4';
+		$timestamp_packed = array( 'table' => base64_encode( 'wp_session_cells' ), 'ddl' => base64_encode( $timestamp_ddl ), 'hash' => hash( 'sha256', $timestamp_ddl ),
+			'columns' => array( array( 'name' => base64_encode( 'first' ), 'type' => 'timestamp', 'charset' => null ),
+				array( 'name' => base64_encode( 'second' ), 'type' => 'timestamp', 'charset' => null ) ) );
+		foreach ( array( 'zone', 'mode', 'selected', 'ac', 'fk', 'uq' ) as $changed ) {
+			Private_Transfer_Session::$stores = array();
+			list( $exporter, $native, $fs, $store, $r ) = $make( 'cell', 1000000, 2 );
+			$db = $r->getProperty( 'database' )->getValue( $exporter );
+			$store->state['schema'] = $timestamp_packed; $store->state['column'] = 0; $store->state['cell_offset'] = 0;
+			$store->state['group'] = array( 'digest' => str_repeat( 'e', 64 ), 'multiplicity' => '1' );
+			$store->on_checkpoint = static function () use ( $native, $changed ) {
+				if ( 'zone' === $changed ) { $native->zone = '+01:00'; }
+				elseif ( 'mode' === $changed ) { $native->mode .= ',STRICT_TRANS_TABLES'; }
+				else { $native->$changed = 'selected' === $changed ? 'other_schema' : '0'; }
+			};
+			$observed = $error( static function () use ( $exporter ) { $exporter->step( 'fixture' ); } );
+			$assert( 'backup_native_session_changed' === $observed && 1 === $db->cell_calls && 1 === $store->checkpoints &&
+				0 === $store->seals && $native->mode === $native->original && 'SYSTEM' === $native->zone &&
+				2 === $native->mode_sets && 2 === $native->zone_sets && 2 === $native->guard_reads,
+				'A checkpoint SESSION mutation must stop before the next timestamp cell read without reapplying backup settings.' );
+		}
+		list( $restore, $native, $fs, $job, $archive, $stage, $db ) = $restore_make( array( array( array( 'type' => 'table', 'table' => $timestamp_packed['table'] ) ) ), 'apply', 1 );
+		$archive->read_advance = 1; $job->state['schemas'] = array( $timestamp_packed['table'] => $timestamp_packed );
+		$archive->on_source = static function () use ( $native ) { $native->zone = '+01:00'; };
+		$assert( 'backup_native_session_changed' === $error( static function () use ( $restore ) { $restore->step( 'fixture' ); } ) &&
+			0 === $db->ddl_calls && 0 === $job->checkpoints && 2 === $native->mode_sets && 'SYSTEM' === $native->zone,
+			'A fresh archive authority/source callback must not change settings before dependent apply DDL.' );
+
+		list( $restore, $native, $fs, $job, $archive, $stage, $db ) = $restore_make( array( array( array( 'type' => 'row_end' ) ) ), 'apply', 1 );
+		$archive->read_advance = 1;
+		$id = $stage->begin_administration_stream( 1, array() )['id'];
+		$job->state += array( 'current_table' => $timestamp_packed['table'], 'row_stage' => $id, 'row_bytes' => 0,
+			'row_chain' => Backup_Archive::initial_chain(), 'row_occurrence' => 0, 'row_count' => 1, 'row_cells' => array(), 'row_group' => str_repeat( 'e', 64 ) );
+		$job->state['schemas'] = array( $timestamp_packed['table'] => $timestamp_packed );
+		$stage->on_source = static function () use ( $native ) { $native->zone = '+01:00'; };
+		$assert( 'backup_native_session_changed' === $error( static function () use ( $restore ) { $restore->step( 'fixture' ); } ) &&
+			0 === $db->insert_calls && 0 === $job->checkpoints && 0 === $stage->cancels && 'SYSTEM' === $native->zone,
+			'A nested row-stage source callback must be checked again immediately before timestamp insertion.' );
+
+		list( $restore, $native, $fs, $job, $archive, $stage, $db ) = $restore_make( array( array( array( 'type' => 'footer' ) ) ), 'verify_files' );
+		$job->state['status'] = 'verifying_restore'; $fs->wrapper_counts = true;
+		$fs->on_iterate = static function () use ( $native ) { $native->mode .= ',STRICT_TRANS_TABLES'; };
+		$assert( 'backup_native_session_changed' === $error( static function () use ( $restore ) { $restore->step( 'fixture' ); } ) &&
+			0 === $db->inventory_calls && 0 === $job->checkpoints && 'verifying_restore' === $job->state['status'] && 'SYSTEM' === $native->zone,
+			'Terminal filesystem authority callbacks must be followed by a session check before native inventory/completion.' );
+
+		list( $restore, $native, $fs, $job, $archive, $stage ) = $restore_make( $file_records, 'apply', 4 );
+		$archive->read_advance = 1;
+		$archive->on_source = static function () use ( $native ) { $native->mode = implode( ',', array_reverse( explode( ',', $native->mode ) ) ); };
+		$restored_order = $restore->step( 'fixture' );
+		$assert( ! $restored_order['complete'] && 1 === $fs->publications && $file_bytes === $fs->published_bytes &&
+			2 === $native->mode_sets && 2 === $native->zone_sets && 5 === $native->guard_reads,
+			'Equivalent native mode ordering must pass the combined readonly samples without extra SETs.' );
+		list( $restore, $native, $fs, $job, $archive, $stage ) = $restore_make( $file_records, 'apply', 4 );
+		$archive->read_advance = 1;
+		$stage->on_source = static function () use ( $native ) { $native->zone = '+01:00'; };
+		$assert( 'backup_native_session_changed' === $error( static function () use ( $restore ) { $restore->step( 'fixture' ); } ) &&
+			0 === $fs->publications && 0 === $stage->cancels && 3 === $job->checkpoints && 'SYSTEM' === $native->zone,
+			'A nested file-stage source callback must be checked again before journalled publication.' );
+
+		foreach ( array( 'constraints', 'verify_database' ) as $phase ) {
+			list( $restore, $native, $fs, $job, $archive, $stage, $db ) = $restore_make( array(), $phase, 5 );
+			$job->state['header']['plan']['tables'] = array( $table ); $job->state['schemas'] = array( $table => $packed );
+			$job->state += array( 'constraint_table' => 0, 'constraint_index' => 0, 'verify_table' => 0, 'verify_after' => '',
+				'verify_db' => hash( 'sha256', 'wpai-backup-database-v1' ), 'verify_schema_started' => false );
+			$db->schema = Backup_Exporter::unpack_schema( $packed );
+			$job->state['footer']['database_digest'] = hash( 'sha256', hash( 'sha256', 'wpai-backup-database-v1' ) . ':table:' . $table . ':' . $hash );
+			$job->on_checkpoint = static function () use ( $native ) { $native->zone = '+01:00'; };
+			$assert( 'backup_native_session_changed' === $error( static function () use ( $restore ) { $restore->step( 'fixture' ); } ) &&
+				1 === $job->checkpoints && 2 === $native->guard_reads && 2 === $native->mode_sets && 0 === $db->inventory_calls &&
+				( 'constraints' === $phase ? 1 === $db->ddl_calls && 0 === $db->schema_calls : 1 === $db->schema_calls && 1 === $db->group_calls ),
+				'Constraint/verification continuation must stop after a checkpoint SESSION mutation before further dependent native work.' );
+		}
+		Private_Transfer_Session::$stores = array();
+		list( $exporter, $native, $fs, $store, $r ) = $make( 'cell', 1000000, 2 );
+		$db = $r->getProperty( 'database' )->getValue( $exporter );
+		$store->state['schema'] = $timestamp_packed; $store->state['column'] = 0; $store->state['cell_offset'] = 0;
+		$store->state['group'] = array( 'digest' => str_repeat( 'e', 64 ), 'multiplicity' => '1' );
+		$store->on_checkpoint = static function () use ( $native ) { $native->zone = '+01:00'; };
+		$native->fail_cleanup = true;
+		$assert( 'cleanup_unproved' === $error( static function () use ( $exporter ) { $exporter->step( 'fixture' ); } ) &&
+			1 === $db->cell_calls && 1 === $store->checkpoints && $native->quarantined && 0 === $store->seals,
+			'An invariant mismatch followed by unproved cleanup must retain quarantine and never replay or report completion.' );
 	} finally { rmdir( $fixture ); }
 	echo "issue199-backup-step: {$checks} checks passed\n";
 }

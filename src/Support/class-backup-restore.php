@@ -170,6 +170,7 @@ final class Backup_Restore {
 								if ( 'preflight' === $state['phase'] ) {
 									$this->validate( $state, $frame['record'], $frame['payload'], $source['stream'] );
 								} elseif ( 'apply' === $state['phase'] ) {
+									$this->database->assert_session( $state['header']['plan']['database']['session'] );
 									$next = $this->apply( $state, $frame['record'], $frame['payload'], $id );
 								} elseif ( 'verify_files' === $state['phase'] ) {
 									$next = $this->verify_file_record( $state, $frame['record'], $frame['payload'] );
@@ -580,6 +581,7 @@ final class Backup_Restore {
 					$row_store->with_administration_source(
 						$s['row_stage'],
 						function ( $source ) use ( &$s, $schema ) {
+							$this->database->assert_session( $s['header']['plan']['database']['session'] );
 							$this->database->insert(
 								$s['target_schema'],
 								$schema,
@@ -655,6 +657,7 @@ final class Backup_Restore {
 				$store->with_administration_source(
 					$s['file_stage'],
 					function ( $source ) use ( &$s ) {
+						$this->database->assert_session( $s['header']['plan']['database']['session'] );
 						$source['chunk_bytes'] = $s['file_record']['chunk_bytes'];
 						$source['mode']        = $s['file_record']['mode'];
 						return $this->filesystem->apply_verified_source(
@@ -692,6 +695,7 @@ final class Backup_Restore {
 	}
 
 	private function constraints( array &$s ) {
+		$this->database->assert_session( $s['header']['plan']['database']['session'] );
 		$tables = $s['header']['plan']['tables'];
 		if ( $s['constraint_table'] >= count( $tables ) ) {
 			$s['phase']                 = 'verify_database';
@@ -717,6 +721,7 @@ final class Backup_Restore {
 	}
 
 	private function verify_database( array &$s ) {
+		$this->database->assert_session( $s['header']['plan']['database']['session'] );
 		$tables = $s['header']['plan']['tables'];
 		if ( $s['verify_table'] >= count( $tables ) ) {
 			if ( ! hash_equals( $s['footer']['database_digest'], $s['verify_db'] ) ) {
@@ -842,6 +847,8 @@ final class Backup_Restore {
 	private function verify_wrapper( array $s ) {
 		$this->directory_count( $s['target_root'], array(), 1 );
 		$this->directory_count( $s['target_root'], array( base64_encode( 'roots' ) ), count( $s['header']['plan']['roots'] ) );
+		// Directory counting re-enters native authority hooks; check afterwards.
+		$this->database->assert_session( $s['header']['plan']['database']['session'] );
 		// No undeclared target database objects may appear during restoration.
 		$this->database->assert_inventory( $s['target_schema'], array_map( array( Backup_Archive::class, 'decode_name' ), $s['header']['plan']['tables'] ) );
 	}

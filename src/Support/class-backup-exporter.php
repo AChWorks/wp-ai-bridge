@@ -155,6 +155,10 @@ final class Backup_Exporter {
 			function () use ( $id, $store, &$state, &$checkpoint, $deadline, &$footer_pending ) {
 				$used = 0;
 				do {
+					if ( in_array( $state['phase'], array( 'table', 'group', 'cell' ), true ) ||
+						( 'root' === $state['phase'] && 'verify' === $state['mode'] && $state['root_index'] >= count( $state['plan']['roots'] ) ) ) {
+						$this->database->assert_session( $state['plan']['database']['session'] );
+					}
 					$record = $this->next( $state );
 					if ( null !== $record ) {
 						if ( 'verify' === $state['mode'] && 'footer' !== $record['record']['type'] ) {
