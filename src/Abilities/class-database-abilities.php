@@ -156,7 +156,14 @@ final class Database_Abilities {
 
 	/** @return bool */
 	public function can_read() {
-		return $this->can_inspect() && $this->permissions->allowed( Settings::GROUP_DATABASE_READ, 'manage_options' );
+		return get_current_user_id() > 0 &&
+			( ! is_multisite() || ( is_super_admin() && current_user_can( 'manage_network_options' ) ) ) &&
+			$this->permissions->allowed_all(
+				array(
+					array( Settings::GROUP_DATABASE_INSPECTION, 'manage_options' ),
+					array( Settings::GROUP_DATABASE_READ, 'manage_options' ),
+				)
+			);
 	}
 
 	/** @param mixed $input Request. @return array|WP_Error */

@@ -98,6 +98,21 @@ try {
 	$settings = new Settings();
 	$settings->register();
 	$provider = new Database_Abilities( new Permissions( $settings ), new Mutation_Log() );
+	$grant_reads = 0;
+	$alternating_grants = static function () use ( &$grant_reads ) {
+		++$grant_reads;
+		return array(
+			Settings::GROUP_DATABASE_INSPECTION => 1 === $grant_reads % 2 ? 1 : 0,
+			Settings::GROUP_DATABASE_READ => 1 === $grant_reads % 2 ? 0 : 1,
+		);
+	};
+	add_filter( 'pre_option_' . Settings::DATABASE_OPTION_NAME, $alternating_grants, 10, 0 );
+	try {
+		wpai199_assert( ! $provider->can_read(), 'Database read combined grants that were never enabled in one protected snapshot.' );
+	} finally {
+		remove_filter( 'pre_option_' . Settings::DATABASE_OPTION_NAME, $alternating_grants, 10 );
+	}
+
 	$grants = $settings->database_defaults();
 	update_option( Settings::OPTION_NAME, $settings->defaults(), false );
 	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
