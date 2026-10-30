@@ -39,6 +39,9 @@ final class Backup_Exporter {
 		if ( ! in_array( 'NO_AUTO_VALUE_ON_ZERO', $modes, true ) ) {
 			$modes[] = 'NO_AUTO_VALUE_ON_ZERO';
 		}
+		// Native SET readback may reorder this exact mode set. Plans made
+		// outside and inside the admitted backup session must hash identically.
+		sort( $modes, SORT_STRING );
 		$identity['session']['sql_mode'] = implode( ',', $modes );
 		$tables                          = $this->database->inventory( $config['backup_tables'] ?? array() );
 		$schemas                         = array();
