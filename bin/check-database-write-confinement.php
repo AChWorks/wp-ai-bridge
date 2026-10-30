@@ -598,6 +598,7 @@ $boundary_pins = array(
 		'src/Support/class-backup-database.php'           => array(
 			'Backup_Database::identity|run'           => 1,
 			'Backup_Database::assert_session|run'     => 1,
+			'Backup_Database::assert_session|quarantine_backup_session' => 1,
 			'Backup_Database::activity_digest|run'    => 1,
 			'Backup_Database::inventory|run'          => 2,
 			'Backup_Database::schema|run'             => 8,

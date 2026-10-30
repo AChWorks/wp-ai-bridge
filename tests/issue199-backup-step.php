@@ -66,6 +66,11 @@ namespace {
 		public $mode_sets = 0;
 		public $zone_sets = 0;
 		public $quarantined = false;
+		public $ready = true;
+		public $dbh = true;
+		public $quarantine_calls = 0;
+		public $native_after_discard = 0;
+		public $fail_quarantine = false;
 		public $reject = false;
 		public $fail_cleanup = false;
 		public $active = false;
@@ -78,12 +83,13 @@ namespace {
 		public function set_backup_sql_mode( $mode ) {
 			++$this->mode_sets;
 			$this->events[] = $mode === $this->original ? 'restore_mode' : 'enter_mode';
-			if ( $this->quarantined ) { throw new \RuntimeException( 'native_quarantined' ); }
+			if ( $this->quarantined ) { ++$this->native_after_discard; throw new \RuntimeException( 'native_quarantined' ); }
 			if ( $this->fail_cleanup && $mode === $this->original ) { throw new \RuntimeException( 'cleanup_unproved' ); }
 			$this->mode = $mode;
 		}
-		public function quarantine_backup_session() { $this->quarantined = true; $this->events[] = 'quarantine'; }
+		public function quarantine_backup_session() { ++$this->quarantine_calls; $this->quarantined = true; $this->ready = false; $this->dbh = null; $this->active = false; $this->events[] = 'quarantine'; if ( $this->fail_quarantine ) { throw new \RuntimeException( 'discard_reporting_failed' ); } }
 		public function run( $sql, $parameters = array(), $sources = array(), $rows = 4096 ) {
+			if ( $this->quarantined ) { ++$this->native_after_discard; throw new \RuntimeException( 'native_quarantined' ); }
 			if ( 0 === strpos( $sql, 'SELECT DATABASE() AS db,@@SESSION.sql_mode' ) ) {
 				++$this->guard_reads;
 				return array( 'rows' => array( array( 'db' => $this->selected, 'sql_mode' => $this->mode, 'time_zone' => $this->zone, 'ac' => $this->ac, 'fk' => $this->fk, 'uq' => $this->uq ) ) );
@@ -113,6 +119,8 @@ namespace {
 		public $group_calls = 0;
 		public $inventory_calls = 0;
 		public $schema;
+		public $activity;
+		public $activity_reads = 0;
 		public function ddl( $sql, $operation, $origin ) { if ( ! $this->native->active ) { throw new \RuntimeException( 'ddl_not_admitted' ); } ++$this->ddl_calls; $GLOBALS['step_clock'] += 2; return array( 'outcome' => 'acknowledged' ); }
 		public function schema( $table, $database ) { ++$this->schema_calls; return $this->schema; }
 		public function next_group( $schema, $after, $database ) { if ( ! $this->native->active ) { throw new \RuntimeException( 'query_not_admitted' ); } ++$this->group_calls; $GLOBALS['step_clock'] += 3; return null; }
@@ -128,7 +136,7 @@ namespace {
 		public function assert_session( $session ) { return $this->session_database->assert_session( $session ); }
 		public function identity() { return $this->session_database->identity(); }
 		public function inventory( $extras ) { return array(); }
-		public function activity_digest() { return null; }
+		public function activity_digest() { ++$this->activity_reads; return $this->activity; }
 	}
 	final class WPAI_Backup_Step_Filesystem {
 		public $native;
@@ -303,9 +311,10 @@ namespace {
 		return array( $exporter, $native, $fs, $store, $r );
 	};
 	try {
-		list( $exporter, $native, $fs, $store ) = $make();
+		list( $exporter, $native, $fs, $store, $r ) = $make();
+		$db = $r->getProperty( 'database' )->getValue( $exporter );
 		$first = $exporter->step( 'fixture' );
-		$assert( 1 === $native->admissions && 2 === $native->mode_sets && 2 === $native->zone_sets && $fs->reads > 1 && 0 === $native->guard_reads,
+		$assert( 1 === $native->admissions && 2 === $native->mode_sets && 2 === $native->zone_sets && $fs->reads > 1 && 0 === $native->guard_reads && 2 === $db->activity_reads,
 			'Many file frames must use one actual Backup_Database admission and one setter/restoration pair per step.' );
 		$assert( ! $first['complete'] && $first['bytes'] >= 25000 && $first['bytes'] < 25000 + 16384 &&
 			$store->checkpoints === $store->appends && $store->revision === $store->checkpoints,
@@ -313,7 +322,7 @@ namespace {
 		$previous_bytes = $first['bytes'];
 		$second = $exporter->step( 'fixture' );
 		$assert( 2 === $native->admissions && 4 === $native->mode_sets && 4 === $native->zone_sets &&
-			$second['bytes'] > $previous_bytes && $store->state['file_offset'] === $fs->reads * 4096,
+			$second['bytes'] > $previous_bytes && $store->state['file_offset'] === $fs->reads * 4096 && 3 === $db->activity_reads,
 			'A continuation must admit and restore its own session and continue exact byte offsets.' );
 		$stream = fopen( 'php://memory', 'w+b' );
 		fwrite( $stream, $store->raw ); rewind( $stream );
@@ -350,7 +359,8 @@ namespace {
 		list( $exporter, $native, $fs, $store ) = $make();
 		$native->reject = true;
 		$assert( 'ambient_native_session' === $error( static function () use ( $exporter ) { $exporter->step( 'fixture' ); } ) &&
-			0 === $native->mode_sets && 0 === $native->zone_sets && 0 === $fs->reads && 0 === $store->appends && 0 === $store->checkpoints,
+			0 === $native->mode_sets && 0 === $native->zone_sets && 0 === $fs->reads && 0 === $store->appends && 0 === $store->checkpoints &&
+			! $native->quarantined && $native->ready && true === $native->dbh && 0 === $native->quarantine_calls,
 			'Rejected caller-owned native sessions must receive no backup setter, callback, append or cleanup.' );
 
 		list( $exporter, $native, $fs, $store ) = $make( 'root' );
@@ -497,7 +507,8 @@ namespace {
 		list( $restore, $native, $fs, $job ) = $restore_make( $file_records );
 		$native->reject = true;
 		$assert( 'ambient_native_session' === $error( static function () use ( $restore ) { $restore->step( 'fixture' ); } ) &&
-			0 === $native->mode_sets && 0 === $native->zone_sets && 0 === $job->checkpoints && 0 === $fs->publications,
+			0 === $native->mode_sets && 0 === $native->zone_sets && 0 === $job->checkpoints && 0 === $fs->publications &&
+			! $native->quarantined && $native->ready && true === $native->dbh && 0 === $native->quarantine_calls,
 			'Restore must retain caller-owned native preconditions before any admitted effect or staged processing.' );
 		list( $restore, $native, $fs, $job ) = $restore_make( $file_records );
 		unset( $job->state['header'] );
@@ -541,10 +552,13 @@ namespace {
 				else { $native->$changed = 'selected' === $changed ? 'other_schema' : '0'; }
 			};
 			$observed = $error( static function () use ( $exporter ) { $exporter->step( 'fixture' ); } );
+			$discard = ! in_array( $changed, array( 'mode', 'zone' ), true );
 			$assert( 'backup_native_session_changed' === $observed && 1 === $db->cell_calls && 1 === $store->checkpoints &&
-				0 === $store->seals && $native->mode === $native->original && 'SYSTEM' === $native->zone &&
-				2 === $native->mode_sets && 2 === $native->zone_sets && 2 === $native->guard_reads,
-				'A checkpoint SESSION mutation must stop before the next timestamp cell read without reapplying backup settings.' );
+				0 === $store->seals && 2 === $native->guard_reads && 0 === $native->native_after_discard &&
+				( $discard ? $native->quarantined && ! $native->ready && null === $native->dbh && 1 === $native->quarantine_calls &&
+					1 === $native->mode_sets && 1 === $native->zone_sets : ! $native->quarantined && $native->ready && true === $native->dbh &&
+					$native->mode === $native->original && 'SYSTEM' === $native->zone && 2 === $native->mode_sets && 2 === $native->zone_sets ),
+				'A checkpoint mutation must stop before dependent reads: DB/flags discard without cleanup SQL; mode/TZ restore the proven original session.' );
 		}
 		list( $restore, $native, $fs, $job, $archive, $stage, $db ) = $restore_make( array( array( array( 'type' => 'table', 'table' => $timestamp_packed['table'] ) ) ), 'apply', 1 );
 		$archive->read_advance = 1; $job->state['schemas'] = array( $timestamp_packed['table'] => $timestamp_packed );
@@ -608,6 +622,30 @@ namespace {
 		$assert( 'cleanup_unproved' === $error( static function () use ( $exporter ) { $exporter->step( 'fixture' ); } ) &&
 			1 === $db->cell_calls && 1 === $store->checkpoints && $native->quarantined && 0 === $store->seals,
 			'An invariant mismatch followed by unproved cleanup must retain quarantine and never replay or report completion.' );
+
+		Private_Transfer_Session::$stores = array();
+		list( $exporter, $native, $fs, $store, $r ) = $make( 'cell', 1000000, 2 );
+		$db = $r->getProperty( 'database' )->getValue( $exporter );
+		$store->state['schema'] = $timestamp_packed; $store->state['column'] = 0; $store->state['cell_offset'] = 0;
+		$store->state['group'] = array( 'digest' => str_repeat( 'e', 64 ), 'multiplicity' => '1' );
+		$store->on_checkpoint = static function () use ( $native ) { $native->fk = '0'; };
+		$native->fail_quarantine = true;
+		$assert( 'backup_native_session_changed' === $error( static function () use ( $exporter ) { $exporter->step( 'fixture' ); } ) &&
+			1 === $db->cell_calls && 1 === $native->quarantine_calls && ! $native->ready && null === $native->dbh &&
+			0 === $native->native_after_discard && 1 === $native->mode_sets && 1 === $native->zone_sets && 0 === $store->seals,
+			'Discard/reporting failure must retain the primary drift error without a second cleanup attempt or complete receipt.' );
+
+		foreach ( array( 'file', 'root' ) as $phase ) {
+			Private_Transfer_Session::$stores = array();
+			list( $exporter, $native, $fs, $store, $r ) = $make( $phase );
+			$db = $r->getProperty( 'database' )->getValue( $exporter ); $db->activity = str_repeat( 'a', 64 );
+			if ( 'root' === $phase ) { $store->raw = 'unacknowledged-footer'; }
+			$assert( 'backup_source_stale' === $error( static function () use ( $exporter ) { $exporter->step( 'fixture' ); } ) &&
+				2 === $db->activity_reads && 0 === $store->appends && 0 === $store->checkpoints && 0 === $store->seals &&
+				0 === $fs->reads && 0 === $store->recoveries && 2 === $native->mode_sets && 2 === $native->zone_sets &&
+				! $native->quarantined && 'SYSTEM' === $native->zone,
+				'Known Activity drift must reject before new frames, cursor checkpoints or footer-recovery work and still restore the admitted session.' );
+		}
 	} finally { rmdir( $fixture ); }
 	echo "issue199-backup-step: {$checks} checks passed\n";
 }

@@ -75,6 +75,8 @@ DBBOOT
     }
     echo "Verified limited app account: source plus approved restore; third schema denied.\n";
     ' --user=1 --allow-root
+    # Full installation capture/ingress/restore/oracle makes several complete passes.
+    # Retain the fixture's finite 60..3600 policy; shared-host measurements exceed 900s.
     wpai199c_wp=("${compose[@]}" run --rm --user=33:33
         -e WP_CLI_CACHE_DIR=/wpai-admin13/private/wpcli-cache
         -e WP_CLI_PACKAGES_DIR=/wpai-admin13/private/wpcli-packages
@@ -86,6 +88,7 @@ DBBOOT
         -e "WPAI199C_RESTORE_ROOT=$wpai199c_restore_root"
         -e WPAI_ADMIN13_RESTORE_SCHEMA=wpai_admin13_restore
         -e "WPAI_ADMIN13_RESTORE_ROOT=$wpai199c_restore_root"
+        -e "WPAI_ADMIN13_BACKUP_TEST_SECONDS=${WPAI_ADMIN13_BACKUP_TEST_SECONDS:-3600}"
         cli)
 }
 

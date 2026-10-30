@@ -139,20 +139,24 @@ final class Backup_Exporter {
 			throw new \RuntimeException( 'backup_capture_restart_required' );
 		}
 		$observed_stream = Backup_Operation::checked( $store->status( $id ) );
-		if ( 'open' === $observed_stream['state'] && $observed_stream['received'] > $state['offset'] &&
-			'verify' === $state['mode'] && 'root' === $state['phase'] &&
-			count( $state['plan']['roots'] ) === $state['root_index'] ) {
-			// A footer was appended but no seal/cursor acknowledgement survived.
-			// Failure diagnostics may have changed source options meanwhile.
-			$state['phase'] = 'table';
-			$this->rewind( $state );
-			$checkpoint = Backup_Operation::checked( $store->checkpoint( $id, $state, $checkpoint['revision'] ) );
-		}
-		$deadline       = microtime( true ) + $this->policy['step_seconds'];
-		$footer_pending = false;
+		$deadline        = microtime( true ) + $this->policy['step_seconds'];
+		$footer_pending  = false;
 		$this->database->with_session(
 			$state['plan']['database']['session'],
-			function () use ( $id, $store, &$state, &$checkpoint, $deadline, &$footer_pending ) {
+			function () use ( $id, $store, &$state, &$checkpoint, $deadline, &$footer_pending, $observed_stream ) {
+				// Known source diagnostics need no second full capture to reject.
+				if ( $this->database->activity_digest() !== $state['plan']['activity_digest'] ) {
+					throw new \RuntimeException( 'backup_source_stale' );
+				}
+				if ( 'open' === $observed_stream['state'] && $observed_stream['received'] > $state['offset'] &&
+					'verify' === $state['mode'] && 'root' === $state['phase'] &&
+					count( $state['plan']['roots'] ) === $state['root_index'] ) {
+					// A footer was appended but no seal/cursor acknowledgement survived.
+					// Failure diagnostics may have changed source options meanwhile.
+					$state['phase'] = 'table';
+					$this->rewind( $state );
+					$checkpoint = Backup_Operation::checked( $store->checkpoint( $id, $state, $checkpoint['revision'] ) );
+				}
 				$used = 0;
 				do {
 					if ( in_array( $state['phase'], array( 'table', 'group', 'cell' ), true ) ||

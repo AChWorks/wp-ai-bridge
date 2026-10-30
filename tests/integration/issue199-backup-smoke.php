@@ -40,6 +40,8 @@ if ( ! function_exists( 'wpai199c_seed_provider' ) ) {
 $original_user = get_current_user_id();
 wp_set_current_user( 1 );
 wpai199c_assert( current_user_can( 'manage_options' ) && ( ! is_multisite() || is_super_admin() ), 'Actual disposable administrator/network authority required.' );
+require_once __DIR__ . '/issue199-backup-session-helper.php';
+wpai199b_native_session_cases();
 $before = wpai199c_options_before();
 $suffix = bin2hex( random_bytes( 4 ) );
 $seed = null;

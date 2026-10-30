@@ -18,6 +18,8 @@ final class Backup_Database {
 	private $connection;
 	/** @var int */
 	private $budget;
+	/** @var bool A discarded shared handle must receive no later cleanup SQL. */
+	private $session_discarded = false;
 
 	/** @param int $budget Finite native metadata/processing byte allowance. */
 	public function __construct( $budget ) {
@@ -460,8 +462,17 @@ final class Backup_Database {
 		)['rows'];
 		$actual = 1 === count( $rows ) ? $rows[0] : array();
 		if ( ! is_string( $actual['db'] ?? null ) || ! hash_equals( $this->connection->database, $actual['db'] ) ||
-			'1' !== ( $actual['ac'] ?? null ) || '1' !== ( $actual['fk'] ?? null ) || '1' !== ( $actual['uq'] ?? null ) ||
-			! is_string( $expected['time_zone'] ?? null ) || ( $actual['time_zone'] ?? null ) !== $expected['time_zone'] ) {
+			'1' !== ( $actual['ac'] ?? null ) || '1' !== ( $actual['fk'] ?? null ) || '1' !== ( $actual['uq'] ?? null ) ) {
+			// Do not repair caller state with USE, SET flags or transaction SQL.
+			// Discard it so outer request callbacks cannot reuse unsafe wpdb.
+			$this->session_discarded = true;
+			try {
+				$this->connection->quarantine_backup_session();
+			} finally {
+				throw new \RuntimeException( 'backup_native_session_changed' );
+			}
+		}
+		if ( ! is_string( $expected['time_zone'] ?? null ) || ( $actual['time_zone'] ?? null ) !== $expected['time_zone'] ) {
 			throw new \RuntimeException( 'backup_native_session_changed' );
 		}
 		$sets = array();
@@ -499,14 +510,16 @@ final class Backup_Database {
 			$this->connection->run( 'SET SESSION time_zone=?', array( $session['time_zone'] ) );
 			return $callback();
 		} finally {
-			try {
-				$this->connection->set_backup_sql_mode( $original['sql_mode'] );
-				$this->connection->run( 'SET SESSION time_zone=?', array( $original['time_zone'] ) );
-			} catch ( \Throwable $cleanup_error ) {
+			if ( ! $this->session_discarded ) {
 				try {
-					$this->connection->quarantine_backup_session();
-				} finally {
-					throw $cleanup_error;
+					$this->connection->set_backup_sql_mode( $original['sql_mode'] );
+					$this->connection->run( 'SET SESSION time_zone=?', array( $original['time_zone'] ) );
+				} catch ( \Throwable $cleanup_error ) {
+					try {
+						$this->connection->quarantine_backup_session();
+					} finally {
+						throw $cleanup_error;
+					}
 				}
 			}
 		}
