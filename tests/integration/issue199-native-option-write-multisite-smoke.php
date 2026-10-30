@@ -57,6 +57,10 @@ $second_blog = 0;
 $local_admin = 0;
 $switched = false;
 $input_id = '';
+$site_inputs = array();
+$site_target = $name . '_site_stage';
+$site_target_before = get_option( $site_target, null );
+$site_target_hook = null;
 $interleave = null;
 $deny = null;
 
@@ -151,6 +155,23 @@ try {
 	wpai199n_error( wpai199nw_call( array( 'action' => 'input_status', 'scope' => 'network', 'transfer_id' => $input_id ) ), 'Write-revoked current authority exposed native input.' );
 	update_network_option( $network, Native_Option_Access::NETWORK_WRITE_OPTION_NAME, 1 );
 
+	// SITE-purpose inputs also retain the original network. Prepare both a
+	// verified value and fully uploaded/open input before changing only network.
+	$site_value = array( 'original_network' => $network, 'bytes' => "site\0سلام" );
+	$site_document = wpai199nw_source( $site_value )['value_json'];
+	$site_verified = wpai199nw_stage( $site_document, 'site' );
+	$site_inputs[] = $site_verified['transfer_id'];
+	$pending_document = wpai199nw_source( array( 'pending' => true, 'bytes' => "pending\0سلام" ) )['value_json'];
+	$site_open = wpai199n_ok( wpai199nw_call( array( 'action' => 'input_begin', 'scope' => 'site', 'total_bytes' => strlen( $pending_document ), 'sha256' => hash( 'sha256', $pending_document ) ) ), 'Cannot prepare original-network open site input.' );
+	$site_inputs[] = $site_open['transfer_id'];
+	$pending_append = array( 'action' => 'input_append', 'scope' => 'site', 'transfer_id' => $site_open['transfer_id'], 'offset' => 0, 'base64' => base64_encode( $pending_document ) );
+	$uploaded_open = wpai199n_ok( wpai199nw_call( $pending_append ), 'Cannot upload complete unverified site input.' );
+	wpai199n_assert( 'open' === $uploaded_open['state'] && strlen( $pending_document ) === $uploaded_open['received_bytes'], 'Site input must permit identical append retry and successful verification before the network probe.' );
+	$site_client = WP_AI_Bridge\Auth\OAuth_Server::authenticated_mcp_client_id();
+	$site_target_calls = 0;
+	$site_target_hook = static function ( $value ) use ( &$site_target_calls ) { ++$site_target_calls; return $value; };
+	add_filter( 'pre_update_option_' . $site_target, $site_target_hook );
+
 	wpai199n_assert( 1 === $wpdb->insert( $wpdb->site, array( 'domain' => 'native-network-' . $suffix . '.invalid', 'path' => '/' ), array( '%s', '%s' ) ), 'Cannot create disposable second-network identity.' );
 	$second_network = (int) $wpdb->insert_id;
 	clean_network_cache( $second_network );
@@ -174,11 +195,78 @@ try {
 	restore_current_blog();
 	$switched = false;
 	wpai199n_assert( $blog === get_current_blog_id() && $second_network === get_current_network_id() && $access->allowed_write( 'network' ), 'Network-only identity probe lacks valid independent current authority.' );
+	wpai199n_assert( $actor === get_current_user_id() && $site_client === WP_AI_Bridge\Auth\OAuth_Server::authenticated_mcp_client_id() && $access->allowed_write( 'site' ), 'Site-input network-only probe changed owner/client or lacks independent valid site authority.' );
+	$site_authorization_errors = array( 'transfer_denied', 'native_option_input_denied' );
+	wpai199n_error( wpai199nw_call( array( 'action' => 'input_status', 'scope' => 'site', 'transfer_id' => $site_verified['transfer_id'] ) ), 'SITE verified input status crossed original network with unchanged blog/user/client.', $site_authorization_errors );
+	$wrong_site_consume = wpai199nw_request( 'update', $site_target, '' );
+	$wrong_site_consume['value_source'] = $site_verified;
+	wpai199n_error( wpai199nw_call( $wrong_site_consume ), 'SITE verified input consumption crossed original network.', $site_authorization_errors );
+	wpai199n_assert( 0 === $site_target_calls && $site_target_before === get_option( $site_target, null ), 'Cross-network site input consumption reached native target callbacks/effects.' );
+	wpai199n_error( wpai199nw_call( array( 'action' => 'input_release', 'scope' => 'site', 'transfer_id' => $site_verified['transfer_id'] ) ), 'SITE verified input release crossed original network.', $site_authorization_errors );
+	wpai199n_error( wpai199nw_call( $pending_append ), 'SITE open input append crossed original network.', $site_authorization_errors );
+	wpai199n_error( wpai199nw_call( array( 'action' => 'input_verify', 'scope' => 'site', 'transfer_id' => $site_open['transfer_id'] ) ), 'SITE complete open input verification crossed original network.', $site_authorization_errors );
 	$other_network_status = wpai199n_ok( wpai199nw_status( $request['operation_id'], 'network' ), 'Cross-network status failed its bounded response.' );
 	wpai199n_assert( 'not_recorded' === $other_network_status['state'] && null === $other_network_status['receipt'], 'Another current network exposed original private native receipt/name.' );
 	wpai199n_error( wpai199nw_call( array( 'action' => 'input_status', 'scope' => 'network', 'transfer_id' => $input_id ) ), 'Another current network reopened original-blog native input.' );
 	wpai199n_protected_denial( static function () use ( $network ) { update_network_option( $network, Native_Option_Access::NETWORK_WRITE_OPTION_NAME, 0 ); } );
 	$current_site = $original_network_context;
+	// The outer audit can change only network after a successful SITE begin.
+	// Its originating facade must still erase just its own new allocation.
+	$begin_store = WP_AI_Bridge\Support\Private_Transfer_Session::for_native_options_write( new WP_AI_Bridge\Support\Permissions( $settings ), 'site' );
+	$begin_root = ( new ReflectionMethod( $begin_store, 'root' ) )->invoke( $begin_store );
+	wpai199n_assert( is_string( $begin_root ), 'Cannot inspect the exact site-input private root for network-drift cleanup.' );
+	$begin_files = glob( $begin_root . '/*' );
+	$begin_audit = get_option( Mutation_Log::OPTION_NAME, array() );
+	$begin_network_context = $current_site;
+	$authorized_other_context = get_network( $second_network );
+	$allocated_during_audit = array();
+	$begin_network_drift = static function ( $value ) use ( &$current_site, $authorized_other_context, $begin_root, $begin_files, &$allocated_during_audit ) {
+		$allocated_during_audit = array_values( array_diff( glob( $begin_root . '/*.meta' ), $begin_files ) );
+		$current_site = $authorized_other_context;
+		return $value;
+	};
+	add_filter( 'pre_update_option_' . Mutation_Log::OPTION_NAME, $begin_network_drift, PHP_INT_MAX );
+	try {
+		$denied_begin = wpai199nw_call( array( 'action' => 'input_begin', 'scope' => 'site', 'total_bytes' => 137, 'sha256' => hash( 'sha256', 'network drift inert input' ) ) );
+		wpai199n_assert( 1 === count( $allocated_during_audit ), 'Network-drift cleanup case did not observe a successful SITE allocation before the audit hook.' );
+		wpai199n_assert( $second_network === get_current_network_id() && $blog === get_current_blog_id() && $actor === get_current_user_id() && $site_client === WP_AI_Bridge\Auth\OAuth_Server::authenticated_mcp_client_id() && $access->allowed_write( 'site' ), 'Input-begin audit drift changed more than network or lost independently valid site authority.' );
+		wpai199n_error( $denied_begin, 'Outer SITE input begin disclosed an allocation after audit network drift.' );
+		wpai199nw_public_private( $denied_begin, array( basename( $allocated_during_audit[0], '.meta' ) ) );
+		wpai199n_assert( ! array_diff( glob( $begin_root . '/*' ), $begin_files ), 'Original-network creation proof failed to erase its new SITE lease/reservation after network drift.' );
+		wpai199n_assert( ! array_diff( $begin_files, glob( $begin_root . '/*' ) ), 'Network-drift begin cleanup erased an earlier retained input.' );
+	} finally {
+		remove_filter( 'pre_update_option_' . Mutation_Log::OPTION_NAME, $begin_network_drift, PHP_INT_MAX );
+		$current_site = $begin_network_context;
+		// Negative reproduction cleanup, confined to exact new coordinators.
+		foreach ( array_diff( glob( $begin_root . '/*.meta' ), $begin_files ) as $orphan ) {
+			if ( 1 === preg_match( '/^([a-f0-9]{64})\.meta$/D', basename( $orphan ), $match ) ) { wpai199nw_call( array( 'action' => 'input_release', 'scope' => 'site', 'transfer_id' => $match[1] ) ); }
+		}
+		wpai199n_restore_option( Mutation_Log::OPTION_NAME, $begin_audit );
+		wpai199n_assert( $current_site === $begin_network_context && $begin_audit === get_option( Mutation_Log::OPTION_NAME ), 'Network-drift begin fixture did not restore exact current network/audit state.' );
+	}
+	$site_facade = new WP_AI_Bridge\Support\Native_Option_Inputs( new WP_AI_Bridge\Support\Permissions( $settings ), 'site' );
+	$retained_verified = wpai199n_ok( $site_facade->status( $site_verified['transfer_id'] ), 'Network-drift cleanup lost the prior verified SITE input.' );
+	$retained_open = wpai199n_ok( $site_facade->status( $site_open['transfer_id'] ), 'Network-drift cleanup lost the prior open SITE input.' );
+	$retained_network = wpai199n_ok( ( new WP_AI_Bridge\Support\Native_Option_Inputs( new WP_AI_Bridge\Support\Permissions( $settings ), 'network' ) )->status( $input_id ), 'Network-drift cleanup lost the prior NETWORK input.' );
+	wpai199n_assert( 'verified' === $retained_verified['state'] && $site_verified['sha256'] === $retained_verified['sha256'] && 'open' === $retained_open['state'] && strlen( $pending_document ) === $retained_open['received_bytes'] && 'verified' === $retained_network['state'] && $source['sha256'] === $retained_network['sha256'], 'Network-drift creation cleanup changed earlier SITE/NETWORK input identities or states.' );
+	$recovered_site = wpai199n_ok( $site_facade->value( $site_verified['transfer_id'], $site_verified['sha256'], $site_verified['total_bytes'], 1024 * 1024 ), 'Original network could not recover its verified site input bytes.' );
+	wpai199n_assert( $site_document === $recovered_site['json'] && $site_verified['sha256'] === $recovered_site['sha256'], 'Cross-network denials changed original site input bytes/hash.' );
+	wpai199n_same( $site_value, $recovered_site['value'], 'Original-network site input lost native value types/bytes.' );
+	$original_site_consume = wpai199nw_request( 'update', $site_target, '' );
+	$original_site_consume['value_source'] = $site_verified;
+	wpai199nw_returned( wpai199nw_call( $original_site_consume ), true );
+	wpai199n_assert( 1 === $site_target_calls, 'Restored original network did not permit exactly one site input consumption.' );
+	wpai199n_same( $site_value, get_option( $site_target ), 'Restored site input consumption changed native value.' );
+	$still_open = wpai199n_ok( wpai199nw_call( array( 'action' => 'input_status', 'scope' => 'site', 'transfer_id' => $site_open['transfer_id'] ) ), 'Original network lost its open site input.' );
+	wpai199n_assert( 'open' === $still_open['state'] && strlen( $pending_document ) === $still_open['received_bytes'], 'Wrong-network verify/append altered the original open input state.' );
+	wpai199n_ok( wpai199nw_call( $pending_append ), 'Original network could not retry its complete site append.' );
+	$verified_open = wpai199n_ok( wpai199nw_call( array( 'action' => 'input_verify', 'scope' => 'site', 'transfer_id' => $site_open['transfer_id'] ) ), 'Original network could not verify its complete site input.' );
+	$recovered_open = wpai199n_ok( $site_facade->value( $site_open['transfer_id'], $verified_open['sha256'], $verified_open['total_bytes'], 1024 * 1024 ), 'Original network could not materialize continued site input.' );
+	wpai199n_assert( $pending_document === $recovered_open['json'], 'Site input continuation changed complete document bytes.' );
+	foreach ( $site_inputs as $site_input ) { wpai199n_ok( wpai199nw_call( array( 'action' => 'input_release', 'scope' => 'site', 'transfer_id' => $site_input ) ), 'Original network cannot release its own site input.' ); }
+	$site_inputs = array();
+	remove_filter( 'pre_update_option_' . $site_target, $site_target_hook );
+	$site_target_hook = null;
 	wpai199n_ok( wpai199nw_call( array( 'action' => 'input_release', 'scope' => 'network', 'transfer_id' => $input_id ) ), 'Original network cannot release its own native input.' );
 	$input_id = '';
 	wpai199n_same( array( 'network' => $network, 'bytes' => "native\0سلام" ), get_network_option( $network, $name ), 'Cross-network denials altered original network value.' );
@@ -193,6 +281,9 @@ try {
 	update_network_option( $network, Native_Option_Access::NETWORK_OPTION_NAME, 1 );
 	update_network_option( $network, Native_Option_Access::NETWORK_WRITE_OPTION_NAME, 1 );
 	if ( '' !== $input_id ) { wpai199nw_call( array( 'action' => 'input_release', 'scope' => 'network', 'transfer_id' => $input_id ) ); }
+	if ( null !== $site_target_hook ) { remove_filter( 'pre_update_option_' . $site_target, $site_target_hook ); }
+	foreach ( $site_inputs as $site_input ) { wpai199nw_call( array( 'action' => 'input_release', 'scope' => 'site', 'transfer_id' => $site_input ) ); }
+	wpai199n_restore_option( $site_target, $site_target_before, null !== $site_target_before );
 	delete_network_option( $network, $name );
 	delete_network_option( $network, $name . '_duplicate' );
 	if ( $second_blog > 0 ) { wp_delete_site( $second_blog ); }

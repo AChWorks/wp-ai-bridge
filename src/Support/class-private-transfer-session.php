@@ -85,12 +85,18 @@ final class Private_Transfer_Session {
 
 	/** @return array<string,mixed> Current native snapshot principal and source. */
 	private function native_binding() {
-		return array(
+		$binding = array(
 			'blog'      => (int) get_current_blog_id(),
 			'user'      => (int) get_current_user_id(),
 			'client'    => OAuth_Server::authenticated_mcp_client_id(),
 			'source_id' => 'network' === $this->native_options_scope ? (int) get_current_network_id() : (int) get_current_blog_id(),
 		);
+		if ( $this->native_options_write ) {
+			// Site write inputs also belong to their original network.
+			// Read snapshots retain their existing metadata/binding shape.
+			$binding['network'] = (int) get_current_network_id();
+		}
+		return $binding;
 	}
 
 	/**
@@ -1524,7 +1530,14 @@ final class Private_Transfer_Session {
 		return array( $h, $meta );
 	}
 
-	/** @param mixed $meta Checkpoint body. @param string $id Exact lease. @return bool */
+	/**
+	 * Missing original network on pre-binding WRITE drafts is structurally
+	 * readable only for reservation/expiry cleanup. load() denies their use.
+	 *
+	 * @param mixed  $meta Checkpoint body.
+	 * @param string $id Exact lease.
+	 * @return bool
+	 */
 	private function valid_meta( $meta, $id ) {
 		return is_array( $meta ) &&
 			1 === ( $meta['version'] ?? null ) && hash_equals( $id, (string) ( $meta['id'] ?? '' ) ) &&
@@ -1550,6 +1563,9 @@ final class Private_Transfer_Session {
 			( ! in_array( $meta['purpose'], array( 'native_site_settings_read', 'native_network_settings_read', 'native_site_settings_write', 'native_network_settings_write' ), true ) ||
 				( is_int( $meta['source_id'] ?? null ) && $meta['source_id'] > 0 &&
 					in_array( $meta['state'], array( 'open', 'verified' ), true ) ) ) &&
+			( ! in_array( $meta['purpose'], array( 'native_site_settings_write', 'native_network_settings_write' ), true ) ||
+				! array_key_exists( 'network', $meta ) ||
+				( is_int( $meta['network'] ) && $meta['network'] > 0 ) ) &&
 			is_string( $meta['sha256'] ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $meta['sha256'] ) &&
 			in_array( $meta['state'], array( 'open', 'preparing', 'verified', 'committing', 'committed', 'rejected', 'observed' ), true ) &&
 			( ! in_array( $meta['state'], array( 'committing', 'committed', 'rejected', 'observed' ), true ) ||
@@ -2197,7 +2213,10 @@ final class Private_Transfer_Session {
 					$meta['source_id'] !== $this->native_binding()['source_id'] ||
 					(int) get_current_blog_id() !== $meta['blog'] ||
 					(int) get_current_user_id() !== $meta['user'] ||
-					OAuth_Server::authenticated_mcp_client_id() !== $meta['client'] ) ) ) {
+					OAuth_Server::authenticated_mcp_client_id() !== $meta['client'] ||
+					( $this->native_options_write &&
+						( ! is_int( $meta['network'] ?? null ) ||
+							(int) get_current_network_id() !== $meta['network'] ) ) ) ) ) {
 			$this->close_meta( $h );
 			return $this->denied();
 		}
