@@ -13,6 +13,8 @@ final class Scoped_Filesystem {
 	private $permissions;
 	private $roots;
 	private $access;
+	private $directory_guards = array();
+	private $entry_guards     = array();
 
 	public function __construct( Permissions $permissions ) {
 		$this->permissions = $permissions;
@@ -62,7 +64,7 @@ final class Scoped_Filesystem {
 		return $this->describe( $root, $relative, false );
 	}
 
-	private function describe( array $root, $relative, $missing ) {
+	private function describe( array $root, $relative, $missing, ?array $owned_candidate = null ) {
 		$parts = self::components( $relative );
 		if ( is_wp_error( $parts ) ) {
 			return $parts;
@@ -91,7 +93,8 @@ final class Scoped_Filesystem {
 			}
 			$type = $stat['mode'] & 0170000;
 			if ( is_link( $path ) || ! in_array( $type, array( 0040000, 0100000 ), true ) ||
-				( 0100000 === $type && 1 !== $stat['nlink'] ) ||
+				( 0100000 === $type && 1 !== $stat['nlink'] &&
+					( count( $parts ) - 1 !== $index || ! $this->pinned_candidate( $path, $stat, $owned_candidate ) ) ) ||
 				( $index < count( $parts ) - 1 && 0040000 !== $type ) ) {
 				return new WP_Error( 'filesystem_unsafe_type', 'Symlinks, hard-linked files and special files are not followed.' );
 			}
@@ -105,30 +108,115 @@ final class Scoped_Filesystem {
 		$fields     = null === $stat ? null : $this->stat_fields( $stat );
 		$key        = array( $root['id'], $root['revision'], $root['origin'], $root['purpose'], $parts );
 		$descriptor = array(
-			'root_id'       => $root['id'],
-			'root_revision' => $root['revision'],
-			'root'          => $root,
-			'purpose'       => $root['purpose'],
-			'path'          => $path,
-			'ancestors'     => $ancestors,
-			'relative_path' => implode( DIRECTORY_SEPARATOR, $parts ),
-			'components'    => array_map( 'base64_encode', $parts ),
-			'name'          => $parts ? end( $parts ) : '',
-			'type'          => null === $stat ? 'absent' : ( 0040000 === ( $stat['mode'] & 0170000 ) ? 'directory' : 'file' ),
-			'size'          => $stat['size'] ?? 0,
-			'bytes'         => $stat['size'] ?? 0,
-			'mode'          => isset( $stat['mode'] ) ? $stat['mode'] & 0777 : 0,
-			'mtime'         => $stat['mtime'] ?? 0,
-			'ctime'         => $stat['ctime'] ?? 0,
-			'stat'          => $stat,
-			'identity'      => hash_hmac( 'sha256', serialize( array( $key, $fields ) ), wp_salt( 'auth' ) ),
-			'file_key'      => hash_hmac( 'sha256', serialize( array( $key, $stat['dev'] ?? null, $stat['ino'] ?? null ) ), wp_salt( 'auth' ) ),
+			'root_id'          => $root['id'],
+			'root_revision'    => $root['revision'],
+			'root'             => $root,
+			'purpose'          => $root['purpose'],
+			'path'             => $path,
+			'ancestors'        => $ancestors,
+			'directory_guards' => $this->directory_guards,
+			'entry_guards'     => $this->entry_guards,
+			'owned_candidate'  => $owned_candidate,
+			'relative_path'    => implode( DIRECTORY_SEPARATOR, $parts ),
+			'components'       => array_map( 'base64_encode', $parts ),
+			'name'             => $parts ? end( $parts ) : '',
+			'type'             => null === $stat ? 'absent' : ( 0040000 === ( $stat['mode'] & 0170000 ) ? 'directory' : 'file' ),
+			'size'             => $stat['size'] ?? 0,
+			'bytes'            => $stat['size'] ?? 0,
+			'mode'             => isset( $stat['mode'] ) ? $stat['mode'] & 0777 : 0,
+			'mtime'            => $stat['mtime'] ?? 0,
+			'ctime'            => $stat['ctime'] ?? 0,
+			'stat'             => $stat,
+			'identity'         => hash_hmac( 'sha256', serialize( array( $key, $fields ) ), wp_salt( 'auth' ) ),
+			'file_key'         => hash_hmac( 'sha256', serialize( array( $key, $stat['dev'] ?? null, $stat['ino'] ?? null ) ), wp_salt( 'auth' ) ),
 		);
 		return $descriptor;
 	}
 
 	private function stat_fields( array $stat ) {
 		return array_intersect_key( $stat, array_fill_keys( array( 'dev', 'ino', 'mode', 'nlink', 'uid', 'gid', 'size', 'mtime', 'ctime' ), true ) );
+	}
+
+	/** Stable native directory generation; child effects legitimately change ctime/mtime/size. */
+	public static function directory_binding( array $descriptor, $preserve_mode = false ) {
+		$binding = array(
+			'root_id'       => $descriptor['root_id'],
+			'root_revision' => $descriptor['root_revision'],
+			'components'    => $descriptor['components'],
+			'purpose'       => $descriptor['purpose'],
+			'generation'    => self::native_generation( $descriptor['stat'] ),
+		);
+		if ( $preserve_mode ) {
+			$binding['mode'] = $descriptor['mode']; }
+		return $binding;
+	}
+
+	private static function native_generation( array $stat ) {
+		return array(
+			'dev'  => $stat['dev'],
+			'ino'  => $stat['ino'],
+			'type' => $stat['mode'] & 0170000,
+			'uid'  => $stat['uid'],
+			'gid'  => $stat['gid'],
+		);
+	}
+
+	/** Bind resumable ancestor generations both now and at each raw effect boundary. */
+	public function with_directory_bindings( array $bindings, callable $callback ) {
+		$previous = $this->directory_guards;
+		$guards   = $previous;
+		foreach ( $bindings as $binding ) {
+			$entry = $this->stat( $binding['root_id'], $binding['components'], $binding['purpose'] );
+			if ( is_wp_error( $entry ) || 'directory' !== $entry['type'] ||
+				$entry['root_revision'] !== $binding['root_revision'] ||
+				self::native_generation( $entry['stat'] ) !== $binding['generation'] ||
+				( isset( $binding['mode'] ) && $entry['mode'] !== $binding['mode'] ) ) {
+				return new WP_Error( 'filesystem_directory_replaced', 'A selected source, destination or ancestor directory generation changed; preserve both trees.' );
+			}
+			$entry['guard_mode'] = $binding['mode'] ?? null;
+			$guards[]            = $entry;
+		}
+		$this->directory_guards = $guards;
+		try {
+			return $callback();
+		} finally {
+			$this->directory_guards = $previous;
+		}
+	}
+
+	/** Keep a verified destination generation current at a conditional source-delete boundary. */
+	public function with_entry_guard( array $entry, callable $callback ) {
+		if ( true !== $this->assert_same( $entry ) ) {
+			return new WP_Error( 'filesystem_stale', 'The verified destination generation changed before conditional deletion.' );
+		}
+		$previous             = $this->entry_guards;
+		$this->entry_guards[] = $entry;
+		try {
+			return $callback();
+		} finally {
+			$this->entry_guards = $previous;
+		}
+	}
+
+	/** Adopt only the native entry actually committed by this child effect, never a fresh pathname. */
+	public function owned_entry( $root_id, $relative, $purpose, $operation_id, $action ) {
+		$entry = $this->stat( $root_id, $relative, $purpose );
+		if ( is_wp_error( $entry ) ) {
+			return $entry;
+		}
+		$record     = $this->journal( $entry )->status( $operation_id );
+		$descriptor = is_array( $record ) ? $record['receipt']['descriptor'] : array();
+		$result     = is_array( $record ) ? $record['receipt']['result'] : array();
+		$generation = $result['generation'] ?? null;
+		$actual     = 'mkdir' === $action ? self::native_generation( $entry['stat'] ) : $this->stat_fields( $entry['stat'] );
+		if ( is_wp_error( $record ) || ( $descriptor['components'] ?? null ) !== $entry['components'] ||
+			( $descriptor['root_id'] ?? null ) !== $entry['root_id'] ||
+			( $descriptor['root_revision'] ?? null ) !== $entry['root_revision'] || ( $descriptor['action'] ?? null ) !== $action ||
+			'committed' !== ( $result['outcome'] ?? null ) || ! is_array( $generation ) || $generation !== $actual ||
+			! $this->physical_same( $entry ) ) {
+			return new WP_Error( 'filesystem_generation_unverified', 'The current entry is not the generation recorded by the owned child effect.' );
+		}
+		return $entry;
 	}
 
 	/** Fixed safe fields for public callers; never leak the internal root/path/stream. */
@@ -144,6 +232,19 @@ final class Scoped_Filesystem {
 
 	/** Physical checks only; safe to use after a dispatch fence without native hooks. */
 	private function physical_same( array $descriptor, $stream = null ) {
+		foreach ( $descriptor['entry_guards'] ?? array() as $guard ) {
+			if ( ! $this->physical_same( $guard ) ) {
+				return false; }
+		}
+		foreach ( $descriptor['directory_guards'] ?? array() as $guard ) {
+			clearstatcache( true, $guard['path'] );
+			$now = @lstat( $guard['path'] );
+			if ( ! is_array( $now ) || is_link( $guard['path'] ) ||
+				self::native_generation( $now ) !== self::native_generation( $guard['stat'] ) ||
+				( isset( $guard['guard_mode'] ) && ( $now['mode'] & 0777 ) !== $guard['guard_mode'] ) ) {
+				return false;
+			}
+		}
 		foreach ( $descriptor['ancestors'] as $ancestor ) {
 			clearstatcache( true, $ancestor['path'] );
 			$now = @lstat( $ancestor['path'] );
@@ -160,6 +261,10 @@ final class Scoped_Filesystem {
 		}
 		if ( ! is_array( $now ) || is_link( $descriptor['path'] ) ||
 			$this->stat_fields( $now ) !== $this->stat_fields( $descriptor['stat'] ) ) {
+			return false;
+		}
+		if ( null !== ( $descriptor['owned_candidate'] ?? null ) &&
+			! $this->pinned_candidate( $descriptor['path'], $now, $descriptor['owned_candidate'] ) ) {
 			return false;
 		}
 		return null === $stream || ( is_resource( $stream ) && $this->stat_fields( fstat( $stream ) ) === $this->stat_fields( $now ) );
@@ -328,7 +433,7 @@ final class Scoped_Filesystem {
 		);
 	}
 
-	private function mutation_target( $root_id, $relative, $purpose, $destructive = false ) {
+	private function mutation_target( $root_id, $relative, $purpose, $destructive = false, ?array $owned_candidate = null ) {
 		$root = $this->roots->resolve( $root_id, $purpose, $destructive ? 'destructive' : 'write' );
 		if ( is_wp_error( $root ) ) {
 			return $root;
@@ -365,7 +470,7 @@ final class Scoped_Filesystem {
 				}
 			}
 		}
-		return $this->describe( $root, $relative, true );
+		return $this->describe( $root, $relative, true, $owned_candidate );
 	}
 
 	/** Preflight a move source/destination before any continuation can change it. */
@@ -460,8 +565,9 @@ final class Scoped_Filesystem {
 					);
 				}
 				return array(
-					'outcome' => 'committed',
-					'action'  => 'mkdir',
+					'outcome'    => 'committed',
+					'action'     => 'mkdir',
+					'generation' => self::native_generation( lstat( $target['path'] ) ),
 				);
 			}
 		);
@@ -528,8 +634,8 @@ final class Scoped_Filesystem {
 	}
 
 	/** Prepare privately in bounded steps, then one no-replace publication protocol. */
-	public function apply_verified_source( $root_id, $relative, $purpose, $expected, array $source, $operation_id ) {
-		$target = $this->mutation_target( $root_id, $relative, $purpose );
+	public function apply_verified_source( $root_id, $relative, $purpose, $expected, array $source, $operation_id, ?array $owned_candidate = null ) {
+		$target = $this->mutation_target( $root_id, $relative, $purpose, false, $owned_candidate );
 		if ( is_wp_error( $target ) ) {
 			return $target;
 		}
@@ -544,7 +650,10 @@ final class Scoped_Filesystem {
 			'expected_identity' => $expected_id,
 			'mode'              => $source['mode'] ?? null,
 		);
-		$history     = $this->historical( $operation_id, $target, $request );
+		if ( null !== $owned_candidate ) {
+			$request['ownership_pin'] = $owned_candidate;
+		}
+		$history = $this->historical( $operation_id, $target, $request );
 		if ( null !== $history ) {
 			return $history;
 		}
@@ -587,18 +696,40 @@ final class Scoped_Filesystem {
 			if ( ! @link( $stage['path'], $probe ) || ! @unlink( $probe ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Confined syscall failure is explicitly checked; private paths must not escape through PHP warnings.
 				return new WP_Error( 'filesystem_atomic_publish_unavailable', 'The destination filesystem cannot provide verified no-replace hard-link publication.' );
 			}
-			$hold                = dirname( $stage['path'] ) . '/hold-' . bin2hex( random_bytes( 24 ) );
+			$directory = $this->private_directory( $target );
+			if ( is_wp_error( $directory ) ) {
+				return $directory;
+			}
+			$hold = $directory . '/hold-' . bin2hex( random_bytes( 24 ) );
+			$pin  = $directory . '/candidate-' . bin2hex( random_bytes( 24 ) );
+			if ( ! @link( $stage['path'], $pin ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Checked private inode pin; paths must not escape through warnings.
+				return new WP_Error( 'filesystem_candidate_pin_failed', 'Private publication generation cannot be pinned.' );
+			}
+			clearstatcache( true, $pin );
+			$candidate = @lstat( $pin );
+			if ( ! is_array( $candidate ) ) {
+				return new WP_Error( 'filesystem_candidate_pin_failed', 'Private candidate generation was not confirmed.' );
+			}
 			$request['recovery'] = array(
-				'stage'            => $stage['path'],
-				'hold'             => $hold,
-				'candidate_sha256' => $stage['sha256'],
+				'stage'                => $stage['path'],
+				'hold'                 => $hold,
+				'candidate'            => $pin,
+				'candidate_directory'  => $directory,
+				'directory_generation' => self::native_generation( lstat( $directory ) ),
+				'candidate_stat'       => $this->stat_fields( $candidate ),
+				'preimage_stat'        => 'file' === $target['type'] ? $this->stat_fields( $target['stat'] ) : null,
+				'candidate_sha256'     => $stage['sha256'],
 			);
+			$recovery            = $request['recovery'];
 			$result              = $this->dispatch(
 				$operation_id,
 				$target,
 				$request,
-				function () use ( $target, $stage, $hold, $preimage ) {
-					if ( ! $this->physical_same( $target ) ) {
+				function () use ( $target, $stage, $hold, $pin, $recovery, $preimage ) {
+					clearstatcache( true, $stage['path'] );
+					$stage_stat = @lstat( $stage['path'] );
+					if ( ! $this->physical_same( $target ) || ! is_array( $stage_stat ) ||
+						! $this->pinned_candidate( $stage['path'], $stage_stat, $recovery ) ) {
 						return array(
 							'outcome' => 'rejected_no_effect',
 							'reason'  => 'stale',
@@ -613,7 +744,9 @@ final class Scoped_Filesystem {
 							);
 						}
 						$moved = true;
-						if ( ! hash_equals( $preimage, (string) hash_file( 'sha256', $hold ) ) ) {
+						$held  = @lstat( $hold );
+						if ( ! is_array( $held ) || ! $this->same_candidate_metadata( $held, $target['stat'] ) ||
+							! hash_equals( $preimage, (string) hash_file( 'sha256', $hold ) ) ) {
 							$restored = @link( $hold, $target['path'] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Confined syscall failure is explicitly checked; private paths must not escape through PHP warnings.
 							if ( $restored ) {
 								@unlink( $hold );
@@ -624,7 +757,7 @@ final class Scoped_Filesystem {
 							);
 						}
 					}
-					if ( ! @link( $stage['path'], $target['path'] ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Confined syscall failure is explicitly checked; private paths must not escape through PHP warnings.
+					if ( ! @link( $pin, $target['path'] ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Confined syscall failure is explicitly checked; private paths must not escape through PHP warnings.
 						$restored = ! $moved || @link( $hold, $target['path'] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Confined syscall failure is explicitly checked; private paths must not escape through PHP warnings.
 						if ( $moved && $restored ) {
 							@unlink( $hold );
@@ -636,30 +769,43 @@ final class Scoped_Filesystem {
 					}
 					$published = @lstat( $target['path'] );
 					$staged    = @lstat( $stage['path'] );
-					if ( ! is_array( $published ) || ! is_array( $staged ) || $published['ino'] !== $staged['ino'] ||
-						$published['dev'] !== $staged['dev'] ||
+					if ( ! is_array( $published ) || ! is_array( $staged ) ||
+						! $this->pinned_candidate( $target['path'], $published, $recovery ) ||
 						! hash_equals( $stage['sha256'], (string) hash_file( 'sha256', $target['path'] ) ) ) {
 						return array(
 							'outcome' => 'recovery_required',
 							'reason'  => 'published_generation_unverified',
 						);
 					}
-					if ( $moved && ! hash_equals( $preimage, (string) hash_file( 'sha256', $hold ) ) ) {
+					$held = $moved ? @lstat( $hold ) : null;
+					if ( $moved && ( ! is_array( $held ) || ! $this->same_candidate_metadata( $held, $target['stat'] ) ||
+						! hash_equals( $preimage, (string) hash_file( 'sha256', $hold ) ) ) ) {
 						return array(
 							'outcome' => 'recovery_required',
 							'reason'  => 'previous_inode_changed',
 						);
 					}
-					if ( ! @unlink( $stage['path'] ) || ( $moved && ! @unlink( $hold ) ) ) {
+					if ( ! $this->unlink_candidate_alias( $stage['path'], $recovery['candidate_stat'] ) ||
+						( $moved && ! $this->unlink_candidate_alias( $hold, $target['stat'] ) ) ||
+						! $this->unlink_candidate_alias( $pin, $recovery['candidate_stat'] ) ) {
 						return array(
 							'outcome' => 'recovery_required',
 							'reason'  => 'private_cleanup_failed',
 						);
 					}
+					clearstatcache( true, $target['path'] );
+					$final = @lstat( $target['path'] );
+					if ( ! is_array( $final ) || ! $this->same_candidate_metadata( $final, $recovery['candidate_stat'] ) || 1 !== $final['nlink'] ) {
+						return array(
+							'outcome' => 'unknown',
+							'reason'  => 'final_generation_unverified',
+						);
+					}
 					return array(
-						'outcome' => 'committed',
-						'action'  => 'write',
-						'bytes'   => $published['size'],
+						'outcome'    => 'committed',
+						'action'     => 'write',
+						'generation' => $this->stat_fields( $final ),
+						'bytes'      => $final['size'],
 					);
 				}
 			);
@@ -668,9 +814,20 @@ final class Scoped_Filesystem {
 				if ( is_wp_error( $released ) ) {
 					return $released;
 				}
-			} elseif ( ! empty( $stage['direct'] ) && is_file( $stage['path'] ) ) {
-				// Restore the still-inert lease's private mode after a rejected publication.
-				@chmod( $stage['path'], 0600 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Only the exact verified private input inode.
+			} else {
+				// Drop only an unpublished, exact private pin. Uncertain published generations retain it.
+				clearstatcache( true, $target['path'] );
+				$current = @lstat( $target['path'] );
+				if ( ! file_exists( $hold ) && ( ! is_array( $current ) ||
+					! $this->same_candidate_metadata( $current, $recovery['candidate_stat'] ) ) ) {
+					$this->unlink_candidate_alias( $pin, $recovery['candidate_stat'] );
+				}
+				clearstatcache( true, $stage['path'] );
+				$inert = @lstat( $stage['path'] );
+				if ( ! empty( $stage['direct'] ) && is_array( $inert ) && 1 === $inert['nlink'] &&
+					$this->same_candidate_metadata( $inert, $recovery['candidate_stat'] ) ) {
+					@chmod( $stage['path'], 0600 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Only an unpublished private input; never chmod a published alias.
+				}
 			}
 			return $result;
 
@@ -688,7 +845,9 @@ final class Scoped_Filesystem {
 			if ( ! is_array( $stat ) || ! is_array( $parent ) || is_link( $path ) ||
 				$stat['ino'] !== $fd['ino'] || $stat['dev'] !== $fd['dev'] || 1 !== $stat['nlink'] ||
 				$stat['dev'] !== $parent['dev'] || 0700 !== ( fileperms( dirname( $path ) ) & 0777 ) ||
-				! preg_match( '/^[a-f0-9]{64}\.bytes$/D', basename( $path ) ) || Filesystem_Roots::served( dirname( $path ) ) ) {
+				( ! preg_match( '/^[a-f0-9]{64}\.bytes$/D', basename( $path ) ) &&
+					( ( $target['owned_candidate']['hold'] ?? null ) !== $path || ! $this->private_recovery_path( $path, $target ) ) ) ||
+				Filesystem_Roots::served( dirname( $path ) ) ) {
 				return new WP_Error( 'filesystem_private_stage_unavailable', 'The verified private input must be on the destination filesystem.' );
 			}
 			if ( $stat['size'] !== $source['bytes'] || 0 !== fseek( $source['stream'], 0 ) ) {
@@ -902,7 +1061,9 @@ final class Scoped_Filesystem {
 							'reason'  => 'quarantine_failed',
 						);
 					}
-					if ( ! hash_equals( $preimage, (string) hash_file( 'sha256', $hold ) ) ) {
+					$held = @lstat( $hold );
+					if ( ! is_array( $held ) || ! $this->same_candidate_metadata( $held, $target['stat'] ) ||
+						! hash_equals( $preimage, (string) hash_file( 'sha256', $hold ) ) ) {
 						$restored = @link( $hold, $target['path'] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Confined syscall failure is explicitly checked; private paths must not escape through PHP warnings.
 						if ( $restored ) {
 							@unlink( $hold );
@@ -944,7 +1105,7 @@ final class Scoped_Filesystem {
 
 	private function public_result( $result ) {
 		if ( is_array( $result ) && isset( $result['receipt'] ) ) {
-			unset( $result['receipt']['descriptor']['recovery'] );
+			unset( $result['receipt']['descriptor']['recovery'], $result['receipt']['descriptor']['ownership_pin'], $result['receipt']['result']['generation'] );
 			$result['outcome'] = $result['receipt']['result']['outcome'] ?? 'unknown';
 		}
 		return $result;
@@ -958,6 +1119,10 @@ final class Scoped_Filesystem {
 		$target  = $this->describe( $root, array(), false );
 		$journal = $this->journal( $target );
 		$result  = $journal->status( $operation_id );
+		if ( is_array( $result ) && ( ( $result['receipt']['descriptor']['root_id'] ?? null ) !== $root_id ||
+			( $result['receipt']['descriptor']['root_revision'] ?? null ) !== $root['revision'] ) ) {
+			return new WP_Error( 'filesystem_operation_scope', 'This operation belongs to another configured root or revision.' );
+		}
 		if ( is_array( $result ) && 'directory_copy' === ( $result['receipt']['descriptor']['action'] ?? '' ) ) {
 			$done = $journal->status( 'fs-done-' . hash( 'sha256', $operation_id ) );
 			if ( is_wp_error( $done ) ) {
@@ -967,37 +1132,84 @@ final class Scoped_Filesystem {
 			unset( $result['receipt']['descriptor']['recovery'] );
 			return $result;
 		}
+		if ( is_array( $result ) && isset( $result['receipt']['descriptor']['recovery'] ) ) {
+			$request = $result['receipt']['descriptor'];
+			$entry   = $this->describe( $root, $request['components'], false, $request['recovery'] );
+			if ( ! is_wp_error( $entry ) && 'file' === $entry['type'] &&
+				$this->pinned_candidate( $entry['path'], $entry['stat'], $request['recovery'] ) ) {
+				$result['recovery_target'] = self::public_descriptor( $entry );
+			}
+		}
 		return $this->public_result( $result );
 	}
 
-	/** Recovery never recreates an absent pathname or overwrites a competing generation. */
+	/** Recovery never recreates an absent pathname or infers ownership from equal bytes. */
 	public function recover( $root_id, $relative, $purpose, $operation_id, $recovery_id, $expected_identity ) {
-		$target = $this->mutation_target( $root_id, $relative, $purpose, true );
-		if ( is_wp_error( $target ) ) {
-			return $target;
+		$root = $this->roots->resolve( $root_id, $purpose, 'destructive' );
+		if ( is_wp_error( $root ) ) {
+			return $root;
 		}
-		$record = $this->journal( $target )->status( $operation_id );
+		$context = $this->describe( $root, array(), false );
+		$journal = $this->journal( $context );
+		$record  = $journal->status( $operation_id );
 		if ( is_wp_error( $record ) || ! is_array( $record ) ) {
 			return $record;
 		}
 		$descriptor = $record['receipt']['descriptor'];
 		$recovery   = $descriptor['recovery'] ?? array();
-		$directory  = $this->private_directory( $target );
-		$hold       = $recovery['hold'] ?? '';
-		if ( $target['components'] !== $descriptor['components'] || $target['identity'] !== $expected_identity ||
-			'file' !== $target['type'] || ! is_string( $directory ) || ! $this->private_recovery_path( $hold, $target ) ||
-			empty( $recovery['candidate_sha256'] ) || empty( $descriptor['preimage'] ) ||
+		$parts      = self::components( $relative );
+		if ( is_wp_error( $parts ) || ( $descriptor['root_id'] ?? null ) !== $root_id ||
+			( $descriptor['root_revision'] ?? null ) !== $root['revision'] ||
+			array_map( 'base64_encode', $parts ) !== ( $descriptor['components'] ?? null ) ||
+			! is_array( $recovery['preimage_stat'] ?? null ) || empty( $recovery['candidate_sha256'] ) || empty( $descriptor['preimage'] ) ) {
+			return new WP_Error( 'filesystem_manual_recovery_required', 'The original recovery scope or native generation evidence is unavailable.' );
+		}
+		$target = $this->mutation_target( $root_id, $relative, $purpose, true, $recovery );
+		if ( is_wp_error( $target ) ) {
+			return $target; }
+		$context['components'] = $descriptor['components'];
+		$request               = $this->request_descriptor(
+			$context,
+			array(
+				'action'            => 'write',
+				'preimage'          => $recovery['candidate_sha256'],
+				'source_sha256'     => $descriptor['preimage'],
+				'integrity'         => 'sha256',
+				'bytes'             => $recovery['preimage_stat']['size'],
+				'expected_identity' => $expected_identity,
+				'mode'              => $recovery['preimage_stat']['mode'] & 0777,
+				'ownership_pin'     => $recovery,
+			)
+		);
+		$history               = $journal->status( $recovery_id, hash( 'sha256', serialize( $request ) ) );
+		if ( null !== $history ) {
+			$result = $this->public_result( $history );
+			if ( is_array( $result ) && 'committed' === $result['outcome'] ) {
+				$result['cleanup_complete'] = $this->cleanup_recovery( $recovery );
+			}
+			return $result;
+		}
+		$hold = $recovery['hold'] ?? '';
+		$held = is_string( $hold ) ? @lstat( $hold ) : false;
+		if ( is_wp_error( $target ) || ( $descriptor['components'] ?? null ) !== $target['components'] ||
+			( $descriptor['root_revision'] ?? null ) !== $target['root_revision'] || $target['identity'] !== $expected_identity ||
+			'file' !== $target['type'] || ! $this->pinned_candidate( $target['path'], $target['stat'], $recovery ) ||
+			! $this->private_recovery_path( $hold, $target ) || ! is_array( $held ) ||
+			is_link( $hold ) || 0100000 !== ( $held['mode'] & 0170000 ) || 1 !== $held['nlink'] ||
+			! $this->same_candidate_metadata( $held, $recovery['preimage_stat'] ) ||
+			empty( $descriptor['preimage'] ) || empty( $recovery['candidate_sha256'] ) ||
 			! hash_equals( $recovery['candidate_sha256'], (string) hash_file( 'sha256', $target['path'] ) ) ||
-			is_link( $hold ) || ! is_file( $hold ) || 1 !== @lstat( $hold )['nlink'] ||
 			! hash_equals( $descriptor['preimage'], (string) hash_file( 'sha256', $hold ) ) ) {
-			return new WP_Error( 'filesystem_manual_recovery_required', 'The exact owned candidate and private preimage are not both available; preserve the evidence and reconcile manually.' );
+			return new WP_Error( 'filesystem_manual_recovery_required', 'The pinned owned candidate and private preimage are not both available; preserve the evidence and reconcile manually.' );
 		}
 		$stream = @fopen( $hold, 'rb' );
-		if ( ! is_resource( $stream ) ) {
-			return new WP_Error( 'filesystem_manual_recovery_required', 'Private recovery preimage is unavailable.' );
+		if ( ! is_resource( $stream ) || $this->stat_fields( fstat( $stream ) ) !== $this->stat_fields( $held ) ) {
+			if ( is_resource( $stream ) ) {
+				fclose( $stream ); }
+			return new WP_Error( 'filesystem_manual_recovery_required', 'Private recovery preimage is unavailable or changed.' );
 		}
 		try {
-			return $this->apply_verified_source(
+			$result = $this->apply_verified_source(
 				$root_id,
 				$relative,
 				$purpose,
@@ -1006,16 +1218,75 @@ final class Scoped_Filesystem {
 					'sha256'   => $recovery['candidate_sha256'],
 				),
 				array(
-					'stream'    => $stream,
-					'bytes'     => filesize( $hold ),
-					'sha256'    => $descriptor['preimage'],
-					'integrity' => 'sha256',
+					'stream'          => $stream,
+					'bytes'           => $held['size'],
+					'sha256'          => $descriptor['preimage'],
+					'integrity'       => 'sha256',
+					'mode'            => $held['mode'] & 0777,
+					'private_path'    => $hold,
+					'release_payload' => static function () {
+						return true; },
 				),
-				$recovery_id
+				$recovery_id,
+				$recovery
 			);
+			if ( ! is_wp_error( $result ) && 'committed' === ( $result['outcome'] ?? '' ) ) {
+				// These are exact private aliases only; the recovery effect has its own durable fence.
+				$result['cleanup_complete'] = $this->cleanup_recovery( $recovery );
+			}
+			return $result;
 		} finally {
 			fclose( $stream );
 		}
+	}
+
+	private function cleanup_recovery( array $recovery ) {
+		$clean = $this->unlink_candidate_alias( $recovery['stage'], $recovery['candidate_stat'] );
+		$clean = $this->unlink_candidate_alias( $recovery['candidate'], $recovery['candidate_stat'] ) && $clean;
+		return $this->unlink_candidate_alias( $recovery['hold'], $recovery['preimage_stat'] ) && $clean;
+	}
+
+	/** Link-count and ctime changes are owned publication metadata; the retained pin prevents inode reuse. */
+	private function same_candidate_metadata( array $actual, array $expected ) {
+		$keys = array_fill_keys( array( 'dev', 'ino', 'mode', 'uid', 'gid', 'size', 'mtime' ), true );
+		return array_intersect_key( $actual, $keys ) === array_intersect_key( $expected, $keys ) &&
+			$actual['ctime'] >= $expected['ctime'];
+	}
+
+	private function pinned_candidate( $path, array $stat, ?array $recovery ) {
+		if ( ! is_array( $recovery['candidate_stat'] ?? null ) || ! is_string( $recovery['candidate'] ?? null ) ||
+			! is_string( $recovery['stage'] ?? null ) ) {
+			return false;
+		}
+		$pin       = $recovery['candidate'];
+		$directory = dirname( $pin );
+		$parent    = @lstat( $directory );
+		clearstatcache( true, $pin );
+		$anchor = @lstat( $pin );
+		if ( ( $recovery['candidate_directory'] ?? null ) !== $directory ||
+			! is_array( $recovery['directory_generation'] ?? null ) ||
+			1 !== preg_match( '/^candidate-[a-f0-9]{48}$/D', basename( $pin ) ) ||
+			! is_array( $parent ) || is_link( $directory ) || realpath( $directory ) !== $directory ||
+			0700 !== ( $parent['mode'] & 0777 ) || self::native_generation( $parent ) !== $recovery['directory_generation'] ||
+			! is_array( $anchor ) || is_link( $pin ) || is_link( $path ) ||
+			0100000 !== ( $anchor['mode'] & 0170000 ) ||
+			! $this->same_candidate_metadata( $anchor, $recovery['candidate_stat'] ) ||
+			! $this->same_candidate_metadata( $stat, $recovery['candidate_stat'] ) ) {
+			return false;
+		}
+		clearstatcache( true, $recovery['stage'] );
+		$stage      = @lstat( $recovery['stage'] );
+		$stage_link = is_array( $stage ) && ! is_link( $recovery['stage'] ) &&
+			$this->same_candidate_metadata( $stage, $recovery['candidate_stat'] );
+		$links      = 1 + ( $path !== $pin ? 1 : 0 ) + ( $stage_link && $path !== $recovery['stage'] ? 1 : 0 );
+		return $stat['nlink'] === $links && $anchor['nlink'] === $links;
+	}
+
+	private function unlink_candidate_alias( $path, array $expected ) {
+		clearstatcache( true, $path );
+		$stat = @lstat( $path );
+		return false === $stat ? ! is_link( $path ) : ( ! is_link( $path ) &&
+			$this->same_candidate_metadata( $stat, $expected ) && @unlink( $path ) );
 	}
 
 	private function private_recovery_path( $path, array $target ) {
@@ -1043,7 +1314,8 @@ final class Scoped_Filesystem {
 			$target['root_id'],
 			$target['components'],
 			$target['purpose'],
-			'delete' === $descriptor['action']
+			'delete' === $descriptor['action'],
+			$target['owned_candidate'] ?? null
 		);
 		if ( is_wp_error( $fresh ) || $fresh['identity'] !== $target['identity'] ||
 			! $this->access->same_context( $target['root']['origin'] ) ) {

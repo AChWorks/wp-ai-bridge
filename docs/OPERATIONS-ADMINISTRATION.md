@@ -69,13 +69,15 @@ Each new mutation uses the shared fixed `scheduler` journal: reserve, acknowledg
 
 Responses distinguish native acknowledgement, observed provider status, provider failure and unknown outcome. `native_api_threw` describes an escaped native API exception; Action Scheduler may catch a callback exception internally. Its void return alone cannot establish success. A completed native provider status is reported as `provider_status_observed`, while business effects remain explicitly `unverified`. A failed callback may already have changed external/business state. Hook dispatch state is restored even when the provider catches an exception internally.
 
+After native dispatch, Bridge checks the original scalar blog/network/user/client before running hook-capable authority checks, and verifies current action-specific grants plus the journal context before provider readback, completion and audit. A callback or readback that switches identity or revokes authority leaves the dispatch fence armed and returns `scheduler_context_changed` with `outcome:unknown` and dispatch evidence. Bridge skips unauthorized follow-up reads and Activity writes; restoring authority permits status inspection, never automatic redispatch. Native provider work performed inside its own dispatch remains governed by that provider.
+
 Bridge fencing prevents this Bridge operation from replaying. It does not promise exactly-once callbacks against concurrent native workers, native target CAS, rollback, transactional recurrence or durable provider business receipts. Native scheduling/cancellation races and failed observation/persistence remain explicit limitations. Ordinary rescheduling can be performed as separately identified native scheduling/cancellation steps; no hidden multi-call atomic replacement is claimed.
 
 Existing permanent targeted-Core fences remain retained without a fixed lifetime-count ceiling. Native storage/resource failures still refuse admission. General Activity records contain fixed operation/status metadata, never callback arguments, log contents or raw provider failures.
 
 ## Compatibility evidence
 
-The focused native fixture is `tests/integration/issue199-native-schedulers-smoke.php`. It exercises standalone Core/no-provider behavior and real initialized Action Scheduler scheduling, processing, cancellation, recurrence and partial callback failure. Actual 3.9.3 and 4.2.0 runs belong to the coordinated integration evidence; a pure test double is not proof of those versions.
+The focused native fixture is `tests/integration/issue199-native-schedulers-smoke.php`. It exercises standalone Core/no-provider behavior and real initialized Action Scheduler scheduling, processing, cancellation, recurrence, partial callback failure and post-effect user/grant loss. The pure scheduler fence suite also covers blog/network/client and journal-context loss during dispatch and readback. Actual 3.9.3 and 4.2.0 runs belong to the coordinated integration evidence; a pure test double is not proof of those versions.
 
 Public upstream contracts:
 

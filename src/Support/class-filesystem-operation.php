@@ -118,6 +118,30 @@ final class Filesystem_Operation {
 		if ( ! is_wp_error( $existing_path ) || 'filesystem_not_found' !== $existing_path->get_error_code() ) {
 			return new WP_Error( 'filesystem_destination_exists', 'The destination must be absent; existing trees are never merged or overwritten.' );
 		}
+		$parent_parts = $destination;
+		array_pop( $parent_parts );
+		$bindings = array();
+		foreach ( $from['ancestors'] as $ancestor ) {
+			$selected               = $from;
+			$selected['components'] = $ancestor['path'] === $from['root']['path'] ? array() :
+				array_map( 'base64_encode', explode( DIRECTORY_SEPARATOR, substr( $ancestor['path'], strlen( $from['root']['path'] ) + 1 ) ) );
+			$selected['stat']       = $ancestor['stat'];
+			$bindings[ serialize( $selected['components'] ) ] = Scoped_Filesystem::directory_binding( $selected );
+		}
+		foreach ( array( $parent_parts ) as $ancestry ) {
+			for ( $depth = 0; $depth <= count( $ancestry ); ++$depth ) {
+				$ancestor = $this->fs->stat( $root_id, array_slice( $ancestry, 0, $depth ) );
+				if ( is_wp_error( $ancestor ) || 'directory' !== $ancestor['type'] ) {
+					return new WP_Error( 'filesystem_directory_replaced', 'A selected source or destination ancestor is unavailable.' );
+				}
+				$key     = serialize( $ancestor['components'] );
+				$binding = Scoped_Filesystem::directory_binding( $ancestor );
+				if ( isset( $bindings[ $key ] ) && $bindings[ $key ] !== $binding ) {
+					return new WP_Error( 'filesystem_directory_replaced', 'A selected ancestor changed during copy preparation.' );
+				}
+				$bindings[ $key ] = $binding;
+			}
+		}
 		$claim = $journal->reserve( $operation_id, $fingerprint, $request );
 		if ( is_wp_error( $claim ) || empty( $claim['dispatch_allowed'] ) ) {
 			return is_wp_error( $claim ) ? $claim :
@@ -164,6 +188,7 @@ final class Filesystem_Operation {
 			'parent_fingerprint' => $fingerprint,
 			'outcome'            => 'incomplete',
 			'processed'          => 0,
+			'ancestors'          => array_values( $bindings ),
 			'stack'              => array(),
 			'file'               => null,
 		);
@@ -176,7 +201,8 @@ final class Filesystem_Operation {
 			'cursor'      => 0,
 		);
 		if ( 'directory' === $from['type'] ) {
-			$state['stack'][] = $entry;
+			$entry['source_binding'] = Scoped_Filesystem::directory_binding( $from, true );
+			$state['stack'][]        = $entry;
 		} else {
 			$state['file'] = $entry;
 		}
@@ -287,176 +313,211 @@ final class Filesystem_Operation {
 						'move'        => $move,
 					);
 				}
-				if ( ! empty( $state['file'] ) ) {
-					$result = $this->copy_file( $state, $lease['save_checkpoint'] );
-					if ( is_wp_error( $result ) ) {
-						return $result;
+				if ( ! isset( $state['ancestors'] ) ) {
+					return new WP_Error( 'filesystem_operation_recovery_required', 'This continuation lacks original directory generation evidence; preserve both trees.' );
+				}
+				$bindings = $state['ancestors'];
+				foreach ( $state['stack'] as $position => $selected ) {
+					if ( empty( $selected['source_binding'] ) || ( $selected['created'] && empty( $selected['destination_binding'] ) ) ) {
+						return new WP_Error( 'filesystem_operation_recovery_required', 'This continuation lacks an owned directory generation.' );
 					}
-					if ( ! empty( $result['preparing'] ) ) {
-						return array(
-							'transfer_id' => $id,
-							'outcome'     => 'incomplete',
-							'processed'   => $state['processed'],
-							'move'        => $move,
-						);
+					// A committed rmdir may precede its cursor checkpoint. Its exact child receipt handles replay.
+					if ( ! ( $move && count( $state['stack'] ) - 1 === $position && isset( $selected['delete_identity'] ) ) ) {
+						$bindings[] = $selected['source_binding'];
 					}
-				} elseif ( $state['stack'] ) {
-					$index = count( $state['stack'] ) - 1;
-					$frame = $state['stack'][ $index ];
-					if ( $move && isset( $frame['delete_identity'] ) ) {
-						$result = $this->fs->delete(
-							$root_id,
-							$frame['source'],
-							'filesystem',
-							$frame['delete_identity'],
-							$this->child_id( $state, 'rmdir', $frame['source'] )
-						);
-						if ( is_wp_error( $result ) || 'committed' !== ( $result['outcome'] ?? '' ) ) {
-							return is_wp_error( $result ) ? $result : new WP_Error( 'filesystem_operation_recovery_required', 'Source directory deletion remains uncertain.' );
-						}
-						array_pop( $state['stack'] );
-						++$state['processed'];
-						if ( ! $state['stack'] ) {
-							$state['outcome'] = 'committed'; }
-						$saved = $lease['save_checkpoint']( $state );
-						if ( ! is_wp_error( $saved ) && 'committed' === $state['outcome'] ) {
-							return $this->finish( $state, $id, $lease['release_payload'] );
-						}
-						return is_wp_error( $saved ) ? $saved : array(
-							'transfer_id' => $id,
-							'outcome'     => $state['outcome'],
-							'processed'   => $state['processed'],
-							'move'        => true,
-						);
+					if ( $selected['created'] ) {
+						$bindings[] = $selected['destination_binding'];
 					}
-					if ( ! $frame['created'] ) {
-						$parent_parts = $frame['destination'];
-						array_pop( $parent_parts );
-						$parent = $this->fs->stat( $root_id, $parent_parts );
-						if ( is_wp_error( $parent ) ) {
-							return $parent;
-						}
-						if ( empty( $frame['parent_identity'] ) ) {
-							$state['stack'][ $index ]['parent_identity'] = $parent['identity'];
-							$saved                                       = $lease['save_checkpoint']( $state );
-							if ( is_wp_error( $saved ) ) {
-								return $saved; }
+				}
+				return $this->fs->with_directory_bindings(
+					$bindings,
+					function () use ( &$state, $lease, $root_id, $move, $id ) {
+						if ( ! empty( $state['file'] ) ) {
+							$result = $this->copy_file( $state, $lease['save_checkpoint'] );
+							if ( is_wp_error( $result ) ) {
+								return $result;
+							}
+							if ( ! empty( $result['preparing'] ) ) {
+								return array(
+									'transfer_id' => $id,
+									'outcome'     => 'incomplete',
+									'processed'   => $state['processed'],
+									'move'        => $move,
+								);
+							}
+						} elseif ( $state['stack'] ) {
+							$index = count( $state['stack'] ) - 1;
 							$frame = $state['stack'][ $index ];
-						}
-						$result = $this->fs->mkdir(
-							$root_id,
-							$frame['destination'],
-							'filesystem',
-							$frame['parent_identity'],
-							$this->child_id( $state, 'mkdir', $frame['source'] ),
-							0755
-						);
-						if ( is_wp_error( $result ) || 'committed' !== ( $result['outcome'] ?? '' ) ) {
-							return is_wp_error( $result ) ? $result : new WP_Error( 'filesystem_operation_recovery_required', 'Directory creation has an uncertain or rejected receipt; inspect it before continuing.' );
-						}
-						$state['stack'][ $index ]['created'] = true;
-					} else {
-						$entry   = null;
-						$listing = $this->fs->iterate_entries(
-							$root_id,
-							$frame['source'],
-							'filesystem',
-							$move ? null : $frame['identity'],
-							function ( $candidate ) use ( &$entry ) {
-								$entry = $candidate;
-								return false;
-							},
-							array(
-								'cursor'           => $frame['cursor'],
-								'entries'          => 1,
-								'reject_protected' => true,
-							)
-						);
-						if ( is_wp_error( $listing ) ) {
-							return $listing;
-						}
-						if ( is_array( $entry ) ) {
-							// Move deletes prior source children, so each scan starts from zero.
-							$state['stack'][ $index ]['cursor'] = $move ? 0 : $listing['cursor'];
-							$destination                        = $frame['destination'];
-							$destination[]                      = end( $entry['components'] );
-							$child                              = array(
-								'source'      => $entry['components'],
-								'destination' => $destination,
-								'identity'    => $entry['identity'],
-								'mode'        => $entry['mode'],
-								'created'     => false,
-								'cursor'      => 0,
-							);
-							if ( 'directory' === $entry['type'] ) {
-								$state['stack'][] = $child;
-							} else {
-								$state['file'] = $child;
-							}
-						} elseif ( $listing['complete'] ) {
-							// Directory mode changes are deferred to avoid blocking child construction.
-							$mode_target = $this->fs->stat( $root_id, $frame['destination'] );
-							if ( is_wp_error( $mode_target ) ) {
-								return $mode_target; }
-							if ( empty( $frame['mode_identity'] ) ) {
-								$state['stack'][ $index ]['mode_identity'] = $mode_target['identity'];
-								$saved                                     = $lease['save_checkpoint']( $state );
-								if ( is_wp_error( $saved ) ) {
-									return $saved; }
-								$frame = $state['stack'][ $index ];
-							}
-							$result = $this->fs->set_mode(
-								$root_id,
-								$frame['destination'],
-								'filesystem',
-								$frame['mode_identity'],
-								$frame['mode'],
-								$this->child_id( $state, 'mode', $frame['source'] )
-							);
-							if ( is_wp_error( $result ) || 'committed' !== ( $result['outcome'] ?? '' ) ) {
-								return is_wp_error( $result ) ? $result : new WP_Error( 'filesystem_operation_recovery_required', 'Directory mode completion is uncertain.' );
-							}
-							if ( $move ) {
-								$current = $this->fs->stat( $root_id, $frame['source'] );
-								if ( is_wp_error( $current ) ) {
-									return $current;
-								}
-								$state['stack'][ $index ]['delete_identity'] = $current['identity'];
-								$saved                                       = $lease['save_checkpoint']( $state );
-								if ( is_wp_error( $saved ) ) {
-									return $saved; }
+							if ( $move && isset( $frame['delete_identity'] ) ) {
 								$result = $this->fs->delete(
 									$root_id,
 									$frame['source'],
 									'filesystem',
-									$current['identity'],
+									$frame['delete_identity'],
 									$this->child_id( $state, 'rmdir', $frame['source'] )
 								);
 								if ( is_wp_error( $result ) || 'committed' !== ( $result['outcome'] ?? '' ) ) {
-									return is_wp_error( $result ) ? $result : new WP_Error( 'filesystem_operation_recovery_required', 'Source directory removal is uncertain.' );
+									return is_wp_error( $result ) ? $result : new WP_Error( 'filesystem_operation_recovery_required', 'Source directory deletion remains uncertain.' );
+								}
+								array_pop( $state['stack'] );
+								++$state['processed'];
+								if ( ! $state['stack'] ) {
+									$state['outcome'] = 'committed'; }
+								$saved = $lease['save_checkpoint']( $state );
+								if ( ! is_wp_error( $saved ) && 'committed' === $state['outcome'] ) {
+									return $this->finish( $state, $id, $lease['release_payload'] );
+								}
+								return is_wp_error( $saved ) ? $saved : array(
+									'transfer_id' => $id,
+									'outcome'     => $state['outcome'],
+									'processed'   => $state['processed'],
+									'move'        => true,
+								);
+							}
+							if ( ! $frame['created'] ) {
+								$parent_parts = $frame['destination'];
+								array_pop( $parent_parts );
+								$parent = $this->fs->stat( $root_id, $parent_parts );
+								if ( is_wp_error( $parent ) ) {
+									return $parent;
+								}
+								if ( empty( $frame['parent_identity'] ) ) {
+									$state['stack'][ $index ]['parent_identity'] = $parent['identity'];
+									$saved                                       = $lease['save_checkpoint']( $state );
+									if ( is_wp_error( $saved ) ) {
+										return $saved; }
+									$frame = $state['stack'][ $index ];
+								}
+								$result = $this->fs->mkdir(
+									$root_id,
+									$frame['destination'],
+									'filesystem',
+									$frame['parent_identity'],
+									$this->child_id( $state, 'mkdir', $frame['source'] ),
+									0755
+								);
+								if ( is_wp_error( $result ) || 'committed' !== ( $result['outcome'] ?? '' ) ) {
+									return is_wp_error( $result ) ? $result : new WP_Error( 'filesystem_operation_recovery_required', 'Directory creation has an uncertain or rejected receipt; inspect it before continuing.' );
+								}
+								$created = $this->fs->owned_entry(
+									$root_id,
+									$frame['destination'],
+									'filesystem',
+									$this->child_id( $state, 'mkdir', $frame['source'] ),
+									'mkdir'
+								);
+								if ( is_wp_error( $created ) ) {
+									return $created; }
+								$state['stack'][ $index ]['destination_binding'] = Scoped_Filesystem::directory_binding( $created );
+								$state['stack'][ $index ]['created']             = true;
+							} else {
+								$current = $this->fs->stat( $root_id, $frame['source'] );
+								if ( is_wp_error( $current ) ) {
+									return $current; }
+								$entry   = null;
+								$listing = $this->fs->iterate_entries(
+									$root_id,
+									$frame['source'],
+									'filesystem',
+									$move ? $current['identity'] : $frame['identity'],
+									function ( $candidate ) use ( &$entry ) {
+										$entry = $candidate;
+										return false;
+									},
+									array(
+										'cursor'           => $frame['cursor'],
+										'entries'          => 1,
+										'reject_protected' => true,
+									)
+								);
+								if ( is_wp_error( $listing ) ) {
+									return $listing;
+								}
+								if ( is_array( $entry ) ) {
+									// Move deletes prior source children, so each scan starts from zero.
+									$state['stack'][ $index ]['cursor'] = $move ? 0 : $listing['cursor'];
+									$destination                        = $frame['destination'];
+									$destination[]                      = end( $entry['components'] );
+									$child                              = array(
+										'source'      => $entry['components'],
+										'destination' => $destination,
+										'identity'    => $entry['identity'],
+										'mode'        => $entry['mode'],
+										'created'     => false,
+										'cursor'      => 0,
+									);
+									if ( 'directory' === $entry['type'] ) {
+										$child['source_binding'] = Scoped_Filesystem::directory_binding( $entry, true );
+										$state['stack'][]        = $child;
+									} else {
+										$state['file'] = $child;
+									}
+								} elseif ( $listing['complete'] ) {
+									// Directory mode changes are deferred to avoid blocking child construction.
+									$mode_target = $this->fs->stat( $root_id, $frame['destination'] );
+									if ( is_wp_error( $mode_target ) ) {
+										return $mode_target; }
+									if ( empty( $frame['mode_identity'] ) ) {
+										$state['stack'][ $index ]['mode_identity'] = $mode_target['identity'];
+										$saved                                     = $lease['save_checkpoint']( $state );
+										if ( is_wp_error( $saved ) ) {
+											return $saved; }
+										$frame = $state['stack'][ $index ];
+									}
+									$result = $this->fs->set_mode(
+										$root_id,
+										$frame['destination'],
+										'filesystem',
+										$frame['mode_identity'],
+										$frame['mode'],
+										$this->child_id( $state, 'mode', $frame['source'] )
+									);
+									if ( is_wp_error( $result ) || 'committed' !== ( $result['outcome'] ?? '' ) ) {
+										return is_wp_error( $result ) ? $result : new WP_Error( 'filesystem_operation_recovery_required', 'Directory mode completion is uncertain.' );
+									}
+									if ( $move ) {
+										$current = $this->fs->stat( $root_id, $frame['source'] );
+										if ( is_wp_error( $current ) ) {
+											return $current;
+										}
+										$state['stack'][ $index ]['delete_identity'] = $current['identity'];
+										$saved                                       = $lease['save_checkpoint']( $state );
+										if ( is_wp_error( $saved ) ) {
+											return $saved; }
+										$result = $this->fs->delete(
+											$root_id,
+											$frame['source'],
+											'filesystem',
+											$current['identity'],
+											$this->child_id( $state, 'rmdir', $frame['source'] )
+										);
+										if ( is_wp_error( $result ) || 'committed' !== ( $result['outcome'] ?? '' ) ) {
+											return is_wp_error( $result ) ? $result : new WP_Error( 'filesystem_operation_recovery_required', 'Source directory removal is uncertain.' );
+										}
+									}
+									array_pop( $state['stack'] );
+									++$state['processed'];
+								} else {
+									$state['stack'][ $index ]['cursor'] = $listing['cursor'];
 								}
 							}
-							array_pop( $state['stack'] );
-							++$state['processed'];
-						} else {
-							$state['stack'][ $index ]['cursor'] = $listing['cursor'];
 						}
+						if ( ! $state['stack'] && empty( $state['file'] ) ) {
+							$state['outcome'] = 'committed';
+						}
+						$saved = $lease['save_checkpoint']( $state );
+						if ( ! is_wp_error( $saved ) && 'committed' === $state['outcome'] ) {
+							return $this->finish( $state, $id, $lease['release_payload'] );
+						}
+						return is_wp_error( $saved ) ? $saved :
+						array(
+							'transfer_id' => $id,
+							'outcome'     => $state['outcome'],
+							'processed'   => $state['processed'],
+							'move'        => $move,
+						);
 					}
-				}
-				if ( ! $state['stack'] && empty( $state['file'] ) ) {
-					$state['outcome'] = 'committed';
-				}
-				$saved = $lease['save_checkpoint']( $state );
-				if ( ! is_wp_error( $saved ) && 'committed' === $state['outcome'] ) {
-					return $this->finish( $state, $id, $lease['release_payload'] );
-				}
-				return is_wp_error( $saved ) ? $saved :
-					array(
-						'transfer_id' => $id,
-						'outcome'     => $state['outcome'],
-						'processed'   => $state['processed'],
-						'move'        => $move,
-					);
+				);
 			}
 		);
 	}
@@ -477,7 +538,16 @@ final class Filesystem_Operation {
 				if ( 'committed' !== ( $deleted['outcome'] ?? '' ) ) {
 					return new WP_Error( 'filesystem_operation_recovery_required', 'Historical source deletion is uncertain; preserve both trees.' );
 				}
-				$verified = $this->fs->hash( $state['root_id'], $file['destination'] );
+				$owned = $this->fs->owned_entry(
+					$state['root_id'],
+					$file['destination'],
+					'filesystem',
+					$this->child_id( $state, 'copy', $file['source'] ),
+					'write'
+				);
+				if ( is_wp_error( $owned ) ) {
+					return $owned; }
+				$verified = $this->fs->hash( $state['root_id'], $file['destination'], 'filesystem', $owned['identity'] );
 				if ( is_wp_error( $verified ) || ! hash_equals( $file['sha256'], $verified['sha256'] ) ) {
 					return new WP_Error( 'filesystem_operation_recovery_required', 'Moved destination changed after recorded deletion.' );
 				}
@@ -608,7 +678,16 @@ final class Filesystem_Operation {
 			return is_wp_error( $result ) ? $result :
 				new WP_Error( 'filesystem_operation_recovery_required', 'The destination has a rejected or uncertain receipt; never blindly repeat it.' );
 		}
-		$target = $this->fs->hash( $state['root_id'], $file['destination'] );
+		$owned = $this->fs->owned_entry(
+			$state['root_id'],
+			$file['destination'],
+			'filesystem',
+			$this->child_id( $state, 'copy', $file['source'] ),
+			'write'
+		);
+		if ( is_wp_error( $owned ) ) {
+			return $owned; }
+		$target = $this->fs->hash( $state['root_id'], $file['destination'], 'filesystem', $owned['identity'] );
 		if ( is_wp_error( $target ) || ! hash_equals( $file['sha256'], $target['sha256'] ) ) {
 			return new WP_Error( 'filesystem_operation_recovery_required', 'Destination verification failed; preserve the source.' );
 		}
@@ -619,15 +698,20 @@ final class Filesystem_Operation {
 			}
 		}
 		if ( $state['move'] ) {
-			$deleted = $this->fs->delete(
-				$state['root_id'],
-				$file['source'],
-				'filesystem',
-				array(
-					'identity' => $file['identity'],
-					'sha256'   => $file['sha256'],
-				),
-				$this->child_id( $state, 'delete', $file['source'] )
+			$deleted = $this->fs->with_entry_guard(
+				$owned,
+				function () use ( $state, $file ) {
+					return $this->fs->delete(
+						$state['root_id'],
+						$file['source'],
+						'filesystem',
+						array(
+							'identity' => $file['identity'],
+							'sha256'   => $file['sha256'],
+						),
+						$this->child_id( $state, 'delete', $file['source'] )
+					);
+				}
 			);
 			if ( is_wp_error( $deleted ) || 'committed' !== ( $deleted['outcome'] ?? '' ) ) {
 				return is_wp_error( $deleted ) ? $deleted :

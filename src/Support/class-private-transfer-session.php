@@ -1890,7 +1890,7 @@ final class Private_Transfer_Session {
 			return false;
 		}
 		clearstatcache( true, $path );
-		$disk = lstat( $path );
+		$disk = @lstat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- A consumer may have removed its exact private inode; never leak private paths through warnings.
 		$fd   = fstat( $h );
 		if ( ! is_array( $disk ) || ! is_array( $fd ) ||
 			$disk['ino'] !== $fd['ino'] || $disk['dev'] !== $fd['dev'] ||
@@ -2744,6 +2744,7 @@ final class Private_Transfer_Session {
 			(int) get_current_user_id() !== $meta['user'] ||
 			OAuth_Server::authenticated_mcp_client_id() !== $meta['client'] ||
 			! $this->allowed( $meta['purpose'] ) ||
+			( null !== $this->administration && ( $meta['administration'] ?? null ) !== $this->administration ) ||
 			( null !== $this->native_options_scope &&
 				( ! is_int( $meta['source_id'] ?? null ) ||
 					$meta['source_id'] !== $this->native_binding()['source_id'] ||

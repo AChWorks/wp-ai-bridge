@@ -348,7 +348,7 @@ final class Scheduler_Abilities {
 					} else {
 						$result = $this->effect( $input, $origin, $budget, $journal );
 					}
-					if ( ! $this->authorized( 'status', $input['provider'] ?? 'wp_cron' ) || ! $this->access->same_context( $origin ) || true !== $journal->check_context() ) {
+					if ( ! $this->continuation_authorized( $input, $origin, $journal ) ) {
 						return $this->error( 'scheduler_context_changed' );
 					}
 					if ( is_wp_error( $result ) ) {
@@ -443,6 +443,11 @@ final class Scheduler_Abilities {
 		if ( ! $this->dispatched ) {
 			return $this->error( 'scheduler_arm_unavailable' );
 		}
+		// A dispatched callback may leave a different ambient principal/tenant
+		// or revoke its own authority. Never follow it with provider/audit work.
+		if ( ! $this->continuation_authorized( $input, $origin, $journal ) ) {
+			return $this->error( 'scheduler_context_changed' );
+		}
 		$captured = array(
 			'outcome'               => 'unknown',
 			'native_return'         => null,
@@ -460,8 +465,14 @@ final class Scheduler_Abilities {
 		} catch ( \Throwable $error ) {
 			// The dispatch remains fenced when provider readback fails.
 		}
+		if ( ! $this->continuation_authorized( $input, $origin, $journal ) ) {
+			return $this->error( 'scheduler_context_changed' );
+		}
 		$completed = $journal->complete( $claim, $captured );
-		$audited   = false;
+		if ( ! $this->continuation_authorized( $input, $origin, $journal ) ) {
+			return $this->error( 'scheduler_context_changed' );
+		}
+		$audited = false;
 		try {
 			$audited = Hook_Dispatch_Recovery::run(
 				function () use ( $captured ) {
@@ -475,6 +486,26 @@ final class Scheduler_Abilities {
 			$completed['audit_confirmed'] = $audited;
 		}
 		return $completed;
+	}
+	/**
+	 * Scalar identity precedes hook-capable policy checks; recheck it afterwards.
+	 * A failed post-dispatch boundary leaves the durable armed fence untouched.
+	 *
+	 * @param array $input Original action and provider.
+	 * @param array $origin Original scalar principal/tenant/client.
+	 * @param Administration_Operation_Journal $journal Original storage context.
+	 * @return bool
+	 */
+	private function continuation_authorized( array $input, array $origin, Administration_Operation_Journal $journal ) {
+		try {
+			return $this->access->same_context( $origin ) &&
+				$this->authorized( $input['action'], $input['provider'] ?? 'wp_cron' ) &&
+				$this->access->same_context( $origin ) &&
+				true === $journal->check_context() &&
+				$this->access->same_context( $origin );
+		} catch ( \Throwable $error ) {
+			return false;
+		}
 	}
 	/** @param mixed $input Request. @param string $mode Fixed mode. @return true|WP_Error */
 	private function parse( $input, $mode ) {
@@ -575,13 +606,17 @@ final class Scheduler_Abilities {
 	}
 	/** @param string $code Fixed safe error. @return WP_Error */
 	private function error( $code ) {
+		$data = array(
+			'dispatch_attempted' => $this->dispatched,
+			'operation_ref'      => $this->reference,
+		);
+		if ( $this->dispatched && 'scheduler_context_changed' === $code ) {
+			$data['outcome'] = 'unknown';
+		}
 		return new WP_Error(
 			$code,
 			__( 'The native scheduler request is invalid, unavailable or no longer authorized. Inspect its operation status before repeating an uncertain effect.', 'wp-ai-bridge' ),
-			array(
-				'dispatch_attempted' => $this->dispatched,
-				'operation_ref'      => $this->reference,
-			)
+			$data
 		);
 	}
 }

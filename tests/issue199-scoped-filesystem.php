@@ -9,6 +9,14 @@ namespace WP_AI_Bridge\Auth {
 	}
 }
 namespace WP_AI_Bridge\Support {
+	// Confined syscall fault injection: production code has no test hooks.
+	function unlink( $path ) {
+		if ( isset( $GLOBALS['fs_unlink_hook'] ) ) {
+			$result = $GLOBALS['fs_unlink_hook']( $path );
+			if ( null !== $result ) { return $result; }
+		}
+		return \unlink( $path );
+	}
 	class Permissions {}
 	class Administration_Access {
 		public function __construct( $permissions ) {}
@@ -52,6 +60,12 @@ namespace WP_AI_Bridge\Support {
 				unset( $GLOBALS['fs_arm_hook'] );
 				$hook( self::$records[ $claim['key'] ]['receipt']['descriptor'] );
 			}
+			$action = self::$records[ $claim['key'] ]['receipt']['descriptor']['action'];
+			if ( isset( $GLOBALS['fs_arm_action_hook'][ $action ] ) ) {
+				$hook = $GLOBALS['fs_arm_action_hook'][ $action ];
+				unset( $GLOBALS['fs_arm_action_hook'][ $action ] );
+				$hook( self::$records[ $claim['key'] ]['receipt']['descriptor'] );
+			}
 			self::$records[ $claim['key'] ]['state'] = 'dispatch_armed';
 			self::$records[ $claim['key'] ]['dispatch_allowed'] = false;
 			return true;
@@ -78,6 +92,12 @@ namespace {
 	}
 	function is_wp_error( $value ) { return $value instanceof WP_Error; }
 	function wp_json_encode( $value ) {
+		if ( isset( $GLOBALS['fs_checkpoint_hook'] ) && is_array( $value ) &&
+			'wpai-filesystem-copy-v1' === ( $value['checkpoint']['format'] ?? '' ) &&
+			$GLOBALS['fs_checkpoint_hook']( $value['checkpoint'] ) ) {
+			unset( $GLOBALS['fs_checkpoint_hook'] );
+			return false;
+		}
 		if ( ! empty( $GLOBALS['fs_fail_terminal_checkpoint'] ) && is_array( $value ) &&
 			'wpai-filesystem-copy-v1' === ( $value['checkpoint']['format'] ?? '' ) &&
 			'committed' === ( $value['checkpoint']['outcome'] ?? '' ) ) {
@@ -86,6 +106,7 @@ namespace {
 		}
 		return json_encode( $value );
 	}
+	function get_stylesheet() { return $GLOBALS['fs_stylesheet'] ?? 'theme-a'; }
 	function wp_salt( $purpose ) { return 'synthetic-filesystem-fixture-salt'; }
 	function get_current_blog_id() { return $GLOBALS['fs_origin']['blog']; }
 	function get_current_network_id() { return $GLOBALS['fs_origin']['network']; }
@@ -303,6 +324,98 @@ namespace {
 		} ), 'competing create fenced' );
 		check( 'rejected_no_effect' === $raced['outcome'] && file_get_contents( $fixture . '/site/uploads/competitor.bin' ) === 'winner', 'exclusive publication preserves competitor' );
 
+		$interrupted = function ( $name, $operation, $throw = false ) use ( $fs, $fixture, $make_input ) {
+			$old_bytes = 'old-preimage-larger-than-one-step';
+			file_put_contents( $fixture . '/site/uploads/' . $name, $old_bytes );
+			chmod( $fixture . '/site/uploads/' . $name, 0600 );
+			$preimage = ok( $fs->hash( 'data', $name ), 'recovery preimage' );
+			list( $input, $replacement ) = $make_input( 'same-candidate' );
+			$GLOBALS['fs_arm_hook'] = function ( $descriptor ) use ( $throw ) {
+				$GLOBALS['fs_recovery_fixture'] = $descriptor['recovery'];
+				$GLOBALS['fs_unlink_hook'] = function ( $path ) use ( $descriptor, $throw ) {
+					if ( $throw && $path === $descriptor['recovery']['stage'] ) {
+						unset( $GLOBALS['fs_unlink_hook'] );
+						\unlink( $path );
+						throw new \RuntimeException( 'synthetic interruption after private-stage unlink' );
+					}
+					if ( ! $throw && $path === $descriptor['recovery']['hold'] ) {
+						unset( $GLOBALS['fs_unlink_hook'] );
+						return false;
+					}
+					return null;
+				};
+			};
+			$result = $input->with_administration_source( $replacement['id'], function ( $source ) use ( $fs, $name, $preimage, $operation ) {
+				return $fs->apply_verified_source( 'data', $name, 'filesystem',
+					array( 'identity' => $preimage['identity'], 'sha256' => $preimage['sha256'] ), $source, $operation );
+			} );
+			check( is_wp_error( $result ) && 'transfer_source_changed' === $result->get_error_code(), 'interrupted private consumption directs inspection to the effect receipt' );
+			$status = ok( $fs->status( 'data', 'filesystem', $operation ), 'interrupted publication status' );
+			check( ( $throw ? 'unknown' : 'recovery_required' ) === $status['outcome'], 'uncertain/cleanup outcome remains durable' );
+			check( isset( $status['recovery_target']['identity'] ) && ! isset( $status['receipt']['descriptor']['recovery'] ), 'status exposes only exact owned recovery identity, no private pin' );
+			$recovery = $GLOBALS['fs_recovery_fixture'];
+			$published = lstat( $fixture . '/site/uploads/' . $name );
+			check( $published['ino'] === $recovery['candidate_stat']['ino'] && $published['dev'] === $recovery['candidate_stat']['dev'], 'durable prepublication native candidate identity matches actual publication' );
+			check( is_file( $recovery['candidate'] ) && ! file_exists( $recovery['stage'] ) && is_file( $recovery['hold'] ), 'unknown cleanup retains independent candidate pin after stage disappeared' );
+			ok( $input->cancel( $replacement['id'] ), 'disposable interrupted transfer metadata may be released without erasing recovery pin' );
+			return array( $status, $recovery, $old_bytes );
+		};
+		list( $status, $evidence, $old_bytes ) = $interrupted( 'recover-owned.bin', 'recover-owned-write-0001' );
+		$restored = ok( $fs->recover( 'data', 'recover-owned.bin', 'filesystem', 'recover-owned-write-0001',
+			'recover-owned-restore-0001', $status['recovery_target']['identity'] ), 'legitimate pinned generation recovery' );
+		check( 'committed' === $restored['outcome'] && $restored['cleanup_complete'], 'owned candidate recovery and exact evidence cleanup commit' );
+		check( $old_bytes === file_get_contents( $fixture . '/site/uploads/recover-owned.bin' ) &&
+			0600 === ( fileperms( $fixture . '/site/uploads/recover-owned.bin' ) & 0777 ), 'large preimage restored exactly with original private mode' );
+		check( ! file_exists( $evidence['candidate'] ) && ! file_exists( $evidence['hold'] ), 'completed recovery removes only its own private aliases' );
+		$replayed = ok( $fs->recover( 'data', 'recover-owned.bin', 'filesystem', 'recover-owned-write-0001',
+			'recover-owned-restore-0001', $status['recovery_target']['identity'] ), 'completed recovery replays immutable receipt after its pin/hold cleanup' );
+		check( 'committed' === $replayed['outcome'] && ! empty( $replayed['historical'] ), 'recovery is never redispatched after completed cleanup' );
+
+		list( $status, $evidence ) = $interrupted( 'recover-competitor.bin', 'recover-same-write-0001' );
+		rename( $fixture . '/site/uploads/recover-competitor.bin', $fixture . '/site/uploads/old-candidate.bin' );
+		file_put_contents( $fixture . '/site/uploads/recover-competitor.bin', 'same-candidate' );
+		chmod( $fixture . '/site/uploads/recover-competitor.bin', 0640 );
+		$competitor = ok( $fs->stat( 'data', 'recover-competitor.bin' ), 'same-byte independent competitor identity' );
+		$denied = $fs->recover( 'data', 'recover-competitor.bin', 'filesystem', 'recover-same-write-0001',
+			'recover-same-restore-0001', $competitor['identity'] );
+		check( is_wp_error( $denied ) && 'filesystem_manual_recovery_required' === $denied->get_error_code(), 'equal digest never proves ownership of an independent replacement' );
+		$after = ok( $fs->stat( 'data', 'recover-competitor.bin' ), 'competitor preserved after recovery refusal' );
+		check( $after['stat']['dev'] === $competitor['stat']['dev'] && $after['stat']['ino'] === $competitor['stat']['ino'] &&
+			0640 === $after['mode'] && 'same-candidate' === file_get_contents( $fixture . '/site/uploads/recover-competitor.bin' ), 'recovery preserves competitor inode, bytes and mode' );
+		check( is_file( $evidence['hold'] ) && is_file( $evidence['candidate'] ), 'same-byte refusal retains reconciliation evidence' );
+
+		list( $status, $evidence, $old_bytes ) = $interrupted( 'recover-unknown.bin', 'recover-unknown-write-0001', true );
+		$restored = ok( $fs->recover( 'data', 'recover-unknown.bin', 'filesystem', 'recover-unknown-write-0001',
+			'recover-unknown-restore-0001', $status['recovery_target']['identity'] ), 'unknown postpublication state can recover only its pinned generation' );
+		check( 'committed' === $restored['outcome'] && $old_bytes === file_get_contents( $fixture . '/site/uploads/recover-unknown.bin' ), 'unknown outcome retains enough ownership evidence for legitimate recovery' );
+
+		list( $status, $evidence ) = $interrupted( 'recover-missing.bin', 'recover-missing-write-0001' );
+		unlink( $fixture . '/site/uploads/recover-missing.bin' );
+		check( is_wp_error( $fs->recover( 'data', 'recover-missing.bin', 'filesystem', 'recover-missing-write-0001',
+			'recover-missing-restore-0001', $status['recovery_target']['identity'] ) ) &&
+			! file_exists( $fixture . '/site/uploads/recover-missing.bin' ), 'recovery never recreates a pathname independently removed after publication' );
+		check( is_file( $evidence['hold'] ) && is_file( $evidence['candidate'] ), 'missing live candidate preserves unknown cleanup evidence' );
+
+		list( $status, $evidence ) = $interrupted( 'recover-boundary.bin', 'recover-boundary-write-0001' );
+		$GLOBALS['fs_arm_hook'] = function () use ( $fixture ) {
+			rename( $fixture . '/site/uploads/recover-boundary.bin', $fixture . '/site/uploads/recover-boundary-owned.bin' );
+			file_put_contents( $fixture . '/site/uploads/recover-boundary.bin', 'same-candidate' );
+			chmod( $fixture . '/site/uploads/recover-boundary.bin', 0640 );
+			$GLOBALS['fs_boundary_competitor'] = lstat( $fixture . '/site/uploads/recover-boundary.bin' );
+		};
+		$rejected = ok( $fs->recover( 'data', 'recover-boundary.bin', 'filesystem', 'recover-boundary-write-0001',
+			'recover-boundary-restore-0001', $status['recovery_target']['identity'] ), 'recovery rechecks publication ownership at native effect boundary' );
+		$after = ok( $fs->stat( 'data', 'recover-boundary.bin' ), 'boundary competitor survives recovery' );
+		check( 'rejected_no_effect' === $rejected['outcome'] && $after['stat']['ino'] === $GLOBALS['fs_boundary_competitor']['ino'] &&
+			0640 === $after['mode'] && 'same-candidate' === file_get_contents( $fixture . '/site/uploads/recover-boundary.bin' ), 'late equal-byte competitor keeps inode/content/mode' );
+		check( is_file( $evidence['hold'] ) && is_file( $evidence['candidate'] ), 'late recovery refusal retains original evidence' );
+
+		list( $status, $evidence ) = $interrupted( 'recover-unpinned.bin', 'recover-unpinned-write-0001' );
+		unlink( $evidence['candidate'] );
+		$unowned = ok( $fs->stat( 'data', 'recover-unpinned.bin' ), 'unlinked pin leaves ordinary live candidate' );
+		check( is_wp_error( $fs->recover( 'data', 'recover-unpinned.bin', 'filesystem', 'recover-unpinned-write-0001',
+			'recover-unpinned-restore-0001', $unowned['identity'] ) ) && is_file( $evidence['hold'] ), 'missing pin never falls back to digest/ctime ownership inference' );
+
 		$stream = $factory( 'filesystem_export' );
 		$dynamic = ok( $stream->begin_administration_stream( 100 ), 'dynamic admission' );
 		$first = ok( $stream->append_verified_frame( $dynamic['id'], 0, 'first', hash( 'sha256', 'first' ) ), 'dynamic first frame' );
@@ -320,6 +433,48 @@ namespace {
 		check( strlen( $checkpoint['state']['large'] ) === 90000, 'private checkpoint roundtrip remains exact' );
 		unset( $GLOBALS['fs_options'][ \WP_AI_Bridge\Support\Transfer_Settings::OPTION_NAME ] );
 		check( is_wp_error( $stream->checkpoint( $dynamic['id'], array(), 0 ) ), 'stale checkpoint denied' );
+
+		list( $bound_store, $bound ) = $make_input( 'original-bound-bytes' );
+		$binding = array( 'root_id' => 'data', 'revision' => $GLOBALS['fs_config']['revision'], 'require_network' => false );
+		$changed_root = $binding;
+		$changed_root['root_id'] = 'other-root';
+		$wrong = \WP_AI_Bridge\Support\Private_Transfer_Session::for_administration( $permissions, 'filesystem_input', $changed_root );
+		$called = false;
+		foreach ( array(
+			function () use ( $wrong, $bound ) { return $wrong->status( $bound['id'] ); },
+			function () use ( $wrong, $bound ) { return $wrong->append( $bound['id'], 0, 'bad' ); },
+			function () use ( $wrong, $bound ) { return $wrong->checkpoint( $bound['id'], array( 'wrong' => true ) ); },
+			function () use ( $wrong, $bound, &$called ) { return $wrong->with_administration_source( $bound['id'], function () use ( &$called ) { $called = true; return true; } ); },
+			function () use ( $wrong, $bound ) { return $wrong->cancel( $bound['id'] ); },
+		) as $attempt ) {
+			$denied = $attempt();
+			check( is_wp_error( $denied ) && 'transfer_denied' === $denied->get_error_code(), 'new root binding cannot load/status/append/checkpoint/consume/cancel old lease' );
+		}
+		check( ! $called, 'binding mismatch never invokes consumer' );
+		$revision = $GLOBALS['fs_config']['revision'];
+		$GLOBALS['fs_config']['revision'] = str_repeat( 'b', 64 );
+		$wrong = $factory();
+		check( is_wp_error( $wrong->cancel( $bound['id'] ) ), 'new configuration revision cannot rebind or erase old bytes' );
+		$GLOBALS['fs_config']['revision'] = $revision;
+		$origin = $GLOBALS['fs_origin'];
+		$GLOBALS['fs_origin']['network'] = 2;
+		$wrong = $factory();
+		check( is_wp_error( $wrong->status( $bound['id'] ) ), 'new current constructor cannot rebind originating network' );
+		$GLOBALS['fs_origin'] = $origin;
+		$preserved = ok( $bound_store->with_administration_source( $bound['id'], function ( $source ) { return stream_get_contents( $source['stream'] ); } ), 'original exact binding still consumes after denied substitutes' );
+		check( 'original-bound-bytes' === $preserved, 'binding refusals preserve lease and exact payload' );
+		$GLOBALS['fs_grants'] += array_fill_keys( array( 'customizer_write', 'sensitive_native_settings_read',
+			'sensitive_native_settings_write', 'site_configuration' ), true );
+		$theme_store = \WP_AI_Bridge\Support\Private_Transfer_Session::for_administration( $permissions, 'customizer_input', array( 'require_network' => false, 'theme' => 'theme-a' ) );
+		$theme = ok( $theme_store->begin( 'customizer_input', 3, hash( 'sha256', 'abc' ), $policy['file'], $policy['chunk'], $policy['sessions'], $policy['ttl'], $policy['active'] ), 'theme-bound lease begins' );
+		ok( $theme_store->append( $theme['id'], 0, 'abc' ), 'theme-bound bytes' );
+		ok( $theme_store->verify( $theme['id'] ), 'theme-bound verification' );
+		$GLOBALS['fs_stylesheet'] = 'theme-b';
+		$wrong_theme = \WP_AI_Bridge\Support\Private_Transfer_Session::for_administration( $permissions, 'customizer_input', array( 'require_network' => false, 'theme' => 'theme-b' ) );
+		check( is_wp_error( $wrong_theme->cancel( $theme['id'] ) ), 'current new theme constructor cannot load or cancel prior theme lease' );
+		$GLOBALS['fs_stylesheet'] = 'theme-a';
+		$preserved = ok( $theme_store->with_administration_source( $theme['id'], function ( $source ) { return stream_get_contents( $source['stream'] ); } ), 'original theme binding survives rejected cancellation' );
+		check( 'abc' === $preserved, 'theme binding denial preserves payload' );
 
 		$revoked = $factory();
 		$own = ok( $revoked->begin( 'filesystem_input', 0, hash( 'sha256', '' ), $policy['file'], $policy['chunk'],
@@ -367,6 +522,83 @@ namespace {
 		check( $lost_response, 'termination after source deletion recovered from same immutable receipt' );
 		check( ! file_exists( $fixture . '/site/uploads/tree' ) &&
 			file_get_contents( $fixture . '/site/uploads/moved/file.bin' ) === $content, 'move conditionally deletes verified source tree' );
+
+		$cancel_job = function ( $job, $move ) use ( $permissions ) {
+			$store = \WP_AI_Bridge\Support\Private_Transfer_Session::for_administration( $permissions, 'filesystem_input',
+				array( 'root_id' => 'data', 'revision' => $GLOBALS['fs_config']['revision'], 'require_network' => false, 'operation' => $move ? 'move' : 'copy' ) );
+			ok( $store->cancel( $job['transfer_id'] ), 'release inert failed continuation with its exact original binding' );
+		};
+		foreach ( array( 'source', 'destination' ) as $replace_side ) {
+			$name = 'generation-' . $replace_side;
+			mkdir( $fixture . '/site/uploads/' . $name, 0755 );
+			file_put_contents( $fixture . '/site/uploads/' . $name . '/selected.bin', $content );
+			$selected = ok( $fs->stat( 'data', $name ), 'selected source generation' );
+			$job = ok( $operations->begin( 'data', $name, $name . '-target', true, $selected['identity'], 'generation-' . $replace_side . '-0001' ), 'generation-pinned move begins' );
+			ok( $operations->step( 'data', $job['transfer_id'], true ), 'generation-pinned destination created in prior request' );
+			$replaced = $name . ( 'destination' === $replace_side ? '-target' : '' );
+			rename( $fixture . '/site/uploads/' . $replaced, $fixture . '/site/uploads/' . $replaced . '-owned' );
+			mkdir( $fixture . '/site/uploads/' . $replaced, 0711 );
+			chmod( $fixture . '/site/uploads/' . $replaced, 0711 );
+			file_put_contents( $fixture . '/site/uploads/' . $replaced . '/competitor.bin', 'competitor-generation' );
+			$competitor = lstat( $fixture . '/site/uploads/' . $replaced );
+			$denied = $operations->step( 'data', $job['transfer_id'], true );
+			check( is_wp_error( $denied ) && 'filesystem_directory_replaced' === $denied->get_error_code(), 'resumed move rejects replaced ' . $replace_side . ' generation' );
+			$after = lstat( $fixture . '/site/uploads/' . $replaced );
+			check( $after['ino'] === $competitor['ino'] && $after['dev'] === $competitor['dev'] &&
+				0711 === ( $after['mode'] & 0777 ) && 'competitor-generation' === file_get_contents( $fixture . '/site/uploads/' . $replaced . '/competitor.bin' ), 'resumption preserves competitor directory inode/mode/content' );
+			check( ! file_exists( $fixture . '/site/uploads/' . $name . '-target/selected.bin' ), 'replacement receives no subsequent child copy' );
+			$cancel_job( $job, true );
+		}
+
+		mkdir( $fixture . '/site/uploads/staged-ancestor', 0755 );
+		file_put_contents( $fixture . '/site/uploads/staged-ancestor/file.bin', $content );
+		$selected = ok( $fs->stat( 'data', 'staged-ancestor' ), 'staged source ancestor' );
+		$job = ok( $operations->begin( 'data', 'staged-ancestor', 'staged-ancestor-target', true, $selected['identity'], 'staged-ancestor-generation-0001' ), 'ancestor-bound continuation' );
+		ok( $operations->step( 'data', $job['transfer_id'], true ), 'create ancestor-bound target' );
+		ok( $operations->step( 'data', $job['transfer_id'], true ), 'select file under original ancestor' );
+		ok( $operations->step( 'data', $job['transfer_id'], true ), 'stage first bounded file chunk' );
+		rename( $fixture . '/site/uploads/staged-ancestor', $fixture . '/site/uploads/staged-ancestor-owned' );
+		mkdir( $fixture . '/site/uploads/staged-ancestor', 0755 );
+		file_put_contents( $fixture . '/site/uploads/staged-ancestor/file.bin', $content );
+		$denied = $operations->step( 'data', $job['transfer_id'], true );
+		check( is_wp_error( $denied ) && 'filesystem_directory_replaced' === $denied->get_error_code() &&
+			! file_exists( $fixture . '/site/uploads/staged-ancestor-target/file.bin' ), 'staged file continuation rejects replacement ancestor before publication or deletion' );
+		check( $content === file_get_contents( $fixture . '/site/uploads/staged-ancestor/file.bin' ), 'same-byte file under replacement ancestor is preserved' );
+		$cancel_job( $job, true );
+
+		mkdir( $fixture . '/site/uploads/mkdir-crash-source', 0755 );
+		$selected = ok( $fs->stat( 'data', 'mkdir-crash-source' ), 'mkdir crash source' );
+		$job = ok( $operations->begin( 'data', 'mkdir-crash-source', 'mkdir-crash-target', false, $selected['identity'], 'mkdir-crash-generation-0001' ), 'mkdir crash continuation' );
+		$GLOBALS['fs_checkpoint_hook'] = function ( $state ) { return ! empty( $state['stack'][0]['created'] ); };
+		$lost = $operations->step( 'data', $job['transfer_id'], false );
+		check( is_wp_error( $lost ) && 'transfer_outcome_unknown' === $lost->get_error_code(), 'mkdir commit can precede lost continuation checkpoint' );
+		rename( $fixture . '/site/uploads/mkdir-crash-target', $fixture . '/site/uploads/mkdir-crash-owned' );
+		mkdir( $fixture . '/site/uploads/mkdir-crash-target', 0711 );
+		chmod( $fixture . '/site/uploads/mkdir-crash-target', 0711 );
+		file_put_contents( $fixture . '/site/uploads/mkdir-crash-target/competitor', 'keep' );
+		$denied = $operations->step( 'data', $job['transfer_id'], false );
+		check( is_wp_error( $denied ) && 'filesystem_generation_unverified' === $denied->get_error_code(), 'historical mkdir cannot adopt a replacement after checkpoint loss' );
+		check( 'keep' === file_get_contents( $fixture . '/site/uploads/mkdir-crash-target/competitor' ) &&
+			0711 === ( fileperms( $fixture . '/site/uploads/mkdir-crash-target' ) & 0777 ), 'historical mkdir preserves competing destination content/mode' );
+
+		$cancel_job( $job, false );
+
+		file_put_contents( $fixture . '/site/uploads/move-file-source.bin', 'abc' );
+		$selected = ok( $fs->stat( 'data', 'move-file-source.bin' ), 'file move generation source' );
+		$job = ok( $operations->begin( 'data', 'move-file-source.bin', 'move-file-target.bin', true, $selected['identity'], 'file-move-generation-0001' ), 'file move generation continuation' );
+		$GLOBALS['fs_arm_action_hook']['delete'] = function () use ( $fixture ) {
+			rename( $fixture . '/site/uploads/move-file-target.bin', $fixture . '/site/uploads/move-file-owned.bin' );
+			file_put_contents( $fixture . '/site/uploads/move-file-target.bin', 'abc' );
+			chmod( $fixture . '/site/uploads/move-file-target.bin', 0600 );
+			$GLOBALS['fs_file_competitor'] = lstat( $fixture . '/site/uploads/move-file-target.bin' );
+		};
+		$denied = $operations->step( 'data', $job['transfer_id'], true );
+		check( is_wp_error( $denied ) && is_file( $fixture . '/site/uploads/move-file-source.bin' ), 'conditional move delete rechecks verified destination generation at raw effect boundary' );
+		$after = lstat( $fixture . '/site/uploads/move-file-target.bin' );
+		check( $after['ino'] === $GLOBALS['fs_file_competitor']['ino'] && 0600 === ( $after['mode'] & 0777 ) &&
+			'abc' === file_get_contents( $fixture . '/site/uploads/move-file-target.bin' ), 'same-byte destination replacement and source are preserved at delete fence' );
+
+		$cancel_job( $job, true );
 
 		$root_config = $GLOBALS['fs_config']['roots']['data'];
 		$GLOBALS['fs_config']['roots']['data']['inode'] = -1;

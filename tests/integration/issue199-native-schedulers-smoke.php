@@ -26,11 +26,27 @@ $hook = 'wpai199_scheduler_' . bin2hex( random_bytes( 6 ) );
 $group = $hook;
 $counter = $hook . '_counter';
 $failure_hook = $hook . '_failure';
+$context_hook = $hook . '_context';
+$context_change = '';
 $effect = static function ( $marker = '' ) use ( $counter ) { update_option( $counter, (int) get_option( $counter, 0 ) + 1, false ); };
 $partial_failure = static function () use ( $counter ) {
 	update_option( $counter, (int) get_option( $counter, 0 ) + 1, false );
 	throw new RuntimeException( 'Synthetic scheduler callback failure after a private fixture effect.' );
 };
+$context_effect = static function () use ( $effect, &$context_change ) {
+	$effect();
+	if ( 'user' === $context_change ) {
+		wp_set_current_user( 0 );
+	} else {
+		$groups = array( 'grant' => Settings::GROUP_SCHEDULER_MANAGE, 'run' => Settings::GROUP_SCHEDULER_RUN,
+			'destructive' => Settings::GROUP_USERS_DESTRUCTIVE, 'code' => Settings::GROUP_CODE_EXTENSIONS );
+		$option = in_array( $context_change, array( 'grant', 'run' ), true ) ? Settings::ADMINISTRATION_OPTION_NAME : Settings::OPTION_NAME;
+		$grants = get_option( $option, array() );
+		$grants[ $groups[ $context_change ] ] = 0;
+		update_option( $option, $grants, false );
+	}
+};
+add_action( $context_hook, $context_effect );
 add_action( $hook, $effect, 10, 1 );
 add_action( $failure_hook, $partial_failure );
 $provider = new Scheduler_Abilities( new Permissions( $settings ), new Mutation_Log() );
@@ -102,7 +118,40 @@ try {
 		wpai199_scheduler_assert( ! is_wp_error( $failed_run ) && 'provider_failed' === $failed_run['receipt']['result']['outcome'] &&
 			'unverified' === $failed_run['receipt']['result']['business_effect'] && 3 === (int) get_option( $counter, 0 ), 'Caught provider failure hid a partial callback effect or claimed success.' );
 		wpai199_scheduler_assert( Hook_Dispatch_Recovery::snapshot()->stack === $baseline->stack, 'Internally caught Action Scheduler callback exception leaked WP_Hook state.' );
-		echo "PASS: #199 actual Core/Action Scheduler native lifecycle, recurrence and partial failure.\n";
+		foreach ( array( 'user', 'grant', 'run', 'destructive', 'code' ) as $context_change ) {
+			$scheduled = $provider->manage( array( 'action' => 'schedule', 'provider' => 'action_scheduler', 'hook' => $context_hook,
+				'group' => $group, 'timestamp' => $at, 'operation_id' => $hook . '-context-' . $context_change, 'confirm' => true ) );
+			wpai199_scheduler_assert( ! is_wp_error( $scheduled ), 'Context-changing native callback could not be scheduled.' );
+			$id = $scheduled['receipt']['result']['target_id'];
+			$selected = $provider->read( array( 'action' => 'get', 'provider' => 'action_scheduler', 'target_id' => $id ) );
+			wpai199_scheduler_assert( ! is_wp_error( $selected ), 'Context-changing native action could not be selected.' );
+			$run_request = array( 'action' => 'run', 'provider' => 'action_scheduler', 'target_id' => $id,
+				'expected_snapshot' => $selected['item']['snapshot'], 'operation_id' => $hook . '-context-run-' . $context_change, 'confirm' => true );
+			$audit_before = get_option( Mutation_Log::OPTION_NAME, array() );
+			$effects_before = (int) get_option( $counter, 0 );
+			try {
+				$changed = $provider->manage( $run_request );
+			} finally {
+				wp_set_current_user( $actor );
+				update_option( Settings::OPTION_NAME, $grants, false );
+				update_option( Settings::ADMINISTRATION_OPTION_NAME, $admin, false );
+			}
+			wpai199_scheduler_assert( is_wp_error( $changed ) && 'scheduler_context_changed' === $changed->get_error_code() &&
+				true === $changed->get_error_data()['dispatch_attempted'] && 'unknown' === ( $changed->get_error_data()['outcome'] ?? null ),
+				'Native callback context loss did not report an explicit unknown dispatched outcome.' );
+			wpai199_scheduler_assert( $effects_before + 1 === (int) get_option( $counter, 0 ) &&
+				$audit_before === get_option( Mutation_Log::OPTION_NAME, array() ), 'Native callback context loss hid its effect or wrote an unauthorized follow-up audit.' );
+			$status = $provider->manage( array( 'action' => 'status', 'provider' => 'action_scheduler', 'operation_id' => $run_request['operation_id'] ) );
+			wpai199_scheduler_assert( ! is_wp_error( $status ) && 'dispatch_armed' === $status['state'] && null === $status['receipt']['result'],
+				'Native callback context loss completed or discarded its armed fence.' );
+			$again = $provider->manage( $run_request );
+			// The real provider may reject the now-complete target as stale
+			// before journal lookup. Either result must preserve no redispatch.
+			wpai199_scheduler_assert( ( is_wp_error( $again ) ? in_array( $again->get_error_code(), array( 'scheduler_target_stale', 'scheduler_target_not_pending_or_claimed' ), true ) :
+				( ! $again['dispatch_attempted'] && 'dispatch_armed' === $again['state'] ) ) &&
+				$effects_before + 1 === (int) get_option( $counter, 0 ), 'Context-changing native callback replayed after authority restoration.' );
+		}
+		echo "PASS: #199 actual Core/Action Scheduler native lifecycle, recurrence and partial failure and post-effect context fencing.\n";
 	}
 	$admin[ Settings::GROUP_SCHEDULER_MANAGE ] = 0;
 	update_option( Settings::ADMINISTRATION_OPTION_NAME, $admin, false );
@@ -112,9 +161,11 @@ try {
 	wp_clear_scheduled_hook( $hook, $args );
 	remove_action( $hook, $effect, 10 );
 	remove_action( $failure_hook, $partial_failure, 10 );
+	remove_action( $context_hook, $context_effect, 10 );
 	if ( function_exists( 'as_unschedule_all_actions' ) ) {
 		as_unschedule_all_actions( $hook, array(), $group );
 		as_unschedule_all_actions( $failure_hook, array(), $group );
+		as_unschedule_all_actions( $context_hook, array(), $group );
 	}
 	delete_option( $counter );
 	if ( false === $original ) { delete_option( Settings::OPTION_NAME ); } else { update_option( Settings::OPTION_NAME, $original, false ); }

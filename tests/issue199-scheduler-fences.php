@@ -20,6 +20,8 @@ namespace {
 		return true;
 	}
 	function wp_get_scheduled_event( $hook, $args, $timestamp ) {
+		$GLOBALS['scheduler_fixture_observations'][] = array( \WP_AI_Bridge\Support\Administration_Access::$origin, \WP_AI_Bridge\Support\Administration_Access::$enabled );
+		if ( isset( $GLOBALS['scheduler_fixture_on_observe'] ) ) { ( $GLOBALS['scheduler_fixture_on_observe'] )(); }
 		$row = $GLOBALS['scheduler_fixture_events'][ $timestamp ][ $hook ][ md5( serialize( $args ) ) ] ?? false;
 		return false === $row ? false : (object) $row;
 	}
@@ -37,7 +39,10 @@ namespace WP_AI_Bridge\Support {
 		public function configuration() { return array( 'step_bytes' => 65536, 'step_seconds' => 2 ); }
 	}
 	class Mutation_Log {
-		public function record( $ability, $type, $id, $success, $code ) { return true; }
+		public function record( $ability, $type, $id, $success, $code ) {
+			$GLOBALS['scheduler_fixture_audits'][] = array( Administration_Access::$origin, Administration_Access::$enabled );
+			return true;
+		}
 	}
 	class Administration_Operation_Journal {
 		public static $records = array();
@@ -45,6 +50,8 @@ namespace WP_AI_Bridge\Support {
 		public static $fail_arm = false;
 		public static $fail_complete = false;
 		public static $arms = 0;
+		public static $completions = 0;
+		public static $context_valid = true;
 		private $identity;
 		public function __construct( $purpose, $identity, $budget ) {
 			if ( 'scheduler' !== $purpose ) { throw new \RuntimeException( 'Wrong purpose.' ); }
@@ -57,7 +64,7 @@ namespace WP_AI_Bridge\Support {
 		public function check_context() {
 			$identity = $this->identity;
 			unset( $identity['scope'] );
-			return $identity === Administration_Access::$origin ? true : new \WP_Error( 'context_changed', 'Changed.' );
+			return self::$context_valid && $identity === Administration_Access::$origin ? true : new \WP_Error( 'context_changed', 'Changed.' );
 		}
 		public function status( $id, $fingerprint = null ) {
 			$key = $this->key( $id );
@@ -89,6 +96,7 @@ namespace WP_AI_Bridge\Support {
 			return true;
 		}
 		public function complete( $claim, $result ) {
+			++self::$completions;
 			if ( self::$fail_complete ) { return new \WP_Error( 'administration_complete_unknown', 'Lost acknowledgement.' ); }
 			self::$records[ $claim['token'] ]['state'] = 'completed';
 			self::$records[ $claim['token'] ]['result'] = $result;
@@ -180,5 +188,50 @@ namespace {
 	$nested = $provider->manage( $request );
 	unset( $GLOBALS['scheduler_fixture_nested'] );
 	fence_assert( ! is_wp_error( $nested ) && $nested['dispatch_attempted'] && 4 === $GLOBALS['scheduler_fixture_calls'], 'Nested rejection destroyed outer accounting.' );
+
+	// Native callbacks and provider readback may leave a different ambient
+	// principal/tenant or revoke authority after a real effect. No follow-up
+	// provider observation, completion or audit may borrow that changed context.
+	$origin = Administration_Access::$origin;
+	foreach ( array( 'dispatch', 'observation' ) as $stage ) {
+		foreach ( array( 'user', 'blog', 'network', 'client', 'grant', 'journal' ) as $change ) {
+			$request['operation_id'] = 'fixture-post-' . $stage . '-' . $change;
+			++$request['timestamp'];
+			$calls = $GLOBALS['scheduler_fixture_calls'];
+			$observations = count( $GLOBALS['scheduler_fixture_observations'] ?? array() );
+			$audits = count( $GLOBALS['scheduler_fixture_audits'] ?? array() );
+			$completions = Administration_Operation_Journal::$completions;
+			$arms = Administration_Operation_Journal::$arms;
+			$callback = static function () use ( $change ) {
+				if ( 'grant' === $change ) {
+					Administration_Access::$enabled = false;
+				} elseif ( 'journal' === $change ) {
+					Administration_Operation_Journal::$context_valid = false;
+				} else {
+					Administration_Access::$origin[ $change ] = 'client' === $change ? 'foreign-client' : 99;
+				}
+			};
+			$key = 'dispatch' === $stage ? 'scheduler_fixture_nested' : 'scheduler_fixture_on_observe';
+			$GLOBALS[ $key ] = $callback;
+			$changed = $provider->manage( $request );
+			unset( $GLOBALS[ $key ] );
+			fence_assert( $observations + ( 'observation' === $stage ? 1 : 0 ) === count( $GLOBALS['scheduler_fixture_observations'] ?? array() ) &&
+				$audits === count( $GLOBALS['scheduler_fixture_audits'] ?? array() ) && $completions === Administration_Operation_Journal::$completions,
+				'Lost ' . $change . ' context after ' . $stage . ' reached follow-up observation, completion or audit.' );
+			fence_assert( is_wp_error( $changed ) && 'scheduler_context_changed' === $changed->get_error_code() &&
+				true === $changed->get_error_data()['dispatch_attempted'] && 'unknown' === ( $changed->get_error_data()['outcome'] ?? null ) &&
+				$calls + 1 === $GLOBALS['scheduler_fixture_calls'], 'Changed post-effect context lost explicit unknown/dispatch evidence.' );
+			Administration_Access::$origin = $origin;
+			Administration_Access::$enabled = true;
+			Administration_Operation_Journal::$context_valid = true;
+			$status = $provider->manage( array( 'action' => 'status', 'provider' => 'wp_cron', 'operation_id' => $request['operation_id'] ) );
+			fence_assert( ! is_wp_error( $status ) && 'dispatch_armed' === $status['state'] && null === $status['receipt']['result'] &&
+				! $status['dispatch_attempted'], 'Lost post-effect authority overwrote the armed fence.' );
+			$again = $provider->manage( $request );
+			fence_assert( ! is_wp_error( $again ) && 'dispatch_armed' === $again['state'] && ! $again['dispatch_attempted'] &&
+				$calls + 1 === $GLOBALS['scheduler_fixture_calls'] && $arms + 1 === Administration_Operation_Journal::$arms,
+				'Changed-context native effect replayed after original authority was restored.' );
+		}
+	}
 	echo 'Scheduler consumer fence regressions passed: ' . $assertions . "\n";
 }

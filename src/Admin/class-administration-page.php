@@ -58,7 +58,7 @@ final class Administration_Page {
 					</td></tr>
 				<?php endforeach; ?>
 				</tbody></table>
-				<?php submit_button( __( 'Save administration access', 'wp-ai-bridge' ) ); ?>
+				<?php submit_button( __( 'Save administration access', 'wp-ai-bridge' ), 'primary', 'wpai_administration_access_submit' ); ?>
 			</form>
 
 			<h2><?php echo esc_html__( 'Native database authority', 'wp-ai-bridge' ); ?></h2>
@@ -100,7 +100,7 @@ final class Administration_Page {
 					</td></tr>
 				</tbody></table>
 				<input type="hidden" name="form_complete" value="1">
-				<?php submit_button( __( 'Save approved scopes', 'wp-ai-bridge' ) ); ?>
+				<?php submit_button( __( 'Save approved scopes', 'wp-ai-bridge' ), 'primary', 'wpai_administration_scopes_submit' ); ?>
 			</form>
 		</div>
 		<?php
