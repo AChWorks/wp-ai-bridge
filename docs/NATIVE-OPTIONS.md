@@ -2,7 +2,7 @@
 
 This guide describes current source functionality pending release. A source commit, published release, installed plugin, exposed Ability and successful authorized operation are separate facts.
 
-`wp-ai-bridge/native-options-read` reads the effective native WordPress Options API view and creates complete private value snapshots. Use it for legitimate settings that do not have a registered REST setting, including sensitive provider configuration under explicit administrator consent. The existing registered REST setting Abilities retain their own schemas, permissions and lifecycle.
+`wp-ai-bridge/native-options-read` reads the effective native WordPress Options API view and creates complete private value snapshots. Use it for legitimate settings that do not have a registered REST setting, including sensitive provider configuration under explicit administrator consent. The existing registered REST setting Abilities retain their own schemas, permissions and lifecycle. One separately consented native add/update/delete family is documented in [Native option mutations](./NATIVE-OPTION-MUTATIONS.md), also pending release.
 
 ## Consent and scope
 
@@ -63,4 +63,4 @@ Hook-capable calls use the existing exception-safe WordPress dispatch recovery b
 
 Native reads preserve the filters installed in the current request. They do not execute provider admin screens, run arbitrary UI hooks or prove provider-specific business workflows. No add/update/delete, transaction, atomic CAS or exactly-once mutation claim is made by this read/export contract.
 
-Native setters, broader theme-mod/transient workflows, schema/advanced SQL, logs/queues/files and complete backup with verified restore remain accepted work in [Issue #199](https://github.com/AChWorks/wp-ai-bridge/issues/199). See [database administration](./DATABASE-ADMINISTRATION.md) for the distinct raw storage contract and [registered REST settings](./REGISTERED-SETTINGS.md) for its narrower REST lifecycle.
+The separate [native mutation contract](./NATIVE-OPTION-MUTATIONS.md) covers one add/update/delete family, inert write-input staging and historical recovery. Read snapshots cannot be used as write inputs. Broader theme-mod/transient/provider workflows, schema/advanced SQL, logs/queues/files and complete backup with verified restore remain accepted work in [Issue #199](https://github.com/AChWorks/wp-ai-bridge/issues/199). See [database administration](./DATABASE-ADMINISTRATION.md) for the distinct raw storage contract and [registered REST settings](./REGISTERED-SETTINGS.md) for its narrower REST lifecycle.

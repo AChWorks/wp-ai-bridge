@@ -24,8 +24,13 @@ fixtures=(
     issue199-database-write-identity-smoke.php
     issue199-database-write-concurrency-smoke.php
     issue199-database-write-transport-smoke.php
+    issue199-native-option-write-smoke.php
+    issue199-native-option-write-mcp-smoke.php
+    issue199-native-option-write-session-smoke.php
 )
-for fixture in issue199-database-write-helper.php issue199-database-write-concurrency-worker.php \
+for fixture in issue199-native-options-helper.php issue199-native-option-write-helper.php \
+    issue199-native-option-write-transport-proxy.php \
+    issue199-database-write-helper.php issue199-database-write-concurrency-worker.php \
     issue199-database-write-transport-proxy.php issue199-database-write-transport-worker.php "${fixtures[@]}"; do
     test -s "$root/tests/integration/$fixture" || {
         echo "ERROR: required typed-write fixture is missing: ${fixture}" >&2

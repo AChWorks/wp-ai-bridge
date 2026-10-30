@@ -27,6 +27,9 @@ final class Private_Transfer_Session {
 	/** @var string|null Fixed native scope; null preserves generic transport. */
 	private $native_options_scope = null;
 
+	/** @var bool Fixed write-input authority; read factories never gain it. */
+	private $native_options_write = false;
+
 	/** @var array<string,array> Exact original proofs of settings leases created by this instance. */
 	private $native_created_roots = array();
 
@@ -60,6 +63,24 @@ final class Private_Transfer_Session {
 		$store                       = new self( $permissions );
 		$store->native_options_scope = $scope;
 		return $store;
+	}
+
+	/**
+	 * Fixed inert native write-input factory, separate from read snapshots.
+	 *
+	 * @param Permissions $permissions Current native write delegation.
+	 * @param string      $scope Site or network.
+	 * @return self
+	 */
+	public static function for_native_options_write( Permissions $permissions, string $scope ) {
+		$store                       = self::for_native_options( $permissions, $scope );
+		$store->native_options_write = true;
+		return $store;
+	}
+
+	/** @return string This factory's one native read or write-input purpose. */
+	private function native_purpose() {
+		return 'native_' . $this->native_options_scope . '_settings_' . ( $this->native_options_write ? 'write' : 'read' );
 	}
 
 	/** @return array<string,mixed> Current native snapshot principal and source. */
@@ -799,7 +820,7 @@ final class Private_Transfer_Session {
 			}
 			list( $handle, $meta ) = $info;
 			try {
-				if ( 'native_' . $this->native_options_scope . '_settings_read' !== $meta['purpose'] ||
+				if ( $this->native_purpose() !== $meta['purpose'] ||
 					array_intersect_key( $meta, $proof['binding'] ) !== $proof['binding'] ||
 					$proof['total'] !== $meta['total'] ||
 					! hash_equals( $proof['sha256'], $meta['sha256'] ) ||
@@ -920,7 +941,7 @@ final class Private_Transfer_Session {
 		if ( null === $this->native_options_scope ) {
 			return $this->denied();
 		}
-		return $this->read_export_window( $id, $offset, $max_bytes, array( 'native_' . $this->native_options_scope . '_settings_read' ) );
+		return $this->read_export_window( $id, $offset, $max_bytes, array( $this->native_purpose() ) );
 	}
 
 	/** @return array<string,mixed>|WP_Error Shared immutable window implementation. */
@@ -1216,13 +1237,16 @@ final class Private_Transfer_Session {
 		}
 		if ( null !== $this->native_options_scope ) {
 			if ( ! in_array( $this->native_options_scope, array( 'site', 'network' ), true ) ||
-				'native_' . $this->native_options_scope . '_settings_read' !== $purpose ) {
+				$this->native_purpose() !== $purpose ) {
 				return false;
 			}
 			try {
 				return Hook_Dispatch_Recovery::run(
 					function () {
-						return ( new Native_Option_Access( $this->permissions ) )->allowed( $this->native_options_scope );
+						$access = new Native_Option_Access( $this->permissions );
+						return $this->native_options_write
+							? $access->allowed_write( $this->native_options_scope )
+							: $access->allowed( $this->native_options_scope );
 					}
 				);
 			} catch ( \Throwable $error ) {
@@ -1522,8 +1546,8 @@ final class Private_Transfer_Session {
 			is_int( $meta['user'] ) && $meta['user'] >= 1 &&
 			is_int( $meta['expires'] ) && $meta['expires'] >= 1 &&
 			is_string( $meta['client'] ) && is_string( $meta['purpose'] ) &&
-			in_array( $meta['purpose'], array( 'media', 'media_read', 'wxr_read', 'text', 'wxr', 'source_plugin', 'source_theme', 'source_plugin_read', 'source_theme_read', 'database_value', 'native_site_settings_read', 'native_network_settings_read' ), true ) &&
-			( ! in_array( $meta['purpose'], array( 'native_site_settings_read', 'native_network_settings_read' ), true ) ||
+			in_array( $meta['purpose'], array( 'media', 'media_read', 'wxr_read', 'text', 'wxr', 'source_plugin', 'source_theme', 'source_plugin_read', 'source_theme_read', 'database_value', 'native_site_settings_read', 'native_network_settings_read', 'native_site_settings_write', 'native_network_settings_write' ), true ) &&
+			( ! in_array( $meta['purpose'], array( 'native_site_settings_read', 'native_network_settings_read', 'native_site_settings_write', 'native_network_settings_write' ), true ) ||
 				( is_int( $meta['source_id'] ?? null ) && $meta['source_id'] > 0 &&
 					in_array( $meta['state'], array( 'open', 'verified' ), true ) ) ) &&
 			is_string( $meta['sha256'] ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $meta['sha256'] ) &&

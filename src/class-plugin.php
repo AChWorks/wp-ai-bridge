@@ -100,6 +100,7 @@ final class Plugin {
 		add_action( 'admin_init', array( new REST_Invocation_Input_Limits(), 'register' ) );
 		add_action( 'admin_menu', array( $this->settings_page, 'register_menu' ) );
 		add_action( 'admin_post_wpai_workspace_export', array( $this->settings_page, 'handle_export' ) );
+		add_action( 'admin_post_wpai_native_network_write', array( $this->settings_page, 'handle_native_network_write' ) );
 		add_action( 'admin_post_wpai_native_network_read', array( $this->settings_page, 'handle_native_network_read' ) );
 		add_action( 'admin_post_wpai_workspace_clear', array( $this->settings_page, 'handle_clear' ) );
 		add_action( 'admin_notices', array( $this, 'render_dependency_notices' ) );

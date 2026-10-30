@@ -217,6 +217,7 @@ final class Registrar {
 			new Database_Abilities( $this->permissions, $this->mutation_log ),
 			new Database_Write_Abilities( $this->permissions ),
 			new Native_Option_Abilities( $this->permissions, $this->mutation_log ),
+			new Native_Option_Write_Abilities( $this->permissions, $this->mutation_log ),
 			new Transfer_Media_Abilities( $this->permissions ),
 			new Transfer_Media_Export_Abilities( $this->permissions ),
 			new Transfer_Content_Abilities( $this->permissions ),

@@ -481,6 +481,8 @@ fi
 database_reader='src/Support/class-database-reader.php'
 database_connection='src/Support/class-database-connection.php'
 native_options_reader='src/Abilities/class-native-option-abilities.php'
+native_options_writer='src/Abilities/class-native-option-write-abilities.php'
+native_options_journal='src/Support/class-native-option-operation.php'
 metadata_store='src/Support/class-post-meta-store.php'
 term_metadata_store='src/Support/class-term-meta-store.php'
 user_comment_metadata_store='src/Support/class-user-comment-meta-store.php'
@@ -575,7 +577,7 @@ if grep -nE '\$wpdb->[A-Za-z_][A-Za-z0-9_]*' "$native_options_reader" |
     echo "ERROR: native options reader grew unapproved database primitives." >&2
     exit 1
 fi
-unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" | grep -vFx "$database_reader" | grep -vFx "$database_connection" | grep -vFx "$native_options_reader" || true)"
+unexpected_db_files="$(grep -R -lF '$wpdb' src --include='*.php' | grep -vFx "$metadata_store" | grep -vFx "$term_metadata_store" | grep -vFx "$user_comment_metadata_store" | grep -vFx "$oauth_store" | grep -vFx "$install_lock" | grep -vFx "$create_claim_store" | grep -vFx "$cron_run_store" | grep -vFx "$admission_lock" | grep -vFx "$native_content_cas" | grep -vFx "$workspace_scan" | grep -vFx "$database_reader" | grep -vFx "$database_connection" | grep -vFx "$native_options_reader" | grep -vFx "$native_options_writer" | grep -vFx "$native_options_journal" || true)"
 if [[ -n "$unexpected_db_files" ]]; then
     printf '%s\n' "$unexpected_db_files"
     echo "ERROR: direct database access found outside the bounded stores." >&2

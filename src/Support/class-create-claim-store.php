@@ -185,4 +185,222 @@ final class Create_Claim_Store {
 		);
 		return is_numeric( $count ) && '' === $wpdb->last_error ? max( 0, (int) $count ) : PHP_INT_MAX;
 	}
+	/** Native Options journal rows never consume legacy create quotas. */
+	const NATIVE_OPTION_PREFIX  = 'wpai_native_option_operation_';
+	const NATIVE_OPTION_FORMAT  = 'wpai-native-option-operation-v1';
+	const NATIVE_OPTION_PURPOSE = 'native_options_write';
+
+	/**
+	 * Reserve once and acknowledge our own commit before any native callback.
+	 *
+	 * @param Database_Connection $connection Retained Core connection.
+	 * @param string $name Fixed native journal identity.
+	 * @param string $initial Complete compact purpose-owned receipt.
+	 * @param int $budget Metadata processing allowance.
+	 * @return array Acquired flag and exact committed/existing receipt bytes.
+	 */
+	public static function reserve_native_option_operation( Database_Connection $connection, $name, $initial, $budget ) {
+		self::native_option_record( $name, $initial, $budget );
+		class_exists( Database_Control_Storage::class );
+		$commit_submitted = false;
+		try {
+			$connection->begin_callback_journal();
+			( new Database_Control_Storage( $connection, $budget ) )->receipt_schema();
+			$existing = self::native_option_read_locked( $connection, $name, $budget );
+			if ( null !== $existing ) {
+				if ( ! $connection->rollback() ) {
+					throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+				}
+				return array(
+					'acquired' => false,
+					'record'   => $existing,
+				);
+			}
+			try {
+				$connection->run(
+					'INSERT INTO ' . $connection->table( $connection->options ) . ' (option_name, option_value, autoload) VALUES (?, ?, ?)',
+					array( $name, $initial, 'off' )
+				);
+			} catch ( Database_Write_Failure $error ) {
+				if ( 1062 !== ( $error->details['errno'] ?? 0 ) ) {
+					throw $error;
+				}
+				$existing = self::native_option_read_locked( $connection, $name, $budget );
+				if ( null === $existing || ! $connection->rollback() ) {
+					throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+				}
+				return array(
+					'acquired' => false,
+					'record'   => $existing,
+				);
+			}
+			$stored = self::native_option_read_locked( $connection, $name, $budget );
+			if ( ! is_string( $stored ) || ! hash_equals( $initial, $stored ) ) {
+				throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+			}
+			$commit_submitted = true;
+			if ( ! $connection->commit() ) {
+				throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+			}
+			return array(
+				'acquired' => true,
+				'record'   => $stored,
+			);
+		} catch ( \Throwable $error ) {
+			self::native_option_failure( $connection, $error, $commit_submitted );
+		}
+	}
+
+	/**
+	 * Read current committed journal bytes without Options API/cache callbacks.
+	 *
+	 * @param Database_Connection $connection Retained Core connection.
+	 * @param string $name Fixed native journal identity.
+	 * @param int $budget Metadata processing allowance.
+	 * @return string|null
+	 */
+	public static function read_native_option_operation( Database_Connection $connection, $name, $budget ) {
+		self::native_option_name( $name, $budget );
+		class_exists( Database_Control_Storage::class );
+		try {
+			$connection->begin_callback_journal();
+			( new Database_Control_Storage( $connection, $budget ) )->receipt_schema();
+			$record = self::native_option_read_locked( $connection, $name, $budget );
+			if ( ! $connection->rollback() ) {
+				throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+			}
+			return $record;
+		} catch ( \Throwable $error ) {
+			self::native_option_failure( $connection, $error, false );
+		}
+	}
+
+	/**
+	 * Acknowledge a fresh empty callback-clean section after final authorization.
+	 *
+	 * @param Database_Connection $connection Retained Core connection.
+	 * @param string $name Fixed native journal identity.
+	 * @param string $before This invocation's exact committed fence.
+	 * @param int $budget Metadata processing allowance.
+	 * @return bool
+	 */
+	public static function ready_native_option_operation( Database_Connection $connection, $name, $before, $budget ) {
+		self::native_option_record( $name, $before, $budget );
+		class_exists( Database_Control_Storage::class );
+		$commit_submitted = false;
+		try {
+			$connection->begin_callback_journal();
+			( new Database_Control_Storage( $connection, $budget ) )->receipt_schema();
+			$record = self::native_option_read_locked( $connection, $name, $budget );
+			if ( ! is_string( $record ) || ! hash_equals( $before, $record ) ) {
+				throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+			}
+			$commit_submitted = true;
+			if ( ! $connection->commit() ) {
+				throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+			}
+			return true;
+		} catch ( \Throwable $error ) {
+			self::native_option_failure( $connection, $error, $commit_submitted );
+		}
+	}
+
+	/**
+	 * Complete only this exact committed fence; no provider callbacks.
+	 *
+	 * @param Database_Connection $connection Retained Core connection.
+	 * @param string $name Fixed native journal identity.
+	 * @param string $before Expected exact committed fence.
+	 * @param string $after Bounded purpose-owned result metadata.
+	 * @param int $budget Metadata processing allowance.
+	 * @return string Exact acknowledged completed receipt.
+	 */
+	public static function complete_native_option_operation( Database_Connection $connection, $name, $before, $after, $budget ) {
+		self::native_option_record( $name, $before, $budget );
+		self::native_option_record( $name, $after, $budget );
+		class_exists( Database_Control_Storage::class );
+		$commit_submitted = false;
+		try {
+			$connection->begin_callback_journal();
+			( new Database_Control_Storage( $connection, $budget ) )->receipt_schema();
+			$record = self::native_option_read_locked( $connection, $name, $budget );
+			if ( ! is_string( $record ) ) {
+				throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+			}
+			if ( ! hash_equals( $before, $record ) ) {
+				if ( ! hash_equals( $after, $record ) || ! $connection->rollback() ) {
+					throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+				}
+				return $record;
+			}
+			$updated = $connection->run(
+				'UPDATE ' . $connection->table( $connection->options ) . ' SET option_value = ? WHERE option_name = ? AND BINARY option_name = BINARY ? AND BINARY option_value = BINARY ?',
+				array( $after, $name, $name, $before )
+			);
+			$record  = self::native_option_read_locked( $connection, $name, $budget );
+			if ( 1 !== $updated['affected'] || ! is_string( $record ) || ! hash_equals( $after, $record ) ) {
+				throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+			}
+			$commit_submitted = true;
+			if ( ! $connection->commit() ) {
+				throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+			}
+			return $record;
+		} catch ( \Throwable $error ) {
+			self::native_option_failure( $connection, $error, $commit_submitted );
+		}
+	}
+
+	/** @param string $name Internal key. @param int $budget Finite allowance. @return void */
+	private static function native_option_name( $name, $budget ) {
+		if ( ! is_string( $name ) || 1 !== preg_match( '/^wpai_native_option_operation_[a-f0-9]{64}$/D', $name ) ||
+			! is_int( $budget ) || $budget < 1 || $budget >= PHP_INT_MAX ) {
+			throw new Database_Write_Failure( 'native_options_write_invalid' );
+		}
+	}
+
+	/** @param string $name Internal key. @param string $record Receipt. @param int $budget Finite allowance. @return void */
+	private static function native_option_record( $name, $record, $budget ) {
+		self::native_option_name( $name, $budget );
+		if ( ! is_string( $record ) || '' === $record || strlen( $record ) > $budget ) {
+			throw new Database_Write_Failure( 'native_options_write_budget' );
+		}
+		$value = json_decode( $record, true );
+		if ( ! is_array( $value ) || self::NATIVE_OPTION_FORMAT !== ( $value['format'] ?? '' ) ||
+			self::NATIVE_OPTION_PURPOSE !== ( $value['purpose'] ?? '' ) ||
+			array_key_exists( 'admission_domain', $value ) ||
+			! in_array( $value['state'] ?? '', array( 'fenced', 'completed' ), true ) ) {
+			throw new Database_Write_Failure( 'native_options_write_invalid' );
+		}
+	}
+
+	/** @param Database_Connection $connection Owned transaction. @param string $name Key. @param int $budget Bound. @return string|null */
+	private static function native_option_read_locked( Database_Connection $connection, $name, $budget ) {
+		$rows = $connection->run(
+			'SELECT option_name AS name, OCTET_LENGTH(option_value) AS bytes, SUBSTRING(CAST(option_value AS BINARY),1,?) AS value FROM ' .
+				$connection->table( $connection->options ) . ' WHERE option_name = ? LIMIT 2 FOR UPDATE',
+			array( (string) ( $budget + 1 ), $name ),
+			array(),
+			2
+		)['rows'];
+		if ( ! $rows ) {
+			return null;
+		}
+		if ( 1 !== count( $rows ) || ! is_string( $rows[0]['name'] ) || ! hash_equals( $name, $rows[0]['name'] ) ||
+			! ctype_digit( $rows[0]['bytes'] ?? '' ) || (float) $rows[0]['bytes'] > $budget ) {
+			throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+		}
+		$record = $rows[0]['value'];
+		self::native_option_record( $name, $record, $budget );
+		return $record;
+	}
+
+	/** @param Database_Connection $connection Journal only. @param \Throwable $error Failure. @param bool $commit_submitted Commit uncertain. @return never */
+	private static function native_option_failure( Database_Connection $connection, $error, $commit_submitted ) {
+		$restored = $connection->rollback();
+		if ( $commit_submitted || ! $restored ) {
+			throw new Database_Write_Failure( 'database_write_outcome_unknown' );
+		}
+		throw $error;
+	}
 }
