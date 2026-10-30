@@ -603,15 +603,15 @@ final class Native_Option_Abilities {
 
 	/** @return array */
 	private function input_schema() {
-		$scope  = array(
+		$scope           = array(
 			'type' => 'string',
 			'enum' => array( 'site', 'network' ),
 		);
-		$id     = array(
+		$id              = array(
 			'type'    => 'string',
 			'pattern' => '^[a-f0-9]{64}$',
 		);
-		$specs  = array(
+		$specs           = array(
 			'list'             => array(
 				'after_id'    => array(
 					'type'      => 'string',
@@ -650,9 +650,17 @@ final class Native_Option_Abilities {
 			'snapshot_status'  => array( 'transfer_id' => $id ),
 			'snapshot_release' => array( 'transfer_id' => $id ),
 		);
-		$one_of = array();
+		$one_of          = array();
+		$root_properties = array(
+			'action' => array(
+				'type' => 'string',
+				'enum' => array_keys( $specs ),
+			),
+			'scope'  => $scope,
+		);
 		foreach ( $specs as $action => $properties ) {
-			$required = array( 'action', 'scope' );
+			$root_properties += $properties;
+			$required         = array( 'action', 'scope' );
 			if ( in_array( $action, array( 'read', 'snapshot' ), true ) ) {
 				$required[] = 'name';
 			} elseif ( 0 === strpos( $action, 'snapshot_' ) ) {
@@ -678,8 +686,11 @@ final class Native_Option_Abilities {
 			);
 		}
 		return array(
-			'type'  => 'object',
-			'oneOf' => $one_of,
+			'type'                 => 'object',
+			'properties'           => $root_properties,
+			'required'             => array( 'action', 'scope' ),
+			'additionalProperties' => false,
+			'oneOf'                => $one_of,
 		);
 	}
 
