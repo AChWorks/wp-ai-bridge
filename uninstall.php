@@ -63,6 +63,14 @@ function wp_ai_bridge_uninstall_site_options() {
 }
 
 if ( is_multisite() ) {
+	foreach ( get_networks(
+		array(
+			'fields' => 'ids',
+			'number' => 0,
+		)
+	) as $network_id ) {
+		delete_network_option( (int) $network_id, 'wp_ai_bridge_network_settings_read' );
+	}
 	delete_site_option( 'wp_ai_bridge_source_lock' );
 	$site_ids = get_sites(
 		array(

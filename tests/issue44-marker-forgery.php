@@ -54,6 +54,7 @@ function current_user_can( $capability ) {
 }
 
 require dirname( __DIR__ ) . '/src/Support/class-settings.php';
+require dirname( __DIR__ ) . '/src/Support/class-native-option-access.php';
 require dirname( __DIR__ ) . '/src/Support/class-native-ability-delegation.php';
 require dirname( __DIR__ ) . '/src/Support/class-operation-content-limits.php';
 require dirname( __DIR__ ) . '/src/Support/class-permissions.php';

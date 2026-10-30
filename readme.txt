@@ -24,6 +24,8 @@ For setup, supported operations and troubleshooting, see https://github.com/AChW
 
 Database administration in current source is pending release. Four protected default-off grants cover Database Inspection, Sensitive Database Read, Database Write and Database Delete; existing ordinary grants never enable them on upgrade. Typed insert/update/delete batches use exact bytes/NULL, live schema/row preconditions, resumable staged values/keys and durable receipt recovery. Account/role/session and ordinary plugin-secret storage are intentionally within powerful database delegation; Bridge authorization/recovery/Workspace controls remain protected. Multisite requires actual Super Admin and network authority. Native WordPress/plugin features remain preferable when their business lifecycle and caches are required. Arbitrary SQL/schema and complete database/files backup with verified restore remain accepted unfinished work in Issue #199.
 
+Native unregistered and sensitive settings read/export is also implemented in current source, pending release. Separate default-off site and current-network grants protect native reads and complete private value snapshots; network access also requires actual Super Admin/network authority. Registered REST settings are unchanged. Native settings writes remain accepted follow-up work. Snapshot windows preserve complete captured bytes; native retrieval still requires memory for the full value.
+
 == Installation ==
 
 1. Install WordPress 6.9 or newer.

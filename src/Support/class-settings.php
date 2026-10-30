@@ -19,6 +19,9 @@ final class Settings {
 	const GROUP_DATABASE_WRITE      = 'database_write';
 	const GROUP_DATABASE_DELETE     = 'database_delete';
 
+	const GROUP_NATIVE_OPTIONS_READ = 'sensitive_native_settings_read';
+	const GROUP_NATIVE_NETWORK_READ = 'sensitive_network_settings_read';
+
 	const GROUP_SITE_READ         = 'site_read';
 	const GROUP_BUILDER_WRITE     = 'builder_write';
 	const GROUP_REMOTE_MEDIA      = 'remote_media';
@@ -51,7 +54,7 @@ final class Settings {
 			self::OPTION_NAME,
 			array(
 				'type'              => 'array',
-				'default'           => array_diff_key( $this->defaults(), $this->database_defaults() ),
+				'default'           => array_diff_key( $this->defaults(), $this->database_defaults(), array( self::GROUP_NATIVE_NETWORK_READ => 0 ) ),
 				'sanitize_callback' => array( $this, 'sanitize' ),
 				'show_in_rest'      => false,
 			)
@@ -139,6 +142,18 @@ final class Settings {
 	 */
 	public function groups() {
 		return array(
+			self::GROUP_NATIVE_OPTIONS_READ => array(
+				'label'       => __( 'Sensitive Native Site Settings Read', 'wp-ai-bridge' ),
+				'description' => __( 'Read and privately export exact native site settings, including credentials and structured private plugin data under any option name. WordPress administrator authority is required. This grants no settings writes.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_NATIVE_NETWORK_READ => array(
+				'label'       => __( 'Sensitive Native Network Settings Read', 'wp-ai-bridge' ),
+				'description' => __( 'Read and privately export current-network native settings, including secrets. Separate current-network consent, site settings read access and actual Super Admin network authority are required. Local site saves cannot change this grant.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
 			self::GROUP_DATABASE_INSPECTION => array(
 				'label'       => __( 'Database Inspection', 'wp-ai-bridge' ),
 				'description' => __( 'Inspect installation table, column and index metadata using the WordPress database connection. Multisite requires Super Admin. This does not expose stored record values.', 'wp-ai-bridge' ),
@@ -265,7 +280,9 @@ final class Settings {
 		$defaults = array();
 
 		foreach ( $this->groups() as $key => $group ) {
-			$defaults[ $key ] = ! empty( $group['default'] ) ? 1 : 0;
+			if ( self::GROUP_NATIVE_NETWORK_READ !== $key ) {
+				$defaults[ $key ] = ! empty( $group['default'] ) ? 1 : 0;
+			}
 		}
 
 		return $defaults;
@@ -282,7 +299,7 @@ final class Settings {
 		$value = array();
 
 		foreach ( $this->groups() as $key => $group ) {
-			if ( ! in_array( $key, self::DATABASE_GROUPS, true ) ) {
+			if ( self::GROUP_NATIVE_NETWORK_READ !== $key && ! in_array( $key, self::DATABASE_GROUPS, true ) ) {
 				$value[ $key ] = ! empty( $input[ $key ] ) ? 1 : 0;
 			}
 		}
@@ -301,6 +318,9 @@ final class Settings {
 	 * @return bool
 	 */
 	public function can_configure_group( $group ) {
+		if ( self::GROUP_NATIVE_NETWORK_READ === $group ) {
+			return Native_Option_Access::can_configure_network();
+		}
 		if ( ! in_array( $group, self::DATABASE_GROUPS, true ) ) {
 			return true;
 		}
@@ -320,12 +340,14 @@ final class Settings {
 		$value  = $this->defaults();
 
 		foreach ( array_keys( $this->groups() ) as $key ) {
-			if ( ! in_array( $key, self::DATABASE_GROUPS, true ) && array_key_exists( $key, $stored ) ) {
+			if ( self::GROUP_NATIVE_NETWORK_READ !== $key && ! in_array( $key, self::DATABASE_GROUPS, true ) && array_key_exists( $key, $stored ) ) {
 				$value[ $key ] = ! empty( $stored[ $key ] ) ? 1 : 0;
 			}
 		}
 		// Never inherit embedded legacy/unreleased bits from the ordinary row.
-		return array_replace( $value, $this->database_values() );
+		$value                                    = array_replace( $value, $this->database_values() );
+		$value[ self::GROUP_NATIVE_NETWORK_READ ] = Native_Option_Access::network_enabled() ? 1 : 0;
+		return $value;
 	}
 
 	/**

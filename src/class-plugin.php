@@ -13,6 +13,7 @@ use WP_AI_Bridge\Auth\OAuth_Server;
 use WP_AI_Bridge\Support\Environment;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Native_Ability_Delegation;
+use WP_AI_Bridge\Support\Native_Option_Access;
 use WP_AI_Bridge\Support\Permissions;
 use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Transfer_Settings;
@@ -76,7 +77,8 @@ final class Plugin {
 		$this->environment = new Environment();
 		$this->settings    = new Settings();
 		$this->settings->register_database_guard();
-		$this->permissions               = new Permissions( $this->settings );
+		$this->permissions = new Permissions( $this->settings );
+		( new Native_Option_Access( $this->permissions ) )->register_network_guards();
 		$this->native_ability_delegation = new Native_Ability_Delegation( $this->settings );
 		$this->workspace                 = new Store();
 		$this->registrar                 = new Registrar( $this->environment, $this->settings, $this->permissions, $this->workspace, $this->native_ability_delegation );
@@ -98,6 +100,7 @@ final class Plugin {
 		add_action( 'admin_init', array( new REST_Invocation_Input_Limits(), 'register' ) );
 		add_action( 'admin_menu', array( $this->settings_page, 'register_menu' ) );
 		add_action( 'admin_post_wpai_workspace_export', array( $this->settings_page, 'handle_export' ) );
+		add_action( 'admin_post_wpai_native_network_read', array( $this->settings_page, 'handle_native_network_read' ) );
 		add_action( 'admin_post_wpai_workspace_clear', array( $this->settings_page, 'handle_clear' ) );
 		add_action( 'admin_notices', array( $this, 'render_dependency_notices' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( WP_AI_BRIDGE_FILE ), array( $this, 'plugin_action_links' ) );

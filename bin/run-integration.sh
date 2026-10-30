@@ -82,6 +82,8 @@ for test in \
     foundation-smoke.php \
     issue199-database-smoke.php \
     issue199-database-mcp-smoke.php \
+    issue199-native-options-smoke.php \
+    issue199-native-options-mcp-smoke.php \
     issue199-database-write-smoke.php \
     issue199-database-write-staging-smoke.php \
     issue199-database-write-mcp-smoke.php \

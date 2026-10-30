@@ -9,6 +9,8 @@ The plugin is free and self-hosted. A direct **ChatGPT** connection is tested; a
 
 **Database administration in current source is pending release.** Four separate default-off grants cover Database Inspection, Sensitive Database Read, typed Database Write and Database Delete. The typed tool supports exact insert/update/delete batches, live row/schema preconditions, resumable large values/keys and receipt-bound recovery. Raw access can include credentials and account/role/session data; Bridge control state remains protected. Multisite requires actual Super Admin and network authority. See [database access, compatibility and recovery](./docs/DATABASE-ADMINISTRATION.md).
 
+**Native settings read/export in current source is pending release.** Separate site and network consent enables effective unregistered/sensitive WordPress option reads and complete private snapshots. See [native settings semantics and capacity](./docs/NATIVE-OPTIONS.md).
+
 ## Requirements
 
 - **WordPress 6.9 or newer**.

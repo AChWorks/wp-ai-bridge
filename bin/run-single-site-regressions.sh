@@ -75,6 +75,7 @@ run_eval issue54-client-assertion-replay-window-smoke.php
 run_eval issue56-registered-settings-smoke.php
 run_eval issue56-registered-settings-typed-smoke.php
 run_eval issue56-specialized-settings-smoke.php
+run_eval issue199-native-options-smoke.php
 
 run_eval issue58-user-comment-meta-smoke.php
 run_eval issue58-user-comment-meta-policy-smoke.php

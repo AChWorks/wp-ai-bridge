@@ -37,7 +37,7 @@ final class Mutation_Log {
 			'success'     => (bool) $success,
 			'error_code'  => Error_Details::from_wp_error( new \WP_Error( (string) $error_code, '' ) )['code'] ?? '',
 		);
-		if ( in_array( $ability, array( 'wp-ai-bridge/database-read', 'wp-ai-bridge/database-write' ), true ) ) {
+		if ( in_array( $ability, array( 'wp-ai-bridge/database-read', 'wp-ai-bridge/database-write', 'wp-ai-bridge/native-options-read' ), true ) ) {
 			$entry['client_fingerprint'] = substr( hash( 'sha256', OAuth_Server::authenticated_mcp_client_id() ), 0, 16 );
 			$entry['event_ref']          = bin2hex( random_bytes( 8 ) );
 		}
@@ -50,7 +50,7 @@ final class Mutation_Log {
 			$entry['phase']      = 'provider';
 			$entry['event_ref']  = bin2hex( random_bytes( 8 ) );
 		}
-		return $this->write( $entry );
+		return $this->write( $entry, 'wp-ai-bridge/native-options-read' === $ability );
 	}
 
 	/**
@@ -183,13 +183,41 @@ final class Mutation_Log {
 
 
 	/**
+	 * Required native settings audit verifies its exact generated event through
+	 * native readback. This is a filtered observation, not immutable storage.
+	 * Other activity consumers retain their existing write-result contract.
+	 *
 	 * @param array<string,mixed> $entry Fixed schema, never raw provider data.
+	 * @param bool $confirm_entry Require exact generated entry readback.
 	 * @return bool
 	 */
-	private function write( $entry ) {
+	private function write( $entry, $confirm_entry = false ) {
+		$context = $confirm_entry ? $this->audit_context() : null;
 		$entries = $this->retained();
+		if ( $confirm_entry && $context !== $this->audit_context() ) {
+			return false;
+		}
 		array_unshift( $entries, $entry );
-		return true === update_option( self::OPTION_NAME, array_slice( $entries, 0, self::LIMIT ), false );
+		$written = true === update_option( self::OPTION_NAME, array_slice( $entries, 0, self::LIMIT ), false );
+		if ( ! $written || ! $confirm_entry ) {
+			return $written;
+		}
+		if ( $context !== $this->audit_context() ) {
+			return false;
+		}
+		$observed = get_option( self::OPTION_NAME, array() );
+		return $context === $this->audit_context() && is_array( $observed ) &&
+			in_array( $entry, array_slice( $observed, 0, self::LIMIT ), true );
+	}
+
+	/** @return array<string,mixed> Request-local identity for required audit confirmation. */
+	private function audit_context() {
+		return array(
+			'blog'    => get_current_blog_id(),
+			'network' => function_exists( 'get_current_network_id' ) ? get_current_network_id() : 0,
+			'user'    => get_current_user_id(),
+			'client'  => OAuth_Server::authenticated_mcp_client_id(),
+		);
 	}
 
 	/**
