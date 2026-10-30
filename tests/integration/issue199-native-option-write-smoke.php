@@ -143,6 +143,16 @@ try {
 		wpai199n_assert( 0 === $alias_calls && 'exact stored alias target' === get_option( $names[4] ), 'Collation alias reached a native target or changed stored bytes.' );
 	} finally { remove_filter( 'pre_option_' . $alias, $alias_sentinel ); }
 
+	// Activity permits sanitized stdClass diagnostics. A fresh native read
+	// recreates object identities, so whole-log snapshots compare exact bytes.
+	$roundtrip_details = WP_AI_Bridge\Support\Error_Details::from_wp_error( new WP_Error( 'native_fixture_roundtrip', 'Inert diagnostic', array( 'observation' => (object) array( 'state' => 'inert' ) ) ) );
+	$roundtrip_ref = ( new Mutation_Log() )->record_mcp_failure( 'fixture/native-audit-roundtrip', $roundtrip_details, 'native_ability', 'native_result', 'inspect_native_result', 'native199-audit-roundtrip-fixture' );
+	wpai199n_assert( '' !== $roundtrip_ref, 'Cannot persist the sanitized nested-object Activity fixture.' );
+	$roundtrip_log = get_option( Mutation_Log::OPTION_NAME, array() );
+	wp_cache_delete( Mutation_Log::OPTION_NAME, 'options' );
+	$fresh_roundtrip_log = get_option( Mutation_Log::OPTION_NAME, array() );
+	wpai199n_assert( $roundtrip_ref === ( $fresh_roundtrip_log[0]['event_ref'] ?? '' ) && ( $fresh_roundtrip_log[0]['error_data']['observation'] ?? null ) instanceof stdClass && $roundtrip_log[0]['error_data']['observation'] !== $fresh_roundtrip_log[0]['error_data']['observation'] && maybe_serialize( $roundtrip_log ) === maybe_serialize( $fresh_roundtrip_log ), 'Fresh Activity read did not preserve exact content across a nested-object roundtrip.' );
+
 	// Facade begin can succeed before the outer Ability audit/output gate fails.
 	// Only its newly allocated input may be discarded, even after revocation.
 	$input_store = Private_Transfer_Session::for_native_options_write( new Permissions( $settings ), 'site' );
@@ -177,8 +187,10 @@ try {
 			wpai199nw_public_private( $failed_begin, array( $name, $begin_error_secret, basename( $allocated_before_failure[0], '.meta' ) ) );
 			$failed_data = $failed_begin->get_error_data();
 			wpai199n_assert( ! is_array( $failed_data ) || ! array_key_exists( 'transfer_id', $failed_data ), 'Failed inert input begin returned a usable private ID.' );
-			if ( 'transform' === $begin_failure ) { wpai199n_assert( 1 === $write_seen && $before_audit !== get_option( Mutation_Log::OPTION_NAME ), 'Transformed input-begin audit did not exercise an actual successful changed log write.' ); }
-			if ( 'false' === $begin_failure ) { wpai199n_assert( 0 === $write_seen && $before_audit === get_option( Mutation_Log::OPTION_NAME ), 'False input-begin veto did not leave the original log untouched.' ); }
+			wp_cache_delete( Mutation_Log::OPTION_NAME, 'options' );
+			$observed_audit = get_option( Mutation_Log::OPTION_NAME );
+			if ( 'transform' === $begin_failure ) { wpai199n_assert( 1 === $write_seen && maybe_serialize( $before_audit ) !== maybe_serialize( $observed_audit ), 'Transformed input-begin audit did not exercise an actual successful changed log write.' ); }
+			if ( 'false' === $begin_failure ) { wpai199n_assert( 0 === $write_seen && maybe_serialize( $before_audit ) === maybe_serialize( $observed_audit ), 'False input-begin veto did not leave the original log untouched.' ); }
 			$new_files = array_diff( glob( $input_root . '/*' ), $before_files );
 			$new_lease_files = array_filter( $new_files, static function ( $path ) { return 1 === preg_match( '/^[a-f0-9]{64}\.(meta(?:\.state\.[01])?|bytes|scratch|claim|tombstone)$/D', basename( $path ) ); } );
 			wpai199n_assert( array() === array_values( $new_lease_files ), 'Failed outer input-begin gate left new private bytes/checkpoints/reservation.' );
@@ -194,7 +206,8 @@ try {
 				if ( 1 === preg_match( '/^([a-f0-9]{64})\.meta$/D', basename( $orphan ), $match ) ) { wpai199nw_call( array( 'action' => 'input_release', 'scope' => 'site', 'transfer_id' => $match[1] ) ); }
 			}
 			wpai199n_restore_option( Mutation_Log::OPTION_NAME, $before_audit );
-			wpai199n_assert( $before_flags === get_option( Settings::OPTION_NAME ) && $before_audit === get_option( Mutation_Log::OPTION_NAME ) && $before_value === get_option( $name ) && $actor === get_current_user_id() && $before_blog === get_current_blog_id() && $before_client === WP_AI_Bridge\Auth\OAuth_Server::authenticated_mcp_client_id(), 'Input-begin failure fixture did not restore exact authority/audit/value/caller state.' );
+			wp_cache_delete( Mutation_Log::OPTION_NAME, 'options' );
+			wpai199n_assert( $before_flags === get_option( Settings::OPTION_NAME ) && maybe_serialize( $before_audit ) === maybe_serialize( get_option( Mutation_Log::OPTION_NAME ) ) && $before_value === get_option( $name ) && $actor === get_current_user_id() && $before_blog === get_current_blog_id() && $before_client === WP_AI_Bridge\Auth\OAuth_Server::authenticated_mcp_client_id(), 'Input-begin failure fixture did not restore exact authority/audit/value/caller state.' );
 		}
 	}
 

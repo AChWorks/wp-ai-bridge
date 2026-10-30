@@ -210,6 +210,16 @@ try {
 	wpai199n_error( wpai199nw_call( array( 'action' => 'input_status', 'scope' => 'network', 'transfer_id' => $input_id ) ), 'Another current network reopened original-blog native input.' );
 	wpai199n_protected_denial( static function () use ( $network ) { update_network_option( $network, Native_Option_Access::NETWORK_WRITE_OPTION_NAME, 0 ); } );
 	$current_site = $original_network_context;
+	// Activity permits sanitized stdClass diagnostics. A fresh native read
+	// recreates object identities, so whole-log snapshots compare exact bytes.
+	$roundtrip_details = WP_AI_Bridge\Support\Error_Details::from_wp_error( new WP_Error( 'native_fixture_roundtrip', 'Inert diagnostic', array( 'observation' => (object) array( 'state' => 'inert' ) ) ) );
+	$roundtrip_ref = ( new Mutation_Log() )->record_mcp_failure( 'fixture/native-audit-roundtrip', $roundtrip_details, 'native_ability', 'native_result', 'inspect_native_result', 'native199-audit-roundtrip-fixture' );
+	wpai199n_assert( '' !== $roundtrip_ref, 'Cannot persist the sanitized nested-object Activity fixture.' );
+	$roundtrip_log = get_option( Mutation_Log::OPTION_NAME, array() );
+	wp_cache_delete( Mutation_Log::OPTION_NAME, 'options' );
+	$fresh_roundtrip_log = get_option( Mutation_Log::OPTION_NAME, array() );
+	wpai199n_assert( $roundtrip_ref === ( $fresh_roundtrip_log[0]['event_ref'] ?? '' ) && ( $fresh_roundtrip_log[0]['error_data']['observation'] ?? null ) instanceof stdClass && $roundtrip_log[0]['error_data']['observation'] !== $fresh_roundtrip_log[0]['error_data']['observation'] && maybe_serialize( $roundtrip_log ) === maybe_serialize( $fresh_roundtrip_log ), 'Fresh Activity read did not preserve exact content across a nested-object roundtrip.' );
+
 	// The outer audit can change only network after a successful SITE begin.
 	// Its originating facade must still erase just its own new allocation.
 	$begin_store = WP_AI_Bridge\Support\Private_Transfer_Session::for_native_options_write( new WP_AI_Bridge\Support\Permissions( $settings ), 'site' );
@@ -242,7 +252,8 @@ try {
 			if ( 1 === preg_match( '/^([a-f0-9]{64})\.meta$/D', basename( $orphan ), $match ) ) { wpai199nw_call( array( 'action' => 'input_release', 'scope' => 'site', 'transfer_id' => $match[1] ) ); }
 		}
 		wpai199n_restore_option( Mutation_Log::OPTION_NAME, $begin_audit );
-		wpai199n_assert( $current_site === $begin_network_context && $begin_audit === get_option( Mutation_Log::OPTION_NAME ), 'Network-drift begin fixture did not restore exact current network/audit state.' );
+		wp_cache_delete( Mutation_Log::OPTION_NAME, 'options' );
+		wpai199n_assert( $current_site === $begin_network_context && maybe_serialize( $begin_audit ) === maybe_serialize( get_option( Mutation_Log::OPTION_NAME ) ), 'Network-drift begin fixture did not restore exact current network/audit state.' );
 	}
 	$site_facade = new WP_AI_Bridge\Support\Native_Option_Inputs( new WP_AI_Bridge\Support\Permissions( $settings ), 'site' );
 	$retained_verified = wpai199n_ok( $site_facade->status( $site_verified['transfer_id'] ), 'Network-drift cleanup lost the prior verified SITE input.' );
