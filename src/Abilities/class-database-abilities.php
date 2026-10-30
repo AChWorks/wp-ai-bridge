@@ -202,6 +202,16 @@ final class Database_Abilities {
 
 	/** @param mixed $input Request. @param bool $raw Stored-value surface. @return array|WP_Error */
 	private function validate( $input, $raw ) {
+		if ( $input instanceof \stdClass ) {
+			$input = (array) $input;
+		}
+		if ( is_array( $input ) ) {
+			foreach ( array( 'filters', 'key', 'key_hashes' ) as $name ) {
+				if ( isset( $input[ $name ] ) && $input[ $name ] instanceof \stdClass ) {
+					$input[ $name ] = (array) $input[ $name ];
+				}
+			}
+		}
 		$actions = $raw ? array(
 			'rows' => array( 'action', 'table', 'columns', 'limit', 'offset', 'after_id', 'filters' ),
 			'cell' => array( 'action', 'table', 'column', 'key', 'key_hashes', 'row_offset', 'filters', 'offset', 'length', 'expected_sha256' ),
@@ -276,6 +286,7 @@ final class Database_Abilities {
 					return $this->invalid();
 				}
 				foreach ( $input[ $name ] as $column => $value ) {
+					$column = (string) $column;
 					if ( ! $this->identifier( $column ) || ( null !== $value && ( ! is_string( $value ) ||
 						strlen( $value ) > Bounded_Payload::response_limit() || false === base64_decode( $value, true ) ||
 						base64_encode( base64_decode( $value, true ) ) !== $value ) ) ) {
@@ -293,6 +304,7 @@ final class Database_Abilities {
 				return $this->invalid();
 			}
 			foreach ( $input['key_hashes'] as $column => $hash ) {
+				$column = (string) $column;
 				if ( ! $this->identifier( $column ) || ! is_string( $hash ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $hash ) ) {
 					return $this->invalid();
 				}

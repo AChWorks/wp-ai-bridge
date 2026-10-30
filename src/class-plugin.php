@@ -73,8 +73,9 @@ final class Plugin {
 
 		$this->booted = true;
 		( new GitHub_Updates() )->boot();
-		$this->environment               = new Environment();
-		$this->settings                  = new Settings();
+		$this->environment = new Environment();
+		$this->settings    = new Settings();
+		$this->settings->register_database_guard();
 		$this->permissions               = new Permissions( $this->settings );
 		$this->native_ability_delegation = new Native_Ability_Delegation( $this->settings );
 		$this->workspace                 = new Store();

@@ -192,7 +192,10 @@ final class Database_Reader {
 		$columns     = $is_cell ? array( $input['column'] ) : $input['columns'];
 		$filters     = $input['key'] ?? $input['filters'] ?? array();
 		$hashes      = $input['key_hashes'] ?? array();
-		$named       = array_values( array_unique( array_merge( $columns, array_keys( $filters ), array_keys( $hashes ) ) ) );
+		// JSON object properties such as "0" become integer PHP array keys.
+		// Restore exact identifier strings before metadata comparison/preparation;
+		// SORT_STRING keeps "0" and "01" distinct without introducing aliases.
+		$named = array_values( array_unique( array_map( 'strval', array_merge( $columns, array_keys( $filters ), array_keys( $hashes ) ) ), SORT_STRING ) );
 		// Inspect only named columns, never values or all provider tables.
 		$column_sql = $wpdb->prepare(
 			'SELECT COLUMN_NAME AS name, DATA_TYPE AS data_type FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND BINARY TABLE_NAME = BINARY %s AND BINARY COLUMN_NAME IN (' . implode( ', ', array_fill( 0, count( $named ), '%s' ) ) . ')',
@@ -245,6 +248,7 @@ final class Database_Reader {
 		}
 		$where = array();
 		foreach ( $filters as $column => $value ) {
+			$column = (string) $column;
 			// Indexed equality narrows candidates. Byte equality additionally
 			// distinguishes case-insensitive/padded collations and raw numerics.
 			$where[] = null === $value ?
@@ -252,6 +256,7 @@ final class Database_Reader {
 				$wpdb->prepare( '(%i = FROM_BASE64(%s) AND CAST(%i AS BINARY) = FROM_BASE64(%s))', $column, $value, $column, $value );
 		}
 		foreach ( $hashes as $column => $digest ) {
+			$column = (string) $column;
 			// Explicit scan fallback for keys that cannot fit a response window.
 			// Hash collisions/duplicate values cannot authorize an ambiguous row.
 			$where[] = $wpdb->prepare( 'SHA2(CAST(%i AS BINARY), 256) = %s', $column, $digest );
@@ -334,7 +339,12 @@ final class Database_Reader {
 				}
 				$item['cells'][ $column ] = $cell;
 			}
-			$items[] = $item;
+			// These dictionaries must encode as JSON objects even when empty or
+			// when every column identifier is a sequential numeric property.
+			$item['key']        = (object) $item['key'];
+			$item['key_hashes'] = (object) $item['key_hashes'];
+			$item['cells']      = (object) $item['cells'];
+			$items[]            = $item;
 		}
 		return array(
 			'table'       => $input['table'],

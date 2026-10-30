@@ -4,6 +4,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 return array(
+	'Changing database access requires a current WordPress administrator and, on multisite, actual Super Admin and network authority.' => 'تغییر دسترسی دیتابیس به مدیر فعلی وردپرس و در حالت چندسایتی به مدیر ارشد واقعی و اختیار مدیریت شبکه نیاز دارد.',
+	'Database access' => 'دسترسی دیتابیس',
+	'Configure database inspection and sensitive reading independently. Changing these grants requires administrator authority and, on multisite, actual Super Admin and network authority.' => 'بازرسی دیتابیس و خواندن حساس را جداگانه تنظیم کنید. تغییر این مجوزها به اختیار مدیریت و در حالت چندسایتی به مدیر ارشد واقعی و اختیار مدیریت شبکه نیاز دارد.',
+	'Save database access' => 'ذخیرهٔ دسترسی دیتابیس',
 	'Only a Super Admin with current network administration authority can change database delegation on multisite. Existing values are preserved when you save other settings.' => 'در وردپرس چندسایتی، تنها مدیر ارشد دارای اختیار فعلی مدیریت شبکه می‌تواند مجوزهای دیتابیس را تغییر دهد. هنگام ذخیرهٔ تنظیمات دیگر، مقادیر فعلی این مجوزها حفظ می‌شوند.',
 	'The selected live row position is no longer available. Refresh the filtered row page before continuing.' => 'موقعیت زندهٔ انتخاب‌شدهٔ سطر دیگر در دسترس نیست. پیش از ادامه، صفحهٔ سطرهای فیلترشده را تازه‌سازی کنید.',
 	'The database did not provide a valid SHA-256 for this value. Verify database SHA2 support and refresh the read; unverified bytes cannot be returned.' => 'دیتابیس هش SHA-256 معتبر برای این مقدار ارائه نکرد. پشتیبانی SHA2 دیتابیس را بررسی و خواندن را تازه‌سازی کنید؛ بایت‌های تأییدنشده قابل ارائه نیستند.',

@@ -1,6 +1,13 @@
 <?php
 require __DIR__ . '/bootstrap.php';
 
+// The foundation fixture inspects registration; native hook execution is covered
+// by the dedicated WordPress configuration-authority integration fixture.
+function add_filter( $name, $callback, $priority = 10, $accepted_args = 1 ) {
+	$GLOBALS['wpai_test']['registered_filters'][ $name ][] = array( $callback, $priority, $accepted_args );
+	return true;
+}
+
 use WP_AI_Bridge\Abilities\Ability_Resolver;
 use WP_AI_Bridge\Abilities\Content_Eligibility;
 use WP_AI_Bridge\Abilities\Registrar;

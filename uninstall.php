@@ -26,6 +26,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
  */
 function wp_ai_bridge_uninstall_site_options() {
 	delete_option( 'wp_ai_bridge_settings' );
+	delete_option( 'wp_ai_bridge_database_access' );
 	delete_option( 'wp_ai_bridge_payload_limits' );
 	delete_option( 'wp_ai_bridge_transfer_limits' );
 	delete_option( 'wp_ai_bridge_recent_actions' );

@@ -23,6 +23,8 @@ function wpai199mcp_call( $token, $session, $name, array $input ) {
 	wp_set_current_user( 0 );
 	return wpai134_review_call( $token, $session, 'wp-ai-bridge/' . $name, $input );
 }
+// The existing MCP helper deliberately JSON-roundtrips into associative PHP arrays.
+// Native object shapes are asserted separately; the numeric fixture checks wire objects.
 function wpai199mcp_data( array $response ) {
 	wpai199mcp_assert( true === ( $response['result']['structuredContent']['success'] ?? false ), 'Authenticated database MCP call failed.' );
 	return $response['result']['structuredContent']['data'];
@@ -36,9 +38,24 @@ function wpai199mcp_delete( $token, $session ) {
 	return rest_do_request( $request );
 }
 
+function wpai199mcp_restore_option( $name, $original ) {
+	if ( false === $original ) {
+		delete_option( $name );
+		return;
+	}
+	$restore = static function () use ( $original ) { return $original; };
+	add_filter( 'pre_update_option_' . $name, $restore, PHP_INT_MAX );
+	try {
+		update_option( $name, $original, false );
+	} finally {
+		remove_filter( 'pre_update_option_' . $name, $restore, PHP_INT_MAX );
+	}
+}
+
 global $wpdb;
 $actor = get_current_user_id();
 $original = get_option( Settings::OPTION_NAME, false );
+$original_database = get_option( Settings::DATABASE_OPTION_NAME, false );
 $original_log = get_option( Mutation_Log::OPTION_NAME, false );
 $table = $wpdb->prefix . 'wpai199_mcp_' . bin2hex( random_bytes( 4 ) );
 $created = false;
@@ -53,10 +70,13 @@ try {
 	$bytes = str_repeat( chr( 255 ), 70000 ) . str_repeat( "Database-MCP-سلام", 1200 );
 	wpai199mcp_assert( 1 === $wpdb->insert( $table, array( 'id' => '1', 'payload' => $bytes ), array( '%s', '%s' ) ), 'Cannot populate private MCP fixture.' );
 	$settings = new Settings();
-	$grants = $settings->defaults();
+	$settings->register();
+	$ordinary = $settings->defaults();
+	$ordinary[ Settings::GROUP_NATIVE_ABILITIES ] = 0;
+	update_option( Settings::OPTION_NAME, $ordinary, false );
+	$grants = $settings->database_defaults();
 	$grants[ Settings::GROUP_DATABASE_INSPECTION ] = 1;
-	$grants[ Settings::GROUP_NATIVE_ABILITIES ] = 0;
-	update_option( Settings::OPTION_NAME, $grants, false );
+	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
 	list( $token, $session, $store ) = wpai134_review_connect( $actor );
 
 	$schema = wpai199mcp_data( wpai199mcp_call( $token, $session, 'database-inspect', array( 'action' => 'schema', 'table' => $table, 'limit' => 10 ) ) );
@@ -70,7 +90,7 @@ try {
 
 	wp_set_current_user( $actor );
 	$grants[ Settings::GROUP_DATABASE_READ ] = 1;
-	update_option( Settings::OPTION_NAME, $grants, false );
+	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
 	$rows = wpai199mcp_data( wpai199mcp_call( $token, $session, 'database-read', $rows_request ) );
 	wpai199mcp_assert( '1' === base64_decode( $rows['items'][0]['cells']['id']['data'], true ), 'Authenticated MCP database row identity changed.' );
 	wpai199mcp_assert( true === $rows['items'][0]['key_complete'], 'Ordinary primary key should be a complete reusable identity.' );
@@ -101,7 +121,7 @@ try {
 
 	wp_set_current_user( $actor );
 	$grants[ Settings::GROUP_DATABASE_READ ] = 0;
-	update_option( Settings::OPTION_NAME, $grants, false );
+	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
 	$revoked = wpai199mcp_call( $token, $session, 'database-read', $rows_request );
 	wpai199mcp_assert( true === ( $revoked['result']['isError'] ?? false ), 'An existing OAuth/MCP session bypassed a freshly revoked database grant.' );
 	$closed = wpai199mcp_delete( $token, $session );
@@ -127,11 +147,8 @@ try {
 	if ( $created ) {
 		$wpdb->query( $wpdb->prepare( 'DROP TABLE %i', $table ) );
 	}
-	if ( false === $original ) {
-		delete_option( Settings::OPTION_NAME );
-	} else {
-		update_option( Settings::OPTION_NAME, $original, false );
-	}
+	wpai199mcp_restore_option( Settings::OPTION_NAME, $original );
+	wpai199mcp_restore_option( Settings::DATABASE_OPTION_NAME, $original_database );
 	if ( false === $original_log ) {
 		delete_option( Mutation_Log::OPTION_NAME );
 	} else {

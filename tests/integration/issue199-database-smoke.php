@@ -19,7 +19,17 @@ function wpai199_assert( $condition, $message ) {
 function wpai199_execute( $name, array $input ) {
 	$ability = wp_get_ability( 'wp-ai-bridge/' . $name );
 	wpai199_assert( $ability instanceof WP_Ability, 'Missing database Ability: ' . $name );
-	return $ability->execute( $input );
+	$result = $ability->execute( $input );
+	if ( ! is_wp_error( $result ) && 'rows' === $input['action'] ) {
+		foreach ( $result['items'] as &$row ) {
+			foreach ( array( 'key', 'key_hashes', 'cells' ) as $dictionary ) {
+				wpai199_assert( $row[ $dictionary ] instanceof stdClass, 'Native row dictionaries must remain JSON objects, including empty maps.' );
+				$row[ $dictionary ] = (array) $row[ $dictionary ];
+			}
+		}
+		unset( $row );
+	}
+	return $result;
 }
 function wpai199_value( array $row, $name ) {
 	$cell = $row['cells'][ $name ];
@@ -27,8 +37,44 @@ function wpai199_value( array $row, $name ) {
 	return $cell['is_null'] ? null : base64_decode( $cell['data'], true );
 }
 
+function wpai199_restore_option( $name, $original ) {
+	if ( false === $original ) {
+		delete_option( $name );
+		return;
+	}
+	$restore = static function () use ( $original ) { return $original; };
+	add_filter( 'pre_update_option_' . $name, $restore, PHP_INT_MAX );
+	try {
+		update_option( $name, $original, false );
+	} finally {
+		remove_filter( 'pre_update_option_' . $name, $restore, PHP_INT_MAX );
+	}
+}
+function wpai199_expect_protected_denial( $callback ) {
+	$denied = false;
+	$handler = static function () {
+		return static function ( $message, $title = '', $args = array() ) {
+			$response = is_array( $args ) ? ( $args['response'] ?? 500 ) : 500;
+			throw new RuntimeException( 'wpai199-protected-denied-' . $response );
+		};
+	};
+	add_filter( 'wp_die_handler', $handler, PHP_INT_MAX );
+	try {
+		$callback();
+	} catch ( RuntimeException $error ) {
+		if ( 'wpai199-protected-denied-403' !== $error->getMessage() ) {
+			throw $error;
+		}
+		$denied = true;
+	} finally {
+		remove_filter( 'wp_die_handler', $handler, PHP_INT_MAX );
+	}
+	wpai199_assert( $denied, 'Unauthorized protected-option update did not stop with HTTP 403 before persistence.' );
+}
+
 global $wpdb;
 $original = get_option( Settings::OPTION_NAME, false );
+$original_database = get_option( Settings::DATABASE_OPTION_NAME, false );
 $original_log = get_option( Mutation_Log::OPTION_NAME, false );
 $original_user = get_current_user_id();
 $original_show = $wpdb->show_errors;
@@ -52,8 +98,9 @@ try {
 	$settings = new Settings();
 	$settings->register();
 	$provider = new Database_Abilities( new Permissions( $settings ), new Mutation_Log() );
-	$grants = $settings->defaults();
-	update_option( Settings::OPTION_NAME, $grants, false );
+	$grants = $settings->database_defaults();
+	update_option( Settings::OPTION_NAME, $settings->defaults(), false );
+	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
 	wpai199_assert( is_wp_error( wpai199_execute( 'database-inspect', array( 'action' => 'tables' ) ) ), 'Default-off inspection was bypassed.' );
 	$old = array();
 	foreach ( $settings->groups() as $group => $definition ) {
@@ -108,7 +155,7 @@ try {
 	$view_created = true;
 
 	$grants[ Settings::GROUP_DATABASE_INSPECTION ] = 1;
-	update_option( Settings::OPTION_NAME, $grants, false );
+	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
 	$inventory = wpai199_execute( 'database-inspect', array( 'action' => 'tables', 'limit' => 1 ) );
 	wpai199_assert( ! is_wp_error( $inventory ) && 1 === count( $inventory['items'] ) && $inventory['has_more'], 'Bounded table inventory failed.' );
 	$seen = array();
@@ -150,7 +197,7 @@ try {
 	$request = array( 'action' => 'rows', 'table' => $table, 'columns' => array( 'id', 'private_value' ), 'limit' => 1 );
 	wpai199_assert( is_wp_error( wpai199_execute( 'database-read', $request ) ), 'Metadata consent disclosed private raw values.' );
 	$grants[ Settings::GROUP_DATABASE_READ ] = 1;
-	update_option( Settings::OPTION_NAME, $grants, false );
+	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
 	$first = wpai199_execute( 'database-read', $request );
 	wpai199_assert( ! is_wp_error( $first ) && 'integer_primary_keyset' === $first['paging'], 'Integer keyset read failed.' );
 	wpai199_assert( '1' === wpai199_value( $first['items'][0], 'id' ) && $marker === wpai199_value( $first['items'][0], 'private_value' ), 'Authorized private bytes were altered or redacted.' );
@@ -291,14 +338,20 @@ try {
 	$subscriber = wp_insert_user( array( 'user_login' => 'wpai199-' . $suffix, 'user_pass' => wp_generate_password( 32 ), 'role' => 'subscriber', 'user_email' => 'wpai199-' . $suffix . '@example.invalid' ) );
 	wpai199_assert( ! is_wp_error( $subscriber ), 'Cannot create nonadministrator fixture.' );
 	wp_set_current_user( $subscriber );
+	$before_protected = get_option( Settings::DATABASE_OPTION_NAME );
+	wpai199_expect_protected_denial( static function () use ( $settings ) {
+		update_option( Settings::DATABASE_OPTION_NAME, $settings->database_defaults(), false );
+	} );
+	wpai199_assert( $before_protected === get_option( Settings::DATABASE_OPTION_NAME ), 'Low-role native option update changed database grants.' );
+
 	wpai199_assert( is_wp_error( wpai199_execute( 'database-read', $request ) ), 'A nonadministrator obtained sensitive values.' );
 	wp_set_current_user( $original_user );
 	wpai199_assert( $provider->can_read(), 'Authorized administrator unexpectedly denied.' );
 	$grants[ Settings::GROUP_DATABASE_READ ] = 0;
-	update_option( Settings::OPTION_NAME, $grants, false );
+	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
 	wpai199_assert( is_wp_error( $provider->read( $request ) ), 'The execute callback reused authorization after grant revocation.' );
 	$grants[ Settings::GROUP_DATABASE_READ ] = 1;
-	update_option( Settings::OPTION_NAME, $grants, false );
+	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
 	$log = new Mutation_Log();
 	for ( $i = 0; $i < Mutation_Log::LIMIT + 5; ++$i ) {
 		wpai199_assert( $log->record( 'wp-ai-bridge/database-read', 'db_rows_synthetic', 0, true ), 'Repeated identical read audit reported a false persistence failure.' );
@@ -332,11 +385,8 @@ try {
 		require_once ABSPATH . 'wp-admin/includes/user.php';
 		wp_delete_user( $subscriber );
 	}
-	if ( false === $original ) {
-		delete_option( Settings::OPTION_NAME );
-	} else {
-		update_option( Settings::OPTION_NAME, $original, false );
-	}
+	wpai199_restore_option( Settings::OPTION_NAME, $original );
+	wpai199_restore_option( Settings::DATABASE_OPTION_NAME, $original_database );
 	if ( false === $original_log ) {
 		delete_option( Mutation_Log::OPTION_NAME );
 	} else {

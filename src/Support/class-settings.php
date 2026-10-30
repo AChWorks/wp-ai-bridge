@@ -33,6 +33,11 @@ final class Settings {
 	const GROUP_COMMENTS          = 'comments';
 	const GROUP_USERS_DESTRUCTIVE = 'users_destructive';
 
+	const DATABASE_OPTION_NAME  = 'wp_ai_bridge_database_access';
+	const DATABASE_OPTION_GROUP = 'wp_ai_bridge_database_access';
+	const DATABASE_GROUPS       = array( self::GROUP_DATABASE_INSPECTION, self::GROUP_DATABASE_READ );
+
+
 	/**
 	 * Registers the bridge option through the WordPress Settings API.
 	 *
@@ -44,12 +49,86 @@ final class Settings {
 			self::OPTION_NAME,
 			array(
 				'type'              => 'array',
-				'default'           => $this->defaults(),
+				'default'           => array_diff_key( $this->defaults(), $this->database_defaults() ),
 				'sanitize_callback' => array( $this, 'sanitize' ),
 				'show_in_rest'      => false,
 			)
 		);
+		register_setting(
+			self::DATABASE_OPTION_GROUP,
+			self::DATABASE_OPTION_NAME,
+			array(
+				'type'              => 'array',
+				'default'           => $this->database_defaults(),
+				'sanitize_callback' => array( $this, 'sanitize_database_grants' ),
+				'show_in_rest'      => false,
+			)
+		);
+		$this->register_database_guard();
 	}
+
+	/**
+	 * Guard the protected native option on every request, including non-admin APIs.
+	 *
+	 * @return void
+	 */
+	public function register_database_guard() {
+		add_filter( 'sanitize_option_' . self::DATABASE_OPTION_NAME, array( $this, 'sanitize_database_grants' ) );
+		add_filter( 'option_page_capability_' . self::DATABASE_OPTION_GROUP, array( $this, 'database_configuration_capability' ) );
+	}
+
+	/** @return array<string,int> */
+	public function database_defaults() {
+		return array_fill_keys( self::DATABASE_GROUPS, 0 );
+	}
+
+	/**
+	 * Return the actual native authority for the distinct database settings form.
+	 *
+	 * @param string $unused Native default capability.
+	 * @return string
+	 */
+	public function database_configuration_capability( $unused = 'manage_options' ) {
+		if ( ! $this->can_configure_group( self::GROUP_DATABASE_INSPECTION ) ) {
+			return 'do_not_allow';
+		}
+		return function_exists( 'is_multisite' ) && is_multisite() ? 'manage_network_options' : 'manage_options';
+	}
+
+	/**
+	 * Only the actual administrator may write the protected grant row.
+	 *
+	 * @param mixed $input Submitted database grants.
+	 * @return array<string,int>
+	 */
+	public function sanitize_database_grants( $input ) {
+		if ( ! $this->can_configure_group( self::GROUP_DATABASE_INSPECTION ) ) {
+			wp_die(
+				esc_html__( 'Changing database access requires a current WordPress administrator and, on multisite, actual Super Admin and network authority.', 'wp-ai-bridge' ),
+				esc_html__( 'Database access', 'wp-ai-bridge' ),
+				array( 'response' => 403 )
+			);
+			return $this->database_values();
+		}
+		$input = is_array( $input ) ? $input : array();
+		$value = $this->database_defaults();
+		foreach ( self::DATABASE_GROUPS as $key ) {
+			$value[ $key ] = isset( $input[ $key ] ) && in_array( $input[ $key ], array( 1, '1', true ), true ) ? 1 : 0;
+		}
+		return $value;
+	}
+
+	/** @return array<string,int> Current grants; malformed stored values fail closed. */
+	private function database_values() {
+		$stored = get_option( self::DATABASE_OPTION_NAME, array() );
+		$stored = is_array( $stored ) ? $stored : array();
+		$value  = $this->database_defaults();
+		foreach ( self::DATABASE_GROUPS as $key ) {
+			$value[ $key ] = isset( $stored[ $key ] ) && 1 === $stored[ $key ] ? 1 : 0;
+		}
+		return $value;
+	}
+
 
 	/**
 	 * Returns the supported access groups and their UI metadata.
@@ -185,13 +264,13 @@ final class Settings {
 	 * @return array<string,int> Sanitized settings.
 	 */
 	public function sanitize( $input ) {
-		$input    = is_array( $input ) ? $input : array();
-		$value    = array();
-		$previous = $this->all();
+		$input = is_array( $input ) ? $input : array();
+		$value = array();
 
 		foreach ( $this->groups() as $key => $group ) {
-			$value[ $key ] = $this->can_configure_group( $key ) ?
-				( ! empty( $input[ $key ] ) ? 1 : 0 ) : $previous[ $key ];
+			if ( ! in_array( $key, self::DATABASE_GROUPS, true ) ) {
+				$value[ $key ] = ! empty( $input[ $key ] ) ? 1 : 0;
+			}
 		}
 
 		return $value;
@@ -208,11 +287,12 @@ final class Settings {
 	 * @return bool
 	 */
 	public function can_configure_group( $group ) {
-		if ( ! in_array( $group, array( self::GROUP_DATABASE_INSPECTION, self::GROUP_DATABASE_READ ), true ) ||
-			! function_exists( 'is_multisite' ) || ! is_multisite() ) {
+		if ( ! in_array( $group, self::DATABASE_GROUPS, true ) ) {
 			return true;
 		}
-		return is_super_admin() && current_user_can( 'manage_network_options' );
+		return get_current_user_id() > 0 && current_user_can( 'manage_options' ) &&
+			( ! function_exists( 'is_multisite' ) || ! is_multisite() ||
+				( is_super_admin() && current_user_can( 'manage_network_options' ) ) );
 	}
 
 	/**
@@ -226,12 +306,12 @@ final class Settings {
 		$value  = $this->defaults();
 
 		foreach ( array_keys( $this->groups() ) as $key ) {
-			if ( array_key_exists( $key, $stored ) ) {
+			if ( ! in_array( $key, self::DATABASE_GROUPS, true ) && array_key_exists( $key, $stored ) ) {
 				$value[ $key ] = ! empty( $stored[ $key ] ) ? 1 : 0;
 			}
 		}
-
-		return $value;
+		// Never inherit embedded legacy/unreleased bits from the ordinary row.
+		return array_replace( $value, $this->database_values() );
 	}
 
 	/**

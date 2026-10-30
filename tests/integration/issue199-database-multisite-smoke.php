@@ -1,6 +1,6 @@
 <?php
 /**
- * Actual network-principal and per-blog delegation boundaries for database reads.
+ * Actual multisite database execution and isolated delegation-configuration tests.
  *
  * @package WP_AI_Bridge
  */
@@ -17,7 +17,39 @@ function wpai199ms_assert( $condition, $message ) {
 		throw new RuntimeException( $message );
 	}
 }
-
+function wpai199ms_restore_option( $name, $original ) {
+	if ( false === $original ) {
+		delete_option( $name );
+		return;
+	}
+	$restore = static function () use ( $original ) { return $original; };
+	add_filter( 'pre_update_option_' . $name, $restore, PHP_INT_MAX );
+	try {
+		update_option( $name, $original, false );
+	} finally {
+		remove_filter( 'pre_update_option_' . $name, $restore, PHP_INT_MAX );
+	}
+}
+function wpai199ms_expect_denied( $callback ) {
+	$denied = false;
+	$handler = static function () {
+		return static function ( $message, $title = '', $args = array() ) {
+			throw new RuntimeException( 'wpai199ms-denied-' . ( is_array( $args ) ? ( $args['response'] ?? 500 ) : 500 ) );
+		};
+	};
+	add_filter( 'wp_die_handler', $handler, PHP_INT_MAX );
+	try {
+		$callback();
+	} catch ( RuntimeException $error ) {
+		if ( 'wpai199ms-denied-403' !== $error->getMessage() ) {
+			throw $error;
+		}
+		$denied = true;
+	} finally {
+		remove_filter( 'wp_die_handler', $handler, PHP_INT_MAX );
+	}
+	wpai199ms_assert( $denied, 'Unauthorized protected-option save did not terminate with HTTP 403 before persistence.' );
+}
 function wpai199ms_render_controls( Settings $settings ) {
 	$page = new Settings_Page( new Environment(), $settings );
 	ob_start();
@@ -28,40 +60,49 @@ function wpai199ms_render_controls( Settings $settings ) {
 		ob_end_clean();
 	}
 	$controls = array();
+	$groups = array();
 	$processor = new WP_HTML_Tag_Processor( $html );
 	while ( $processor->next_tag( 'INPUT' ) ) {
 		$name = $processor->get_attribute( 'name' );
+		if ( 'option_page' === $name ) {
+			$groups[] = $processor->get_attribute( 'value' );
+		}
 		foreach ( array( Settings::GROUP_DATABASE_INSPECTION, Settings::GROUP_DATABASE_READ, Settings::GROUP_SITE_READ ) as $key ) {
-			if ( Settings::OPTION_NAME . '[' . $key . ']' === $name ) {
+			$option = Settings::GROUP_SITE_READ === $key ? Settings::OPTION_NAME : Settings::DATABASE_OPTION_NAME;
+			if ( $option . '[' . $key . ']' === $name ) {
 				$controls[ $key ] = null !== $processor->get_attribute( 'disabled' );
 			}
 		}
 	}
-	wpai199ms_assert( 3 === count( $controls ), 'Native Settings page omitted the expected database/ordinary inputs.' );
+	wpai199ms_assert( 3 === count( $controls ), 'Native Settings page omitted correctly named database/ordinary inputs.' );
+	wpai199ms_assert( Settings::OPTION_GROUP !== Settings::DATABASE_OPTION_GROUP && in_array( Settings::OPTION_GROUP, $groups, true ) && in_array( Settings::DATABASE_OPTION_GROUP, $groups, true ), 'Database access did not use its distinct native settings form/group.' );
 	return array( $controls, $html );
 }
 
 $original_user = get_current_user_id();
 $original_blog = get_current_blog_id();
 $main_original = get_option( Settings::OPTION_NAME, false );
+$main_database = get_option( Settings::DATABASE_OPTION_NAME, false );
 $secondary = 0;
 $created_secondary = false;
 $secondary_original = false;
+$secondary_database = false;
 $switched = false;
 $site_admin = 0;
 $deny_network = null;
+$interleave = null;
 
 try {
 	wpai199ms_assert( is_multisite() && is_super_admin(), 'Database multisite fixture requires its synthetic Super Admin.' );
 	$settings = new Settings();
+	wpai199ms_assert( false !== has_filter( 'sanitize_option_' . Settings::DATABASE_OPTION_NAME ), 'Protected option write guard was not installed before native admin settings registration.' );
+	wpai199ms_assert( false !== has_filter( 'option_page_capability_' . Settings::DATABASE_OPTION_GROUP ), 'Protected form capability was not installed on bootstrap.' );
 	$settings->register();
 	$provider = new Database_Abilities( new Permissions( $settings ), new Mutation_Log() );
 	$inspect = wp_get_ability( 'wp-ai-bridge/database-inspect' );
 	wpai199ms_assert( $inspect instanceof WP_Ability, 'Database inspection not registered on multisite.' );
-	$grants = $settings->defaults();
-	$grants[ Settings::GROUP_DATABASE_INSPECTION ] = 1;
-	$grants[ Settings::GROUP_DATABASE_READ ] = 1;
-	update_option( Settings::OPTION_NAME, $grants, false );
+	$grants = array( Settings::GROUP_DATABASE_INSPECTION => 1, Settings::GROUP_DATABASE_READ => 1 );
+	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
 	wpai199ms_assert( $provider->can_read(), 'Real Super Admin/network grants did not enable database reads.' );
 	wpai199ms_assert( ! is_wp_error( $inspect->execute( array( 'action' => 'tables', 'limit' => 1 ) ) ), 'Super Admin cannot inspect the installation database.' );
 	foreach ( get_sites( array( 'fields' => 'ids', 'number' => 20 ) ) as $blog_id ) {
@@ -76,80 +117,96 @@ try {
 		wpai199ms_assert( ! is_wp_error( $secondary ) && $secondary > 0, 'Cannot create a second synthetic site.' );
 		$created_secondary = true;
 	}
-
 	switch_to_blog( $secondary );
 	$switched = true;
 	$secondary_original = get_option( Settings::OPTION_NAME, false );
+	$secondary_database = get_option( Settings::DATABASE_OPTION_NAME, false );
 	update_option( Settings::OPTION_NAME, $settings->defaults(), false );
+	update_option( Settings::DATABASE_OPTION_NAME, $settings->database_defaults(), false );
 	wpai199ms_assert( ! $provider->can_read() && is_wp_error( $inspect->execute( array( 'action' => 'tables' ) ) ), 'Main-blog database grants leaked to another blog.' );
-	update_option( Settings::OPTION_NAME, $grants, false );
+	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
 	wpai199ms_assert( $provider->can_read(), 'Super Admin cannot use an explicitly granted secondary site.' );
 	$suffix = wp_generate_password( 10, false, false );
 	$site_admin = wp_insert_user( array( 'user_login' => 'wpai199ms-' . $suffix, 'user_pass' => wp_generate_password( 32 ), 'user_email' => 'wpai199ms-' . $suffix . '@example.invalid' ) );
 	wpai199ms_assert( ! is_wp_error( $site_admin ), 'Cannot create local administrator fixture.' );
 	add_user_to_blog( $secondary, $site_admin, 'administrator' );
-	update_option( Settings::OPTION_NAME, $settings->defaults(), false );
+	update_option( Settings::DATABASE_OPTION_NAME, $settings->database_defaults(), false );
 	wp_set_current_user( $site_admin );
 	wpai199ms_assert( current_user_can( 'manage_options' ) && ! is_super_admin(), 'Local administrator fixture has wrong native authority.' );
-	wpai199ms_assert( ! $settings->can_configure_group( Settings::GROUP_DATABASE_INSPECTION ) && ! $settings->can_configure_group( Settings::GROUP_DATABASE_READ ) && $settings->can_configure_group( Settings::GROUP_SITE_READ ), 'Configuration authority did not distinguish network database grants from ordinary site settings.' );
-	$local_enable = array( Settings::GROUP_DATABASE_INSPECTION => 1, Settings::GROUP_DATABASE_READ => 1, Settings::GROUP_SITE_READ => 0, Settings::GROUP_BUILDER_WRITE => 1 );
-	$sanitized_enable = sanitize_option( Settings::OPTION_NAME, $local_enable );
-	wpai199ms_assert( 0 === $sanitized_enable[ Settings::GROUP_DATABASE_INSPECTION ] && 0 === $sanitized_enable[ Settings::GROUP_DATABASE_READ ], 'Native registered sanitize_option allowed a local database enable.' );
-	update_option( Settings::OPTION_NAME, $local_enable, false );
-	$stored_enable = get_option( Settings::OPTION_NAME );
-	wpai199ms_assert( 0 === $stored_enable[ Settings::GROUP_DATABASE_INSPECTION ] && 0 === $stored_enable[ Settings::GROUP_DATABASE_READ ] && 0 === $stored_enable[ Settings::GROUP_SITE_READ ] && 1 === $stored_enable[ Settings::GROUP_BUILDER_WRITE ], 'Native option update expanded database delegation or failed to save ordinary settings.' );
+	wpai199ms_assert( ! $settings->can_configure_group( Settings::GROUP_DATABASE_READ ) && $settings->can_configure_group( Settings::GROUP_SITE_READ ), 'Database and ordinary configuration authority were conflated.' );
+	$capability = apply_filters( 'option_page_capability_' . Settings::DATABASE_OPTION_GROUP, 'manage_options' );
+	wpai199ms_assert( is_string( $capability ) && ! current_user_can( $capability ), 'Native protected-group capability authorized a local site administrator.' );
+	$local_input = array( Settings::GROUP_DATABASE_INSPECTION => 1, Settings::GROUP_DATABASE_READ => 1, Settings::GROUP_SITE_READ => 0, Settings::GROUP_BUILDER_WRITE => 1 );
+	$ordinary = sanitize_option( Settings::OPTION_NAME, $local_input );
+	wpai199ms_assert( ! isset( $ordinary[ Settings::GROUP_DATABASE_INSPECTION ], $ordinary[ Settings::GROUP_DATABASE_READ ] ), 'Ordinary native sanitizer retained protected database fields.' );
+	update_option( Settings::OPTION_NAME, $local_input, false );
+	wpai199ms_assert( 0 === $settings->all()[ Settings::GROUP_DATABASE_READ ] && 1 === get_option( Settings::OPTION_NAME )[ Settings::GROUP_BUILDER_WRITE ], 'Ordinary site save expanded database grants or failed to save ordinary fields.' );
+	wpai199ms_expect_denied( static function () use ( $grants ) { update_option( Settings::DATABASE_OPTION_NAME, $grants, false ); } );
+	wpai199ms_assert( $settings->database_defaults() === get_option( Settings::DATABASE_OPTION_NAME ), 'Unauthorized native database save changed its dedicated row.' );
 	list( $local_controls, $local_html ) = wpai199ms_render_controls( $settings );
-	$explanation = __( 'Only a Super Admin with current network administration authority can change database delegation on multisite. Existing values are preserved when you save other settings.', 'wp-ai-bridge' );
-	wpai199ms_assert( $local_controls[ Settings::GROUP_DATABASE_INSPECTION ] && $local_controls[ Settings::GROUP_DATABASE_READ ] && ! $local_controls[ Settings::GROUP_SITE_READ ] && str_contains( $local_html, esc_html( $explanation ) ), 'Local Settings UI did not disable/explain restricted database controls while retaining ordinary fields.' );
+	$explanation = __( 'Changing database access requires a current WordPress administrator and, on multisite, actual Super Admin and network authority.', 'wp-ai-bridge' );
+	wpai199ms_assert( $local_controls[ Settings::GROUP_DATABASE_INSPECTION ] && $local_controls[ Settings::GROUP_DATABASE_READ ] && ! $local_controls[ Settings::GROUP_SITE_READ ] && str_contains( $local_html, esc_html( $explanation ) ), 'Local Settings UI did not disable/explain database controls while retaining ordinary fields.' );
+	wpai199ms_assert( ! $provider->can_read() && is_wp_error( $inspect->execute( array( 'action' => 'schema', 'table' => $GLOBALS['wpdb']->base_prefix . 'users' ) ) ), 'Local site administrator gained network database execution authority.' );
 
-	wpai199ms_assert( ! $provider->can_read() && ! $provider->can_inspect(), 'Site-admin authority became network database authority.' );
-	wpai199ms_assert( is_wp_error( $inspect->execute( array( 'action' => 'schema', 'table' => $GLOBALS['wpdb']->base_prefix . 'users' ) ) ), 'Site admin inspected shared network users through a main-site prefix.' );
 	wp_set_current_user( $original_user );
-	update_option( Settings::OPTION_NAME, $grants, false );
-	$super_enabled = get_option( Settings::OPTION_NAME );
-	wpai199ms_assert( 1 === $super_enabled[ Settings::GROUP_DATABASE_INSPECTION ] && 1 === $super_enabled[ Settings::GROUP_DATABASE_READ ] && $provider->can_read(), 'Actual Super Admin could not enable database grants through registered native updates.' );
+	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
+	wpai199ms_assert( $provider->can_read() && $grants === get_option( Settings::DATABASE_OPTION_NAME ), 'Authorized Super Admin cannot enable dedicated database grants.' );
+	$capability = apply_filters( 'option_page_capability_' . Settings::DATABASE_OPTION_GROUP, 'manage_options' );
+	wpai199ms_assert( current_user_can( $capability ), 'Native protected-group capability rejected an authorized Super Admin.' );
 	list( $super_controls, $super_html ) = wpai199ms_render_controls( $settings );
-	wpai199ms_assert( ! $super_controls[ Settings::GROUP_DATABASE_INSPECTION ] && ! $super_controls[ Settings::GROUP_DATABASE_READ ] && ! str_contains( $super_html, esc_html( $explanation ) ), 'Authorized Super Admin retained disabled database controls or misleading restriction text.' );
+	wpai199ms_assert( ! $super_controls[ Settings::GROUP_DATABASE_INSPECTION ] && ! $super_controls[ Settings::GROUP_DATABASE_READ ] && ! str_contains( $super_html, esc_html( $explanation ) ), 'Authorized Super Admin retained disabled database controls.' );
 	wp_set_current_user( $site_admin );
-	update_option( Settings::OPTION_NAME, array( Settings::GROUP_DATABASE_INSPECTION => 0, Settings::GROUP_DATABASE_READ => 0, Settings::GROUP_SITE_READ => 1 ), false );
-	$local_revoke = get_option( Settings::OPTION_NAME );
-	wpai199ms_assert( 1 === $local_revoke[ Settings::GROUP_DATABASE_INSPECTION ] && 1 === $local_revoke[ Settings::GROUP_DATABASE_READ ] && 1 === $local_revoke[ Settings::GROUP_SITE_READ ], 'Local explicit zero changed Super Admin database grants or blocked an ordinary setting.' );
-	update_option( Settings::OPTION_NAME, array( Settings::GROUP_SITE_READ => 0, Settings::GROUP_BUILDER_WRITE => 1 ), false );
-	$local_omission = get_option( Settings::OPTION_NAME );
-	wpai199ms_assert( 1 === $local_omission[ Settings::GROUP_DATABASE_INSPECTION ] && 1 === $local_omission[ Settings::GROUP_DATABASE_READ ] && 0 === $local_omission[ Settings::GROUP_SITE_READ ] && 1 === $local_omission[ Settings::GROUP_BUILDER_WRITE ], 'Disabled/omitted UI fields lost existing database grants during ordinary site-setting saves.' );
-	wp_set_current_user( $original_user );
-	$deny_network = static function ( $caps, $cap ) {
-		return 'manage_network_options' === $cap ? array( 'do_not_allow' ) : $caps;
-	};
-	add_filter( 'map_meta_cap', $deny_network, 999, 2 );
-	wpai199ms_assert( ! $provider->can_read(), 'Super Admin bypassed explicit native network-capability denial.' );
-	wpai199ms_assert( ! $settings->can_configure_group( Settings::GROUP_DATABASE_READ ), 'Mapped native denial was ignored by database configuration authority.' );
-	update_option( Settings::OPTION_NAME, $settings->defaults(), false );
-	$denied_change = get_option( Settings::OPTION_NAME );
-	wpai199ms_assert( 1 === $denied_change[ Settings::GROUP_DATABASE_INSPECTION ] && 1 === $denied_change[ Settings::GROUP_DATABASE_READ ], 'Native option update revoked database grants despite explicit network-authority denial.' );
+	foreach ( array(
+		array( Settings::GROUP_DATABASE_INSPECTION => 0, Settings::GROUP_DATABASE_READ => 0, Settings::GROUP_SITE_READ => 1 ),
+		array( Settings::GROUP_SITE_READ => 0, Settings::GROUP_BUILDER_WRITE => 1 ),
+	) as $ordinary_save ) {
+		update_option( Settings::OPTION_NAME, $ordinary_save, false );
+		wpai199ms_assert( $grants === get_option( Settings::DATABASE_OPTION_NAME ), 'An ordinary save wrote the independent database grant row.' );
+	}
 
+	// Reproduce the review finding at the real native post-sanitization boundary.
+	// The privileged update must survive completion of the older local save.
+	foreach ( array( $settings->database_defaults(), $grants ) as $fresh_grants ) {
+		$calls = 0;
+		$interleave = static function ( $value ) use ( $original_user, $site_admin, $fresh_grants, &$calls ) {
+			++$calls;
+			wpai199ms_assert( ! array_key_exists( Settings::GROUP_DATABASE_INSPECTION, $value ) && ! array_key_exists( Settings::GROUP_DATABASE_READ, $value ), 'Outer ordinary save still carried stale protected grant bits.' );
+			wp_set_current_user( $original_user );
+			try {
+				update_option( Settings::DATABASE_OPTION_NAME, $fresh_grants, false );
+			} finally {
+				wp_set_current_user( $site_admin );
+			}
+			return $value;
+		};
+		add_filter( 'pre_update_option_' . Settings::OPTION_NAME, $interleave );
+		update_option( Settings::OPTION_NAME, array( Settings::GROUP_DATABASE_INSPECTION => 1, Settings::GROUP_DATABASE_READ => 1, Settings::GROUP_SITE_READ => 1, Settings::GROUP_BUILDER_WRITE => 0 ), false );
+		remove_filter( 'pre_update_option_' . Settings::OPTION_NAME, $interleave );
+		$interleave = null;
+		wpai199ms_assert( 1 === $calls && $fresh_grants === get_option( Settings::DATABASE_OPTION_NAME ), 'Completion of an older ordinary save resurrected/revoked a concurrently changed database grant.' );
+	}
+	wp_set_current_user( $original_user );
+	$deny_network = static function ( $caps, $cap ) { return 'manage_network_options' === $cap ? array( 'do_not_allow' ) : $caps; };
+	add_filter( 'map_meta_cap', $deny_network, 999, 2 );
+	wpai199ms_assert( ! $provider->can_read() && ! $settings->can_configure_group( Settings::GROUP_DATABASE_READ ), 'Explicit native network denial was ignored.' );
+	wpai199ms_expect_denied( static function () use ( $settings ) { update_option( Settings::DATABASE_OPTION_NAME, $settings->database_defaults(), false ); } );
+	wpai199ms_assert( $grants === get_option( Settings::DATABASE_OPTION_NAME ), 'Mapped network denial permitted a protected grant-row write.' );
 	remove_filter( 'map_meta_cap', $deny_network, 999 );
 	$deny_network = null;
-	wpai199ms_assert( $provider->can_read(), 'Network grant did not recover after removing synthetic denial.' );
-	$grants[ Settings::GROUP_DATABASE_INSPECTION ] = 0;
-	$grants[ Settings::GROUP_DATABASE_READ ] = 0;
-	update_option( Settings::OPTION_NAME, $grants, false );
-	wpai199ms_assert( ! $provider->can_read(), 'Network database inspection revocation was cached.' );
-	$super_revoked = get_option( Settings::OPTION_NAME );
-	wpai199ms_assert( 0 === $super_revoked[ Settings::GROUP_DATABASE_INSPECTION ] && 0 === $super_revoked[ Settings::GROUP_DATABASE_READ ], 'Authorized Super Admin could not revoke both database grants through the native sanitizer/update path.' );
-
-	echo "PASS: Issue #199 multisite network/site authority and per-blog revocation.\n";
+	update_option( Settings::DATABASE_OPTION_NAME, $settings->database_defaults(), false );
+	wpai199ms_assert( ! $provider->can_read() && $settings->database_defaults() === get_option( Settings::DATABASE_OPTION_NAME ), 'Authorized Super Admin could not revoke both dedicated database grants.' );
+	echo "PASS: Issue #199 multisite isolated delegation, native authority, UI and concurrent-save boundaries.\n";
 } finally {
 	wp_set_current_user( $original_user );
+	if ( null !== $interleave ) {
+		remove_filter( 'pre_update_option_' . Settings::OPTION_NAME, $interleave );
+	}
 	if ( null !== $deny_network ) {
 		remove_filter( 'map_meta_cap', $deny_network, 999 );
 	}
 	if ( $switched ) {
-		if ( false === $secondary_original ) {
-			delete_option( Settings::OPTION_NAME );
-		} else {
-			update_option( Settings::OPTION_NAME, $secondary_original, false );
-		}
+		wpai199ms_restore_option( Settings::OPTION_NAME, $secondary_original );
+		wpai199ms_restore_option( Settings::DATABASE_OPTION_NAME, $secondary_database );
 		restore_current_blog();
 	}
 	if ( $created_secondary && is_int( $secondary ) && $secondary > 0 ) {
@@ -159,9 +216,6 @@ try {
 		require_once ABSPATH . 'wp-admin/includes/ms.php';
 		wpmu_delete_user( $site_admin );
 	}
-	if ( false === $main_original ) {
-		delete_option( Settings::OPTION_NAME );
-	} else {
-		update_option( Settings::OPTION_NAME, $main_original, false );
-	}
+	wpai199ms_restore_option( Settings::OPTION_NAME, $main_original );
+	wpai199ms_restore_option( Settings::DATABASE_OPTION_NAME, $main_database );
 }
