@@ -106,7 +106,8 @@ if (!hash_equals((string) $doc["state_hash"], (string) $doc_read["state_hash"]) 
 "${wp[@]}" eval 'deactivate_plugins("mcp-adapter/mcp-adapter.php");' --user=1 --allow-root
 run_dependency_phase bypassed
 "${wp[@]}" plugin activate mcp-adapter --allow-root
-"${wp[@]}" plugin is-active mcp-adapter wp-ai-bridge --allow-root
+"${wp[@]}" plugin is-active mcp-adapter --allow-root
+"${wp[@]}" plugin is-active wp-ai-bridge --allow-root
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wpai198-plugin-dependency-smoke.php
 
 echo "PASS: v$expected_version activates natively with canonical identity and canonical Workspace storage, without retired migration code."
