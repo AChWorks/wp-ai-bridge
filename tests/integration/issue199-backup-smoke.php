@@ -116,8 +116,12 @@ try {
 		clearstatcache( true, $installation_root );
 		wpai199c_assert( 01777 === ( lstat( $installation_root )['mode'] & 07777 ), 'Actual sticky root fixture was not installed.' );
 		foreach ( array( 'inspect', 'export_begin' ) as $permission_action ) {
-			$unsupported_permissions = $call( array( 'action' => $permission_action, 'source_roots' => array( 'installation' ),
-				'expected_plan_hash' => str_repeat( '0', 64 ), 'quiescence_confirmed' => true, 'bootstrap_writers_confirmed' => true ) );
+			$permission_input = array( 'action' => $permission_action, 'source_roots' => array( 'installation' ) );
+			if ( 'export_begin' === $permission_action ) {
+				$permission_input += array( 'expected_plan_hash' => str_repeat( '0', 64 ),
+					'quiescence_confirmed' => true, 'bootstrap_writers_confirmed' => true );
+			}
+			$unsupported_permissions = $call( $permission_input );
 			wpai199c_assert( is_wp_error( $unsupported_permissions ) && 'backup_permission_metadata_unsupported' === $unsupported_permissions->get_error_code(),
 				'Actual sticky source root must reject inspect/begin before an archive reservation or complete claim.' );
 		}
