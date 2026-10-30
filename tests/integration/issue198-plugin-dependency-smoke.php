@@ -79,6 +79,24 @@ $has_action = static function ( $html, $action, $file ) {
 	}
 };
 
+$is_selection_disabled = static function ( $html, $file ) {
+	$document = new DOMDocument();
+	$previous = libxml_use_internal_errors( true );
+	try {
+		$document->loadHTML( '<table>' . $html . '</table>' );
+		$xpath = new DOMXPath( $document );
+		foreach ( $xpath->query( '//input[@name="checked[]"]' ) as $input ) {
+			if ( $input->getAttribute( 'value' ) === $file ) {
+				return $input->hasAttribute( 'disabled' );
+			}
+		}
+		return false;
+	} finally {
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+	}
+};
+
 try {
 	WP_Plugin_Dependencies::initialize();
 	$assert( WP_Plugin_Dependencies::has_dependencies( $bridge ), 'Core did not discover installed Bridge requirements.' );
@@ -111,14 +129,17 @@ try {
 		$assert( WP_Plugin_Dependencies::has_active_dependents( $adapter ), 'Core did not protect the Adapter of an active Bridge.' );
 		$adapter_row = $row( $adapter );
 		$assert( false !== strpos( $adapter_row, 'class="required-by"' ) && false !== strpos( $adapter_row, 'WP AI Bridge' ), 'Native Adapter row does not identify its active dependent.' );
+		$assert( $is_selection_disabled( $adapter_row, $adapter ), 'Native UI permits bulk selection of a required Adapter.' );
 		if ( 'active' === $phase ) {
 			$assert( is_plugin_active( $adapter ), 'Required Adapter is not active.' );
-			$assert( ! current_user_can( 'deactivate_plugin', $adapter ), 'Native deactivation capability permits breaking an active dependent.' );
+			// Core retains the administrator capability; its Plugins UI owns this guard.
+			$assert( false !== strpos( $adapter_row, 'You cannot deactivate this plugin as other plugins depend on it.' ), 'Native UI does not explain the protected dependency deactivation.' );
 			$assert( ! $has_action( $adapter_row, 'deactivate', $adapter ), 'Native Adapter UI offers deactivation while Bridge is active.' );
 			$assert( ( new WP_AI_Bridge\Support\Environment() )->mcp_adapter_available(), 'Real activated Adapter did not provide its native implementation.' );
 		} else {
 			$assert( ! is_plugin_active( $adapter ), 'Abnormal-state fixture requires inactive Adapter without automatic Bridge deactivation.' );
 			$assert( ! $has_action( $adapter_row, 'delete-selected', $adapter ), 'Core UI offers deletion of a required inactive Adapter.' );
+			$assert( false !== strpos( $adapter_row, 'You cannot delete this plugin as other plugins require it.' ), 'Native UI does not explain the protected dependency deletion.' );
 			$assert( false !== strpos( $bridge_row, 'This plugin is active but may not function correctly' ), 'Core does not explain an already-active abnormal dependency state.' );
 			$plugin = WP_AI_Bridge\Plugin::instance();
 			ob_start();
