@@ -316,6 +316,7 @@ if [[ "${RUN_OPTIONAL_PROVIDERS:-0}" == '1' ]]; then
     done
 fi
 if [[ "$wordpress_tag" == 'php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.1' ]]; then
+    wpai199c_external_https
     wpai199c_eval issue199-backup-smoke.php
     wpai199c_eval issue199-completion-derived-bootstrap-smoke.php
 fi

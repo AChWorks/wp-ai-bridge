@@ -10,6 +10,9 @@ if ( ! defined( 'WPAI_ADMIN13_DISPOSABLE' ) || true !== WPAI_ADMIN13_DISPOSABLE 
 	return;
 }
 
+// Task-only HTTP and CLI use the same finite memory policy.
+ini_set( 'memory_limit', '512M' );
+
 /** Durable native effect counter: concurrent dispatches cannot lose increments. */
 function wpai199c_provider_effect( $operation_id, $mode = 'normal' ) {
 	global $wpdb;

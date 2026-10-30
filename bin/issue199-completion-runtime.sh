@@ -125,3 +125,57 @@ wpai199c_install_as() {
 wpai199c_remove_provider() {
     "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-content/mu-plugins/admin13-provider.php
 }
+
+# A separate host process uses real HTTPS/OAuth/MCP, with explicit disposable CA trust.
+wpai199c_external_https() (
+    local binding port origin private_host ca_host result=0
+    binding="$("${compose[@]}" port wordpress 443 | tail -n 1)"
+    port="${binding##*:}"
+    [[ "$port" =~ ^[0-9]+$ ]] || return 1
+    origin="https://localhost:$port"
+    private_host="$(mktemp "${TMPDIR:-/tmp}/wpai199c-https.XXXXXX")"
+    ca_host="$(mktemp "${TMPDIR:-/tmp}/wpai199c-ca.XXXXXX")"
+    chmod 0600 "$private_host" "$ca_host"
+    trap 'rm -f "$private_host" "$ca_host"' EXIT
+    "${compose[@]}" exec -T wordpress bash -se <<'TLS'
+a2enmod ssl >/dev/null
+openssl req -x509 -nodes -newkey rsa:2048 -days 1 -subj '/CN=localhost' \
+    -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+    -keyout /wpai-admin13/tls.key -out /wpai-admin13/tls.crt >/dev/null 2>&1
+chmod 0600 /wpai-admin13/tls.key
+cat > /etc/apache2/sites-available/wpai-admin13-ssl.conf <<'VHOST'
+<IfModule mod_ssl.c>
+<VirtualHost *:443>
+    DocumentRoot /var/www/html
+    SSLEngine on
+    SSLCertificateFile /wpai-admin13/tls.crt
+    SSLCertificateKeyFile /wpai-admin13/tls.key
+    <Directory /var/www/html>
+        AllowOverride All
+        Require all granted
+    </Directory>
+</VirtualHost>
+</IfModule>
+VHOST
+a2ensite wpai-admin13-ssl >/dev/null
+apache2ctl graceful >/dev/null
+TLS
+    "${compose[@]}" cp wordpress:/wpai-admin13/tls.crt "$ca_host"
+    "${wpai199c_wp[@]}" eval-file \
+        wp-content/plugins/wp-ai-bridge/tests/integration/issue199-completion-https-fixture.php setup "$origin" --user=1
+    "${compose[@]}" cp wordpress:/wpai-admin13/private/wp-temp/admin13-https-fixture.json "$private_host"
+    chmod 0600 "$private_host"
+    python3 "$root/tests/integration/issue199-completion-https-client.py" "$private_host" "$ca_host" run || result=$?
+    if [[ "$result" == 0 ]]; then
+        "${wpai199c_wp[@]}" eval-file \
+            wp-content/plugins/wp-ai-bridge/tests/integration/issue199-completion-https-fixture.php revoke_grants --user=1
+        python3 "$root/tests/integration/issue199-completion-https-client.py" "$private_host" "$ca_host" revoked || result=$?
+    fi
+    "${wpai199c_wp[@]}" eval-file \
+        wp-content/plugins/wp-ai-bridge/tests/integration/issue199-completion-https-fixture.php cleanup --user=1
+    if [[ "$result" == 0 ]]; then
+        python3 "$root/tests/integration/issue199-completion-https-client.py" "$private_host" "$ca_host" token_revoked || result=$?
+    fi
+    rm -f "$private_host" "$ca_host"
+    return "$result"
+)

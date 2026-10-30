@@ -40,7 +40,11 @@ final class Backup_Operation {
 			$this->validate( $input );
 			$policy = $this->policy();
 			$action = $input['action'];
-			$budget = max( $policy['request'], Bounded_Payload::response_limit() );
+			$budget = $policy['processing'];
+			if ( $budget < 1 && ( in_array( $action, array( 'inspect', 'export_begin', 'export_step' ), true ) ||
+				0 === strpos( $action, 'restore_' ) && 'restore_status' !== $action ) ) {
+				throw new \RuntimeException( 'backup_processing_capacity' );
+			}
 			if ( in_array( $action, array( 'inspect', 'export_begin', 'export_step' ), true ) ) {
 				$exporter = new Backup_Exporter( $this->permissions, $policy, $budget );
 				if ( 'inspect' === $action ) {
@@ -172,6 +176,16 @@ final class Backup_Operation {
 				'activation_pending'    => true,
 				'quiescence_assumption' => true,
 			);
+			if ( in_array( $code, array( 'backup_metadata_capacity', 'backup_processing_capacity' ), true ) ) {
+				$data['capacity_domain']    = 'internal_complete_schema_processing';
+				$data['required_resources'] = 'administration_step_bytes_and_current_php_memory_headroom';
+				$data['processing_bytes']   = $policy['processing'] ?? null;
+				$data['memory_known']       = $policy['memory_known'] ?? null;
+				$data['memory_headroom']    = $policy['memory_headroom'] ?? null;
+			} elseif ( 'backup_plan_checkpoint_capacity' === $code ) {
+				$data['capacity_domain']    = 'private_checkpoint_plan_metadata';
+				$data['required_resources'] = 'private_transfer_checkpoint_metadata_reservation';
+			}
 			if ( in_array( $code, array( 'backup_cell_verification_resources', 'backup_cell_verification_unavailable' ), true ) ) {
 				$data['verification_work']  = 'one_complete_cell_native_sha256_replay';
 				$data['required_resources'] = 'seekable_retained_archive_and_sufficient_step_seconds_and_php_execution_time';
@@ -185,9 +199,21 @@ final class Backup_Operation {
 	}
 
 	private function policy() {
-		$policy                 = ( new Transfer_Settings() )->bytes();
-		$config                 = $this->access->configuration();
-		$memory                 = function_exists( 'wp_convert_hr_to_bytes' ) ? wp_convert_hr_to_bytes( ini_get( 'memory_limit' ) ) : -1;
+		$policy                    = ( new Transfer_Settings() )->bytes();
+		$config                    = $this->access->configuration();
+		$memory                    = Operation_Content_Limits::effective_memory_bytes();
+		$used                      = memory_get_usage( true );
+		$transport                 = max( $policy['request'], Bounded_Payload::response_limit() );
+		$policy['processing']      = max( $config['step_bytes'], $transport );
+		$policy['memory_known']    = $memory > 0;
+		$policy['memory_headroom'] = $memory > 0 ? max( 0, $memory - $used ) : null;
+		if ( $memory > 0 ) {
+			// Complete native definitions/maps have multiple live representations.
+			// This is independent of a JSON message or archive frame quantum.
+			$policy['processing'] = min( $policy['processing'], intdiv( $policy['memory_headroom'], 8 ) );
+		}
+		// Unknown/unlimited ceilings do not discard the operator's already
+		// finite processing quantum or replace it with a message-sized cap.
 		$policy['step_bytes']   = min( $config['step_bytes'], $policy['chunk'] * max( 1, intdiv( $config['step_bytes'], max( 1, $policy['chunk'] ) ) ) );
 		$policy['step_seconds'] = $config['step_seconds'];
 		if ( $memory > 0 ) {

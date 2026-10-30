@@ -81,8 +81,13 @@ final class Backup_Exporter {
 			'roots'                  => $roots,
 		);
 		$wire = json_encode( $plan );
-		if ( ! is_string( $wire ) || strlen( $wire ) > $this->policy['request'] / 2 ) {
-			throw new \RuntimeException( 'backup_metadata_capacity' );
+		if ( ! is_string( $wire ) ) {
+			throw new \RuntimeException( 'backup_metadata_encoding' );
+		}
+		// Reserve at least half of the existing private checkpoint for cursors,
+		// the current schema and recovery state; this is not native schema memory.
+		if ( strlen( $wire ) > intdiv( $this->policy['request'], 2 ) ) {
+			throw new \RuntimeException( 'backup_plan_checkpoint_capacity' );
 		}
 		$plan['plan_hash'] = hash( 'sha256', $wire );
 		return $plan;
