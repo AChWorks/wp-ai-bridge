@@ -82,6 +82,9 @@ for test in \
     foundation-smoke.php \
     issue199-database-smoke.php \
     issue199-database-mcp-smoke.php \
+    issue199-database-write-smoke.php \
+    issue199-database-write-staging-smoke.php \
+    issue199-database-write-mcp-smoke.php \
     issue199-numeric-columns-smoke.php \
     issue39-media-import-smoke.php \
     issue34-post-meta-security-smoke.php \

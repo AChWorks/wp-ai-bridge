@@ -7,7 +7,7 @@
 
 The plugin is free and self-hosted. A direct **ChatGPT** connection is tested; a separate Gateway is optional. Other compatible clients and services can use approved connections where their authentication and transport actually interoperate. **Not every administrator operation or future service workflow is available yet.**
 
-Optional **Database Inspection** and **Sensitive Database Read** groups let administrators discover installation/plugin tables and inspect exact raw values with bounded pages and hash-checked byte windows. Both default off; sensitive reads can include stored credentials. Multisite requires actual Super Admin authority. See [database access and limits](./docs/DATABASE-ADMINISTRATION.md).
+**Database administration in current source is pending release.** Four separate default-off grants cover Database Inspection, Sensitive Database Read, typed Database Write and Database Delete. The typed tool supports exact insert/update/delete batches, live row/schema preconditions, resumable large values/keys and receipt-bound recovery. Raw access can include credentials and account/role/session data; Bridge control state remains protected. Multisite requires actual Super Admin and network authority. See [database access, compatibility and recovery](./docs/DATABASE-ADMINISTRATION.md).
 
 ## Requirements
 
@@ -65,6 +65,10 @@ Go to **WP AI Bridge → Settings**. **Only Site Read is enabled by default.** E
 | Access group | Intended use |
 | --- | --- |
 | **Site Read** | Inspect permitted site, content, media and extensions. |
+| **Database Inspection** | Discover installation/plugin table metadata; source pending release. |
+| **Sensitive Database Read** | Read exact raw database values, including secrets; also requires Inspection. |
+| **Database Write** | Stage exact bytes and execute typed insert/update batches with recovery; also requires Inspection and Sensitive Read. |
+| **Database Delete** | Additionally authorize typed delete batches and explicit destructive receipt recovery. |
 | **Builder Write** | Create and edit supported content, Media and Workspace data. |
 | **Remote Media** | Import safe remote media; also requires Builder Write and native upload permission. |
 | **Live Content** | Publish content and change live status when WordPress permits. |
@@ -79,6 +83,8 @@ Go to **WP AI Bridge → Settings**. **Only Site Read is enabled by default.** E
 | **High-Trust Registered REST Invocation** | Invoke guarded registered REST operations under additional high-trust grants and native WordPress checks. |
 | **Comments** | Read, reply to and moderate supported comments. |
 | **Users & Destructive** | Administer authorized users/roles and perform destructive actions. |
+
+Database grants use a separate protected settings form. Existing ordinary grants never enable them on upgrade. Typed raw writes bypass WordPress/plugin business APIs; use native features when their hooks, validation, caches or lifecycle are required.
 
 **Source Editing and External Packages can execute code with WordPress's ordinary runtime privileges.** They are not sandboxes. Enable high-trust groups only for appropriate accounts and approved clients. See the [security guide](./docs/SECURITY.md) and [user guide](./docs/USER-GUIDE.md).
 

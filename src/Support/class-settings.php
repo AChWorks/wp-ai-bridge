@@ -16,6 +16,8 @@ final class Settings {
 
 	const GROUP_DATABASE_INSPECTION = 'database_inspection';
 	const GROUP_DATABASE_READ       = 'sensitive_database_read';
+	const GROUP_DATABASE_WRITE      = 'database_write';
+	const GROUP_DATABASE_DELETE     = 'database_delete';
 
 	const GROUP_SITE_READ         = 'site_read';
 	const GROUP_BUILDER_WRITE     = 'builder_write';
@@ -35,7 +37,7 @@ final class Settings {
 
 	const DATABASE_OPTION_NAME  = 'wp_ai_bridge_database_access';
 	const DATABASE_OPTION_GROUP = 'wp_ai_bridge_database_access';
-	const DATABASE_GROUPS       = array( self::GROUP_DATABASE_INSPECTION, self::GROUP_DATABASE_READ );
+	const DATABASE_GROUPS       = array( self::GROUP_DATABASE_INSPECTION, self::GROUP_DATABASE_READ, self::GROUP_DATABASE_WRITE, self::GROUP_DATABASE_DELETE );
 
 
 	/**
@@ -146,6 +148,18 @@ final class Settings {
 			self::GROUP_DATABASE_READ       => array(
 				'label'       => __( 'Sensitive Database Read', 'wp-ai-bridge' ),
 				'description' => __( 'Read exact raw installation database values, including possible credentials and private plugin data. Database Inspection and administrator authority are also required. This grants no database writes.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_DATABASE_WRITE      => array(
+				'label'       => __( 'Database Write', 'wp-ai-bridge' ),
+				'description' => __( 'Insert and update exact installation database rows, including sensitive plugin and account data, through typed transactions. Database Inspection, Sensitive Database Read and administrator authority are also required. This does not enable deletion.', 'wp-ai-bridge' ),
+				'default'     => false,
+				'warning'     => true,
+			),
+			self::GROUP_DATABASE_DELETE     => array(
+				'label'       => __( 'Database Delete', 'wp-ai-bridge' ),
+				'description' => __( 'Delete exact installation database rows inside typed transactions. Database Inspection, Sensitive Database Read, Database Write and administrator authority are also required. Deletion can remove live data.', 'wp-ai-bridge' ),
 				'default'     => false,
 				'warning'     => true,
 			),

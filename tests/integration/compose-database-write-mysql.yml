@@ -1,0 +1,16 @@
+# Only the focused typed-write MySQL lane replaces the normal MariaDB service.
+# CI supplies the resolved, verified linux/amd64 manifest reference and disables
+# additional pulls. Local use may pull the official MySQL8.4 tag normally.
+services:
+  db:
+    image: ${WPAI_DATABASE_WRITE_MYSQL_IMAGE:-docker.io/library/mysql:8.4}
+    environment:
+      MYSQL_ROOT_PASSWORD: wordpress
+      MYSQL_ROOT_HOST: '%'
+      MYSQL_DATABASE: wordpress
+    healthcheck:
+      test: ["CMD-SHELL", 'MYSQL_PWD="$${MYSQL_ROOT_PASSWORD}" mysql --protocol=socket --user=root --batch --skip-column-names --execute="SELECT 1" >/dev/null']
+      interval: 5s
+      timeout: 10s
+      retries: 18
+      start_period: 30s

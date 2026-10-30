@@ -22,7 +22,7 @@ The plugin has no required SaaS subscription. The official MCP Adapter is instal
 
 For setup, supported operations and troubleshooting, see https://github.com/AChWorks/wp-ai-bridge.
 
-Optional Database Inspection and Sensitive Database Read groups expose installation/plugin schema and exact raw values, including possible credentials, with bounded pagination and byte windows. Both default off; multisite requires actual Super Admin. Database writes, arbitrary SQL and full backup/restore are not provided by these read-only tools.
+Database administration in current source is pending release. Four protected default-off grants cover Database Inspection, Sensitive Database Read, Database Write and Database Delete; existing ordinary grants never enable them on upgrade. Typed insert/update/delete batches use exact bytes/NULL, live schema/row preconditions, resumable staged values/keys and durable receipt recovery. Account/role/session and ordinary plugin-secret storage are intentionally within powerful database delegation; Bridge authorization/recovery/Workspace controls remain protected. Multisite requires actual Super Admin and network authority. Native WordPress/plugin features remain preferable when their business lifecycle and caches are required. Arbitrary SQL/schema and complete database/files backup with verified restore remain accepted unfinished work in Issue #199.
 
 == Installation ==
 

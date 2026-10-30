@@ -49,7 +49,7 @@ Security regression coverage belongs to implementation and CI. Add or adjust det
 
 Mark the PR ready only after implementation, targeted validation, documentation, and self-review are complete enough to freeze a candidate. For a parent/program completion PR, that means the accepted parent cutline is complete, not merely that one absorbed child or remediation commit is ready.
 
-The current `.github/workflows/ci.yml` runs the complete supported WordPress assurance set for **non-draft** pull requests on `opened`, `reopened`, `ready_for_review`, and **every subsequent `synchronize` push** that changes non-ignored paths. Draft PR jobs are skipped by each job's `if` guard. A ready/non-draft code PR currently runs **22 workflow jobs**: **21 assurance jobs** (Quality, **six** WordPress × MCP Adapter integration combinations, **fourteen** specialized suites) plus **one** OCI image-supply job. Job counts are descriptive; the workflow file defines the actual required checks. Keep active remediation in Draft and batch local/targeted checks before making a final ready candidate. Path filtering applies to the **cumulative changed-file set of the PR, not just the latest commit**: a docs-only push on a mixed code+docs PR can trigger full CI, while an entirely docs-only PR is ignored. Reuse unaffected technical evidence when legitimate, but still diagnose new failures and meet enforced branch/PR checks.
+The current `.github/workflows/ci.yml` runs the complete supported WordPress assurance set for **non-draft** pull requests on `opened`, `reopened`, `ready_for_review`, and **every subsequent `synchronize` push** that changes non-ignored paths. Draft PR jobs are skipped by each job's `if` guard. A ready/non-draft code PR currently runs **24 workflow jobs**: **23 assurance jobs** (Quality, **six** WordPress × MCP Adapter integration combinations, **fourteen** specialized suites and **two** focused MariaDB/MySQL typed-write suites) plus **one** OCI image-supply job. Job counts are descriptive; the workflow file defines the actual required checks. Keep active remediation in Draft and batch local/targeted checks before making a final ready candidate. Path filtering applies to the **cumulative changed-file set of the PR, not just the latest commit**: a docs-only push on a mixed code+docs PR can trigger full CI, while an entirely docs-only PR is ignored. Reuse unaffected technical evidence when legitimate, but still diagnose new failures and meet enforced branch/PR checks.
 
 Full assurance includes:
 
@@ -57,6 +57,7 @@ Full assurance includes:
 - one separate-process, localhost-only authenticated HTTPS/OAuth/MCP **Media** client proof: PNG, opaque ZIP and a >1 MiB real UTF-8 text document ingress through the WordPress private-transfer protocol, explicit native Media publication and one-way claim, complete original-byte egress by private snapshot and inline Media windows, and strict SHA-256 checks (Issue #134). The existing separate-process native WXR producer/importer fixture is also a dedicated specialized lane, verifying authenticated export → chunked original-byte retrieval → staged WXR import and preflight/plan → explicitly consented native Importer execution with durable non-replay receipt (Issues #134/#139). These are disposable WordPress tests, **not** ChatGPT host-native downloadable attachment acceptance;
 - consolidated single-site regressions for previously integrated security/administration slices;
 - dedicated multisite source-editing and user-metadata authority suites;
+- focused typed database-write evidence on genuine MariaDB and MySQL 8.4: exact/staged values and complete keys, owned-session preservation, transaction/receipt concurrency and private protocol loss before/after COMMIT;
 - canonical identity/activation coverage on both supported WordPress lanes.
 
 If a ready PR needs remediation, return it to Draft, batch all related fixes that are reasonably discoverable from the finding, use targeted validation while the candidate is changing, then mark it Ready once to generate the next meaningful full-assurance candidate. Do not request a fresh full run or independent review for every intermediate remediation commit.
@@ -155,6 +156,15 @@ bash bin/run-integration.sh 6.9-php8.4-apache
 bash bin/run-integration.sh php8.4-apache
 RUN_OPTIONAL_PROVIDERS=1 bash bin/run-integration.sh php8.4-apache
 ```
+
+For typed database transactions on each native engine (candidate ZIP, exact byte/recovery and concurrency fixtures):
+
+```bash
+bash bin/run-issue199-database-write.sh mariadb 6.9-php8.4-apache
+bash bin/run-issue199-database-write.sh mysql 6.9-php8.4-apache
+```
+
+The focused MySQL lane resolves and verifies its own official image digest; it does not enlarge the common image bundle downloaded by unrelated suites.
 
 For the consolidated single-site regression layer:
 

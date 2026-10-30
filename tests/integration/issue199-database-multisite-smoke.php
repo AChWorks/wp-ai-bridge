@@ -101,9 +101,10 @@ try {
 	$provider = new Database_Abilities( new Permissions( $settings ), new Mutation_Log() );
 	$inspect = wp_get_ability( 'wp-ai-bridge/database-inspect' );
 	wpai199ms_assert( $inspect instanceof WP_Ability, 'Database inspection not registered on multisite.' );
-	$grants = array( Settings::GROUP_DATABASE_INSPECTION => 1, Settings::GROUP_DATABASE_READ => 1 );
+	$grants = array_replace( $settings->database_defaults(), array( Settings::GROUP_DATABASE_INSPECTION => 1, Settings::GROUP_DATABASE_READ => 1 ) );
 	update_option( Settings::DATABASE_OPTION_NAME, $grants, false );
 	wpai199ms_assert( $provider->can_read(), 'Real Super Admin/network grants did not enable database reads.' );
+	wpai199ms_assert( 0 === get_option( Settings::DATABASE_OPTION_NAME )[ Settings::GROUP_DATABASE_WRITE ] && 0 === get_option( Settings::DATABASE_OPTION_NAME )[ Settings::GROUP_DATABASE_DELETE ], 'Read-only dedicated grants unexpectedly enabled typed writes/deletion.' );
 	wpai199ms_assert( ! is_wp_error( $inspect->execute( array( 'action' => 'tables', 'limit' => 1 ) ) ), 'Super Admin cannot inspect the installation database.' );
 	foreach ( get_sites( array( 'fields' => 'ids', 'number' => 20 ) ) as $blog_id ) {
 		if ( (int) $blog_id !== (int) $original_blog ) {

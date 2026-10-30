@@ -37,7 +37,7 @@ final class Mutation_Log {
 			'success'     => (bool) $success,
 			'error_code'  => Error_Details::from_wp_error( new \WP_Error( (string) $error_code, '' ) )['code'] ?? '',
 		);
-		if ( 'wp-ai-bridge/database-read' === $ability ) {
+		if ( in_array( $ability, array( 'wp-ai-bridge/database-read', 'wp-ai-bridge/database-write' ), true ) ) {
 			$entry['client_fingerprint'] = substr( hash( 'sha256', OAuth_Server::authenticated_mcp_client_id() ), 0, 16 );
 			$entry['event_ref']          = bin2hex( random_bytes( 8 ) );
 		}

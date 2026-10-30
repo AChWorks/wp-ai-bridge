@@ -247,3 +247,87 @@ jobs:
 
       - name: Run specialized regression suite
         run: bash '${{ matrix.runner }}' '${{ matrix.wordpress_tag }}'
+
+  database-write:
+    needs: image-supply
+    name: Typed database writes / ${{ matrix.database_engine }} / WordPress 6.9
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        database_engine: [mariadb, mysql]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore verified common OCI image bundle
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: wpai-ci-official-images
+          path: ${{ runner.temp }}/wpai-ci-images
+
+      - name: Load common images without remote pulls
+        run: |
+          docker load --input "${RUNNER_TEMP}/wpai-ci-images/wpai-ci-images.tar"
+          docker image inspect \
+            "${WPAI_CI_IMAGE_REGISTRY}mariadb:lts" \
+            "${WPAI_CI_IMAGE_REGISTRY}wordpress:6.9-php8.4-apache" \
+            "${WPAI_CI_IMAGE_REGISTRY}wordpress:cli-php8.4" \
+            --format 'Platform={{.Os}}/{{.Architecture}} ID={{.Id}}'
+
+      - name: Resolve and verify the focused official MySQL 8.4 amd64 image
+        if: ${{ matrix.database_engine == 'mysql' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Keep this image out of the common artifact: unrelated jobs do not
+          # download MySQL. Bind Compose to the exact selected manifest digest.
+          ref='docker.io/library/mysql:8.4'
+          index_digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}')"
+          if ! grep -Eq '^sha256:[0-9a-f]{64}$' <<< "$index_digest"; then
+            echo "::error::Missing trustworthy manifest digest for ${ref}"
+            exit 1
+          fi
+          manifest="$(docker buildx imagetools inspect "${ref}@${index_digest}" --raw)"
+          platform_digest="$(python3 -c '
+          import json, re, sys
+          document = json.load(sys.stdin)
+          matches = [entry for entry in document.get("manifests", [])
+                     if entry.get("platform", {}).get("os") == "linux"
+                     and entry.get("platform", {}).get("architecture") == "amd64"
+                     and entry.get("platform", {}).get("variant", "") in ("", "v1")]
+          if len(matches) != 1 or not re.fullmatch(r"sha256:[0-9a-f]{64}", matches[0].get("digest", "")):
+              sys.exit("Missing or ambiguous verified linux/amd64 MySQL manifest")
+          print(matches[0]["digest"])
+          ' <<< "$manifest")"
+          echo "Verified ${ref}@${index_digest}; linux/amd64 manifest ${platform_digest}"
+          for attempt in 1 2 3; do
+            if docker pull --platform linux/amd64 "${ref}@${platform_digest}"; then
+              break
+            fi
+            if [[ "$attempt" == '3' ]]; then
+              echo "::error::Verified MySQL image pull failed after 3 attempts: ${ref}@${platform_digest}"
+              exit 1
+            fi
+            sleep $(( attempt * 15 ))
+          done
+          actual_platform="$(docker image inspect "${ref}@${platform_digest}" --format '{{.Os}}/{{.Architecture}}')"
+          if [[ "$actual_platform" != 'linux/amd64' ]]; then
+            echo "::error::Pulled MySQL platform mismatch: ${actual_platform}"
+            exit 1
+          fi
+          echo "WPAI_DATABASE_WRITE_MYSQL_IMAGE=${ref}@${platform_digest}" >> "$GITHUB_ENV"
+
+      - name: Setup PHP for release ZIP build
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          extensions: zip
+          coverage: none
+
+      - name: Run isolated typed-write transaction and recovery regressions
+        env:
+          MCP_ADAPTER_EXPECTED_VERSION: '0.7.1'
+          MCP_ADAPTER_URL: https://github.com/WordPress/mcp-adapter/releases/download/v0.7.1/mcp-adapter.zip
+        run: bash bin/run-issue199-database-write.sh '${{ matrix.database_engine }}' '6.9-php8.4-apache'
