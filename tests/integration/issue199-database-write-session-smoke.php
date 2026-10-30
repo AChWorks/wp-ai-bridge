@@ -5,6 +5,8 @@
  * @package WP_AI_Bridge
  */
 
+use WP_AI_Bridge\Support\Database_Connection;
+use WP_AI_Bridge\Support\Database_Write_Failure;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Settings;
 
@@ -29,6 +31,7 @@ $receipts = wpai199w_receipts_before();
 $suffix = bin2hex( random_bytes( 5 ) );
 $table = $wpdb->prefix . 'wpai199wc_' . $suffix;
 $heap = $wpdb->prefix . 'wpai199wh_' . $suffix;
+$diagnostic = $wpdb->prefix . 'wpai199wd_' . $suffix;
 $myisam = $wpdb->prefix . 'wpai199wm_' . $suffix;
 $expression = $wpdb->prefix . 'wpai199we_' . $suffix;
 $generated = $wpdb->prefix . 'wpai199wg_' . $suffix;
@@ -51,6 +54,7 @@ try {
 	foreach ( array(
 		$table => '(id INT NOT NULL PRIMARY KEY, payload LONGBLOB NULL, amount DECIMAL(10,2) NOT NULL DEFAULT 0, short_value VARCHAR(4) NULL) ENGINE=InnoDB',
 		$heap => '(payload LONGBLOB NULL) ENGINE=InnoDB',
+		$diagnostic => '(id VARCHAR(64) NOT NULL PRIMARY KEY, payload LONGBLOB NULL) ENGINE=InnoDB',
 		$myisam => '(id INT NOT NULL PRIMARY KEY, payload LONGBLOB NULL) ENGINE=MyISAM',
 		$outside => '(id INT NOT NULL PRIMARY KEY, payload LONGBLOB NULL) ENGINE=InnoDB',
 		$expression => '(id INT NOT NULL PRIMARY KEY, token VARCHAR(36) NOT NULL DEFAULT (uuid())) ENGINE=InnoDB',
@@ -67,6 +71,69 @@ try {
 	$wpdb->insert( $child, array( 'id' => 1, 'parent_tag' => 10 ) );
 	$schema = wpai199w_describe( $table )['schema_hash'];
 	$step = wpai199w_step( 'update', $table, $schema, array( 'payload' => base64_encode( 'owned' ) ), '1' );
+
+	// Real SQL failure with ERROR but no STRICT emits a PHP warning even under
+	// @. The caller handler must never see data or run inside owned work.
+	$diagnostic_schema = wpai199w_describe( $diagnostic )['schema_hash'];
+	$secret_key = 'private-diagnostic-' . $suffix;
+	$wpdb->insert( $diagnostic, array( 'id' => $secret_key, 'payload' => 'retained' ) );
+	$report_mode = ( new mysqli_driver() )->report_mode;
+	$observed = array();
+	$observer = static function ( $level, $message ) use ( &$observed ) {
+		$observed[] = array( $level, $message );
+		return true;
+	};
+	set_error_handler( $observer );
+	try {
+		mysqli_report( MYSQLI_REPORT_ERROR );
+		$diagnostic_first = wpai199w_step( 'insert', $diagnostic, $diagnostic_schema, array( 'id' => base64_encode( 'rolled-back-' . $suffix ), 'payload' => base64_encode( 'must roll back' ) ) );
+		$diagnostic_duplicate = wpai199w_step( 'insert', $diagnostic, $diagnostic_schema, array( 'id' => base64_encode( $secret_key ) ) );
+		$diagnostic_id = 'write-diagnostic-failure-' . $suffix;
+		$diagnostic_error = wpai199w_error( wpai199w_execute( $diagnostic_id, array( $diagnostic_first, $diagnostic_duplicate ) ), 'Diagnostic-mode duplicate batch succeeded.', array( 'database_write_query_failed' ) );
+		wpai199w_assert( array() === $observed, 'Native SQL warning dispatched the caller application handler during owned work.' );
+		wpai199w_assert( 1062 === $diagnostic_error->get_error_data()['errno'] && 'not_committed' === $diagnostic_error->get_error_data()['outcome'] && ! str_contains( wp_json_encode( $diagnostic_error ), $secret_key ), 'Native duplicate diagnostics lost their truthful redacted classification.' );
+		wpai199w_assert( 0 === wpai199w_count( $diagnostic, 'rolled-back-' . $suffix ) && 'retained' === wpai199w_bytes( $diagnostic, 'payload', $secret_key ), 'Diagnostic-mode failure left partial target effects.' );
+		wpai199w_assert( 'not_recorded' === wpai199w_ok( wpai199w_call( array( 'action' => 'recover', 'operation_id' => $diagnostic_id ) ), 'Diagnostic failure recovery failed.' )['status'], 'Diagnostic-mode failure committed a receipt.' );
+		$diagnostic_success = wpai199w_step( 'insert', $diagnostic, $diagnostic_schema, array( 'id' => base64_encode( 'success-' . $suffix ) ) );
+		wpai199w_ok( wpai199w_execute( 'write-diagnostic-success-' . $suffix, array( $diagnostic_success ) ), 'Legitimate non-STRICT mysqli mode was unnecessarily rejected.' );
+		wpai199w_assert( array() === $observed && MYSQLI_REPORT_ERROR === ( new mysqli_driver() )->report_mode, 'Native work changed caller mysqli reporting or dispatched its handler.' );
+		// Exercise prepare, unparameterized query and index-report diagnostics on
+		// the retained native connection without any owning WordPress callback.
+		$native = new Database_Connection();
+		$native->begin();
+		try {
+			foreach ( array( MYSQLI_REPORT_ERROR, MYSQLI_REPORT_ERROR | MYSQLI_REPORT_INDEX, MYSQLI_REPORT_ALL ) as $native_mode ) {
+				mysqli_report( $native_mode );
+				foreach ( array( array( 'SELECT ? FROM', array( $secret_key ) ), array( 'SELECT FROM', array() ) ) as $invalid_sql ) {
+					$failed = false;
+					try {
+						$native->run( $invalid_sql[0], $invalid_sql[1] );
+					} catch ( Database_Write_Failure $failure ) {
+						$failed = 'database_write_query_failed' === $failure->reason && 1064 === ( $failure->details['errno'] ?? 0 );
+					}
+					wpai199w_assert( $failed && array() === $observed && $native_mode === ( new mysqli_driver() )->report_mode, 'Native query/prepare failure escaped diagnostic isolation or changed report mode.' );
+				}
+				try {
+					$native->run( 'SELECT COUNT(*) AS rows_count FROM ' . $native->table( $diagnostic ) . ' WHERE payload IS NOT NULL' );
+				} catch ( Database_Write_Failure $failure ) {
+					// STRICT intentionally converts the driver's no-index diagnostic
+					// to an exception with errno0; preserving that mode is deliberate.
+					wpai199w_assert( 0 !== ( $native_mode & MYSQLI_REPORT_STRICT ) && 'database_write_query_failed' === $failure->reason && 0 === ( $failure->details['errno'] ?? -1 ), 'Native index diagnostic had an unexpected outcome.' );
+				}
+				$native->run( 'SELECT 1 AS connection_usable' );
+				wpai199w_assert( array() === $observed && $native_mode === ( new mysqli_driver() )->report_mode, 'Native index reporting dispatched the application handler or changed report mode.' );
+			}
+		} finally {
+			wpai199w_assert( $native->rollback(), 'Native diagnostic fixture could not restore its owned session.' );
+		}
+		trigger_error( 'wpai199w-caller-handler-restored', E_USER_WARNING );
+		wpai199w_assert( array( array( E_USER_WARNING, 'wpai199w-caller-handler-restored' ) ) === $observed, 'Original caller handler/mask was not restored after native success/failure cleanup.' );
+	} finally {
+		mysqli_report( $report_mode );
+		restore_error_handler();
+	}
+	wpai199w_assert( $report_mode === ( new mysqli_driver() )->report_mode, 'Original mysqli report mode was not restored by diagnostic fixture.' );
+
 
 	wpai199w_assert( false !== $wpdb->query( 'START TRANSACTION' ), 'Cannot start ambient native transaction.' );
 	$wpdb->insert( $table, array( 'id' => 99, 'payload' => 'ambient uncommitted' ) );

@@ -298,6 +298,16 @@ final class Database_Connection {
 	public function run( $sql, array $parameters = array(), array $sources = array(), $max_rows = 4096 ) {
 		$statement = null;
 		$result    = null;
+		// @ does not stop PHP from dispatching an installed application error
+		// handler. Native mysqli modes can emit data-bearing E_WARNING instead
+		// of exceptions; source I/O and result cleanup can also warn. Keep the
+		// fixed internal handler through cleanup, then restore the caller stack.
+		// Do not change the caller's process-wide mysqli reporting mode.
+		set_error_handler(
+			static function () {
+				return true;
+			}
+		);
 		try {
 			global $wpdb;
 			if ( $wpdb !== $this->wpdb || $this->wpdb->base_prefix !== $this->prefix || $this->wpdb->options !== $this->options ||
@@ -405,11 +415,15 @@ final class Database_Connection {
 		} catch ( \Throwable $error ) {
 			throw new Database_Write_Failure( 'database_write_outcome_unknown' );
 		} finally {
-			if ( $result instanceof \mysqli_result ) {
-				mysqli_free_result( $result );
-			}
-			if ( $statement instanceof \mysqli_stmt ) {
-				@mysqli_stmt_close( $statement );
+			try {
+				if ( $result instanceof \mysqli_result ) {
+					mysqli_free_result( $result );
+				}
+				if ( $statement instanceof \mysqli_stmt ) {
+					@mysqli_stmt_close( $statement );
+				}
+			} finally {
+				restore_error_handler();
 			}
 		}
 	}
