@@ -147,6 +147,10 @@ The generated package is:
 build/wp-ai-bridge.zip
 ```
 
+## Issue #209 native SQL configuration setup validation
+
+The narrowly scoped deterministic runner is `php tests/issue209-native-sql-config.php`: isolated PHP-process cases use disposable private configuration paths, including actual included-file identity, standard parent layouts, constant conflicts, policy/nonces, stale edits, ownership/mode and fresh-request activation. The real WordPress Docker integration lane additionally checks WordPress's actual capability/policy behavior and, when the disposable file layout permits it, a new-request bootstrap after the explicit config action. Do not run a configuration write against any hosted installation as part of development or release testing. The feature does not change the native SQL Ability gate, the six grants or the settings-save controller.
+
 ## Integration tests
 
 Docker-based integration lanes build the release ZIP, install that ZIP into WordPress, install the pinned official MCP Adapter, and exercise the plugin in isolated volumes.

@@ -85,7 +85,7 @@ $assert( 8 === $xp->query( '//section[contains(@class,"wpai-settings-section")]'
 $assert( 0 === $xp->query( '//section[@hidden]' )->length, 'No-JS must expose every settings section.' );
 $assert( 1 === $xp->query( '//button[@id="wpai-settings-save"]' )->length, 'There must be exactly one Save changes action.' );
 $assert( 1 === $xp->query( '(//input[@type="submit"] | //button[not(@type) or @type="submit"])[1][@id="wpai-settings-default-submit" and @hidden and not(@name)]' )->length, 'The first native submitter must trigger the main Save action without Add scope draft intent.' );
-$assert( 3 === $xp->query( '//form' )->length, 'Settings, Export and Clear must have distinct forms.' );
+$assert( 4 === $xp->query( '//form' )->length, 'Settings, SQL configuration, Export and Clear must have distinct forms.' );
 $clear_form = '//form[contains(concat(" ", normalize-space(@class), " "), " wpai-workspace-clear ")]';
 $assert( 1 === $xp->query( $clear_form . '[@target="_blank" and contains(concat(" ", normalize-space(@rel), " "), " noopener ")]' )->length, 'Native no-JS Clear must preserve the settings page in a separate tab without an opener.' );
 $assert( 1 === $xp->query( $clear_form . '[@method="post" and @action="https://example.test/wp-admin/admin-post.php"]/input[@name="action" and @value="wpai_workspace_clear"]' )->length &&
@@ -94,6 +94,20 @@ $assert( 1 === $xp->query( $clear_form . '[@method="post" and @action="https://e
 $assert( 1 === $xp->query( $clear_form . '//input[@name="_wpnonce"]' )->length &&
 	1 === $xp->query( $clear_form . '//input[@type="checkbox" and @name="confirm_clear" and @value="clear" and @required]' )->length,
 	'Native Clear must retain its nonce and explicit required confirmation.' );
+$sql_form = '//form[@id="wpai-native-sql-setup-form"]';
+$assert( 1 === $xp->query( $sql_form . '[@method="post" and @target="_blank" and contains(@rel,"noopener")]' )->length &&
+    1 === $xp->query( $sql_form . '//input[@name="action" and @value="wpai_native_sql_config_setup"]' )->length &&
+    1 === $xp->query( $sql_form . '//input[@name="_wpnonce"]' )->length &&
+    1 === $xp->query( $sql_form . '//input[@name="expected_digest"]' )->length,
+    'Explicit native SQL config POST must have an independent secured new-tab form.' );
+$assert( 0 === $xp->query( $sql_form . '//*[@name="wp_ai_bridge_database_access" or starts-with(@name,"wp_ai_bridge_settings[") or @name="expected_revision" or @name="form_complete"]' )->length,
+    'Config setup must never submit SQL grants or pending Settings draft state.' );
+$assert( 0 === $xp->query( '//form[@id="wpai-settings-form"]//input[@value="wpai_native_sql_config_setup"]' )->length &&
+    0 === $xp->query( '//button[@form="wpai-native-sql-setup-form" and @type="submit"]' )->length,
+    'Unknown active wp-config path must prevent automatic action while retaining isolated form.' );
+$assert( 1 === $xp->query( '//section[@id="database"]//h3[normalize-space(.)="Native-account SQL server setup"]' )->length &&
+    str_contains( $html, 'No proven active file path is available.' ),
+    'Database setup must clearly deny path guesses on an unproven bootstrap.' );
 $assert( 0 === $xp->query( '//form//form' )->length, 'Operation forms must not nest in settings.' );
 $assert( 0 === $xp->query( '//form[@id="wpai-settings-form"]//input[@value="wpai_workspace_clear" or @value="wpai_workspace_export"]' )->length, 'Save must never execute a Workspace operation.' );
 $assert( 1 === $xp->query( '//form[@id="wpai-settings-form"]/input[last()][@name="form_complete"]' )->length, 'Completeness sentinel must follow every settings input.' );

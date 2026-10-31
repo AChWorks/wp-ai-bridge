@@ -495,6 +495,66 @@ $path = (string) ($fixture["path"] ?? "");
 if ("" !== $path) { @unlink($path); @rmdir(dirname($path)); }
 delete_option("wpai_integration_source_recovery_fixture");
 ' --allow-root >/dev/null
+# Isolated WordPress configuration setup must run after the other feature tests.
+# This config belongs only to a disposable Docker volume, never a hosted site.
+if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
+    echo '== Issue #209 disposable WordPress config setup =='
+    "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration
+    for file in issue209-native-sql-config-smoke.php issue209-unsupported-config-smoke.php issue209-prepare-disposable-config.php; do
+        "${compose[@]}" cp "$root/tests/integration/$file" "wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/$file"
+    done
+
+    # First prove fail-closed behavior for the *actual* Docker wp-config:
+    # the official template contains an inactive optional eval() branch.
+    unsupported="$("${compose[@]}" exec -T --user www-data wordpress php -r '
+        require "/var/www/html/wp-load.php";
+        wp_set_current_user(1);
+        require "/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue209-unsupported-config-smoke.php";
+    ')"
+    printf '%s\n' "$unsupported"
+    if ! grep -Fxq 'WPAI209_UNSUPPORTED=1' <<< "$unsupported"; then
+        echo 'ERROR: Issue #209 must refuse the dynamic Docker configuration without changing it.' >&2
+        exit 1
+    fi
+
+    # Keep production handling of eval() and explicit false unchanged.
+    # Reconcile only an inactive Docker extension and the previous Issue #199
+    # test-owned false definition inside this verified disposable volume.
+    case "${COMPOSE_PROJECT_NAME:-}" in
+        wpai-integration-*) ;;
+        *) echo 'ERROR: Issue #209 requires an owned disposable Compose project.' >&2; exit 1 ;;
+    esac
+    prepared="$("${compose[@]}" exec -T -e WPAI209_DISPOSABLE_TEST=1 -e "WPAI209_COMPOSE_PROJECT=$COMPOSE_PROJECT_NAME" wordpress php /var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue209-prepare-disposable-config.php)"
+    printf '%s\n' "$prepared"
+    if ! grep -Fxq 'WPAI209_FIXTURE_READY=1' <<< "$prepared" ||
+        ! grep -Fxq 'WPAI209_FALSE_REMOVED=1' <<< "$prepared"; then
+        echo 'ERROR: Issue #209 disposable WordPress static config and test-owned false policy were not reconciled.' >&2
+        exit 1
+    fi
+    "${compose[@]}" exec -T wordpress sh -ec '
+        chown www-data:www-data /var/www/html /var/www/html/wp-config.php
+        chmod 0755 /var/www/html
+        chmod 0640 /var/www/html/wp-config.php
+    '
+    result="$("${compose[@]}" exec -T --user www-data wordpress php -r '
+        require "/var/www/html/wp-load.php";
+        wp_set_current_user(1);
+        require "/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue209-native-sql-config-smoke.php";
+    ')"
+    printf '%s\n' "$result"
+    if ! grep -Fxq 'WPAI209_FALLBACK=1' <<< "$result" || ! grep -Fxq 'WPAI209_WRITTEN=1' <<< "$result"; then
+        echo 'ERROR: Issue #209 requires both denied/fallback and successful automatic WordPress publication.' >&2
+        exit 1
+    fi
+    "${compose[@]}" exec -T --user www-data wordpress php -r '
+        require "/var/www/html/wp-load.php";
+        if (!defined("WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL") || true !== WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL) {
+            fwrite(STDERR, "Fresh WordPress bootstrap did not activate Issue 209 policy.\n");
+            exit(1);
+        }
+        echo "PASS: #209 new WordPress request confirms boolean true.\n";
+    '
+fi
 "${wp[@]}" plugin uninstall wp-ai-bridge --deactivate --allow-root >/dev/null
 if "${wp[@]}" plugin is-installed wp-ai-bridge --allow-root >/dev/null 2>&1; then
     echo "ERROR: plugin files survived final post-recovery uninstall." >&2
