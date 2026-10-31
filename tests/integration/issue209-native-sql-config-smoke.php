@@ -27,6 +27,20 @@ $forged = $payload;
 $forged['_wpnonce'] = 'invalid';
 $denied = $setup->activate( $forged );
 $assert( $denied['result'] === 'denied' && hash_equals( $before, hash_file( 'sha256', $path ) ), 'nonce denial and no edit' );
+$stale = $payload;
+$stale['expected_digest'] = str_repeat( '0', 64 );
+$denied = $setup->activate( $stale );
+$assert( 'denied' === $denied['result'] && hash_equals( $before, hash_file( 'sha256', $path ) ), 'stale source digest must not edit' );
+$deny_mods = static function ( $allowed, $context ) {
+    return Native_SQL_Config_Setup::ACTION === $context ? false : $allowed;
+};
+add_filter( 'file_mod_allowed', $deny_mods, PHP_INT_MAX, 2 );
+try {
+    $denied = $setup->activate( $payload );
+    $assert( 'denied' === $denied['result'] && hash_equals( $before, hash_file( 'sha256', $path ) ), 'native Core policy must refuse direct config edit' );
+} finally {
+    remove_filter( 'file_mod_allowed', $deny_mods, PHP_INT_MAX );
+}
 $result = $setup->activate( $payload );
 if ( $state['can_auto'] ) {
     $assert( $result['result'] === 'written', 'disk publication' );

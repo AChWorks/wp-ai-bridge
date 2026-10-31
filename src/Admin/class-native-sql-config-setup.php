@@ -67,6 +67,9 @@ final class Native_SQL_Config_Setup {
 
 	/** @return string Empty when currently authorized, otherwise the precise denial. */
 	public function authority_issue() {
+		$actor   = get_current_user_id();
+		$site    = get_current_blog_id();
+		$network = get_current_network_id();
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return __( 'Current WordPress user lacks manage_options; only an authorized administrator may request this setup.', 'wp-ai-bridge' );
 		}
@@ -79,11 +82,17 @@ final class Native_SQL_Config_Setup {
 		if ( defined( 'DISALLOW_FILE_MODS' ) && DISALLOW_FILE_MODS ) {
 			return __( 'DISALLOW_FILE_MODS is enabled; WordPress forbids programmatic file changes on this host.', 'wp-ai-bridge' );
 		}
+		if ( defined( 'FS_METHOD' ) && 'direct' !== FS_METHOD ) {
+			return __( 'FS_METHOD explicitly selects a non-direct WordPress filesystem backend. This setup does not bypass that hosting choice or request filesystem credentials.', 'wp-ai-bridge' );
+		}
 		if ( ! current_user_can( 'edit_files' ) ) {
 			return __( 'WordPress denied the native edit_files capability for the current administrator.', 'wp-ai-bridge' );
 		}
 		if ( ! function_exists( 'wp_is_file_mod_allowed' ) || ! wp_is_file_mod_allowed( 'wpai_native_sql_config_setup' ) ) {
 			return __( 'WordPress file-modification policy denied this operation (DISALLOW_FILE_MODS or a policy filter).', 'wp-ai-bridge' );
+		}
+		if ( get_current_user_id() !== $actor || get_current_blog_id() !== $site || get_current_network_id() !== $network ) {
+			return __( 'The active WordPress user, site or network changed during native permission evaluation. No configuration edit is allowed.', 'wp-ai-bridge' );
 		}
 		return '';
 	}
@@ -155,6 +164,9 @@ final class Native_SQL_Config_Setup {
 					'line'   => $token[2],
 				);
 			}
+			if ( T_EVAL === $id ) {
+				return $no( 'complex', __( 'The configuration evaluates dynamically generated PHP. This server-policy source cannot be proven safe for automatic insertion.', 'wp-ai-bridge' ) );
+			}
 			if ( in_array( $id, array( T_REQUIRE, T_REQUIRE_ONCE, T_INCLUDE, T_INCLUDE_ONCE ), true ) ) {
 				if ( 0 !== $depth ) {
 					return $no( 'unsupported', __( 'The configuration contains conditional or nested includes. Automatic insertion cannot prove the policy source.', 'wp-ai-bridge' ) );
@@ -219,11 +231,13 @@ final class Native_SQL_Config_Setup {
 		if ( 1 !== count( $matches[0] ) ) {
 			return $no( 'unsupported', __( 'A unique standard WordPress bootstrap line could not be identified. Do not insert PHP at an unverified location.', 'wp-ai-bridge' ) );
 		}
-		$at         = $matches[0][0][1];
-		$statement  = $matches[0][0][0];
-		$keyword_at = $at + strspn( $statement, " \t" );
+		$at             = $matches[0][0][1];
+		$statement      = $matches[0][0][0];
+		$keyword_at     = $at + strspn( $statement, " \t" );
+		$prior          = $require_at[0]['previous'] ?? '';
+		$after_open_tag = is_string( $prior ) && 1 === preg_match( '/^<\?php\s*$/i', $prior );
 		if ( 1 !== count( $require_at ) || $keyword_at !== $require_at[0]['offset'] ||
-			! in_array( $require_at[0]['previous'], array( ';', '}', '<?php', '<?php\n' ), true ) ) {
+			! in_array( $prior, array( ';', '}' ), true ) && ! $after_open_tag ) {
 			return $no( 'unsupported', __( 'The bootstrap statement is conditional or nonstandard. Manual review is required before changing PHP.', 'wp-ai-bridge' ) );
 		}
 		$line      = substr_count( substr( $source, 0, $at ), "\n" ) + 1;
@@ -301,19 +315,30 @@ final class Native_SQL_Config_Setup {
 			$result['state']  = 'unsupported';
 			$result['reason'] = $located['reason'];
 		} elseif ( $result['enabled'] ) {
-			$result['state']  = 'enabled';
-			$result['reason'] = __( 'The SQL constant is exactly boolean true in this WordPress request. Database grants and native privileges remain separate.', 'wp-ai-bridge' );
+			// A true runtime value does not turn a conflicting or dynamically
+			// configured file into an uncomplicated, automatically editable file.
+			if ( 'true' === $result['state'] ) {
+				$result['state']  = 'enabled';
+				$result['reason'] = __( 'The SQL constant is exactly boolean true in this WordPress request. Database grants and native privileges remain separate.', 'wp-ai-bridge' );
+			} elseif ( 'ready' === $result['state'] ) {
+				$result['state']  = 'external';
+				$result['reason'] = __( 'Runtime SQL policy is enabled, but the loaded wp-config.php has no explicit definition. An external source may own the policy; do not append a shadow definition.', 'wp-ai-bridge' );
+			}
 		} elseif ( defined( self::CONSTANT ) && 'ready' === $result['state'] ) {
 			$result['state']  = 'external';
 			$result['reason'] = __( 'The constant has another runtime value, apparently from an external or dynamic source. Find that definition; do not add a shadow definition.', 'wp-ai-bridge' );
 		} elseif ( 'true' === $result['state'] ) {
 			$result['state']  = 'pending';
 			$result['reason'] = __( 'The file contains true but the current request did not load boolean true. Check the actual bootstrap and reload on a fresh request.', 'wp-ai-bridge' );
-		} elseif ( 'ready' === $result['state'] && ! $this->can_modify() ) {
-			$result['reason'] = $this->authority_issue();
 		}
-		$result['can_auto'] = 'ready' === $result['state'] && $this->can_modify() && is_writable( $path ) && is_writable( dirname( $path ) );
-		if ( 'ready' === $result['state'] && $this->can_modify() && ! $result['can_auto'] ) {
+		// Resolve mutable WordPress capability/hosting filters once for this
+		// observation, and reject if any filter changes the principal/context.
+		$permission_issue = 'ready' === $result['state'] ? $this->authority_issue() : '';
+		if ( 'ready' === $result['state'] && '' !== $permission_issue ) {
+			$result['reason'] = $permission_issue;
+		}
+		$result['can_auto'] = 'ready' === $result['state'] && '' === $permission_issue && is_writable( $path ) && is_writable( dirname( $path ) );
+		if ( 'ready' === $result['state'] && '' === $permission_issue && ! $result['can_auto'] ) {
 			$result['reason'] = __( 'PHP cannot write the existing configuration and its directory. File ownership or filesystem permissions prevent automatic editing.', 'wp-ai-bridge' );
 		}
 		return $result;

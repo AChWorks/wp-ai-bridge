@@ -5,8 +5,8 @@
  */
 if ( ! isset( $argv[1] ) ) {
 	$cases = array(
-		'ready', 'parent', 'already', 'false', 'duplicate', 'dynamic', 'conditional',
-		'external', 'missing', 'nonstandard', 'unwritable', 'policy', 'file_mod', 'disallow_mods',
+		'ready', 'parent', 'minimal', 'crlf', 'already', 'false', 'duplicate', 'dynamic', 'eval', 'conditional',
+		'external', 'missing', 'nonstandard', 'html_tail', 'unwritable', 'policy', 'file_mod', 'disallow_mods', 'non_direct', 'context_drift', 'runtime_external', 'runtime_conflict',
 		'multisite', 'nonce', 'stale', 'concurrent', 'linked', 'unknown',
 	);
 	$count = 0;
@@ -39,8 +39,17 @@ $GLOBALS['wpai209'] = array(
 	'multisite' => false, 'super_admin' => true, 'context' => true, 'race' => false,
 );
 
+if ( 'minimal' === $case ) {
+	$source = "<?php\nrequire_once ABSPATH . 'wp-settings.php';\n";
+}
+if ( 'crlf' === $case ) {
+	$source = str_replace( "\n", "\r\n", $source );
+}
 if ( 'already' === $case ) {
 	$source = str_replace( "require_once", "define( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL', true );\nrequire_once", $source );
+}
+if ( 'runtime_conflict' === $case ) {
+	$source = str_replace( "require_once", "define( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL', false );\nrequire_once", $source );
 }
 if ( 'false' === $case ) {
 	$source = str_replace( "require_once", "define( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL', false );\nrequire_once", $source );
@@ -48,11 +57,17 @@ if ( 'false' === $case ) {
 if ( 'duplicate' === $case ) {
 	$source = str_replace( "require_once", "define( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL', false );\ndefine( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL', true );\nrequire_once", $source );
 }
+if ( 'eval' === $case ) {
+	$source = str_replace( "require_once", "eval( '/* disposable inert fixture */' );\nrequire_once", $source );
+}
 if ( 'dynamic' === $case ) {
 	$source = str_replace( "require_once", "define( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL', false );\nrequire_once", $source );
 }
 if ( 'conditional' === $case ) {
 	$source = str_replace( "require_once", "if ( false ) { define( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL', true ); }\nrequire_once", $source );
+}
+if ( 'html_tail' === $case ) {
+	$source .= "?>\nunsafe HTML tail";
 }
 if ( 'nonstandard' === $case ) {
 	$source = str_replace( "require_once", "include", $source );
@@ -83,14 +98,23 @@ if ( 'policy' === $case ) {
 if ( 'disallow_mods' === $case ) {
 	define( 'DISALLOW_FILE_MODS', true );
 }
+if ( 'non_direct' === $case ) {
+	define( 'FS_METHOD', 'ssh2' );
+}
 if ( 'file_mod' === $case ) {
 	$GLOBALS['wpai209']['file_mod'] = false;
+}
+if ( 'context_drift' === $case ) {
+	$GLOBALS['wpai209']['drift'] = true;
 }
 if ( 'multisite' === $case ) {
 	$GLOBALS['wpai209']['multisite'] = true;
 	$GLOBALS['wpai209']['super_admin'] = false;
 }
 
+if ( in_array( $case, array( 'runtime_external', 'runtime_conflict' ), true ) ) {
+	define( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL', true ); // Synthetic external runtime source.
+}
 if ( ! in_array( $case, array( 'unknown', 'missing' ), true ) ) {
 	// The PHP runtime records the exact included config. Core's wp-settings
 	// bootstrap is a deliberate no-op in this disposable fixture.
@@ -103,9 +127,15 @@ function __( $text, $domain = '' ) { return $text; }
 function current_user_can( $cap ) { return 'edit_files' === $cap ? $GLOBALS['wpai209']['can_edit'] : $GLOBALS['wpai209']['context']; }
 function is_multisite() { return $GLOBALS['wpai209']['multisite']; }
 function is_super_admin() { return $GLOBALS['wpai209']['super_admin']; }
-function wp_is_file_mod_allowed( $context ) { return $GLOBALS['wpai209']['file_mod']; }
+function wp_is_file_mod_allowed( $context ) {
+	if ( ! empty( $GLOBALS['wpai209']['drift'] ) ) {
+		$GLOBALS['wpai209']['drift'] = false;
+		$GLOBALS['wpai209']['blog'] = 18;
+	}
+	return $GLOBALS['wpai209']['file_mod'];
+}
 function get_current_user_id() { return 11; }
-function get_current_blog_id() { return 17; }
+function get_current_blog_id() { return $GLOBALS['wpai209']['blog'] ?? 17; }
 function get_current_network_id() { return 23; }
 function wp_verify_nonce( $nonce, $action ) { return 'valid-' . $action === $nonce; }
 function nocache_headers() {}
@@ -129,10 +159,10 @@ $assert  = static function ( $condition, $message ) use ( $case ) {
 };
 
 $expected = array(
-	'ready' => 'ready', 'parent' => 'ready', 'already' => 'enabled', 'false' => 'false',
-	'duplicate' => 'complex', 'dynamic' => 'complex', 'conditional' => 'pending',
-	'external' => 'unsupported', 'missing' => 'unknown', 'nonstandard' => 'unsupported',
-	'unwritable' => 'ready', 'policy' => 'ready', 'file_mod' => 'ready', 'disallow_mods' => 'ready',
+	'ready' => 'ready', 'parent' => 'ready', 'minimal' => 'ready', 'crlf' => 'ready', 'already' => 'enabled', 'false' => 'false',
+	'duplicate' => 'complex', 'dynamic' => 'complex', 'eval' => 'complex', 'conditional' => 'pending',
+	'external' => 'unsupported', 'missing' => 'unknown', 'nonstandard' => 'unsupported', 'html_tail' => 'unsupported',
+	'runtime_external' => 'external', 'runtime_conflict' => 'false', 'unwritable' => 'ready', 'policy' => 'ready', 'file_mod' => 'ready', 'disallow_mods' => 'ready', 'non_direct' => 'ready', 'context_drift' => 'ready',
 	'multisite' => 'ready', 'nonce' => 'ready', 'stale' => 'ready',
 	'concurrent' => 'ready', 'linked' => 'unsupported', 'unknown' => 'unknown',
 );
@@ -142,9 +172,19 @@ if ( ! in_array( $case, array( 'unknown', 'missing' ), true ) ) {
 } else {
 	$assert( '' === $state['path'], 'Cannot invent an unproven config path.' );
 }
-$assert( in_array( $case, array( 'ready', 'parent', 'nonce', 'stale', 'concurrent' ), true ) === $state['can_auto'], 'Wrong automatic edit admission.' );
+$assert( in_array( $case, array( 'ready', 'parent', 'minimal', 'crlf', 'nonce', 'stale', 'concurrent' ), true ) === $state['can_auto'], 'Wrong automatic edit admission.' );
+if ( 'runtime_external' === $case || 'runtime_conflict' === $case ) {
+	$assert( $state['enabled'], 'Actual runtime enabled status must not erase conflicting or external file diagnostics.' );
+}
+
 if ( 'disallow_mods' === $case ) {
 	$assert( str_contains( $state['reason'], 'DISALLOW_FILE_MODS' ), 'Report precise native configuration policy denial.' );
+}
+if ( 'non_direct' === $case ) {
+	$assert( str_contains( $state['reason'], 'FS_METHOD' ), 'Do not bypass an explicit non-direct WordPress filesystem policy.' );
+}
+if ( 'context_drift' === $case ) {
+	$assert( str_contains( $state['reason'], 'changed during native permission' ), 'Reject context drift caused by a WordPress policy hook.' );
 }
 
 $post = array(
@@ -165,12 +205,13 @@ if ( 'concurrent' === $case ) {
 }
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $result = $service->activate( $post );
-$published = in_array( $case, array( 'ready', 'parent' ), true );
+$published = in_array( $case, array( 'ready', 'parent', 'minimal', 'crlf' ), true );
 $assert( ( 'written' === ( $result['result'] ?? '' ) ) === $published, 'Wrong publish result.' );
 if ( $published ) {
 	$after = file_get_contents( $fixture );
 	$assert( 1 === substr_count( $after, $service::DEFINITION ), 'One exact definition must be published.' );
-	$assert( str_replace( $service::DEFINITION . "\n\n", '', $after ) === $source, 'All original bytes must be preserved.' );
+	$newline = 'crlf' === $case ? "\r\n" : "\n";
+	$assert( str_replace( $service::DEFINITION . $newline . $newline, '', $after ) === $source, 'All original bytes must be preserved.' );
 	$assert( false === defined( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL' ), 'Current PHP request must stay unchanged.' );
 	clearstatcache( true, $fixture );
 	$assert( $original_mode === ( fileperms( $fixture ) & 07777 ), 'Original file mode must survive replacement.' );
