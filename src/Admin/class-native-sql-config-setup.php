@@ -176,7 +176,7 @@ final class Native_SQL_Config_Setup {
 					'previous' => $previous,
 				);
 			}
-			// PHP 8 tokenizes \\define() and namespaced calls differently
+			// PHP 8 tokenizes \define() and namespaced calls differently
 			// from bare T_STRING. A qualified definition must not escape the
 			// policy-source check solely because of its token representation.
 			$function_name = '';
@@ -184,24 +184,28 @@ final class Native_SQL_Config_Setup {
 				$parts         = explode( '\\', strtolower( $value ) );
 				$function_name = end( $parts );
 			}
-			$next = $this->next_significant( $tokens, $index + 1 );
-			if ( '(' === $next['value'] && in_array( $function_name, array( 'define', 'defined' ), true ) ) {
-				$argument = $this->next_significant( $tokens, $next['index'] + 1 );
-				$after    = $this->next_significant( $tokens, $argument['index'] + 1 );
-				// A computed constant name may resolve to the SQL policy only
-				// in a different request. Never insert beside an unknown define.
-				if ( T_CONSTANT_ENCAPSED_STRING !== $argument['id'] ||
-					! in_array( $after['value'], array( ',', ')' ), true ) ) {
-					return $no( 'complex', __( 'A dynamic define/defined expression prevents proving that this SQL constant is not set elsewhere.', 'wp-ai-bridge' ) );
-				}
-			}
+			$definition_call = in_array( $function_name, array( 'define', 'defined' ), true );
 			// Indirect calls can reach define() without any literal policy-name
-			// token. Decline rather than trying to interpret callable values or
-			// evaluate arbitrary configuration PHP.
-			if ( '(' === $next['value'] &&
-				( in_array( $function_name, array( 'call_user_func', 'call_user_func_array', 'forward_static_call', 'forward_static_call_array' ), true ) ||
-				T_VARIABLE === $id || T_CONSTANT_ENCAPSED_STRING === $id || ')' === $value || ']' === $value ) ) {
-				return $no( 'complex', __( 'An indirect function invocation prevents proving that this SQL constant is not set elsewhere.', 'wp-ai-bridge' ) );
+			// token. Decline rather than interpreting callable values or running
+			// arbitrary PHP. Skip the lookahead for comments and ordinary tokens
+			// to keep parsing bounded even for long runs of PHP comments.
+			$indirect_call = in_array( $function_name, array( 'call_user_func', 'call_user_func_array', 'forward_static_call', 'forward_static_call_array' ), true ) ||
+				T_VARIABLE === $id || T_CONSTANT_ENCAPSED_STRING === $id || ')' === $value || ']' === $value;
+			if ( $definition_call || $indirect_call ) {
+				$next = $this->next_significant( $tokens, $index + 1 );
+				if ( '(' === $next['value'] && $definition_call ) {
+					$argument = $this->next_significant( $tokens, $next['index'] + 1 );
+					$after    = $this->next_significant( $tokens, $argument['index'] + 1 );
+					// A computed name may resolve to SQL policy only in another
+					// request. Never insert beside an unknown define/defined.
+					if ( T_CONSTANT_ENCAPSED_STRING !== $argument['id'] ||
+						! in_array( $after['value'], array( ',', ')' ), true ) ) {
+						return $no( 'complex', __( 'A dynamic define/defined expression prevents proving that this SQL constant is not set elsewhere.', 'wp-ai-bridge' ) );
+					}
+				}
+				if ( '(' === $next['value'] && $indirect_call ) {
+					return $no( 'complex', __( 'An indirect function invocation prevents proving that this SQL constant is not set elsewhere.', 'wp-ai-bridge' ) );
+				}
 			}
 			if ( ! in_array( $id, array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT ), true ) ) {
 				$previous = $value;
