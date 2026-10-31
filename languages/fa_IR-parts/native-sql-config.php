@@ -34,6 +34,7 @@ return array(
 	'The configuration contains conditional or nested includes. Automatic insertion cannot prove the policy source.' => 'پیکربندی شامل includeهای شرطی یا تو در تو است. نمی‌توان منبع خط‌مشی را به‌طور قطعی تعیین کرد.',
 	'The configuration evaluates dynamically generated PHP. This server-policy source cannot be proven safe for automatic insertion.' => 'فایل پیکربندی کد PHP تولیدشده به‌شکل پویا را اجرا می‌کند. ایمنی منبع خط‌مشی سرور برای درج خودکار قابل اثبات نیست.',
 	'A dynamic define/defined expression prevents proving that this SQL constant is not set elsewhere.' => 'وجود یک عبارت define/defined پویا مانع اطمینان از نبود تعریف SQL در جای دیگر است.',
+	'An indirect function invocation prevents proving that this SQL constant is not set elsewhere.' => 'وجود فراخوانی غیرمستقیم تابع مانع اثبات این است که ثابت SQL در جای دیگری تعریف نمی‌شود.',
 	'Multiple references to the native SQL constant exist. Do not append or automatically override any definition.' => 'چند ارجاع به ثابت SQL بومی وجود دارد. تعریف جدید اضافه نکنید و هیچ تعریف قبلی را خودکار بازنویسی نکنید.',
 	'The constant is defined or referenced dynamically. Locate its real definition manually; no duplicate was added.' => 'ثابت به‌صورت پویا تعریف یا استفاده شده است. تعریف واقعی آن را دستی پیدا کنید؛ تعریف تکراری اضافه نشد.',
 	'An explicit false definition exists. Change this intentional server policy manually rather than overriding it automatically.' => 'تعریف صریح false وجود دارد. این تصمیم عمدی سرور را دستی تغییر دهید، نه با بازنویسی خودکار.',

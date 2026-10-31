@@ -176,18 +176,32 @@ final class Native_SQL_Config_Setup {
 					'previous' => $previous,
 				);
 			}
-			if ( T_STRING === $id && in_array( strtolower( $value ), array( 'define', 'defined' ), true ) ) {
-				$next = $this->next_significant( $tokens, $index + 1 );
-				if ( '(' === $next['value'] ) {
-					$argument = $this->next_significant( $tokens, $next['index'] + 1 );
-					$after    = $this->next_significant( $tokens, $argument['index'] + 1 );
-					// A computed constant name may resolve to the SQL policy only
-					// in a different request. Never insert beside an unknown define.
-					if ( T_CONSTANT_ENCAPSED_STRING !== $argument['id'] ||
-						! in_array( $after['value'], array( ',', ')' ), true ) ) {
-						return $no( 'complex', __( 'A dynamic define/defined expression prevents proving that this SQL constant is not set elsewhere.', 'wp-ai-bridge' ) );
-					}
+			// PHP 8 tokenizes \\define() and namespaced calls differently
+			// from bare T_STRING. A qualified definition must not escape the
+			// policy-source check solely because of its token representation.
+			$function_name = '';
+			if ( in_array( $id, array( T_STRING, T_NAME_FULLY_QUALIFIED, T_NAME_QUALIFIED, T_NAME_RELATIVE ), true ) ) {
+				$parts         = explode( '\\', strtolower( $value ) );
+				$function_name = end( $parts );
+			}
+			$next = $this->next_significant( $tokens, $index + 1 );
+			if ( '(' === $next['value'] && in_array( $function_name, array( 'define', 'defined' ), true ) ) {
+				$argument = $this->next_significant( $tokens, $next['index'] + 1 );
+				$after    = $this->next_significant( $tokens, $argument['index'] + 1 );
+				// A computed constant name may resolve to the SQL policy only
+				// in a different request. Never insert beside an unknown define.
+				if ( T_CONSTANT_ENCAPSED_STRING !== $argument['id'] ||
+					! in_array( $after['value'], array( ',', ')' ), true ) ) {
+					return $no( 'complex', __( 'A dynamic define/defined expression prevents proving that this SQL constant is not set elsewhere.', 'wp-ai-bridge' ) );
 				}
+			}
+			// Indirect calls can reach define() without any literal policy-name
+			// token. Decline rather than trying to interpret callable values or
+			// evaluate arbitrary configuration PHP.
+			if ( '(' === $next['value'] &&
+				( in_array( $function_name, array( 'call_user_func', 'call_user_func_array', 'forward_static_call', 'forward_static_call_array' ), true ) ||
+				T_VARIABLE === $id || T_CONSTANT_ENCAPSED_STRING === $id || ')' === $value || ']' === $value ) ) {
+				return $no( 'complex', __( 'An indirect function invocation prevents proving that this SQL constant is not set elsewhere.', 'wp-ai-bridge' ) );
 			}
 			if ( ! in_array( $id, array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT ), true ) ) {
 				$previous = $value;
@@ -479,9 +493,15 @@ final class Native_SQL_Config_Setup {
 				! hash_equals( hash( 'sha256', $replacement ), (string) @hash_file( 'sha256', $stage ) ) ) {
 				return __( 'The server cannot stage a byte-exact replacement with unchanged ownership and permissions. Use manual editing.', 'wp-ai-bridge' );
 			}
+			// WordPress capability/file-modification filters are effectful
+			// callbacks. Run them BEFORE the last source-integrity check: no
+			// extension point is permitted between that check and rename().
+			if ( ! $this->can_modify() ) {
+				return __( 'The original configuration or authority changed before publication. The existing file was preserved.', 'wp-ai-bridge' );
+			}
 			clearstatcache( true, $path );
 			$fresh = $this->read( $path );
-			if ( false === $fresh || ! hash_equals( $expected_hash, hash( 'sha256', $fresh ) ) || ! $this->same_inode( $path, $before ) || ! $this->can_modify() ) {
+			if ( false === $fresh || ! hash_equals( $expected_hash, hash( 'sha256', $fresh ) ) || ! $this->same_inode( $path, $before ) ) {
 				return __( 'The original configuration or authority changed before publication. The existing file was preserved.', 'wp-ai-bridge' );
 			}
 			// WordPress/PHP offers no atomic conditional-rename API for

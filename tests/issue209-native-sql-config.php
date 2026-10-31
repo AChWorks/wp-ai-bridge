@@ -5,9 +5,9 @@
  */
 if ( ! isset( $argv[1] ) ) {
 	$cases = array(
-		'ready', 'parent', 'minimal', 'crlf', 'already', 'false', 'duplicate', 'dynamic', 'eval', 'conditional',
+		'ready', 'parent', 'minimal', 'crlf', 'already', 'false', 'duplicate', 'dynamic', 'qualified_dynamic', 'qualified_defined', 'indirect_user_func', 'indirect_array', 'variable_call', 'literal_call', 'qualified_literal_other', 'eval', 'conditional',
 		'external', 'missing', 'nonstandard', 'html_tail', 'unwritable', 'policy', 'file_mod', 'disallow_mods', 'non_direct', 'context_drift', 'runtime_external', 'runtime_conflict',
-		'multisite', 'nonce', 'stale', 'concurrent', 'linked', 'unknown',
+		'multisite', 'nonce', 'stale', 'concurrent', 'policy_publish_race', 'linked', 'unknown',
 	);
 	$count = 0;
 	foreach ( $cases as $case ) {
@@ -62,6 +62,27 @@ if ( 'eval' === $case ) {
 }
 if ( 'dynamic' === $case ) {
 	$source = str_replace( "require_once", "define( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL', false );\nrequire_once", $source );
+}
+if ( 'qualified_dynamic' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { \\define( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL', true ); }\nrequire_once", $source );
+}
+if ( 'qualified_defined' === $case ) {
+	$source = str_replace( 'require_once', "if ( \\defined( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL' ) ) { /* no-op */ }\nrequire_once", $source );
+}
+if ( 'indirect_user_func' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { call_user_func( 'define', 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL', true ); }\nrequire_once", $source );
+}
+if ( 'indirect_array' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { \\call_user_func_array( 'define', array( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL', true ) ); }\nrequire_once", $source );
+}
+if ( 'variable_call' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { \$fn = 'define'; \$fn( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL', true ); }\nrequire_once", $source );
+}
+if ( 'literal_call' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { ('define')( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL', true ); }\nrequire_once", $source );
+}
+if ( 'qualified_literal_other' === $case ) {
+	$source = str_replace( 'require_once', "\\defined( 'WP_DEBUG' );\nrequire_once", $source );
 }
 if ( 'conditional' === $case ) {
 	$source = str_replace( "require_once", "if ( false ) { define( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL', true ); }\nrequire_once", $source );
@@ -132,6 +153,16 @@ function wp_is_file_mod_allowed( $context ) {
 		$GLOBALS['wpai209']['drift'] = false;
 		$GLOBALS['wpai209']['blog'] = 18;
 	}
+	// A deliberately uncooperative fixture callback modifies the original
+	// while the staged replacement already exists, before its final publish.
+	if ( ! empty( $GLOBALS['wpai209']['edit_on_policy_at_publish'] ) ) {
+		$target = $GLOBALS['wpai209']['path'];
+		$stages = glob( dirname( $target ) . '/.wpai-config-*.php' );
+		if ( $stages ) {
+			file_put_contents( $target, "\n// callback changed file", FILE_APPEND );
+			$GLOBALS['wpai209']['edit_on_policy_at_publish'] = false;
+		}
+	}
 	return $GLOBALS['wpai209']['file_mod'];
 }
 function get_current_user_id() { return 11; }
@@ -160,11 +191,11 @@ $assert  = static function ( $condition, $message ) use ( $case ) {
 
 $expected = array(
 	'ready' => 'ready', 'parent' => 'ready', 'minimal' => 'ready', 'crlf' => 'ready', 'already' => 'enabled', 'false' => 'false',
-	'duplicate' => 'complex', 'dynamic' => 'complex', 'eval' => 'complex', 'conditional' => 'pending',
+	'duplicate' => 'complex', 'dynamic' => 'complex', 'qualified_dynamic' => 'complex', 'qualified_defined' => 'complex', 'indirect_user_func' => 'complex', 'indirect_array' => 'complex', 'variable_call' => 'complex', 'literal_call' => 'complex', 'qualified_literal_other' => 'ready', 'eval' => 'complex', 'conditional' => 'pending',
 	'external' => 'unsupported', 'missing' => 'unknown', 'nonstandard' => 'unsupported', 'html_tail' => 'unsupported',
 	'runtime_external' => 'external', 'runtime_conflict' => 'false', 'unwritable' => 'ready', 'policy' => 'ready', 'file_mod' => 'ready', 'disallow_mods' => 'ready', 'non_direct' => 'ready', 'context_drift' => 'ready',
 	'multisite' => 'ready', 'nonce' => 'ready', 'stale' => 'ready',
-	'concurrent' => 'ready', 'linked' => 'unsupported', 'unknown' => 'unknown',
+	'concurrent' => 'ready', 'policy_publish_race' => 'ready', 'linked' => 'unsupported', 'unknown' => 'unknown',
 );
 $assert( $expected[ $case ] === $state['state'], 'Incorrect detected state: ' . $state['state'] );
 if ( ! in_array( $case, array( 'unknown', 'missing' ), true ) ) {
@@ -172,7 +203,7 @@ if ( ! in_array( $case, array( 'unknown', 'missing' ), true ) ) {
 } else {
 	$assert( '' === $state['path'], 'Cannot invent an unproven config path.' );
 }
-$assert( in_array( $case, array( 'ready', 'parent', 'minimal', 'crlf', 'nonce', 'stale', 'concurrent' ), true ) === $state['can_auto'], 'Wrong automatic edit admission.' );
+$assert( in_array( $case, array( 'ready', 'parent', 'minimal', 'crlf', 'nonce', 'stale', 'concurrent', 'policy_publish_race', 'qualified_literal_other' ), true ) === $state['can_auto'], 'Wrong automatic edit admission.' );
 if ( 'runtime_external' === $case || 'runtime_conflict' === $case ) {
 	$assert( $state['enabled'], 'Actual runtime enabled status must not erase conflicting or external file diagnostics.' );
 }
@@ -203,9 +234,13 @@ if ( 'concurrent' === $case ) {
 	$GLOBALS['wpai209']['race'] = true;
 	$GLOBALS['wpai209']['path'] = $fixture;
 }
+if ( 'policy_publish_race' === $case ) {
+	$GLOBALS['wpai209']['edit_on_policy_at_publish'] = true;
+	$GLOBALS['wpai209']['path'] = $fixture;
+}
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $result = $service->activate( $post );
-$published = in_array( $case, array( 'ready', 'parent', 'minimal', 'crlf' ), true );
+$published = in_array( $case, array( 'ready', 'parent', 'minimal', 'crlf', 'qualified_literal_other' ), true );
 $assert( ( 'written' === ( $result['result'] ?? '' ) ) === $published, 'Wrong publish result.' );
 if ( $published ) {
 	$after = file_get_contents( $fixture );
@@ -222,8 +257,12 @@ if ( $published ) {
 } elseif ( ! in_array( $case, array( 'unknown', 'missing' ), true ) ) {
 	$after = file_get_contents( $fixture );
 	$assert( 0 === substr_count( $after, $service::DEFINITION ) || 'already' === $case || 'conditional' === $case || 'duplicate' === $case, 'Fallback must never add a new definition.' );
-	if ( 'stale' === $case || 'concurrent' === $case ) {
+	if ( in_array( $case, array( 'stale', 'concurrent', 'policy_publish_race' ), true ) ) {
 		$assert( false !== strpos( $after, 'changed' ), 'External changes must not be overwritten.' );
+	}
+	if ( 'policy_publish_race' === $case ) {
+		$assert( false === $GLOBALS['wpai209']['edit_on_policy_at_publish'], 'The policy callback must run during final publication.' );
+		$assert( str_contains( $result['reason'], 'preserved' ), 'Report the denied publication with accurate manual recovery guidance.' );
 	}
 }
 
