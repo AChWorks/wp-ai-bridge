@@ -499,16 +499,38 @@ delete_option("wpai_integration_source_recovery_fixture");
 # This config belongs only to a disposable Docker volume, never a hosted site.
 if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION:-}" == '0.7.0' ]]; then
     echo '== Issue #209 disposable WordPress config setup =='
-    # Docker's generated wp-config.php may be root-owned. Make this one
-    # disposable named-volume fixture a known supported owner/mode/layout,
-    # rather than accepting a fallback-only test as a positive result.
+    "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration
+    for file in issue209-native-sql-config-smoke.php issue209-unsupported-config-smoke.php issue209-prepare-disposable-config.php; do
+        "${compose[@]}" cp "$root/tests/integration/$file" "wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/$file"
+    done
+
+    # First prove fail-closed behavior for the *actual* Docker wp-config:
+    # the official template contains an inactive optional eval() branch.
+    unsupported="$("${compose[@]}" exec -T --user www-data wordpress php -r '
+        require "/var/www/html/wp-load.php";
+        wp_set_current_user(1);
+        require "/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue209-unsupported-config-smoke.php";
+    ')"
+    printf '%s\n' "$unsupported"
+    if ! grep -Fxq 'WPAI209_UNSUPPORTED=1' <<< "$unsupported"; then
+        echo 'ERROR: Issue #209 must refuse the dynamic Docker configuration without changing it.' >&2
+        exit 1
+    fi
+
+    # Never weaken the production analyzer to permit eval(). Instead,
+    # strip only the provably inactive optional Docker extension in this
+    # disposable named-volume fixture, then provide writable owner/mode.
+    prepared="$("${compose[@]}" exec -T -e WPAI209_DISPOSABLE_TEST=1 wordpress php /var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue209-prepare-disposable-config.php)"
+    printf '%s\n' "$prepared"
+    if ! grep -Fxq 'WPAI209_FIXTURE_READY=1' <<< "$prepared"; then
+        echo 'ERROR: Issue #209 supported disposable WordPress config fixture was not prepared.' >&2
+        exit 1
+    fi
     "${compose[@]}" exec -T wordpress sh -ec '
         chown www-data:www-data /var/www/html /var/www/html/wp-config.php
         chmod 0755 /var/www/html
         chmod 0640 /var/www/html/wp-config.php
     '
-    "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration
-    "${compose[@]}" cp "$root/tests/integration/issue209-native-sql-config-smoke.php" wordpress:/var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue209-native-sql-config-smoke.php
     result="$("${compose[@]}" exec -T --user www-data wordpress php -r '
         require "/var/www/html/wp-load.php";
         wp_set_current_user(1);
