@@ -43,6 +43,8 @@ final class Settings_Page {
 	/** @var array */
 	private $save_result = array();
 	/** @var array */
+	private $sql_setup_result = array();
+	/** @var array */
 	private $settings_draft = array();
 	/** @var string */
 	private $draft_revision = '';
@@ -442,7 +444,12 @@ final class Settings_Page {
 		if ( 'POST' !== ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) {
 			return;
 		}
-		$posted = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Settings_Save verifies nonce and exact context before effects.
+		$posted = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Each separate controller verifies its own nonce and current context before effects.
+		if ( Native_SQL_Config_Setup::ACTION === ( $posted['action'] ?? null ) ) {
+			$this->selected_section = 'database';
+			$this->sql_setup_result = ( new Native_SQL_Config_Setup() )->activate( $posted );
+			return;
+		}
 		if ( Settings_Save::ACTION !== ( $posted['action'] ?? null ) ) {
 			return;
 		}
@@ -571,6 +578,7 @@ final class Settings_Page {
 			<h1><?php echo esc_html__( 'WP AI Bridge Settings', 'wp-ai-bridge' ); ?></h1>
 			<p class="wpai-settings-intro"><?php echo esc_html__( 'Choose a section. Save changes applies your edits in all sections together.', 'wp-ai-bridge' ); ?></p>
 			<?php $this->render_save_feedback( $status, $errors, $blocked ); ?>
+			<?php $this->render_sql_setup_feedback(); ?>
 			<div class="wpai-settings-layout">
 				<nav class="wpai-settings-nav" aria-label="<?php echo esc_attr__( 'Settings sections', 'wp-ai-bridge' ); ?>">
 					<ul>
@@ -612,6 +620,7 @@ final class Settings_Page {
 						</section>
 						<input type="hidden" name="form_complete" value="1">
 					</form>
+					<?php $this->render_sql_setup_form(); ?>
 					<section id="workspace-data" class="wpai-settings-section" aria-labelledby="workspace-data-heading">
 						<h2 id="workspace-data-heading" tabindex="-1"><?php echo esc_html( $sections['workspace-data'] ); ?></h2>
 						<?php $this->render_workspace_operations(); ?>
@@ -718,6 +727,7 @@ else :
 				<?php if ( 'database' === $id ) : ?>
 					<p><?php echo esc_html__( 'Typed database writes bypass WordPress and plugin business APIs. Review the exact schema and row state before changing live data; use the matching native feature when its lifecycle is required.', 'wp-ai-bridge' ); ?></p>
 					<p class="wpai-policy-status"><strong><?php echo esc_html__( 'Server SQL policy:', 'wp-ai-bridge' ); ?></strong> <?php echo esc_html( defined( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL' ) && true === WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL ? __( 'Native-account SQL is allowed by server policy. The separate grant and native privileges are still required.', 'wp-ai-bridge' ) : __( 'Native-account SQL is disabled by server policy. The hosting operator must explicitly enable WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL before this grant can be used.', 'wp-ai-bridge' ) ); ?></p>
+					<?php $this->render_sql_setup_status(); ?>
 				<?php endif; ?>
 				<?php foreach ( $fieldsets as $fieldset ) : ?>
 					<?php $this->render_grant_group( $fieldset[0], $fieldset[1] ); ?>
@@ -725,6 +735,95 @@ else :
 			</section>
 			<?php
 		}
+	}
+
+	/** @param int $line Existing false definition line. @return string */
+	private function sql_manual_false_instruction( $line ) {
+		/* translators: %d: line number of an existing explicit false definition. */
+		return sprintf( __( 'Replace the existing false definition at line %d; do not add a second definition.', 'wp-ai-bridge' ), $line );
+	}
+
+	/** @param int $line Existing WordPress bootstrap line. @return string */
+	private function sql_manual_ready_instruction( $line ) {
+		/* translators: %d: line number of the exact standalone WordPress bootstrap statement. */
+		return sprintf( __( 'Insert this exact line before the standalone WordPress bootstrap statement currently at line %d.', 'wp-ai-bridge' ), $line );
+	}
+
+	/** Explain the separate file-configuration result without treating it as a settings save. @return void */
+	private function render_sql_setup_feedback() {
+		if ( ! $this->sql_setup_result ) {
+			return;
+		}
+		$written = 'written' === ( $this->sql_setup_result['result'] ?? '' );
+		?>
+		<div class="notice <?php echo $written ? 'notice-success' : 'notice-warning'; ?> wpai-sql-config-feedback" role="status">
+			<p><strong><?php echo $written ? esc_html__( 'Configuration file updated; fresh-request verification required.', 'wp-ai-bridge' ) : esc_html__( 'Configuration setup was not completed.', 'wp-ai-bridge' ); ?></strong></p>
+			<p><?php echo esc_html( $this->sql_setup_result['reason'] ?? '' ); ?></p>
+		</div>
+		<?php
+	}
+
+	/** Explain actual runtime/config state and provide a separate no-JS setup submitter. @return void */
+	private function render_sql_setup_status() {
+		$setup = new Native_SQL_Config_Setup();
+		$state = $setup->inspect();
+		?>
+		<div class="wpai-sql-config">
+			<h3><?php echo esc_html__( 'Native-account SQL server setup', 'wp-ai-bridge' ); ?></h3>
+			<p><?php echo esc_html( $state['reason'] ); ?></p>
+			<?php if ( $state['enabled'] ) : ?>
+				<p><strong><?php echo esc_html__( 'Runtime verified: boolean true in this request.', 'wp-ai-bridge' ); ?></strong></p>
+			<?php else : ?>
+				<p><?php echo esc_html__( 'The configuration action does not save settings, issue SQL, change privileges or enable database grants.', 'wp-ai-bridge' ); ?></p>
+				<?php if ( $state['path'] ) : ?>
+					<p><strong><?php echo esc_html__( 'Loaded configuration file:', 'wp-ai-bridge' ); ?></strong> <code dir="ltr"><?php echo esc_html( $state['path'] ); ?></code></p>
+					<?php if ( in_array( $state['state'], array( 'ready', 'false' ), true ) ) : ?>
+						<p>
+						<?php
+						echo esc_html(
+							'false' === $state['state']
+								? $this->sql_manual_false_instruction( $state['line'] )
+								: $this->sql_manual_ready_instruction( $state['line'] )
+						);
+						?>
+						</p>
+						<p><code dir="ltr" class="wpai-sql-config-line"><?php echo esc_html( Native_SQL_Config_Setup::DEFINITION ); ?></code></p>
+					<?php elseif ( in_array( $state['state'], array( 'complex', 'external', 'unsupported', 'unknown' ), true ) ) : ?>
+						<p><?php echo esc_html__( 'Locate the actual definition or bootstrap first. Edit only its intended server-policy location; do not append this line blindly:', 'wp-ai-bridge' ); ?></p>
+						<p><code dir="ltr" class="wpai-sql-config-line"><?php echo esc_html( Native_SQL_Config_Setup::DEFINITION ); ?></code></p>
+					<?php endif; ?>
+				<?php else : ?>
+					<p><?php echo esc_html__( 'No proven active file path is available. Check the hosting bootstrap before any manual edit.', 'wp-ai-bridge' ); ?></p>
+				<?php endif; ?>
+				<?php if ( $state['can_auto'] ) : ?>
+					<p><button type="submit" form="wpai-native-sql-setup-form" class="button button-secondary" id="wpai-native-sql-setup-submit"><?php echo esc_html__( 'Add SQL server definition to wp-config.php', 'wp-ai-bridge' ); ?></button></p>
+					<p class="description"><?php echo esc_html__( 'Opens its result in a new tab, keeping unsaved settings drafts here. The next fresh request must confirm activation.', 'wp-ai-bridge' ); ?></p>
+				<?php endif; ?>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * No nested forms or settings submission: the submitter in Database uses
+	 * the HTML form attribute, and a new tab preserves the original draft.
+	 *
+	 * @return void
+	 */
+	private function render_sql_setup_form() {
+		$setup = new Native_SQL_Config_Setup();
+		$state = $setup->inspect();
+		?>
+		<form id="wpai-native-sql-setup-form" method="post" target="_blank" rel="noopener" action="<?php echo esc_url( admin_url( 'admin.php?page=' . self::SETTINGS_SLUG ) ); ?>">
+			<input type="hidden" name="action" value="<?php echo esc_attr( Native_SQL_Config_Setup::ACTION ); ?>">
+			<?php wp_nonce_field( $setup->nonce_action() ); ?>
+			<input type="hidden" name="expected_digest" value="<?php echo esc_attr( $state['digest'] ); ?>">
+			<input type="hidden" name="expected_path_hash" value="<?php echo esc_attr( $state['path_hash'] ); ?>">
+			<input type="hidden" name="user" value="<?php echo esc_attr( (string) get_current_user_id() ); ?>">
+			<input type="hidden" name="blog" value="<?php echo esc_attr( (string) get_current_blog_id() ); ?>">
+			<input type="hidden" name="network" value="<?php echo esc_attr( (string) get_current_network_id() ); ?>">
+		</form>
+		<?php
 	}
 
 	/** @param string $title Task group. @param array $keys Grant keys. @return void */

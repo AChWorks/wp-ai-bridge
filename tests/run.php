@@ -565,7 +565,7 @@ foreach ( array( Payload_Settings::RESPONSE_KEY, Payload_Settings::WINDOW_KEY, P
 	$labels = $xpath->query( $form . '//label[@for="' . $id . '"]' );
 	wpai_assert( '' !== $id && 1 === $labels->length && '' !== trim( $labels->item( 0 )->textContent ), 'Each payload budget has an explicitly associated visible label: ' . $key );
 }
-wpai_assert( 3 === $xpath->query( '//form' )->length &&
+wpai_assert( 4 === $xpath->query( '//form' )->length &&
 	0 === $xpath->query( $form . '//input[@name="action" and (@value="wpai_workspace_export" or @value="wpai_workspace_clear")]' )->length, 'Workspace operations have separate forms and cannot be submitted by Save changes.' );
 wpai_assert( 1 === $xpath->query( '//form[not(@id="wpai-settings-form")]//input[@name="action" and @value="wpai_workspace_export"]' )->length, 'Settings page exposes explicit separate Workspace export.' );
 wpai_assert( 1 === $xpath->query( '//form[.//input[@name="action" and @value="wpai_workspace_clear"]]//input[@name="confirm_clear" and @value="clear" and @required]' )->length, 'Workspace clear remains a separate action requiring explicit confirmation.' );

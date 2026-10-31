@@ -281,3 +281,7 @@
         scroll-behavior: auto;
     }
 }
+
+.wpai-sql-config { margin-block: 1rem; padding: 1rem; border: 1px solid #c3c4c7; border-radius: 4px; overflow-wrap: anywhere; }
+.wpai-sql-config code { direction: ltr; unicode-bidi: isolate; white-space: normal; overflow-wrap: anywhere; }
+.wpai-sql-config .wpai-sql-config-line { display: inline-block; user-select: all; }

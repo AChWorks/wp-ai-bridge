@@ -2,6 +2,10 @@
 
 All notable public changes are documented here.
 
+## Unreleased — Issue #209 candidate (not in published v0.7.1)
+
+- Add an explicit Settings → Database native-account SQL server-configuration action. Verify the actually loaded wp-config.php, WordPress-native file authority, supported source layout, conditional definitions, concurrent changes, exact minimal file edit and fresh-request activation, with precise hosting-operator manual fallback. Keep existing SQL constant gate, all six database grants, one settings Save and pending drafts unchanged (#209).
+
 ## 0.7.1
 
 - Consolidate administrator controls under one final **Settings** submenu with eight task sections, active-section navigation, Persian/RTL presentation and an all-sections no-JavaScript fallback. The old Administration URL redirects to Settings (#206).

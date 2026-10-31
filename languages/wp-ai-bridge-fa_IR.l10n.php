@@ -47,7 +47,8 @@ $messages = array_merge(
 	require __DIR__ . '/fa_IR-parts/transfer-consumers.php',
 	require __DIR__ . '/fa_IR-parts/operation-receipts.php',
 	require __DIR__ . '/fa_IR-parts/administration-completion.php',
-	require __DIR__ . '/fa_IR-parts/unified-settings.php'
+	require __DIR__ . '/fa_IR-parts/unified-settings.php',
+	require __DIR__ . '/fa_IR-parts/native-sql-config.php'
 );
 
 return array(

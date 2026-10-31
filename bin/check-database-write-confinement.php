@@ -361,6 +361,16 @@ function wpai_filesystem_boundary( $source, $relative, array $pins ) {
  */
 $boundary_pins = array(
 	'writes'       => array(
+		// #209: exact local wp-config.php server-policy setup, no caller path or shell.
+		'src/Admin/class-native-sql-config-setup.php' => array(
+			'Native_SQL_Config_Setup::publish|chmod($stage,$mode)' => 1,
+			'Native_SQL_Config_Setup::publish|fopen($lock_path,\'c+b\')' => 1,
+			'Native_SQL_Config_Setup::publish|fopen($path,\'rb\')' => 1,
+			'Native_SQL_Config_Setup::publish|fopen($stage,\'x+b\')' => 1,
+			'Native_SQL_Config_Setup::publish|fwrite($staging,substr($replacement,$offset,65536))' => 1,
+			'Native_SQL_Config_Setup::publish|rename($stage,$path)' => 1,
+			'Native_SQL_Config_Setup::publish|unlink($stage)' => 1,
+		),
 		'src/Abilities/class-media-abilities.php'          => array(
 			'Media_Abilities::upload|file_put_contents($tmp_name,$bytes)' => 1,
 		),
