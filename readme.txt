@@ -2,7 +2,7 @@
 Tags: ai, mcp, abilities, oauth, administration
 Requires at least: 6.9
 Tested up to: 7.1
-Stable tag: 0.7.1
+Stable tag: 0.7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -16,7 +16,7 @@ Capabilities include authorized content, blocks, media, taxonomy, site settings,
 
 The plugin has no required SaaS subscription. The official MCP Adapter is installed separately and declared as a required plugin; WordPress identifies a missing/inactive dependency and requires its activation before WP AI Bridge can be activated. WordPress 6.9 or newer is required. Consult the detailed GitHub documentation for the supported Adapter builds, hosting requirements and limits.
 
-On future versions that expose the native-account SQL setup action, Settings > Database can request a separate safe wp-config.php opt-in with explicit administrator/hosting file-edit authority and a manual fallback. Published v0.7.1 does not include that action. A fresh WordPress request must confirm the actual boolean constant; grants and native privileges are separate.
+Starting with v0.7.2, Settings > Database offers an explicit native-account SQL server setup action. An authorized administrator can request a guarded wp-config.php opt-in when hosting permissions and a provably standard PHP layout allow it; otherwise the page provides the precise manual fallback. A fresh WordPress request must confirm the actual boolean constant; the six database grants and native account privileges remain separate.
 
 **Security:** External Packages, Source Editing, Registered REST Invocation, Native Abilities, credentials and destructive operations are privileged features, not code sandboxes. Grant access only to trusted clients and WordPress users. An administrator can revoke OAuth permissions and Bridge grants. Legitimate third-party package installations and executable source changes can run code with the authority of WordPress and its hosting environment.
 
@@ -78,6 +78,10 @@ WordPress.org may be contacted by WordPress Core for its own routine plugin/them
 WP AI Bridge retains private Workspace data and bounded activity metadata on the WordPress installation. OAuth tokens, connection approvals and revocation remain WordPress-controlled. See the project's Security and OAuth documentation for retention, revocation and advanced permissions.
 
 == Changelog ==
+
+= 0.7.2 =
+* Add a separately authorized Settings > Database action for guarded wp-config.php native-account SQL opt-in, with a precise manual fallback for unsupported or policy-denied hosts (#209).
+* Preserve explicit false policies, existing SQL grants, Settings drafts and all unrelated configuration bytes; fresh WordPress bootstrap confirms activation. No migration or automatic grant change.
 
 = 0.7.1 =
 * Unify settings in one final Settings submenu with eight task sections, Persian/RTL support, keyboard navigation and a no-JavaScript fallback.
