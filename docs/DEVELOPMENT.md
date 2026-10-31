@@ -211,7 +211,7 @@ docs/           architecture, security, operation contracts and developer guides
 
 ### Pinned published-predecessor ZIP upgrade regression
 
-For the **v0.7.1 candidate**, validate the real **published v0.7.0 → v0.7.1** replacement path. The predecessor is the official **v0.7.0 `wp-ai-bridge.zip`**, 740322 bytes, pinned by SHA-256 `e642a58a2c4779ded085b9574a13ccf9e1311d80d172fc1354ffbd34fda15074` (the runner checks byte identity; GitHub does not enforce asset immutability). Install the candidate using WordPress Core's normal replacement operation:
+For the **v0.7.2 candidate**, validate the real **published v0.7.1 → v0.7.2** replacement path. The predecessor is the official **v0.7.1 `wp-ai-bridge.zip`**, 763378 bytes, pinned by SHA-256 `86283cfaffbd3b0ed61675db02a9c1c0033dc72d0e59a0670c362ab0d6a99c39` (the runner checks byte identity; GitHub does not enforce asset immutability). Install the candidate using WordPress Core's normal replacement operation:
 
 ```bash
 bash bin/run-published-upgrade.sh 6.9-php8.4-apache
