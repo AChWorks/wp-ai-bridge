@@ -5,7 +5,7 @@
  */
 if ( ! isset( $argv[1] ) ) {
 	$cases = array(
-		'ready', 'parent', 'minimal', 'crlf', 'already', 'false', 'duplicate', 'dynamic', 'qualified_dynamic', 'qualified_defined', 'indirect_user_func', 'indirect_array', 'variable_call', 'literal_call', 'qualified_literal_other', 'eval', 'conditional',
+		'ready', 'parent', 'minimal', 'crlf', 'already', 'false', 'duplicate', 'dynamic', 'qualified_dynamic', 'qualified_defined', 'indirect_user_func', 'indirect_array', 'array_map_callback', 'array_walk_callback', 'shutdown_callback', 'qualified_array_callback', 'computed_callable_callback', 'variable_call', 'literal_call', 'qualified_literal_other', 'eval', 'conditional',
 		'external', 'missing', 'nonstandard', 'html_tail', 'unwritable', 'policy', 'file_mod', 'disallow_mods', 'non_direct', 'context_drift', 'runtime_external', 'runtime_conflict',
 		'multisite', 'nonce', 'stale', 'concurrent', 'policy_publish_race', 'linked', 'unknown',
 	);
@@ -83,6 +83,21 @@ if ( 'literal_call' === $case ) {
 }
 if ( 'qualified_literal_other' === $case ) {
 	$source = str_replace( 'require_once', "\\defined( 'WP_DEBUG' );\nrequire_once", $source );
+}
+if ( 'array_map_callback' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { array_map( 'define', ['WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL'], [false] ); }\nrequire_once", $source );
+}
+if ( 'array_walk_callback' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { array_walk( ['WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL' => false], 'define' ); }\nrequire_once", $source );
+}
+if ( 'shutdown_callback' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { register_shutdown_function( 'define', 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL', true ); }\nrequire_once", $source );
+}
+if ( 'qualified_array_callback' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { array_map( '\\\\define', ['WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL'], [true] ); }\nrequire_once", $source );
+}
+if ( 'computed_callable_callback' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { array_map( 'de' . 'fine', ['WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL'], [true] ); }\nrequire_once", $source );
 }
 if ( 'conditional' === $case ) {
 	$source = str_replace( "require_once", "if ( false ) { define( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL', true ); }\nrequire_once", $source );
@@ -191,7 +206,7 @@ $assert  = static function ( $condition, $message ) use ( $case ) {
 
 $expected = array(
 	'ready' => 'ready', 'parent' => 'ready', 'minimal' => 'ready', 'crlf' => 'ready', 'already' => 'enabled', 'false' => 'false',
-	'duplicate' => 'complex', 'dynamic' => 'complex', 'qualified_dynamic' => 'complex', 'qualified_defined' => 'complex', 'indirect_user_func' => 'complex', 'indirect_array' => 'complex', 'variable_call' => 'complex', 'literal_call' => 'complex', 'qualified_literal_other' => 'ready', 'eval' => 'complex', 'conditional' => 'pending',
+	'duplicate' => 'complex', 'dynamic' => 'complex', 'qualified_dynamic' => 'complex', 'qualified_defined' => 'complex', 'indirect_user_func' => 'complex', 'indirect_array' => 'complex', 'array_map_callback' => 'complex', 'array_walk_callback' => 'complex', 'shutdown_callback' => 'complex', 'qualified_array_callback' => 'complex', 'computed_callable_callback' => 'complex', 'variable_call' => 'complex', 'literal_call' => 'complex', 'qualified_literal_other' => 'ready', 'eval' => 'complex', 'conditional' => 'pending',
 	'external' => 'unsupported', 'missing' => 'unknown', 'nonstandard' => 'unsupported', 'html_tail' => 'unsupported',
 	'runtime_external' => 'external', 'runtime_conflict' => 'false', 'unwritable' => 'ready', 'policy' => 'ready', 'file_mod' => 'ready', 'disallow_mods' => 'ready', 'non_direct' => 'ready', 'context_drift' => 'ready',
 	'multisite' => 'ready', 'nonce' => 'ready', 'stale' => 'ready',

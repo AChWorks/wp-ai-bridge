@@ -164,6 +164,28 @@ final class Native_SQL_Config_Setup {
 					'line'   => $token[2],
 				);
 			}
+			if ( T_CONSTANT_ENCAPSED_STRING === $id ) {
+				// Callback-based APIs such as array_map() can invoke define()
+				// without an ordinary function-call token. Rather than maintain
+				// an incomplete list of callback consumers, reject a literal
+				// naming any qualified policy-definition callable anywhere in
+				// the executable PHP source, including dormant code branches.
+				$literal_callable = substr( $value, 1, -1 );
+				$namespace_at     = strrpos( $literal_callable, '\\' );
+				if ( false !== $namespace_at ) {
+					$literal_callable = substr( $literal_callable, $namespace_at + 1 );
+				}
+				if ( in_array( strtolower( $literal_callable ), array( 'define', 'defined' ), true ) ) {
+					return $no( 'complex', __( 'An indirect function invocation prevents proving that this SQL constant is not set elsewhere.', 'wp-ai-bridge' ) );
+				}
+				// A computed constant name may be split across string tokens.
+				// Recognize its distinctive policy prefix even without the
+				// complete final symbol. This is deliberately fail-closed.
+				if ( false !== strpos( $value, 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' ) &&
+					false === strpos( $value, self::CONSTANT ) ) {
+					return $no( 'complex', __( 'The constant is defined or referenced dynamically. Locate its real definition manually; no duplicate was added.', 'wp-ai-bridge' ) );
+				}
+			}
 			if ( T_EVAL === $id ) {
 				return $no( 'complex', __( 'The configuration evaluates dynamically generated PHP. This server-policy source cannot be proven safe for automatic insertion.', 'wp-ai-bridge' ) );
 			}

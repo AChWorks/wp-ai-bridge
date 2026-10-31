@@ -517,13 +517,18 @@ if [[ "$wordpress_tag" == '6.9-php8.4-apache' && "${MCP_ADAPTER_EXPECTED_VERSION
         exit 1
     fi
 
-    # Never weaken the production analyzer to permit eval(). Instead,
-    # strip only the provably inactive optional Docker extension in this
-    # disposable named-volume fixture, then provide writable owner/mode.
-    prepared="$("${compose[@]}" exec -T -e WPAI209_DISPOSABLE_TEST=1 wordpress php /var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue209-prepare-disposable-config.php)"
+    # Keep production handling of eval() and explicit false unchanged.
+    # Reconcile only an inactive Docker extension and the previous Issue #199
+    # test-owned false definition inside this verified disposable volume.
+    case "${COMPOSE_PROJECT_NAME:-}" in
+        wpai-integration-*) ;;
+        *) echo 'ERROR: Issue #209 requires an owned disposable Compose project.' >&2; exit 1 ;;
+    esac
+    prepared="$("${compose[@]}" exec -T -e WPAI209_DISPOSABLE_TEST=1 -e "WPAI209_COMPOSE_PROJECT=$COMPOSE_PROJECT_NAME" wordpress php /var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration/issue209-prepare-disposable-config.php)"
     printf '%s\n' "$prepared"
-    if ! grep -Fxq 'WPAI209_FIXTURE_READY=1' <<< "$prepared"; then
-        echo 'ERROR: Issue #209 supported disposable WordPress config fixture was not prepared.' >&2
+    if ! grep -Fxq 'WPAI209_FIXTURE_READY=1' <<< "$prepared" ||
+        ! grep -Fxq 'WPAI209_FALSE_REMOVED=1' <<< "$prepared"; then
+        echo 'ERROR: Issue #209 disposable WordPress static config and test-owned false policy were not reconciled.' >&2
         exit 1
     fi
     "${compose[@]}" exec -T wordpress sh -ec '
