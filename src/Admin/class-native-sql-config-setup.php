@@ -142,11 +142,44 @@ final class Native_SQL_Config_Setup {
 		if ( ! isset( $tokens[0] ) || ! is_array( $tokens[0] ) || T_OPEN_TAG !== $tokens[0][0] ) {
 			return $no( 'unsupported', __( 'The configuration is not a single ordinary PHP block; manual inspection is required.', 'wp-ai-bridge' ) );
 		}
-		$occurrences = array();
-		$require_at  = array();
-		$previous    = null;
-		$offset      = 0;
-		$depth       = 0;
+		$occurrences      = array();
+		$require_at       = array();
+		$previous         = null;
+		$previous_id      = 0;
+		$offset           = 0;
+		$depth            = 0;
+		$unsupported_php  = __( 'The configuration contains an unsupported callable or dynamic PHP construct; automatic policy provenance cannot be proven.', 'wp-ai-bridge' );
+		$forbidden_tokens = array(
+			T_NEW,
+			T_OBJECT_OPERATOR,
+			T_NULLSAFE_OBJECT_OPERATOR,
+			T_DOUBLE_COLON,
+			T_NAMESPACE,
+			T_USE,
+			T_FN,
+			T_CLASS,
+			T_TRAIT,
+			T_INTERFACE,
+			T_ENUM,
+			T_HALT_COMPILER,
+			T_GOTO,
+			T_YIELD,
+			T_YIELD_FROM,
+			T_ATTRIBUTE,
+			T_DOLLAR_OPEN_CURLY_BRACES,
+			T_CURLY_OPEN,
+		);
+		$allowed_calls    = array(
+			'define',
+			'defined',
+			'function_exists',
+			'getenv_docker',
+			'getenv',
+			'file_get_contents',
+			'rtrim',
+			'strpos',
+			'dirname',
+		);
 		foreach ( $tokens as $index => $token ) {
 			$value = is_array( $token ) ? $token[1] : $token;
 			$id    = is_array( $token ) ? $token[0] : 0;
@@ -189,6 +222,28 @@ final class Native_SQL_Config_Setup {
 			if ( T_EVAL === $id ) {
 				return $no( 'complex', __( 'The configuration evaluates dynamically generated PHP. This server-policy source cannot be proven safe for automatic insertion.', 'wp-ai-bridge' ) );
 			}
+			// A whitelist of safe, direct configuration calls is essential:
+			// arbitrary PHP callback consumers can reconstruct both "define"
+			// and its constant name from unlimited fragments. It is impossible
+			// to prove their absence with a blacklist of callback functions.
+			// Reject indirect execution and code declarations outside the
+			// bounded WordPress/official-Docker configuration subset.
+			if ( in_array( $id, $forbidden_tokens, true ) || '`' === $value ) {
+				return $no( 'complex', $unsupported_php );
+			}
+			if ( T_FUNCTION === $id ) {
+				$declaration = $this->next_significant( $tokens, $index + 1 );
+				if ( T_STRING !== $declaration['id'] || 'getenv_docker' !== strtolower( $declaration['value'] ) ) {
+					return $no( 'complex', $unsupported_php );
+				}
+			}
+			if ( '(' === $value && in_array( $previous_id, array( T_STRING, T_NAME_FULLY_QUALIFIED, T_NAME_QUALIFIED, T_NAME_RELATIVE ), true ) ) {
+				$direct = strtolower( ltrim( $previous, '\\' ) );
+				if ( false !== strpos( $direct, '\\' ) ||
+					! in_array( $direct, $allowed_calls, true ) ) {
+					return $no( 'complex', $unsupported_php );
+				}
+			}
 			if ( in_array( $id, array( T_REQUIRE, T_REQUIRE_ONCE, T_INCLUDE, T_INCLUDE_ONCE ), true ) ) {
 				if ( 0 !== $depth ) {
 					return $no( 'unsupported', __( 'The configuration contains conditional or nested includes. Automatic insertion cannot prove the policy source.', 'wp-ai-bridge' ) );
@@ -221,6 +276,7 @@ final class Native_SQL_Config_Setup {
 					// A computed name may resolve to SQL policy only in another
 					// request. Never insert beside an unknown define/defined.
 					if ( T_CONSTANT_ENCAPSED_STRING !== $argument['id'] ||
+						! preg_match( '/\A([\x27\x22])[A-Za-z_][A-Za-z0-9_]*\1\z/D', $argument['value'] ) ||
 						! in_array( $after['value'], array( ',', ')' ), true ) ) {
 						return $no( 'complex', __( 'A dynamic define/defined expression prevents proving that this SQL constant is not set elsewhere.', 'wp-ai-bridge' ) );
 					}
@@ -230,7 +286,8 @@ final class Native_SQL_Config_Setup {
 				}
 			}
 			if ( ! in_array( $id, array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT ), true ) ) {
-				$previous = $value;
+				$previous    = $value;
+				$previous_id = $id;
 			}
 			if ( '{' === $value ) {
 				++$depth;

@@ -5,7 +5,7 @@
  */
 if ( ! isset( $argv[1] ) ) {
 	$cases = array(
-		'ready', 'parent', 'minimal', 'crlf', 'already', 'false', 'duplicate', 'dynamic', 'qualified_dynamic', 'qualified_defined', 'indirect_user_func', 'indirect_array', 'array_map_callback', 'array_walk_callback', 'shutdown_callback', 'qualified_array_callback', 'computed_callable_callback', 'variable_call', 'literal_call', 'qualified_literal_other', 'eval', 'conditional',
+		'ready', 'parent', 'minimal', 'crlf', 'already', 'false', 'duplicate', 'dynamic', 'qualified_dynamic', 'qualified_defined', 'indirect_user_func', 'indirect_array', 'array_map_callback', 'array_walk_callback', 'shutdown_callback', 'qualified_array_callback', 'computed_callable_callback', 'fully_fragmented_callback', 'character_fragmented_callback', 'unknown_callback_api', 'unsafe_function_declaration', 'reflection_call', 'encoded_constant_literal', 'unknown_safe_call', 'official_docker_static', 'variable_call', 'literal_call', 'qualified_literal_other', 'eval', 'conditional',
 		'external', 'missing', 'nonstandard', 'html_tail', 'unwritable', 'policy', 'file_mod', 'disallow_mods', 'non_direct', 'context_drift', 'runtime_external', 'runtime_conflict',
 		'multisite', 'nonce', 'stale', 'concurrent', 'policy_publish_race', 'linked', 'unknown',
 	);
@@ -98,6 +98,56 @@ if ( 'qualified_array_callback' === $case ) {
 }
 if ( 'computed_callable_callback' === $case ) {
 	$source = str_replace( 'require_once', "if ( false ) { array_map( 'de' . 'fine', ['WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL'], [true] ); }\nrequire_once", $source );
+}
+if ( 'fully_fragmented_callback' === $case ) {
+	putenv( 'WPAI_SQL_POLICY_FLAG=0' );
+	$source = str_replace( 'require_once', "if ( getenv( 'WPAI_SQL_POLICY_FLAG' ) === '1' ) {\n\tarray_map( 'de' . 'fine', ['WP_AI_' . 'BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL'], [false] );\n}\nrequire_once", $source );
+}
+if ( 'character_fragmented_callback' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { array_map( 'd' . 'e' . 'f' . 'i' . 'n' . 'e', ['W' . 'P' . '_' . 'AI_' . 'BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL'], [false] ); }\nrequire_once", $source );
+}
+if ( 'unknown_callback_api' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { array_reduce( ['safe'], 'strtoupper' ); }\nrequire_once", $source );
+}
+if ( 'unsafe_function_declaration' === $case ) {
+	$source = str_replace( 'require_once', "function custom_config_callback( \$name ) { return \$name; }\nrequire_once", $source );
+}
+if ( 'reflection_call' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { (new \\ReflectionFunction('define'))->invoke('WP_AI_' . 'BRIDGE_ALLOW_NATIVE_ACCOUNT_' . 'SQL', false); }\nrequire_once", $source );
+}
+if ( 'encoded_constant_literal' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { define( \"\\x57P_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL\", false ); }\nrequire_once", $source );
+}
+if ( 'unknown_safe_call' === $case ) {
+	$source = str_replace( 'require_once', "if ( false ) { trim( 'unrelated' ); }\nrequire_once", $source );
+}
+if ( 'official_docker_static' === $case ) {
+	$source = <<<'WPAI_DOCKER_CONFIG'
+<?php
+// A faithful safe callable subset of official wp-config-docker.php,
+// after its inactive optional eval extension was explicitly removed.
+if ( ! function_exists( 'getenv_docker' ) ) {
+	function getenv_docker( $env, $default ) {
+		if ( $fileEnv = getenv( $env . '_FILE' ) ) {
+			return rtrim( file_get_contents( $fileEnv ), "\r\n" );
+		} else if ( ( $val = getenv( $env ) ) !== false ) {
+			return $val;
+		}
+		return $default;
+	}
+}
+define( 'DB_NAME', getenv_docker( 'WPAI209_TEST_DB', 'wordpress' ) );
+$table_prefix = getenv_docker( 'WPAI209_TEST_PREFIX', 'wp_' );
+if ( isset( $_SERVER['HTTP_X_FORWARDED_PROTO'] ) &&
+	strpos( $_SERVER['HTTP_X_FORWARDED_PROTO'], 'https' ) !== false ) {
+	$_SERVER['HTTPS'] = 'on';
+}
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', __DIR__ . '/' );
+}
+require_once ABSPATH . 'wp-settings.php';
+WPAI_DOCKER_CONFIG;
+	$source .= "\n";
 }
 if ( 'conditional' === $case ) {
 	$source = str_replace( "require_once", "if ( false ) { define( 'WP_AI_BRIDGE_ALLOW_NATIVE_ACCOUNT_SQL', true ); }\nrequire_once", $source );
@@ -206,19 +256,22 @@ $assert  = static function ( $condition, $message ) use ( $case ) {
 
 $expected = array(
 	'ready' => 'ready', 'parent' => 'ready', 'minimal' => 'ready', 'crlf' => 'ready', 'already' => 'enabled', 'false' => 'false',
-	'duplicate' => 'complex', 'dynamic' => 'complex', 'qualified_dynamic' => 'complex', 'qualified_defined' => 'complex', 'indirect_user_func' => 'complex', 'indirect_array' => 'complex', 'array_map_callback' => 'complex', 'array_walk_callback' => 'complex', 'shutdown_callback' => 'complex', 'qualified_array_callback' => 'complex', 'computed_callable_callback' => 'complex', 'variable_call' => 'complex', 'literal_call' => 'complex', 'qualified_literal_other' => 'ready', 'eval' => 'complex', 'conditional' => 'pending',
+	'duplicate' => 'complex', 'dynamic' => 'complex', 'qualified_dynamic' => 'complex', 'qualified_defined' => 'complex', 'indirect_user_func' => 'complex', 'indirect_array' => 'complex', 'array_map_callback' => 'complex', 'array_walk_callback' => 'complex', 'shutdown_callback' => 'complex', 'qualified_array_callback' => 'complex', 'computed_callable_callback' => 'complex', 'fully_fragmented_callback' => 'complex', 'character_fragmented_callback' => 'complex', 'unknown_callback_api' => 'complex', 'unsafe_function_declaration' => 'complex', 'reflection_call' => 'complex', 'encoded_constant_literal' => 'complex', 'unknown_safe_call' => 'complex', 'official_docker_static' => 'ready', 'variable_call' => 'complex', 'literal_call' => 'complex', 'qualified_literal_other' => 'ready', 'eval' => 'complex', 'conditional' => 'pending',
 	'external' => 'unsupported', 'missing' => 'unknown', 'nonstandard' => 'unsupported', 'html_tail' => 'unsupported',
 	'runtime_external' => 'external', 'runtime_conflict' => 'false', 'unwritable' => 'ready', 'policy' => 'ready', 'file_mod' => 'ready', 'disallow_mods' => 'ready', 'non_direct' => 'ready', 'context_drift' => 'ready',
 	'multisite' => 'ready', 'nonce' => 'ready', 'stale' => 'ready',
 	'concurrent' => 'ready', 'policy_publish_race' => 'ready', 'linked' => 'unsupported', 'unknown' => 'unknown',
 );
 $assert( $expected[ $case ] === $state['state'], 'Incorrect detected state: ' . $state['state'] );
+if ( in_array( $case, array( 'fully_fragmented_callback', 'character_fragmented_callback', 'unknown_callback_api', 'unknown_safe_call' ), true ) ) {
+	$assert( str_contains( $state['reason'], 'unsupported callable' ), 'Dynamic or unknown call-site must be rejected by the restrictive callable provenance policy.' );
+}
 if ( ! in_array( $case, array( 'unknown', 'missing' ), true ) ) {
 	$assert( realpath( $fixture ) === $state['path'], 'Must identify the exact included file.' );
 } else {
 	$assert( '' === $state['path'], 'Cannot invent an unproven config path.' );
 }
-$assert( in_array( $case, array( 'ready', 'parent', 'minimal', 'crlf', 'nonce', 'stale', 'concurrent', 'policy_publish_race', 'qualified_literal_other' ), true ) === $state['can_auto'], 'Wrong automatic edit admission.' );
+$assert( in_array( $case, array( 'ready', 'parent', 'minimal', 'crlf', 'nonce', 'stale', 'concurrent', 'policy_publish_race', 'qualified_literal_other', 'official_docker_static' ), true ) === $state['can_auto'], 'Wrong automatic edit admission.' );
 if ( 'runtime_external' === $case || 'runtime_conflict' === $case ) {
 	$assert( $state['enabled'], 'Actual runtime enabled status must not erase conflicting or external file diagnostics.' );
 }
@@ -255,7 +308,7 @@ if ( 'policy_publish_race' === $case ) {
 }
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $result = $service->activate( $post );
-$published = in_array( $case, array( 'ready', 'parent', 'minimal', 'crlf', 'qualified_literal_other' ), true );
+$published = in_array( $case, array( 'ready', 'parent', 'minimal', 'crlf', 'qualified_literal_other', 'official_docker_static' ), true );
 $assert( ( 'written' === ( $result['result'] ?? '' ) ) === $published, 'Wrong publish result.' );
 if ( $published ) {
 	$after = file_get_contents( $fixture );
