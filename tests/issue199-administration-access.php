@@ -60,7 +60,6 @@ wpai199n_assert( ! $access->allowed( Settings::GROUP_FILESYSTEM_READ ), 'Delegat
 $GLOBALS['wpai_test']['capabilities']['manage_options'] = true;
 wpai199n_assert( ! $access->allowed( Settings::GROUP_FILESYSTEM_READ, false, array( array( Settings::GROUP_FILESYSTEM_WRITE, 'delete_users' ) ) ), 'Additional native capability was skipped.' );
 $client = new ReflectionProperty( OAuth_Server::class, 'authenticated_mcp_client_id' );
-$client->setAccessible( true );
 $client->setValue( null, 'other-authenticated-client' );
 wpai199n_assert( ! $access->same_context( $context ), 'Authenticated client drift went undetected.' );
 $client->setValue( null, '' );

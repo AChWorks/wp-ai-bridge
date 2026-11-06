@@ -533,7 +533,7 @@ foreach ( array( Settings_Page::DOCUMENTS_SLUG, Settings_Page::TASKS_SLUG, Setti
 	wpai_assert( 'manage_options' === $GLOBALS['wpai_test']['submenu_pages'][ Settings_Page::PAGE_SLUG ][ $submenu_slug ]['capability'], 'WP AI Bridge submenu requires manage_options: ' . $submenu_slug );
 }
 foreach ( array( "wp-native-builder", "wp-native-builder-documents", "wp-native-builder-tasks", "wp-native-builder-activity", "wp-native-builder-settings" ) as $legacy_slug ) {
-	wpai_assert( empty( $GLOBALS["wpai_test"]["submenu_pages"][ null ][ $legacy_slug ] ), "Legacy WP Native Builder admin bookmark alias is not registered: " . $legacy_slug );
+	wpai_assert( empty( $GLOBALS["wpai_test"]["submenu_pages"][ '' ][ $legacy_slug ] ), "Legacy WP Native Builder admin bookmark alias is not registered: " . $legacy_slug );
 }
 ob_start();
 $page->render_settings();

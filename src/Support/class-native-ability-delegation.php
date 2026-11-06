@@ -80,7 +80,7 @@ final class Native_Ability_Delegation {
 	public function remember_bridge_abilities( array $abilities ) {
 		foreach ( $abilities as $ability ) {
 			if ( is_object( $ability ) ) {
-				$this->bridge_owned_abilities->attach( $ability );
+				$this->bridge_owned_abilities->offsetSet( $ability );
 			}
 		}
 	}
@@ -705,7 +705,7 @@ final class Native_Ability_Delegation {
 	 * @return bool
 	 */
 	public function is_bridge_owned_ability( $ability ) {
-		return is_object( $ability ) && $this->bridge_owned_abilities->contains( $ability );
+		return is_object( $ability ) && $this->bridge_owned_abilities->offsetExists( $ability );
 	}
 
 	/** @return bool */
