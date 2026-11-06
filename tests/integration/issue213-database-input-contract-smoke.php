@@ -117,7 +117,10 @@ try {
 			'limit'   => 1,
 		)
 	);
-	wpai213_assert( is_wp_error( $raw_denied ) && 'ability_invalid_input' !== $raw_denied->get_error_code(), 'Sensitive database read grant was silently widened.' );
+	wpai213_assert(
+		is_wp_error( $raw_denied ) && 'ability_invalid_permissions' === $raw_denied->get_error_code(),
+		'Sensitive database read grant was silently widened or returned an unrelated denial.'
+	);
 
 	list( $token, $session, $store ) = wpai134_review_connect( $actor );
 	$wpai_call                       = static function ( array $input ) use ( &$token, &$session ) {
@@ -130,12 +133,37 @@ try {
 		'Maximum request failed through authenticated official MCP Adapter.'
 	);
 	$adapter_bad = $wpai_call( $bad_input );
-	$code        = $adapter_bad['result']['structuredContent']['error']['code'] ?? null;
+	$core_error  = $adapter_bad['result']['structuredContent']['error'] ?? array();
 	wpai213_assert(
 		true === ( $adapter_bad['result']['isError'] ?? false ) &&
-		'ability_invalid_input' === $code,
-		'Authenticated Adapter failed to preserve Core ability_invalid_input.'
+		is_string( $core_error['message'] ?? null ) &&
+		str_contains( $core_error['message'], 'limit' ),
+		'Authenticated Adapter failed to return a bounded, actionable Core schema denial.'
 	);
+	if ( version_compare( get_bloginfo( 'version' ), '7.1', '>=' ) ) {
+		// WordPress 7.1 added wp_ability_validate_input, allowing Bridge to
+		// observe Core's actual WP_Error before the Adapter drops its code.
+		wpai213_assert(
+			'ability_invalid_input' === ( $core_error['code'] ?? null ) &&
+			true === ( $core_error['code_available'] ?? null ) &&
+			'observed_wordpress' === ( $core_error['code_source'] ?? null ) &&
+			'wordpress_core' === ( $core_error['origin'] ?? null ) &&
+			'input_validation' === ( $core_error['stage'] ?? null ),
+			'WordPress 7.1+ authenticated Adapter lost observed Core error provenance.'
+		);
+	} else {
+		// WordPress 6.9 has no wp_ability_validate_input observation hook.
+		// Adapter v0.6.x/0.7.x discards Core's original WP_Error identifier.
+		// Never reconstruct it from the message, or claim it was observed.
+		wpai213_assert(
+			null === ( $core_error['code'] ?? null ) &&
+			false === ( $core_error['code_available'] ?? null ) &&
+			'unavailable' === ( $core_error['code_source'] ?? null ) &&
+			'adapter_boundary' === ( $core_error['origin'] ?? null ) &&
+			'adapter_execute' === ( $core_error['stage'] ?? null ),
+			'WordPress 6.9 Adapter fabricated or misattributed an unobserved Core error.'
+		);
+	}
 	$adapter_handler_error = $wpai_call(
 		array(
 			'action' => 'schema',
@@ -157,7 +185,10 @@ try {
 			'limit'  => 1,
 		)
 	);
-	wpai213_assert( is_wp_error( $denied ) && 'ability_invalid_input' !== $denied->get_error_code(), 'Native permission callback bypassed revocation.' );
+	wpai213_assert(
+		is_wp_error( $denied ) && 'ability_invalid_permissions' === $denied->get_error_code(),
+		'Native permission callback bypassed revocation.'
+	);
 	$adapter_denied = $wpai_call(
 		array(
 			'action' => 'tables',
