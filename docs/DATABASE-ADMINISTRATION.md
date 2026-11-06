@@ -43,6 +43,8 @@ The official WordPress Docker configuration template used in integration testing
 
 Input action tables supports limit and after_table (the previous returned table name). It returns installation base-table metadata, approximate engine row counts and keyset continuation without scanning record values. Input action schema requires table, supports section columns or indexes, limit and offset, and returns next_offset/has_more.
 
+The advertised `limit.maximum` is the **current** response-policy-derived page ceiling: `max(1, floor(response_bytes / 2048))` (64 at the default 128 KiB response budget). The native handler rejects a larger requested page with `database_input_invalid`, even when an older client ignores or caches the latest discovery schema. Omitting `limit` uses a bounded default of at most 25 items. Rediscover Abilities after changing response limits rather than assuming a static site-wide maximum. The same discovered schema bounds raw-read column/filter/key selector counts and metadata/cell byte-window lengths; action-specific required selectors still apply.
+
 Column metadata preserves native data_type and bounded sql_type definitions, with sql_type_bytes/sql_type_truncated. Large ENUM/SET definitions are reported as truncated metadata, not falsely complete schemas. Use action column_type with table, column, offset and optional length to retrieve the complete definition through bounded base64 cell windows. It returns total bytes, SHA-256, data_type and continuation; positive byte offsets require expected_sha256. Reconstruct and verify the complete bytes exactly as for record cells, while retaining metadata-only authority. Concurrent DDL can stale the definition; restart on a hash conflict.
 
 ## Values: wp-ai-bridge/database-read

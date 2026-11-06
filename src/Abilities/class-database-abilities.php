@@ -70,6 +70,8 @@ final class Database_Abilities {
 			'type'    => 'integer',
 			'minimum' => 0,
 		);
+		$max_page   = max( 1, intdiv( Bounded_Payload::response_limit(), 2048 ) );
+		$max_window = intdiv( Bounded_Payload::response_limit(), 4 );
 		$properties = array(
 			'action' => array(
 				'type' => 'string',
@@ -79,18 +81,21 @@ final class Database_Abilities {
 			'limit'  => array(
 				'type'    => 'integer',
 				'minimum' => 1,
+				'maximum' => $max_page,
 			),
 			'offset' => $natural,
 		);
 		if ( $raw ) {
 			$key         = array(
 				'type'                 => 'object',
+				'maxProperties'        => $max_page,
 				'additionalProperties' => array( 'type' => array( 'string', 'null' ) ),
 			);
 			$properties += array(
 				'columns'         => array(
 					'type'        => 'array',
 					'minItems'    => 1,
+					'maxItems'    => $max_page,
 					'uniqueItems' => true,
 					'items'       => $identifier,
 				),
@@ -100,6 +105,7 @@ final class Database_Abilities {
 				'row_offset'      => $natural,
 				'key_hashes'      => array(
 					'type'                 => 'object',
+					'maxProperties'        => $max_page,
 					'additionalProperties' => array(
 						'type'    => 'string',
 						'pattern' => '^[a-f0-9]{64}$',
@@ -112,6 +118,7 @@ final class Database_Abilities {
 				'length'          => array(
 					'type'    => 'integer',
 					'minimum' => 1,
+					'maximum' => $max_window,
 				),
 				'expected_sha256' => array(
 					'type'    => 'string',
@@ -132,6 +139,7 @@ final class Database_Abilities {
 				'length'          => array(
 					'type'    => 'integer',
 					'minimum' => 1,
+					'maximum' => $max_window,
 				),
 				'expected_sha256' => array(
 					'type'    => 'string',
