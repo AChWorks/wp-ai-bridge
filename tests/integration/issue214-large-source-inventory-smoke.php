@@ -66,13 +66,16 @@ try {
 	$theme_created = true;
 	$theme_style   = $theme_dir . '/style.css';
 	$theme_main    = $theme_dir . '/functions.php';
+	$theme_index   = $theme_dir . '/index.php';
 	wpai214_inventory_assert(
 		false !== file_put_contents( $theme_style, "/*\nTheme Name: WP AI Bridge Inventory Test Theme\nVersion: 1.0.0\n*/\n" ) &&
-		false !== file_put_contents( $theme_main, "<?php\n// Theme fixture.\n" ),
+		false !== file_put_contents( $theme_main, "<?php\n// Theme fixture.\n" ) &&
+		false !== file_put_contents( $theme_index, "<?php\n// Valid classic theme entrypoint.\n" ),
 		'Cannot create theme inventory headers.'
 	);
 	$theme_files[] = $theme_style;
 	$theme_files[] = $theme_main;
+	$theme_files[] = $theme_index;
 	$theme_extra   = $theme_dir . '/includes';
 	wpai214_inventory_assert( wp_mkdir_p( $theme_extra ), 'Cannot create theme inventory subdirectory.' );
 	for ( $i = 0; $i < 80; ++$i ) {
@@ -118,7 +121,12 @@ try {
 	wpai214_inventory_assert(
 		! is_wp_error( $theme ) && $theme['total'] >= 80 &&
 		1 === count( $theme['items'] ) && $theme_slug === $theme['items'][0]['extension'],
-		'Large installed theme source inventory failed.'
+		'Large installed theme source inventory failed: ' .
+		( is_wp_error( $theme ) ? $theme->get_error_code() : wp_json_encode( array(
+			'total'           => $theme['total'],
+			'first_extension' => $theme['items'][0]['extension'] ?? null,
+			'registered'      => array_key_exists( $theme_slug, wp_get_themes() ),
+		) ) )
 	);
 	$denied_settings = $grants;
 	$denied_settings[ Settings::GROUP_SOURCE_EDITING ] = 0;
