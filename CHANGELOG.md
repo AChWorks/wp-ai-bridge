@@ -2,6 +2,16 @@
 
 All notable public changes are documented here.
 
+## 0.7.3
+
+- Persist client-bound rotating OAuth refresh grants in durable WordPress storage rather than evictable Transients, keeping the established 30-day expiry, client binding, single-use rotation, bounded authorized recovery, revocation and cleanup without widening client authority (#92, PR #220).
+- Advertise actual WordPress database inspection/read input bounds derived from response policy, and preserve observed Core versus Adapter error provenance without inventing unavailable error codes (#213, PR #215).
+- Avoid evidenced PHP 8.5 deprecations in native Ability delegation while retaining the supported older Core/Adapter behavior (#214, PR #216).
+- Enumerate each installed plugin/theme source-file inventory once instead of repeatedly scanning it per entry. Preserve WordPress file-editor permissions, canonical-path and symlink confinement, accurate counts and pagination (#214, PR #219).
+- When current-theme Customizer registration cannot initialize during late provider bootstrap, allow **only** independently authorized `list` inventory to degrade to explicitly labeled stored `theme_mod` keys (`provenance=stored_theme_mods`, `coverage=stored_only`) while preserving the original Customizer error. Do not silently reroute named reads, snapshots, updates or publication; native provider Abilities remain independent (#207, PR #221).
+- Extend actual WordPress/MCP Adapter regression evidence for WXR administrator author mapping, scoped Backup/Restore verification, database boundaries, large source inventories, OAuth refresh durability and Astra Customizer fallback (#214, PRs #217–218 and related focused fixtures).
+- **Delivery boundary:** Publication of an official ZIP does not itself upgrade any hosted installation. The original hosted Customizer HTTP500, Ganoderma PHP-memory/OAuth failure, native hosted plugin updater, installed-Gateway acceptance and complete client↔Gateway↔Bridge file delivery remain separately tracked and are **not** claimed repaired by this release (#207, #212, #186, #214, #134).
+
 ## 0.7.2
 
 - Add an explicit Settings → Database native-account SQL server-configuration action. Verify the actually loaded wp-config.php, WordPress-native file authority, supported source layout, conditional definitions, concurrent changes, exact minimal file edit and fresh-request activation, with precise hosting-operator manual fallback. Keep existing SQL constant gate, all six database grants, one settings Save and pending drafts unchanged (#209).
