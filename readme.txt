@@ -2,7 +2,7 @@
 Tags: ai, mcp, abilities, oauth, administration
 Requires at least: 6.9
 Tested up to: 7.1
-Stable tag: 0.7.2
+Stable tag: 0.7.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -78,6 +78,13 @@ WordPress.org may be contacted by WordPress Core for its own routine plugin/them
 WP AI Bridge retains private Workspace data and bounded activity metadata on the WordPress installation. OAuth tokens, connection approvals and revocation remain WordPress-controlled. See the project's Security and OAuth documentation for retention, revocation and advanced permissions.
 
 == Changelog ==
+
+= 0.7.3 =
+* Persist rotating, client-bound OAuth refresh grants beyond transient-cache eviction, retaining expiry, revocation, replay prevention and one-time recovery.
+* Align database Ability input limits and Core error provenance with real response budgets; retain permission and native validation boundaries.
+* Make large installed plugin/theme source inventory linear rather than repeatedly rescanning files; preserve canonical path and symlink safeguards.
+* Let authorized Customizer inventory list requests return clearly labeled stored-only theme-mod keys if provider registration cannot initialize; named reads and writes never silently fall back.
+* Improve PHP 8.5 compatibility and expand real WordPress/Adapter regression tests. Hosted memory/HTTP500, live updater, client file delivery and installed-target acceptance remain separately tracked.
 
 = 0.7.2 =
 * Add a separately authorized Settings > Database action for guarded wp-config.php native-account SQL opt-in, with a precise manual fallback for unsupported or policy-denied hosts (#209).
