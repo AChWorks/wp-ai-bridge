@@ -145,7 +145,7 @@ function wpai_issue80_check_oauth_store_db_confinement( $source, $require_full_s
 		'TYPE_ACCESS'                      => 9,
 		'TYPE_CODE'                        => 3,
 		'TYPE_CONSENT'                     => 2,
-		'TYPE_REFRESH'                     => 15,
+		'TYPE_REFRESH'                     => 20,
 	);
 
 	$allowed_calls = array(

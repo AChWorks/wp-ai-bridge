@@ -117,13 +117,13 @@ function wpai_issue80_delete_artifact_backing( OAuth_Store $store, $type, $token
 	delete_transient( 'wpai_oauth_' . sanitize_key( $type ) . '_' . $parsed[0] );
 }
 
-function wpai_issue80_transient_count( $prefix ) {
+function wpai_issue80_artifact_count( $prefix ) {
 	global $wpdb;
 	$like = $wpdb->esc_like( '_transient_' . $prefix ) . '%';
 	if ( 'wpai_oauth_refresh_' === $prefix ) {
-		$recovery_like = $wpdb->esc_like( '_transient_' . OAuth_Store::REFRESH_RECOVERY_PREFIX ) . '%';
+		$like = $wpdb->esc_like( $prefix ) . '%';
 		return (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Integration-only count proves recovery does not mint hidden successor generations.
-			$wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s AND option_name NOT LIKE %s", $like, $recovery_like ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- The table identifier is the current WordPress options table; values are prepared.
+			$wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s", $like ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- The table identifier is the current WordPress options table; the value is prepared.
 		);
 	}
 	return (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Integration-only count proves recovery does not mint hidden successor generations.
@@ -194,6 +194,47 @@ $resource     = $oauth->mcp_endpoint_url();
 $issued_pairs = array();
 
 try {
+	// The 30-day grant is an actual non-autoloaded WordPress option, not a
+	// cache entry. Simulate late-life idle use by shifting its absolute expiry
+	// into the final minutes, then flush the object cache before rotating.
+	$idle_old    = wpai_issue80_seed_refresh( $store, $user_id, $client_a, $revision, $resource );
+	$idle_parts  = explode( '.', $idle_old );
+	$idle_key    = 'wpai_oauth_refresh_' . $idle_parts[1];
+	$idle_claims = get_option( $idle_key, false );
+	wpai_issue80_assert( is_array( $idle_claims ) && $idle_claims['expires_at'] >= time() + OAuth_Server::REFRESH_TTL - 1, 'New refresh grant is not durably stored for its 30-day lifetime.' );
+	wpai_issue80_assert( false === get_transient( $idle_key ), 'New refresh grant incorrectly depends on transient storage.' );
+	$idle_claims['expires_at'] = time() + 300;
+	update_option( $idle_key, $idle_claims, false );
+	wp_cache_flush();
+	wpai_issue80_assert( is_array( $store->read( OAuth_Store::TYPE_REFRESH, $idle_old, false, $client_a ) ), 'Cache flush or simulated long idle lost a still-valid refresh grant.' );
+	wpai_issue80_assert( false === $store->read( OAuth_Store::TYPE_REFRESH, $idle_old, false, $client_b ), 'Cache-independent refresh grant accepted a different client.' );
+	$idle_response = wpai_issue80_token_request( $oauth, $client_a, $key_a, $idle_old, $resource );
+	wpai_issue80_assert( 200 === $idle_response->get_status(), 'Idle 30-day grant failed a fresh authenticated rotation after cache eviction.' );
+	$idle_data = wpai_issue80_data( $idle_response );
+	$issued_pairs[] = $idle_data;
+	wpai_issue80_assert( false === $store->read( OAuth_Store::TYPE_REFRESH, $idle_old, false, $client_a ), 'Rotated idle source refresh grant remained usable.' );
+	$idle_successor_parts = explode( '.', $idle_data['refresh_token'] );
+	$idle_successor_key   = 'wpai_oauth_refresh_' . $idle_successor_parts[1];
+	wpai_issue80_assert( is_array( get_option( $idle_successor_key, false ) ), 'Refreshed successor did not use durable option storage.' );
+	wp_cache_flush();
+	wpai_issue80_assert( is_array( $store->read( OAuth_Store::TYPE_REFRESH, $idle_data['refresh_token'], false, $client_a ) ), 'Cache flush lost a committed refresh successor.' );
+	wpai_issue80_assert( $store->revoke( $idle_data['refresh_token'], $client_a ), 'Revocation failed for a cache-independent durable successor.' );
+	wpai_issue80_assert( false === $store->read( OAuth_Store::TYPE_REFRESH, $idle_data['refresh_token'], false, $client_a ), 'Revocation left durable successor refresh credentials active.' );
+
+	// An existing transient-backed grant still valid during upgrade must
+	// migrate in place and survive the next cache flush without re-consent.
+	$legacy_token   = wpai_issue80_seed_refresh( $store, $user_id, $client_a, $revision, $resource );
+	$legacy_parts   = explode( '.', $legacy_token );
+	$legacy_key     = 'wpai_oauth_refresh_' . $legacy_parts[1];
+	$legacy_claims  = get_option( $legacy_key, false );
+	delete_option( $legacy_key );
+	set_transient( $legacy_key, $legacy_claims, 300 );
+	wpai_issue80_assert( is_array( $store->read( OAuth_Store::TYPE_REFRESH, $legacy_token, false, $client_a ) ), 'Valid legacy transient grant failed to migrate.' );
+	wpai_issue80_assert( is_array( get_option( $legacy_key, false ) ) && false === get_transient( $legacy_key ), 'Legacy grant migration left transient-only backing.' );
+	wp_cache_flush();
+	wpai_issue80_assert( is_array( $store->read( OAuth_Store::TYPE_REFRESH, $legacy_token, false, $client_a ) ), 'Migrated legacy grant disappeared after cache flush.' );
+	wpai_issue80_assert( $store->revoke( $legacy_token, $client_a ) && false === $store->read( OAuth_Store::TYPE_REFRESH, $legacy_token, false, $client_a ), 'Migrated legacy grant could not be revoked or was revived.' );
+
 	// Normal rotation commits exactly one successor generation and consumes the old token.
 	$old             = wpai_issue80_seed_refresh( $store, $user_id, $client_a, $revision, $resource );
 	$first_assertion = wpai_issue80_assertion( $client_a, $oauth->token_endpoint_url(), $key_a, 'issue80-first-assertion' );
@@ -235,13 +276,13 @@ try {
 	wpai_issue80_assert( wpai_issue80_error_is( $wrong_scope, 'invalid_scope' ), 'Different refresh scope recovered an Issue #80 response.' );
 	wpai_issue80_assert( is_array( $store->read_refresh_recovery( $old ) ), 'Binding mismatch consumed valid Issue #80 recovery state.' );
 
-	$access_count_before  = wpai_issue80_transient_count( 'wpai_oauth_access_' );
-	$refresh_count_before = wpai_issue80_transient_count( 'wpai_oauth_refresh_' );
+	$access_count_before  = wpai_issue80_artifact_count( 'wpai_oauth_access_' );
+	$refresh_count_before = wpai_issue80_artifact_count( 'wpai_oauth_refresh_' );
 	$recovered            = wpai_issue80_token_request( $oauth, $client_a, $key_a, $old, $resource );
 	wpai_issue80_assert( 200 === $recovered->get_status(), 'Exact approved-client lost-response retry did not recover.' );
 	wpai_issue80_assert( wpai_issue80_data( $recovered ) === $first_data, 'Issue #80 recovery returned a different successor generation.' );
-	wpai_issue80_assert( wpai_issue80_transient_count( 'wpai_oauth_access_' ) === $access_count_before, 'Issue #80 recovery created a second access-token generation.' );
-	wpai_issue80_assert( wpai_issue80_transient_count( 'wpai_oauth_refresh_' ) === $refresh_count_before, 'Issue #80 recovery created a second refresh-token generation.' );
+	wpai_issue80_assert( wpai_issue80_artifact_count( 'wpai_oauth_access_' ) === $access_count_before, 'Issue #80 recovery created a second access-token generation.' );
+	wpai_issue80_assert( wpai_issue80_artifact_count( 'wpai_oauth_refresh_' ) === $refresh_count_before, 'Issue #80 recovery created a second refresh-token generation.' );
 	wpai_issue80_assert( false === $store->read_refresh_recovery( $old ), 'Issue #80 recovery allowance was not one-shot.' );
 	$post_recovery_replay = wpai_issue80_token_request( $oauth, $client_a, $key_a, $old, $resource );
 	wpai_issue80_assert( wpai_issue80_error_is( $post_recovery_replay, 'invalid_grant' ), 'Replay after the one-shot recovery allowance was accepted.' );
