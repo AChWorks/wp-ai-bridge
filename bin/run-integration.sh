@@ -86,6 +86,7 @@ for test in \
     foundation-smoke.php \
     issue199-database-smoke.php \
     issue199-database-mcp-smoke.php \
+    issue213-database-input-contract-smoke.php \
     issue199-native-options-smoke.php \
     issue199-native-options-mcp-smoke.php \
     issue199-native-option-write-smoke.php \
@@ -160,6 +161,12 @@ do
         "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue147-operation-content-setup.php --user=1 --allow-root
     fi
     "${wp[@]}" eval-file "wp-content/plugins/wp-ai-bridge/tests/integration/${test}" --user=1 --allow-root
+    if [[ "$test" == "issue213-database-input-contract-smoke.php" ]]; then
+        # Schema registration happens during WordPress bootstrap.
+        "${wp[@]}" eval 'update_option("wp_ai_bridge_payload_limits", array("response_kib" => 64), false);' --user=1 --allow-root
+        "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue213-database-input-contract-smoke.php --user=1 --allow-root
+        "${wp[@]}" eval 'delete_option("wp_ai_bridge_payload_limits");' --user=1 --allow-root
+    fi
     if [[ "$test" == "issue110-site-context-smoke.php" ]]; then
         "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-content/mu-plugins/wpai-catalog-contract.php
     fi

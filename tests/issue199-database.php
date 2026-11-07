@@ -11,6 +11,7 @@ use WP_AI_Bridge\Abilities\Database_Abilities;
 use WP_AI_Bridge\Support\Bounded_Payload;
 use WP_AI_Bridge\Support\Mutation_Log;
 use WP_AI_Bridge\Support\Permissions;
+use WP_AI_Bridge\Support\Payload_Settings;
 use WP_AI_Bridge\Support\Settings;
 
 function is_multisite() { return ! empty( $GLOBALS['wpai_test']['multisite'] ); }
@@ -30,11 +31,20 @@ $settings = new Settings();
 $provider = new Database_Abilities( new Permissions( $settings ), new Mutation_Log() );
 $registered = $provider->register();
 $assert( 2 === count( $registered ), 'Both database contracts must register through the native registry.' );
+$default_page_limit   = max( 1, intdiv( Bounded_Payload::response_limit(), 2048 ) );
+$default_window_limit = intdiv( Bounded_Payload::response_limit(), 4 );
 foreach ( array( 'database-inspect', 'database-read' ) as $name ) {
 	$args = $GLOBALS['wpai_test']['registered_abilities'][ 'wp-ai-bridge/' . $name ];
 	$assert( true === $args['meta']['annotations']['readonly'] && false === $args['meta']['annotations']['destructive'], 'Database reads must not advertise mutation authority.' );
 	$assert( false === $args['input_schema']['additionalProperties'], 'Database input must remain closed.' );
 	$assert( ! isset( $args['input_schema']['properties']['sql'], $args['input_schema']['properties']['database'] ), 'A raw query or database selector entered the public schema.' );
+	$assert( $default_page_limit === $args['input_schema']['properties']['limit']['maximum'], 'Advertised maximum page size disagrees with the handler response policy.' );
+	$assert( $default_window_limit === $args['input_schema']['properties']['length']['maximum'], 'Advertised maximum byte window disagrees with the handler response policy.' );
+	if ( 'database-read' === $name ) {
+		$assert( $default_page_limit === $args['input_schema']['properties']['columns']['maxItems'], 'Published column count lacks the response-policy bound.' );
+		$assert( $default_page_limit === $args['input_schema']['properties']['filters']['maxProperties'], 'Published filter selector count lacks the response-policy bound.' );
+		$assert( $default_page_limit === $args['input_schema']['properties']['key_hashes']['maxProperties'], 'Published hash selector count lacks the response-policy bound.' );
+	}
 }
 
 $assert( 0 === $settings->database_defaults()[ Settings::GROUP_DATABASE_INSPECTION ], 'Database Inspection defaults enabled.' );
@@ -78,6 +88,18 @@ $assert( $provider->can_read(), 'Actual Super Admin/network authority was denied
 $GLOBALS['wpai_test']['multisite'] = false;
 
 $validate = new ReflectionMethod( Database_Abilities::class, 'validate' );
+$schema  = new ReflectionMethod( Database_Abilities::class, 'schema' );
+$assert( ! is_wp_error( $validate->invoke( $provider, array( 'action' => 'tables', 'limit' => $default_page_limit ), false ) ), 'Advertised maximum table page was rejected.' );
+$assert( is_wp_error( $validate->invoke( $provider, array( 'action' => 'tables', 'limit' => $default_page_limit + 1 ), false ) ), 'Over-budget table page was accepted.' );
+update_option( Payload_Settings::OPTION_NAME, array( Payload_Settings::RESPONSE_KEY => 64 ), false );
+$small_page_limit   = max( 1, intdiv( Bounded_Payload::response_limit(), 2048 ) );
+$small_window_limit = intdiv( Bounded_Payload::response_limit(), 4 );
+$assert( 32 === $small_page_limit, 'Synthetic 64 KiB policy did not produce the expected page bound.' );
+$assert( $small_page_limit === $schema->invoke( $provider, false )['properties']['limit']['maximum'], 'Inspection schema did not follow the active smaller response policy.' );
+$assert( $small_window_limit === $schema->invoke( $provider, true )['properties']['length']['maximum'], 'Raw-read schema did not follow the active smaller response policy.' );
+$assert( ! is_wp_error( $validate->invoke( $provider, array( 'action' => 'tables', 'limit' => $small_page_limit ), false ) ), 'Allowed smaller page was rejected.' );
+$assert( is_wp_error( $validate->invoke( $provider, array( 'action' => 'tables', 'limit' => $small_page_limit + 1 ), false ) ), 'Smaller policy was not enforced.' );
+update_option( Payload_Settings::OPTION_NAME, array(), false );
 $rows = array( 'action' => 'rows', 'table' => 'wp_fixture', 'columns' => array( 'id' ) );
 $valid = $validate->invoke( $provider, $rows, true );
 $assert( ! is_wp_error( $valid ), 'A minimal typed row request was rejected.' );
