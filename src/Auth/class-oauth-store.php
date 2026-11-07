@@ -1,6 +1,6 @@
 <?php
 /**
- * OAuth transient-backed token storage.
+ * OAuth token storage with durable rotating refresh grants.
  *
  * @package WP_AI_Bridge
  */
@@ -73,7 +73,7 @@ final class OAuth_Store {
 	 * @param string              $type   Artifact type.
 	 * @param array<string,mixed> $claims Claims bound to the artifact.
 	 * @param int                 $ttl    Lifetime in seconds.
-	 * @return string Opaque artifact.
+	 * @return string|\WP_Error Opaque artifact or persistence error.
 	 */
 	public function issue( $type, array $claims, $ttl ) {
 		$prefix = $this->token_prefix( $type );
@@ -88,7 +88,14 @@ final class OAuth_Store {
 		$claims['secret_hash'] = $this->hash_secret( $secret );
 		$claims['expires_at']  = time() + $ttl;
 		$claims['instance_id'] = $this->instance_id();
-		set_transient( $this->transient_key( $type, $selector ), $claims, $ttl );
+		$key                   = $this->transient_key( $type, $selector );
+		if ( self::TYPE_REFRESH === $type ) {
+			if ( ! $this->store_refresh_record( $key, $claims ) ) {
+				return new \WP_Error( 'oauth_refresh_storage_unavailable', 'OAuth refresh token could not be stored.' );
+			}
+		} else {
+			set_transient( $key, $claims, $ttl );
+		}
 		return $token;
 	}
 
@@ -125,12 +132,12 @@ final class OAuth_Store {
 		}
 		list( $selector, $secret ) = $parsed;
 		$key                       = $this->transient_key( $type, $selector );
-		$claims                    = get_transient( $key );
+		$claims                    = $this->read_artifact_record( $type, $selector );
 		if ( ! is_array( $claims ) || empty( $claims['secret_hash'] ) || empty( $claims['expires_at'] ) || empty( $claims['instance_id'] ) ) {
 			return false;
 		}
 		if ( (int) $claims['expires_at'] <= time() ) {
-			delete_transient( $key );
+			$this->delete_artifact_record( $type, $selector );
 			return false;
 		}
 		if ( ! hash_equals( (string) $claims['instance_id'], $this->instance_id() ) ) {
@@ -144,7 +151,7 @@ final class OAuth_Store {
 				return false;
 			}
 		}
-		if ( $consume && ! delete_transient( $key ) ) {
+		if ( $consume && ! $this->delete_artifact_record( $type, $selector ) ) {
 			return false;
 		}
 		unset( $claims['secret_hash'], $claims['instance_id'], $claims[ self::REFRESH_RECOVERY_CLAIM ] );
@@ -463,6 +470,23 @@ final class OAuth_Store {
 	}
 
 	/**
+	 * Removes a durable refresh record only after its exact original expiry.
+	 *
+	 * @param string $key             Exact option key (no bearer secret).
+	 * @param int    $expected_expiry Original absolute expiration.
+	 * @return void
+	 */
+	public function cleanup_refresh_artifact( $key, $expected_expiry ) {
+		if ( ! is_string( $key ) || 1 !== preg_match( '/^wpai_oauth_refresh_[A-Za-z0-9_-]{20,40}$/', $key ) ) {
+			return;
+		}
+		$record = get_option( $key, false );
+		if ( is_array( $record ) && (int) ( $record['expires_at'] ?? 0 ) === (int) $expected_expiry && (int) $expected_expiry <= time() ) {
+			$this->delete_artifact_record( self::TYPE_REFRESH, substr( $key, strlen( 'wpai_oauth_refresh_' ) ) );
+		}
+	}
+
+	/**
 	 * Revokes one opaque artifact when its secret and optional client binding are valid.
 	 *
 	 * Refresh artifacts share the same per-token lock as rotation. Successor access/
@@ -485,7 +509,7 @@ final class OAuth_Store {
 			}
 			list( $selector, $secret ) = $parsed;
 			$key                       = $this->transient_key( $type, $selector );
-			$claims                    = get_transient( $key );
+			$claims                    = $this->read_artifact_record( $type, $selector );
 
 			if ( ! is_array( $claims ) || empty( $claims['secret_hash'] ) ) {
 				if ( self::TYPE_REFRESH !== $type ) {
@@ -535,7 +559,7 @@ final class OAuth_Store {
 				return false;
 			}
 			try {
-				$current = get_transient( $key );
+				$current = $this->read_artifact_record( $type, $selector );
 				if ( ! is_array( $current ) || empty( $current['secret_hash'] ) || ! hash_equals( (string) $current['secret_hash'], $this->hash_secret( $secret ) ) ) {
 					return false;
 				}
@@ -550,7 +574,7 @@ final class OAuth_Store {
 					}
 					delete_transient( $this->refresh_recovery_key( $parent_recovery_id ) );
 				}
-				return delete_transient( $key ) || false === get_transient( $key );
+				return $this->delete_artifact_record( $type, $selector );
 			} finally {
 				$this->release_refresh_lock_ids( $acquired );
 			}
@@ -692,7 +716,7 @@ final class OAuth_Store {
 		for ( $attempt = 0; $attempt < 4; ++$attempt ) {
 			$selector = $this->random_urlsafe( 18 );
 			$secret   = $this->random_urlsafe( 32 );
-			if ( false === get_transient( $this->transient_key( $type, $selector ) ) ) {
+			if ( false === $this->read_artifact_record( $type, $selector ) ) {
 				return $prefix . '.' . $selector . '.' . $secret;
 			}
 		}
@@ -752,9 +776,16 @@ final class OAuth_Store {
 		$record['expires_at']      = (int) $expires_at;
 		$record['instance_id']     = $this->instance_id();
 		$key                       = $this->transient_key( $type, $selector );
-		$existing                  = get_transient( $key );
+		$existing                  = $this->read_artifact_record( $type, $selector );
 		if ( is_array( $existing ) ) {
 			return $this->artifact_records_match( $existing, $record );
+		}
+		if ( self::TYPE_REFRESH === $type ) {
+			if ( $this->store_refresh_record( $key, $record ) ) {
+				return true;
+			}
+			$stored = get_option( $key, false );
+			return is_array( $stored ) && $this->artifact_records_match( $stored, $record );
 		}
 		set_transient( $key, $record, $ttl );
 		$stored = get_transient( $key );
@@ -782,15 +813,14 @@ final class OAuth_Store {
 		}
 		list( $selector, $secret ) = $parsed;
 		$key                       = $this->transient_key( $type, $selector );
-		$record                    = get_transient( $key );
+		$record                    = $this->read_artifact_record( $type, $selector );
 		if ( false === $record ) {
 			return true;
 		}
 		if ( ! is_array( $record ) || empty( $record['secret_hash'] ) || ! hash_equals( (string) $record['secret_hash'], $this->hash_secret( $secret ) ) ) {
 			return false;
 		}
-		delete_transient( $key );
-		return false === get_transient( $key );
+		return $this->delete_artifact_record( $type, $selector );
 	}
 
 	/** @param array<string,mixed> $payload Recovery payload. @param string $recovery_id Expected recovery identity. @return bool Structural validity. */
@@ -954,6 +984,84 @@ final class OAuth_Store {
 	/** @param string $type Artifact type. @param string $selector Selector. @return string Transient key. */
 	private function transient_key( $type, $selector ) {
 		return 'wpai_oauth_' . sanitize_key( $type ) . '_' . $selector;
+	}
+
+	/**
+	 * Reads a refresh record from durable options, promoting live pre-upgrade
+	 * transient records before they are consumed. Other token types stay cached.
+	 * A transient that was already evicted before upgrade cannot be reconstructed.
+	 *
+	 * @param string $type     Token type.
+	 * @param string $selector Opaque public selector.
+	 * @return array<string,mixed>|false Record.
+	 */
+	private function read_artifact_record( $type, $selector ) {
+		$key = $this->transient_key( $type, $selector );
+		if ( self::TYPE_REFRESH !== $type ) {
+			return get_transient( $key );
+		}
+		$record = get_option( $key, false );
+		if ( false !== $record ) {
+			return $record;
+		}
+		$legacy = get_transient( $key );
+		if ( ! is_array( $legacy ) || (int) ( $legacy['expires_at'] ?? 0 ) <= time() ) {
+			return false;
+		}
+		if ( ! $this->store_refresh_record( $key, $legacy ) ) {
+			$record = get_option( $key, false );
+			if ( ! is_array( $record ) || $record !== $legacy ) {
+				return false;
+			}
+		}
+		delete_transient( $key );
+		return get_option( $key, false );
+	}
+
+	/**
+	 * Persists only hashed refresh credentials, without WordPress autoload.
+	 *
+	 * @param string              $key    Token selector option key.
+	 * @param array<string,mixed> $record Authenticated claims with absolute expiry.
+	 * @return bool Whether the durable record was inserted.
+	 */
+	private function store_refresh_record( $key, array $record ) {
+		if ( ! add_option( $key, $record, '', false ) ) {
+			return false;
+		}
+		$expires_at = (int) ( $record['expires_at'] ?? 0 );
+		wp_schedule_single_event( $expires_at + MINUTE_IN_SECONDS, 'wpai_oauth_cleanup_refresh_artifact', array( $key, $expires_at ) );
+		return true;
+	}
+
+	/**
+	 * Deletes both durable and legacy backing so an old transient cannot revive
+	 * a consumed or revoked refresh token after a software upgrade.
+	 *
+	 * @param string $type     Token type.
+	 * @param string $selector Opaque public selector.
+	 * @return bool Whether the record is absent from every applicable store.
+	 */
+	private function delete_artifact_record( $type, $selector ) {
+		$key = $this->transient_key( $type, $selector );
+		if ( self::TYPE_REFRESH !== $type ) {
+			return delete_transient( $key );
+		}
+		$record = get_option( $key, false );
+		if ( false !== $record && ! delete_option( $key ) ) {
+			return false;
+		}
+		if ( false !== get_transient( $key ) && ! delete_transient( $key ) ) {
+			return false;
+		}
+		if ( false !== get_option( $key, false ) || false !== get_transient( $key ) ) {
+			return false;
+		}
+		if ( is_array( $record ) && isset( $record['expires_at'] ) ) {
+			$expires_at = (int) $record['expires_at'];
+			wp_unschedule_event( $expires_at + MINUTE_IN_SECONDS, 'wpai_oauth_cleanup_refresh_artifact', array( $key, $expires_at ) );
+		}
+		return true;
 	}
 
 	/** @param string $secret Bearer secret. @return string Secret hash. */

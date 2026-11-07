@@ -73,6 +73,7 @@ final class OAuth_Server {
 		add_action( 'rest_api_init', array( $this, 'register_oauth_routes' ), 20 );
 		add_action( 'parse_request', array( $this, 'maybe_handle_public_endpoint' ), 1 );
 		add_action( 'wpai_oauth_cleanup_client_assertion', array( $this->store, 'cleanup_client_assertion' ), 10, 2 );
+		add_action( 'wpai_oauth_cleanup_refresh_artifact', array( $this->store, 'cleanup_refresh_artifact' ), 10, 2 );
 		add_filter( 'rest_post_dispatch', array( $this, 'add_mcp_authentication_challenge' ), 10, 3 );
 	}
 
@@ -776,7 +777,12 @@ final class OAuth_Server {
 			'scope'        => $scope,
 		);
 		if ( in_array( self::SCOPE_OFFLINE, $this->parse_scope( $scope ), true ) ) {
-			$data['refresh_token']            = $this->store->issue( OAuth_Store::TYPE_REFRESH, $token_claims, self::REFRESH_TTL );
+			$refresh_token = $this->store->issue( OAuth_Store::TYPE_REFRESH, $token_claims, self::REFRESH_TTL );
+			if ( is_wp_error( $refresh_token ) ) {
+				$this->store->revoke( $access_token, $client_id );
+				return $this->oauth_error( 'temporarily_unavailable', 'The refresh token could not be stored safely.' );
+			}
+			$data['refresh_token']            = $refresh_token;
 			$data['refresh_token_expires_in'] = self::REFRESH_TTL;
 		}
 		$response = new \WP_REST_Response( $data, 200 );
