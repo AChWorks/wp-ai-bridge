@@ -93,6 +93,8 @@ function wpai139_effect_execute( $token, $session, &$sequence, $ability, $input 
 }
 
 $actor          = get_current_user_id();
+$actor_user     = get_userdata( $actor );
+$author_login   = $actor_user instanceof WP_User ? (string) $actor_user->user_login : '';
 $grants_before  = get_option( Settings::OPTION_NAME, false );
 $settings       = new Settings();
 $grants         = $settings->defaults();
@@ -117,7 +119,7 @@ $source_term    = 'WXR Proof ' . $marker;
 
 try {
 	wpai139_effect_assert(
-		$actor > 0 && current_user_can( 'manage_options' ) &&
+		$actor > 0 && '' !== $author_login && current_user_can( 'manage_options' ) &&
 		defined( 'WP_LOAD_IMPORTERS' ) && true === WP_LOAD_IMPORTERS &&
 		class_exists( 'WP_Import', false ),
 		'Native importer must be installed and bootstrapped in the disposable test site.'
@@ -558,7 +560,7 @@ try {
 		'wp-ai-bridge/wxr-import-plan',
 		array(
 			'transfer_id'    => $id,
-			'author_mapping' => array( 'admin' => $actor ),
+			'author_mapping' => array( $author_login => $actor ),
 		)
 	);
 	wpai139_effect_assert(
@@ -587,7 +589,7 @@ try {
 		'wp-ai-bridge/wxr-import-execute',
 		array(
 			'transfer_id'    => $id,
-			'author_mapping' => array( 'admin' => $actor ),
+			'author_mapping' => array( $author_login => $actor ),
 			'plan_token'     => $plan['data']['plan_token'],
 			'confirm'        => true,
 		)
@@ -646,7 +648,7 @@ try {
 		'wp-ai-bridge/wxr-import-execute',
 		array(
 			'transfer_id'    => $id,
-			'author_mapping' => array( 'admin' => $actor ),
+			'author_mapping' => array( $author_login => $actor ),
 			'plan_token'     => $plan['data']['plan_token'],
 			'confirm'        => true,
 		)
