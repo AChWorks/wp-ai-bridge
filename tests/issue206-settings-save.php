@@ -265,7 +265,6 @@ namespace {
 				case 'network': $GLOBALS['wpai_test']['network'] = 2; break;
 				case 'client':
 					$client = new ReflectionProperty( OAuth_Server::class, 'authenticated_mcp_client_id' );
-					$client->setAccessible( true );
 					$client->setValue( null, 'changed-client' );
 					break;
 			}
