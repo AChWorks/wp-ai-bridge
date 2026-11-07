@@ -4,6 +4,18 @@ This guide describes source functionality; [Issue #199](https://github.com/AChWo
 
 `wp-ai-bridge/native-configuration` uses Core's current-theme Theme Modification API and exact Transients API. `wp-ai-bridge/customizer-settings` discovers and publishes settings registered through the current theme's native Customizer. They complement the existing native Options, registered REST settings, navigation, content/blocks, public Abilities and registered REST contracts.
 
+## Adaptive Customizer inventory
+
+For theme configuration, start with registered provider-native Abilities (for example, `astra/*` when they are enabled and exposed in `integration-status`). They retain the provider's own validation and operation semantics. The generic Customizer path is independent; it cannot assume every theme initializes its Customizer registration during a late REST/MCP request.
+
+When `customizer-settings` `action=list` succeeds, its result has `target=customizer_setting`, `provenance=registered_customizer`, `coverage=registered_settings_only`, and `inventory=registered_current_theme_settings`. Dynamically registered names are **not** enumerated.
+
+If that registration instead fails with `customizer_late_bootstrap_unavailable`, the same list request can return an **authorized, bounded stored-key fallback** through the existing `native-configuration` theme-mod inventory. Its result has `target=theme_mod`, `inventory=stored_theme_mod_keys`, `provenance=stored_theme_mods`, `coverage=stored_only`, `virtual_keys_enumerated=false`, and `customizer_error_code=customizer_late_bootstrap_unavailable`. The original Customizer failure is still audited; successful stored-key inspection is **not** successful Customizer registration. `limit` and `after_name` keep native key-cursor pagination, and `stylesheet` remains the exact active child-theme stylesheet.
+
+The fallback requires both the original Customizer-list authorization and the independently granted native-configuration read permissions. If the native route is denied, unavailable, or cannot fit the response, the original Customizer failure is returned instead of a false success. No grant is widened and unrelated provider-native Abilities continue to work separately.
+
+Named `read` / `snapshot` requests and all Customizer `update` / publication operations **never** silently switch to theme mods: Customizer names may refer to options, dynamic settings or different provider storage. For a specifically intended stored theme-mod key, explicitly invoke `native-configuration` with `target=theme_mod`, `expected_stylesheet`, and its own grants; for provider settings, select its registered native Ability. Empty stored-key inventory does not imply the theme has no configurable settings.
+
 ## Authority and scope
 
 Both new grouped grants default off in the protected administration settings. Ordinary settings saves and historical all-enabled grants cannot enable them.
