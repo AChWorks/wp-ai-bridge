@@ -203,6 +203,7 @@ namespace {
 		public function register_controls() {
 			if ( 'core' === $GLOBALS['config_bootstrap_failure'] ) { throw new RuntimeException( 'private-theme-path/core-secret' ); }
 		}
+		public function settings() { return array(); }
 		public function get_stylesheet() { return 'test-theme'; }
 		public function is_theme_active() { return true; }
 		public function settings_previewed() { return false; }
@@ -241,6 +242,61 @@ namespace {
 				wpai199n_assert( 1 === $GLOBALS['config_manager_attempts'], 'Failed bootstrap was attempted twice in one request.' );
 			}
 		}
+
+		// Issue #207: a late provider bootstrap failure degrades ONLY list
+		// inventory, using the separately authorized native theme-mod route.
+		$initialized->setValue( null, false );
+		$GLOBALS['config_bootstrap_failure'] = 'provider';
+		$GLOBALS['config_mods'] = array( 'nav_menu_locations' => array( 'primary' => 2 ), 'custom_logo' => 24 );
+		update_option( Settings::ADMINISTRATION_OPTION_NAME, array( Settings::GROUP_CUSTOMIZER_WRITE => 1, Settings::GROUP_NATIVE_CONFIGURATION => 1, '_blog_id' => 1, '_network_id' => 1 ) );
+		unset( $GLOBALS['wp_customize'] );
+		$first_input = array( 'action' => 'list', 'expected_stylesheet' => 'test-theme', 'limit' => 1 );
+		$written_before = $GLOBALS['config_writes'];
+		$journal_before = Administration_Operation_Journal::$records;
+		$arms_before = Administration_Operation_Journal::$arms;
+		$post_before = $_POST; $request_before = $_REQUEST;
+		wpai199n_assert( $customizer->can_execute( $first_input ), 'Authorized Customizer-list unexpectedly denied.' );
+		$first = wpai199n_ok( $customizer->execute( $first_input ), 'Late Customizer listing did not adapt to native stored keys.' );
+		wpai199n_assert( 'theme_mod' === $first['target'] && 'test-theme' === $first['stylesheet'] && 'stored_theme_mod_keys' === $first['inventory'], 'Fallback impersonated registered Customizer inventory.' );
+		wpai199n_assert( 'stored_theme_mods' === $first['provenance'] && 'stored_only' === $first['coverage'] && false === $first['virtual_keys_enumerated'], 'Fallback misrepresented coverage.' );
+		wpai199n_assert( 'customizer_late_bootstrap_unavailable' === $first['customizer_error_code'], 'Fallback concealed its original bootstrap failure.' );
+		wpai199n_assert( array( array( 'name' => 'custom_logo' ) ) === $first['items'] && true === $first['has_more'] && 'custom_logo' === $first['next_after_name'], 'Fallback lost a bounded theme-mod cursor.' );
+		wpai199n_assert( $written_before === $GLOBALS['config_writes'] && $journal_before === Administration_Operation_Journal::$records && $arms_before === Administration_Operation_Journal::$arms, 'Read fallback dispatched a native write or reserved a journal.' );
+		wpai199n_assert( $_POST === $post_before && $_REQUEST === $request_before && ! isset( $GLOBALS['wp_customize'] ), 'Fallback left Customizer ambient state changed.' );
+		$initialized->setValue( null, false );
+		$second = wpai199n_ok( $customizer->execute( array_merge( $first_input, array( 'after_name' => 'custom_logo' ) ) ), 'Fallback continuation failed.' );
+		wpai199n_assert( array( array( 'name' => 'nav_menu_locations' ) ) === $second['items'] && false === $second['has_more'], 'Fallback continuation skipped or fabricated stored keys.' );
+
+		$initialized->setValue( null, false );
+		update_option( Settings::ADMINISTRATION_OPTION_NAME, array( Settings::GROUP_CUSTOMIZER_WRITE => 1, '_blog_id' => 1, '_network_id' => 1 ) );
+		$denied = wpai199n_error( $customizer->execute( $first_input ), 'Separate native grant bypassed.', array( 'customizer_late_bootstrap_unavailable' ) );
+		wpai199n_assert( false === $denied->get_error_data()['dispatch_attempted'], 'Denied fallback mislabeled a write.' );
+
+		$initialized->setValue( null, false );
+		update_option( Settings::ADMINISTRATION_OPTION_NAME, array( Settings::GROUP_CUSTOMIZER_WRITE => 1, Settings::GROUP_NATIVE_CONFIGURATION => 1, '_blog_id' => 1, '_network_id' => 1 ) );
+		$read_error = wpai199n_error( $customizer->execute( array( 'action' => 'read', 'expected_stylesheet' => 'test-theme', 'name' => 'custom_logo' ) ), 'Named Customizer read silently switched to theme-mod storage.', array( 'customizer_late_bootstrap_unavailable' ) );
+		wpai199n_assert( false === $read_error->get_error_data()['dispatch_attempted'], 'Read prerequisite marked a publication dispatch.' );
+		$initialized->setValue( null, false );
+		$update_error = wpai199n_error( $customizer->execute( array( 'action' => 'update', 'expected_stylesheet' => 'test-theme', 'name' => 'custom_logo', 'operation_id' => 'issue207-no-write', 'value_source' => array( 'value_json' => $value ) ) ), 'Customizer update silently wrote a native theme mod.', array( 'customizer_late_bootstrap_unavailable' ) );
+		wpai199n_assert( false === $update_error->get_error_data()['dispatch_attempted'] && $written_before === $GLOBALS['config_writes'], 'Failed Customizer write modified native theme mods.' );
+
+		$initialized->setValue( null, false );
+		$wrong = wpai199n_error( $customizer->execute( array( 'action' => 'list', 'expected_stylesheet' => 'different-theme', 'limit' => 1 ) ), 'Theme mismatch should not fall back.', array( 'configuration_theme_changed' ) );
+		wpai199n_assert( false === $wrong->get_error_data()['dispatch_attempted'], 'Wrong theme produced a native effect.' );
+
+		$initialized->setValue( null, false );
+		$GLOBALS['config_mods'] = array();
+		$empty = wpai199n_ok( $customizer->execute( $first_input ), 'Empty stored inventory should still be described honestly.' );
+		wpai199n_assert( array() === $empty['items'] && 'stored_only' === $empty['coverage'] && false === $empty['has_more'], 'Empty stored inventory was mislabeled as complete Customizer settings.' );
+
+		// A theme with functioning registration remains on Core's native path,
+		// never replaced with the stored keys of its current stylesheet.
+		$initialized->setValue( null, false );
+		$GLOBALS['config_bootstrap_failure'] = 'none';
+		$GLOBALS['config_mods'] = array( 'stored_but_not_registered' => 1 );
+		$normal = wpai199n_ok( $customizer->execute( $first_input ), 'Working native Customizer listing regressed.' );
+		wpai199n_assert( 'customizer_setting' === $normal['target'] && 'registered_current_theme_settings' === $normal['inventory'] && 'registered_customizer' === $normal['provenance'] && 'registered_settings_only' === $normal['coverage'], 'Working Customizer was reported as stored-only.' );
+		wpai199n_assert( ! isset( $normal['customizer_error_code'] ) && array() === $normal['items'], 'Working Customizer fabricated stored keys or an error.' );
 	} finally {
 		$_POST = $prior_post; $_REQUEST = $prior_request;
 		if ( $had_global ) { $GLOBALS['wp_customize'] = $prior_global; } else { unset( $GLOBALS['wp_customize'] ); }

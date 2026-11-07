@@ -130,6 +130,11 @@ final class Native_Configuration_Abilities {
 	/** @param array $input Native theme-key page. @return array|WP_Error */
 	private function listing( array $input ) {
 		$mods = get_theme_mods();
+		if ( false === $mods ) {
+			$mods = array();
+		} elseif ( ! is_array( $mods ) ) {
+			return $this->operation->error( 'configuration_inventory_unrepresentable' );
+		}
 		$keys = array_keys( $mods );
 		$keys = array_map( 'strval', $keys );
 		sort( $keys, SORT_STRING );
@@ -138,6 +143,8 @@ final class Native_Configuration_Abilities {
 			'next_after_name'         => $input['after_name'] ?? '',
 			'has_more'                => false,
 			'inventory'               => 'stored_theme_mod_keys',
+			'provenance'              => 'stored_theme_mods',
+			'coverage'                => 'stored_only',
 			'virtual_keys_enumerated' => false,
 		);
 		$limit  = $input['limit'] ?? PHP_INT_MAX;
@@ -420,7 +427,7 @@ final class Native_Configuration_Abilities {
 	/** @return array Closed public result vocabulary; native receipts remain inert metadata. */
 	public static function output_schema() {
 		$properties = array();
-		foreach ( array( 'action', 'target', 'stylesheet', 'state', 'operation_ref', 'format', 'value_json', 'sha256', 'storage_presence', 'next_after_name', 'inventory', 'transfer_id', 'base64', 'chunk_sha256', 'integrity' ) as $name ) {
+		foreach ( array( 'action', 'target', 'stylesheet', 'state', 'operation_ref', 'format', 'value_json', 'sha256', 'storage_presence', 'next_after_name', 'inventory', 'transfer_id', 'base64', 'chunk_sha256', 'integrity', 'provenance', 'coverage', 'customizer_error_code' ) as $name ) {
 			$properties[ $name ] = array( 'type' => 'string' );
 		}
 		foreach ( array( 'blog_id', 'network_id', 'total_bytes', 'received_bytes', 'chunk_bytes', 'offset', 'next_offset', 'expires_at' ) as $name ) {

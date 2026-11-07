@@ -297,6 +297,7 @@ if [[ "${RUN_OPTIONAL_PROVIDERS:-0}" == "1" ]]; then
     "${wp[@]}" eval 'Astra_API_Init::update_admin_settings_option("enable_abilities", true);' --allow-root
     "${wp[@]}" eval-file wp-content/plugins/wp-ai-bridge/tests/integration/issue4-astra-reuse-smoke.php --user=1 --allow-root
     wpai199c_eval issue199-customizer-prerequisite-smoke.php
+    wpai199c_eval issue207-adaptive-customizer-smoke.php
 
     echo "== GFAPI transport contract fixture =="
     "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/mu-plugins

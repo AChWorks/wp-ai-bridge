@@ -14,6 +14,8 @@ For this setup:
 - a separate Astra MCP option/server is not required;
 - the Bridge does not silently enable Astra Abilities for the site owner.
 
+Theme configuration selection uses the observed `astra/*` Ability names first when appropriate; a missing or broken late Customizer lifecycle does not disable those Abilities. Generic `customizer-settings` lists can degrade to clearly labeled **stored-only** theme-mod inventory when the separately authorized native route is available. See [Native Configuration](./NATIVE-CONFIGURATION.md#adaptive-customizer-inventory); neither path substitutes for Astra's registered settings or write validation.
+
 ## Code Snippets
 
 Compatible Code Snippets versions expose a namespaced programmatic lifecycle that the Bridge can use for managed snippets.

@@ -7,6 +7,7 @@
 
 namespace WP_AI_Bridge\Abilities;
 
+use WP_AI_Bridge\Support\Bounded_Payload;
 use WP_AI_Bridge\Support\Customizer_Context;
 use WP_AI_Bridge\Support\Hook_Dispatch_Recovery;
 use WP_AI_Bridge\Support\Mutation_Log;
@@ -32,7 +33,7 @@ final class Customizer_Abilities {
 			'wp-ai-bridge/customizer-settings',
 			array(
 				'label'               => __( 'Registered Customizer Settings', 'wp-ai-bridge' ),
-				'description'         => __( 'Discovers or updates exact registered current-theme Customizer settings using fresh owned native changesets, provider validation and native publication hooks. Provider initialization requires explicit conservative lifecycle consent.', 'wp-ai-bridge' ),
+				'description'         => __( 'Discovers registered current-theme Customizer settings or updates them with native validation/publication. If registration fails, authorized list requests may return labeled stored-only theme-mod keys; named reads and writes never fall back. Provider initialization requires explicit conservative lifecycle consent.', 'wp-ai-bridge' ),
 				'category'            => Registrar::CATEGORY,
 				'input_schema'        => Native_Configuration_Abilities::schema( true ),
 				'output_schema'       => Native_Configuration_Abilities::output_schema(),
@@ -76,7 +77,7 @@ final class Customizer_Abilities {
 		}
 		$context = new Customizer_Context( $this->permissions, $input['expected_stylesheet'] );
 		try {
-			return $this->operation->execute(
+			$result = $this->operation->execute(
 				$input,
 				function () use ( $context, $input ) {
 					return $context->read( $input['name'] ); },
@@ -93,5 +94,40 @@ final class Customizer_Abilities {
 		} finally {
 			$context->close();
 		}
+
+		if ( 'list' !== $input['action'] ) {
+			return $result;
+		}
+		if ( ! is_wp_error( $result ) ) {
+			$result['provenance'] = 'registered_customizer';
+			$result['coverage']   = 'registered_settings_only';
+			return $result;
+		}
+		if ( 'customizer_late_bootstrap_unavailable' !== $result->get_error_code() ) {
+			return $result;
+		}
+
+		// A stored theme-mod key is not necessarily a registered Customizer
+		// setting. Only inventory can degrade safely, never named reads or writes.
+		$native_input = array(
+			'action'              => 'list',
+			'target'              => 'theme_mod',
+			'expected_stylesheet' => $input['expected_stylesheet'],
+		);
+		foreach ( array( 'after_name', 'limit' ) as $field ) {
+			if ( isset( $input[ $field ] ) ) {
+				$native_input[ $field ] = $input[ $field ];
+			}
+		}
+		$native = new Native_Configuration_Abilities( $this->permissions );
+		if ( ! $native->can_execute( $native_input ) ) {
+			return $result;
+		}
+		$stored = $native->execute( $native_input );
+		if ( is_wp_error( $stored ) ) {
+			return $result;
+		}
+		$stored['customizer_error_code'] = $result->get_error_code();
+		return Bounded_Payload::projected_mcp_bytes( $stored ) <= Bounded_Payload::response_limit() ? $stored : $result;
 	}
 }
