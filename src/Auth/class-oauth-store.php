@@ -1047,13 +1047,21 @@ final class OAuth_Store {
 		if ( self::TYPE_REFRESH !== $type ) {
 			return delete_transient( $key );
 		}
-		if ( false !== get_option( $key, false ) && ! delete_option( $key ) ) {
+		$record = get_option( $key, false );
+		if ( false !== $record && ! delete_option( $key ) ) {
 			return false;
 		}
 		if ( false !== get_transient( $key ) && ! delete_transient( $key ) ) {
 			return false;
 		}
-		return false === get_option( $key, false ) && false === get_transient( $key );
+		if ( false !== get_option( $key, false ) || false !== get_transient( $key ) ) {
+			return false;
+		}
+		if ( is_array( $record ) && isset( $record['expires_at'] ) ) {
+			$expires_at = (int) $record['expires_at'];
+			wp_unschedule_event( $expires_at + MINUTE_IN_SECONDS, 'wpai_oauth_cleanup_refresh_artifact', array( $key, $expires_at ) );
+		}
+		return true;
 	}
 
 	/** @param string $secret Bearer secret. @return string Secret hash. */

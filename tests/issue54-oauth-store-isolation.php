@@ -53,6 +53,16 @@ if ( ! function_exists( 'delete_transient' ) ) {
 		return true;
 	}
 }
+if ( ! function_exists( 'wp_unschedule_event' ) ) {
+	function wp_unschedule_event( $timestamp, $hook, $args = array() ) {
+		foreach ( $GLOBALS['wpai_issue54_cleanup_events'] as $key => $event ) {
+			if ( $event[0] === $timestamp && $event[1] === $hook && $event[2] === $args ) {
+				unset( $GLOBALS['wpai_issue54_cleanup_events'][ $key ] );
+			}
+		}
+		return true;
+	}
+}
 if ( ! function_exists( 'wp_salt' ) ) {
 	function wp_salt( $scheme = 'auth' ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- WordPress test stub signature.
 		return 'issue54-test-salt';
@@ -159,6 +169,13 @@ wpai_issue54_store_assert(
 	false === $store->read( OAuth_Store::TYPE_REFRESH, $durable_token, true, $client_a ) &&
 	false === get_option( $durable_key, false ),
 	'An authorized refresh grant was not consumed exactly once from durable storage.'
+);
+
+wpai_issue54_store_assert(
+	0 === count( array_filter( $GLOBALS['wpai_issue54_cleanup_events'], static function ( $entry ) use ( $durable_key ) {
+		return 'wpai_oauth_cleanup_refresh_artifact' === $entry[1] && $durable_key === $entry[2][0];
+	} ) ),
+	'Consuming a rotating refresh token left an unnecessary 30-day scheduled cleanup event.'
 );
 
 // A live pre-upgrade transient is promoted on the first use with identical

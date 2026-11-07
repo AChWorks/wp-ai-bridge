@@ -128,6 +128,7 @@ function wpai_issue80_check_oauth_store_db_confinement( $source, $require_full_s
 		'wp_json_encode'           => true,
 		'wp_salt'                  => true,
 		'wp_schedule_single_event' => true,
+		'wp_unschedule_event'      => true,
 	);
 	$allowed_callback_calls = array(
 		"array_filter(\$recovery_ids,'is_string')" => true,
