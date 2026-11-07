@@ -782,7 +782,7 @@ final class OAuth_Server {
 				$this->store->revoke( $access_token, $client_id );
 				return $this->oauth_error( 'temporarily_unavailable', 'The refresh token could not be stored safely.' );
 			}
-			$data['refresh_token'] = $refresh_token;
+			$data['refresh_token']            = $refresh_token;
 			$data['refresh_token_expires_in'] = self::REFRESH_TTL;
 		}
 		$response = new \WP_REST_Response( $data, 200 );

@@ -88,7 +88,7 @@ final class OAuth_Store {
 		$claims['secret_hash'] = $this->hash_secret( $secret );
 		$claims['expires_at']  = time() + $ttl;
 		$claims['instance_id'] = $this->instance_id();
-		$key = $this->transient_key( $type, $selector );
+		$key                   = $this->transient_key( $type, $selector );
 		if ( self::TYPE_REFRESH === $type ) {
 			if ( ! $this->store_refresh_record( $key, $claims ) ) {
 				return new \WP_Error( 'oauth_refresh_storage_unavailable', 'OAuth refresh token could not be stored.' );
