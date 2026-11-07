@@ -176,7 +176,20 @@ try {
 	$restored = $step( 'restore_step', $restore_id, array( 'verified' ) );
 	wpai199c_assert( true === $restored['complete'] && true === $restored['restore_verified'] && true === $restored['activation_pending'], 'Restore was not independently verified or implied activation.' );
 	$restored_root = $target_root . '/roots/installation';
-	wpai199c_assert_restored( $expected_db, $expected_files, $wpdb->dbh, $target_schema, $restored_root );
+	// The independent source image covers every table to prove capture has no
+	// source effects; an isolated restore intentionally includes only the
+	// explicitly planned installation/provider tables. Do not treat unrelated
+	// databases sharing this test schema as missing from the portable backup.
+	$planned_tables = array();
+	foreach ( $plan['tables'] as $encoded_table ) {
+		$table = is_string( $encoded_table ) ? base64_decode( $encoded_table, true ) : false;
+		wpai199c_assert( is_string( $table ) && '' !== $table, 'Invalid planned backup table identity.' );
+		$planned_tables[ $table ] = true;
+	}
+	$restore_expected_db           = $expected_db;
+	$restore_expected_db['tables'] = array_intersect_key( $expected_db['tables'], $planned_tables );
+	wpai199c_assert( count( $restore_expected_db['tables'] ) === count( $planned_tables ), 'Backup plan contains a table missing from the independent source oracle.' );
+	wpai199c_assert_restored( $restore_expected_db, $expected_files, $wpdb->dbh, $target_schema, $restored_root );
 	$after_session = $wpdb->get_row( 'SELECT DATABASE() AS db,@@SESSION.autocommit AS ac,@@SESSION.foreign_key_checks AS fk,@@SESSION.unique_checks AS uq,@@SESSION.sql_mode AS mode,@@SESSION.time_zone AS tz', ARRAY_A );
 	wpai199c_assert( $native_session === $after_session, 'Backup/restore changed the caller native connection/session.' );
 
