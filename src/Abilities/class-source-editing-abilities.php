@@ -902,20 +902,36 @@ final class Source_Editing_Abilities {
 	private function discover_targets( $kind, $extension ) {
 		$this->load_editor_files();
 		$items = array();
+		// Core inventories are already the allowlist. Re-enumerating them per file
+		// is quadratic; each listed path still gets canonical containment checks.
 		if ( 'plugin' === $kind ) {
+			$plugin_base = realpath( WP_PLUGIN_DIR );
 			foreach ( array_keys( get_plugins() ) as $plugin ) {
 				if ( '' !== $extension && $extension !== $plugin ) {
 					continue;
 				}
+				$root = realpath( dirname( WP_PLUGIN_DIR . '/' . $plugin ) );
+				if ( false === $plugin_base || false === $root ||
+					( $root !== $plugin_base && ! $this->path_is_within( $root, $plugin_base ) ) ) {
+					continue;
+				}
 				$plugin_dir = dirname( $plugin );
 				$types      = wp_get_plugin_file_editable_extensions( $plugin );
+				$allowed    = array();
 				foreach ( get_plugin_files( $plugin ) as $plugin_file ) {
 					$type = strtolower( pathinfo( $plugin_file, PATHINFO_EXTENSION ) );
 					if ( ! in_array( $type, $types, true ) ) {
 						continue;
 					}
 					$relative = '.' === $plugin_dir ? basename( $plugin_file ) : substr( $plugin_file, strlen( $plugin_dir ) + 1 );
-					$target   = $this->resolve_plugin_target( $plugin, $relative );
+					if ( '' !== $relative ) {
+						$allowed[ wp_normalize_path( $relative ) ] = WP_PLUGIN_DIR . '/' . $plugin_file;
+					}
+				}
+				$active         = is_plugin_active( $plugin );
+				$network_active = is_multisite() && is_plugin_active_for_network( $plugin );
+				foreach ( $allowed as $relative => $path ) {
+					$target = $this->resolved_target( 'plugin', $plugin, $relative, $root, $path, $active, $network_active );
 					if ( ! is_wp_error( $target ) ) {
 						$items[] = $this->public_target( $target );
 					}
@@ -926,16 +942,24 @@ final class Source_Editing_Abilities {
 				if ( '' !== $extension && $extension !== $stylesheet ) {
 					continue;
 				}
+				$theme_base = realpath( get_theme_root( $stylesheet ) );
+				$root       = realpath( $theme->get_stylesheet_directory() );
+				if ( false === $theme_base || false === $root ||
+					( $root !== $theme_base && ! $this->path_is_within( $root, $theme_base ) ) ) {
+					continue;
+				}
+				$allowed = array();
 				foreach ( wp_get_theme_file_editable_extensions( $theme ) as $type ) {
 					$files = $theme->get_files( $type, -1 );
-					if ( ! is_array( $files ) ) {
-						continue;
+					if ( is_array( $files ) ) {
+						$allowed = array_merge( $allowed, $files );
 					}
-					foreach ( array_keys( $files ) as $relative ) {
-						$target = $this->resolve_theme_target( $stylesheet, $relative );
-						if ( ! is_wp_error( $target ) ) {
-							$items[] = $this->public_target( $target );
-						}
+				}
+				$active = get_stylesheet() === $stylesheet || get_template() === $stylesheet;
+				foreach ( $allowed as $relative => $path ) {
+					$target = $this->resolved_target( 'theme', $stylesheet, wp_normalize_path( $relative ), $root, $path, $active, false );
+					if ( ! is_wp_error( $target ) ) {
+						$items[] = $this->public_target( $target );
 					}
 				}
 			}

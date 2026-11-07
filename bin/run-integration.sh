@@ -121,6 +121,7 @@ for test in \
     issue147-rest-input-smoke.php \
     issue44-native-ability-delegation-smoke.php \
     issue46-source-editing-smoke.php \
+    issue214-large-source-inventory-smoke.php \
     issue147-operation-content-smoke.php \
     issue147-source-transfer-mcp-smoke.php \
     issue3-content-block-smoke.php \
