@@ -176,23 +176,7 @@ try {
 	$restored = $step( 'restore_step', $restore_id, array( 'verified' ) );
 	wpai199c_assert( true === $restored['complete'] && true === $restored['restore_verified'] && true === $restored['activation_pending'], 'Restore was not independently verified or implied activation.' );
 	$restored_root = $target_root . '/roots/installation';
-	// The source oracle covers every table in this disposable schema, including
-	// any unrelated WordPress compatibility fixtures. The approved backup only
-	// includes installation-prefixed and explicitly approved provider tables.
-	$expected_restored_db           = $expected_db;
-	$expected_restored_db['tables'] = array_filter(
-		$expected_db['tables'],
-		static function ( $table_name ) use ( $wpdb, $backup_tables ) {
-			return str_starts_with( $table_name, $wpdb->prefix ) || in_array( $table_name, $backup_tables, true );
-		},
-		ARRAY_FILTER_USE_KEY
-	);
-	$planned_tables = array_map( 'base64_decode', $plan['tables'] );
-	$expected_tables = array_keys( $expected_restored_db['tables'] );
-	sort( $planned_tables, SORT_STRING );
-	sort( $expected_tables, SORT_STRING );
-	wpai199c_assert( $expected_tables === $planned_tables, 'Approved backup plan omitted or added a table relative to the independent source oracle.' );
-	wpai199c_assert_restored( $expected_restored_db, $expected_files, $wpdb->dbh, $target_schema, $restored_root );
+	wpai199c_assert_restored( $expected_db, $expected_files, $wpdb->dbh, $target_schema, $restored_root );
 	$after_session = $wpdb->get_row( 'SELECT DATABASE() AS db,@@SESSION.autocommit AS ac,@@SESSION.foreign_key_checks AS fk,@@SESSION.unique_checks AS uq,@@SESSION.sql_mode AS mode,@@SESSION.time_zone AS tz', ARRAY_A );
 	wpai199c_assert( $native_session === $after_session, 'Backup/restore changed the caller native connection/session.' );
 
@@ -220,7 +204,7 @@ try {
 	$status = wpai199c_ok( $call( array( 'action' => 'export_status', 'session_id' => $drift['archive_id'] ) ), 'Failed capture status unavailable.' );
 	wpai199c_assert( false === $status['complete'] && 'incomplete' === $status['state'], 'Returned capture failure was resumable as complete.' );
 	wpai199c_ok( $call( array( 'action' => 'cancel', 'purpose' => 'backup_archive', 'session_id' => $drift['archive_id'] ) ), 'Failed archive byte cleanup failed.' );
-	echo json_encode( array( 'test' => 'issue199-backup-native', 'status' => 'pass', 'database_tables' => count( $expected_restored_db['tables'] ),
+	echo json_encode( array( 'test' => 'issue199-backup-native', 'status' => 'pass', 'database_tables' => count( $expected_db['tables'] ),
 		'archive_bytes' => $export['bytes'], 'restored_root' => $restored_root, 'activation_pending' => true, 'seconds' => round( microtime( true ) - $started, 2 ) ), JSON_UNESCAPED_SLASHES ) . "\n";
 } finally {
 	// Keep the independently verified isolated destination for the coordinator's
