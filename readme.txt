@@ -2,7 +2,7 @@
 Tags: ai, mcp, abilities, oauth, administration
 Requires at least: 6.9
 Tested up to: 7.1
-Stable tag: 0.7.3
+Stable tag: 0.7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -78,6 +78,11 @@ WordPress.org may be contacted by WordPress Core for its own routine plugin/them
 WP AI Bridge retains private Workspace data and bounded activity metadata on the WordPress installation. OAuth tokens, connection approvals and revocation remain WordPress-controlled. See the project's Security and OAuth documentation for retention, revocation and advanced permissions.
 
 == Changelog ==
+
+= 0.7.4 =
+* When a canonical Bridge update's GitHub ZIP download fails, retry the exact official stable asset through GitHub REST only after verifying its identity, size and SHA-256. Keep WordPress Core's installer, permissions, errors and other plugins unchanged (#186).
+* Reuse independently verified official MCP Adapter and Action Scheduler ZIP test dependencies across CI jobs without reducing the test matrix (#223).
+* Existing installations through 0.7.3 may need one manual official ZIP replacement to receive this fallback. The REST endpoint may still use the same blocked CDN; real hosted updater acceptance remains pending.
 
 = 0.7.3 =
 * Persist rotating, client-bound OAuth refresh grants beyond transient-cache eviction, retaining expiry, revocation, replay prevention and one-time recovery.

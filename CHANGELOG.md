@@ -2,6 +2,12 @@
 
 All notable public changes are documented here.
 
+## 0.7.4
+
+- When the native WordPress Core updater cannot download the canonical Bridge GitHub Release ZIP, retry **only that plugin** through GitHub's official stable-release REST asset endpoint after validating the exact tag, package identity, byte count and SHA-256. Preserve Core's normal replacement/activation flow, original HTTP failure diagnostics, safe streamed HTTPS and temporary-file cleanup; never affect other plugin packages (#186, PR #223).
+- Stabilize the unchanged 24-job CI acceptance matrix by acquiring and reusing integrity-pinned official MCP Adapter 0.6.1/0.7.0/0.7.1 and Action Scheduler 3.9.3/4.2.0 archives across jobs rather than repeatedly downloading them from GitHub's intermittently failing Release CDN (#223).
+- **Delivery boundary:** The official REST asset endpoint can redirect to the same CDN and is not a universal network bypass. Installed versions through 0.7.3 do not contain this fallback and may require one authorized manual official ZIP replacement to receive it. Source/CI success and public release do **not** prove a successful live WordPress update or continuity; hosted native updater and post-upgrade OAuth/Workspace/grants remain open in #186.
+
 ## 0.7.3
 
 - Persist client-bound rotating OAuth refresh grants in durable WordPress storage rather than evictable Transients, keeping the established 30-day expiry, client binding, single-use rotation, bounded authorized recovery, revocation and cleanup without widening client authority (#92, PR #220).
