@@ -9,7 +9,14 @@ use WP_AI_Bridge\Support\GitHub_Updates;
 
 $GLOBALS['wpai186'] = array(
 	'filters'        => array(),
-	'direct'         => new WP_Error( 'http_404', 'Gateway Timeout', array( 'code' => 504, 'body' => 'PRIVATE_DIAGNOSTIC_BODY_DO_NOT_ECHO https://example.invalid/?token=do-not-leak' ) ),
+	'direct'         => new WP_Error(
+		'http_404',
+		'Gateway Timeout',
+		array(
+			'code' => 504,
+			'body' => 'PRIVATE_DIAGNOSTIC_BODY_DO_NOT_ECHO https://example.invalid/?token=do-not-leak',
+		)
+	),
 	'direct_calls'   => 0,
 	'metadata'       => array(),
 	'metadata_code'  => 200,
@@ -119,7 +126,14 @@ $release = array(
 );
 $sim     = &$GLOBALS['wpai186'];
 $reset   = static function () use ( &$sim, $release, $payload ) {
-	$sim['direct']         = new WP_Error( 'http_404', 'Gateway Timeout', array( 'code' => 504, 'body' => 'PRIVATE_DIAGNOSTIC_BODY_DO_NOT_ECHO https://example.invalid/?token=do-not-leak' ) );
+	$sim['direct']         = new WP_Error(
+		'http_404',
+		'Gateway Timeout',
+		array(
+			'code' => 504,
+			'body' => 'PRIVATE_DIAGNOSTIC_BODY_DO_NOT_ECHO https://example.invalid/?token=do-not-leak',
+		)
+	);
 	$sim['direct_calls']   = 0;
 	$sim['metadata']       = $release;
 	$sim['metadata_code']  = 200;
@@ -201,9 +215,16 @@ $expect_failure = static function ( $stage ) use ( $updater, $package, $context,
 	}
 };
 $reset();
-$sim['direct'] = new WP_Error( 'http_transport_failed', 'https://example.invalid/?token=hidden-in-message', array( 'code' => '504', 'body' => 'PRIVATE_DIAGNOSTIC_BODY_DO_NOT_ECHO' ) );
+$sim['direct']        = new WP_Error(
+	'http_transport_failed',
+	'https://example.invalid/?token=hidden-in-message',
+	array(
+		'code' => '504',
+		'body' => 'PRIVATE_DIAGNOSTIC_BODY_DO_NOT_ECHO',
+	)
+);
 $sim['metadata_code'] = 503;
-$transport_failure = $updater->filter_package_download( false, $package, null, $context );
+$transport_failure    = $updater->filter_package_download( false, $package, null, $context );
 $assert( is_wp_error( $transport_failure ), 'Non-HTTP transport failure must remain an error.' );
 $transport_data = $transport_failure->get_error_data();
 $assert( 'http_transport_failed' === ( $transport_data['direct_error'] ?? null ), 'Transport error code was lost.' );
