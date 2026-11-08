@@ -5,6 +5,7 @@ set -euo pipefail
 # seed canonical/WP Workspace and authenticated OAuth state, then exercise
 # WordPress Core's normal ZIP replacement with the current candidate artifact.
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$root/bin/ci-official-mcp-adapter.sh"
 wordpress_tag="${1:-6.9-php8.4-apache}"
 compose_file="$root/tests/integration/compose.yml"
 baseline_url="https://github.com/AChWorks/wp-ai-bridge/releases/download/v0.7.1/wp-ai-bridge.zip"
@@ -81,6 +82,7 @@ wp=("${compose[@]}" run --rm cli)
     --allow-root
 
 adapter_url="${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.6.1/mcp-adapter.zip}"
+adapter_url="$(wpai_ci_mcp_adapter_package "$adapter_url")"
 "${wp[@]}" plugin install "$adapter_url" --activate --allow-root
 "${wp[@]}" plugin install /var/www/html/wpai124-published-v0.7.1.zip --activate --allow-root
 baseline_installed="$("${wp[@]}" plugin get wp-ai-bridge --field=version --allow-root | tail -n 1)"

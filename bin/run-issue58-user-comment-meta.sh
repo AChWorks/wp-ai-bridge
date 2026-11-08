@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
+source "$root/bin/ci-official-mcp-adapter.sh"
 compose_file="$root/tests/integration/compose.yml"
 wordpress_tag="${1:-6.9-php8.4-apache}"
 safe_tag="$(printf '%s' "$wordpress_tag" | tr -c 'A-Za-z0-9' '-')"
@@ -19,7 +20,7 @@ done
 "${compose[@]}" cp "$root/build/wp-ai-bridge.zip" wordpress:/var/www/html/wp-ai-bridge.zip
 wp=("${compose[@]}" run --rm cli)
 "${wp[@]}" core install --url=https://localhost --title='WP AI Bridge Issue 58' --admin_user=admin --admin_password='integration-only-password' --admin_email=admin@example.invalid --skip-email --allow-root
-"${wp[@]}" plugin install "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.6.1/mcp-adapter.zip}" --activate --allow-root
+"${wp[@]}" plugin install "$(wpai_ci_mcp_adapter_package "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.6.1/mcp-adapter.zip}")" --activate --allow-root
 "${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge.zip
 "${compose[@]}" exec -T wordpress mkdir -p /var/www/html/wp-content/plugins/wp-ai-bridge/tests/integration

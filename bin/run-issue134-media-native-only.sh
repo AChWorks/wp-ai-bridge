@@ -2,6 +2,7 @@
 # Isolated, one-command two-worker Media admission regression for #134.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
+source "$root/bin/ci-official-mcp-adapter.sh"
 export WORDPRESS_TAG="${1:-6.9-php8.4-apache}"
 export COMPOSE_PROJECT_NAME="wpai134-media-race-$$"
 compose=(docker compose -f "$root/tests/integration/compose.yml" -f "$root/tests/integration/compose-shared-private.yml")
@@ -20,7 +21,7 @@ wp=("${compose[@]}" run --rm cli)
     --admin_user=admin --admin_password='test-only-password' \
     --admin_email=admin@example.invalid --skip-email --allow-root
 "${wp[@]}" plugin install \
-    "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip}" \
+    "$(wpai_ci_mcp_adapter_package "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip}")" \
     --activate --allow-root
 "${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
 tar --mode='u+rwX,go+rX' -C "$root" -cf - tests \

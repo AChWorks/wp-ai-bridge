@@ -4,6 +4,7 @@ set -euo pipefail
 # Separate-process, actual HTTPS/OAuth/MCP direct Media file exchange.
 # Runs ONLY against a fresh, isolated localhost disposable WordPress project.
 root="$(cd "$(dirname "$0")/.." && pwd)"
+source "$root/bin/ci-official-mcp-adapter.sh"
 cd "$root"
 : "${WORDPRESS_TAG:=${1:-6.9-php8.4-apache}}"
 export WORDPRESS_TAG
@@ -44,7 +45,7 @@ fi
     --admin_email=admin@example.invalid --skip-email --allow-root
 "${wp[@]}" rewrite structure '/%postname%/' --hard --allow-root
 "${wp[@]}" rewrite flush --hard --allow-root
-"${wp[@]}" plugin install https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip --activate --allow-root
+"${wp[@]}" plugin install "$(wpai_ci_mcp_adapter_package https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip)" --activate --allow-root
 "${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge.zip
 

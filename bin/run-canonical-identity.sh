@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
+source "$root/bin/ci-official-mcp-adapter.sh"
 compose_file="$root/tests/integration/compose.yml"
 wordpress_tag="${1:-6.9-php8.4-apache}"
 safe_tag="$(printf '%s' "$wordpress_tag" | tr -c 'A-Za-z0-9' '-')"
@@ -47,6 +48,7 @@ run_dependency_phase() {
 }
 run_dependency_phase missing
 mcp_adapter_url="${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.6.1/mcp-adapter.zip}"
+mcp_adapter_url="$(wpai_ci_mcp_adapter_package "$mcp_adapter_url")"
 "${wp[@]}" plugin install "$mcp_adapter_url" --allow-root
 run_dependency_phase inactive
 "${wp[@]}" plugin activate mcp-adapter wp-ai-bridge --allow-root

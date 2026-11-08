@@ -4,6 +4,7 @@ set -euo pipefail
 # Install the candidate release ZIP into an isolated real-engine WordPress stack.
 # This focused suite complements the ordinary six-lane compatibility suite.
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$root/bin/ci-official-mcp-adapter.sh"
 database_engine="${1:-mariadb}"
 wordpress_tag="${2:-6.9-php8.4-apache}"
 export COMPOSE_FILE="$root/tests/integration/compose.yml:$root/tests/integration/compose-completion-private.yml"
@@ -81,7 +82,7 @@ wp=("${compose[@]}" run --rm cli)
     --admin_email=admin@example.invalid \
     --skip-email \
     --allow-root
-"${wp[@]}" plugin install "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.7.1/mcp-adapter.zip}" --activate --allow-root
+"${wp[@]}" plugin install "$(wpai_ci_mcp_adapter_package "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.7.1/mcp-adapter.zip}")" --activate --allow-root
 "${compose[@]}" cp "$root/build/wp-ai-bridge.zip" wordpress:/var/www/html/wp-ai-bridge.zip
 "${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge.zip

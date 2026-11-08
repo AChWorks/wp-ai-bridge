@@ -34,6 +34,14 @@ jobs:
       - name: Check strict image metadata transformation
         run: python3 tests/issue199-image-metadata.py
 
+      - name: Supply verified official MCP Adapter and Action Scheduler release ZIPs
+        shell: bash
+        run: bash bin/ci-official-release-assets.sh
+
+      - name: Verify pinned Adapter cache consumption and negative cases
+        shell: bash
+        run: bash tests/ci-official-assets-smoke.sh
+
       - name: Resolve and pull exact Docker Official Image manifests once
         shell: bash
         run: |
@@ -86,7 +94,10 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wpai-ci-official-images
-          path: ${{ runner.temp }}/wpai-ci-images.tar
+          path: |
+            ${{ runner.temp }}/wpai-ci-images.tar
+            ${{ runner.temp }}/wpai-ci-mcp-adapter-*.zip
+            ${{ runner.temp }}/wpai-ci-action-scheduler-*.zip
           retention-days: 1
           compression-level: 1
           if-no-files-found: error

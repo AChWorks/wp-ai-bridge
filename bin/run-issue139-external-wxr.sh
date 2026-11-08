@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
+source "$root/bin/ci-official-mcp-adapter.sh"
 cd "$root"
 : "${WORDPRESS_TAG:=6.9-php8.4-apache}"
 export WORDPRESS_TAG
@@ -36,7 +37,7 @@ if [[ "${WPAI_ISSUE134_PUBLIC_TEMP:-0}" == "1" ]]; then
 fi
 "${wp[@]}" rewrite structure '/%postname%/' --hard --allow-root
 "${wp[@]}" rewrite flush --hard --allow-root
-"${wp[@]}" plugin install https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip --activate --allow-root
+"${wp[@]}" plugin install "$(wpai_ci_mcp_adapter_package https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip)" --activate --allow-root
 "${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
 "${wp[@]}" plugin install wordpress-importer --version=0.9.6 --activate --allow-root
 "${wp[@]}" config set WP_LOAD_IMPORTERS true --raw --allow-root >/dev/null

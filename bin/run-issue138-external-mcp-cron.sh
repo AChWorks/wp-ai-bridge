@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
+source "$root/bin/ci-official-mcp-adapter.sh"
 cd "$root"
 export WORDPRESS_TAG=6.9-php8.4-apache
 export WPAI_CI_PULL_POLICY=never
@@ -27,7 +28,7 @@ dc cp build/wp-ai-bridge.zip wordpress:/var/www/html/wp-ai-bridge.zip
 wp core install --url="https://localhost:$host_port" --title="Native Cron external MCP proof" --admin_user=admin --admin_password=ephemeral-only --admin_email=admin@example.invalid --skip-email --allow-root
 wp rewrite structure '/%postname%/' --hard --allow-root
 wp rewrite flush --hard --allow-root
-wp plugin install https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip --activate --allow-root
+wp plugin install "$(wpai_ci_mcp_adapter_package https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip)" --activate --allow-root
 wp plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
 # Test installed native-callback and aliased-runner safety before external MCP.
 dc cp tests/integration/issue138-targeted-alias-idempotency-smoke.php wordpress:/var/www/html/wpai138-targeted-alias-idempotency-smoke.php
