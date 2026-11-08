@@ -9,7 +9,7 @@ use WP_AI_Bridge\Support\GitHub_Updates;
 
 $GLOBALS['wpai186'] = array(
 	'filters'        => array(),
-	'direct'         => new WP_Error( 'http_504', 'Gateway timed out' ),
+	'direct'         => new WP_Error( 'http_404', 'Gateway Timeout', array( 'code' => 504, 'body' => 'PRIVATE_DIAGNOSTIC_BODY_DO_NOT_ECHO https://example.invalid/?token=do-not-leak' ) ),
 	'direct_calls'   => 0,
 	'metadata'       => array(),
 	'metadata_code'  => 200,
@@ -119,7 +119,7 @@ $release = array(
 );
 $sim     = &$GLOBALS['wpai186'];
 $reset   = static function () use ( &$sim, $release, $payload ) {
-	$sim['direct']         = new WP_Error( 'http_504', 'Gateway timed out' );
+	$sim['direct']         = new WP_Error( 'http_404', 'Gateway Timeout', array( 'code' => 504, 'body' => 'PRIVATE_DIAGNOSTIC_BODY_DO_NOT_ECHO https://example.invalid/?token=do-not-leak' ) );
 	$sim['direct_calls']   = 0;
 	$sim['metadata']       = $release;
 	$sim['metadata_code']  = 200;
@@ -188,13 +188,29 @@ $expect_failure = static function ( $stage ) use ( $updater, $package, $context,
 	$failed = $updater->filter_package_download( false, $package, null, $context );
 	$assert( is_wp_error( $failed ) && 'wp_ai_bridge_release_download_failed' === $failed->get_error_code(), 'Invalid asset was accepted: ' . $stage );
 	$data = $failed->get_error_data();
-	$assert( 'http_504' === ( $data['direct_error'] ?? null ), 'Original HTTP failure was lost: ' . $stage );
+	$assert( 'http_404' === ( $data['direct_error'] ?? null ), 'Actual WordPress Core WP_Error code was lost: ' . $stage );
+	$assert( 504 === ( $data['direct_http_status'] ?? null ), 'Original Core HTTP 504 status was lost: ' . $stage );
+	$assert( false !== strpos( $failed->get_error_message(), 'HTTP 504' ), 'HTTP status absent from operator diagnostic: ' . $stage );
+	$assert( false !== strpos( $failed->get_error_message(), 'Gateway Timeout' ), 'Known safe Core reason phrase was dropped: ' . $stage );
+	$assert( false === strpos( $failed->get_error_message() . wp_json_encode( $data ), 'PRIVATE_DIAGNOSTIC_BODY_DO_NOT_ECHO' ), 'Sensitive Core error body was exposed: ' . $stage );
+	$assert( false === strpos( $failed->get_error_message() . wp_json_encode( $data ), 'token=do-not-leak' ), 'Signed asset URL or token was exposed: ' . $stage );
 	$assert( ( $data['api_stage'] ?? null ) === $stage, 'Official API failure stage is missing: ' . $stage );
 	$assert( 1 === $sim['direct_calls'], 'Direct download count changed: ' . $stage );
 	foreach ( $sim['temps'] as $path ) {
 		$assert( ! is_file( $path ), 'Rejected archive left a temporary file: ' . $stage );
 	}
 };
+$reset();
+$sim['direct'] = new WP_Error( 'http_transport_failed', 'https://example.invalid/?token=hidden-in-message', array( 'code' => '504', 'body' => 'PRIVATE_DIAGNOSTIC_BODY_DO_NOT_ECHO' ) );
+$sim['metadata_code'] = 503;
+$transport_failure = $updater->filter_package_download( false, $package, null, $context );
+$assert( is_wp_error( $transport_failure ), 'Non-HTTP transport failure must remain an error.' );
+$transport_data = $transport_failure->get_error_data();
+$assert( 'http_transport_failed' === ( $transport_data['direct_error'] ?? null ), 'Transport error code was lost.' );
+$assert( null === ( $transport_data['direct_http_status'] ?? null ), 'Untrusted numeric-string HTTP status was accepted.' );
+$assert( 'metadata_http_503' === ( $transport_data['api_stage'] ?? null ), 'Transport fallback failure stage was lost.' );
+$assert( false === strpos( $transport_failure->get_error_message() . wp_json_encode( $transport_data ), 'token=hidden-in-message' ), 'Untrusted direct transport message was exposed.' );
+$assert( false === strpos( $transport_failure->get_error_message() . wp_json_encode( $transport_data ), 'PRIVATE_DIAGNOSTIC_BODY_DO_NOT_ECHO' ), 'Untrusted direct transport body was exposed.' );
 $reset();
 $sim['metadata_code'] = 504;
 $expect_failure( 'metadata_http_504' );

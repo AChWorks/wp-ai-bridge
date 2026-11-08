@@ -131,17 +131,34 @@ final class GitHub_Updates {
 	 * @return \WP_Error
 	 */
 	private function download_error( $direct, $stage ) {
+		// Core download_url() uses http_404 for any non-200 response; the
+		// actual HTTP status is the integer in error data['code']. Never
+		// propagate the accompanying upstream response body or signed URL.
+		$data        = $direct->get_error_data();
+		$http_status = is_array( $data ) && isset( $data['code'] ) && is_int( $data['code'] )
+			&& 100 <= $data['code'] && 599 >= $data['code'] ? $data['code'] : null;
+		$summary     = $direct->get_error_code();
+		if ( null !== $http_status ) {
+			$summary .= ', HTTP ' . $http_status;
+		}
+		// Preserve an ordinary, fixed HTTP reason without copying arbitrary
+		// transport messages that may contain secrets or signed asset URLs.
+		$reason = $direct->get_error_message();
+		if ( in_array( $reason, array( 'Bad Gateway', 'Service Unavailable', 'Gateway Timeout' ), true ) ) {
+			$summary .= ': ' . $reason;
+		}
 		return new \WP_Error(
 			'wp_ai_bridge_release_download_failed',
 			sprintf(
-				/* translators: 1: direct download error code, 2: official GitHub API failure stage. */
+				/* translators: 1: direct download error code and HTTP status, 2: official GitHub API failure stage. */
 				__( 'WP AI Bridge update download failed via GitHub (%1$s) and the official API fallback (%2$s).', 'wp-ai-bridge' ),
-				$direct->get_error_code(),
+				$summary,
 				$stage
 			),
 			array(
-				'direct_error' => $direct->get_error_code(),
-				'api_stage'    => $stage,
+				'direct_error'       => $direct->get_error_code(),
+				'direct_http_status' => $http_status,
+				'api_stage'          => $stage,
 			)
 		);
 	}
