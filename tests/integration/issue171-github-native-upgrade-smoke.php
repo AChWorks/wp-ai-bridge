@@ -43,7 +43,7 @@ $zip = new ZipArchive();
 if ( true !== $zip->open( $archive, ZipArchive::CREATE | ZipArchive::OVERWRITE ) ) {
 	throw new RuntimeException( 'Could not create synthetic update ZIP.' );
 }
-$files = new RecursiveIteratorIterator(
+$files       = new RecursiveIteratorIterator(
 	new RecursiveDirectoryIterator( $plugin_root, FilesystemIterator::SKIP_DOTS ),
 	RecursiveIteratorIterator::LEAVES_ONLY
 );
@@ -86,29 +86,74 @@ $fake_api = array(
 			'name'                 => 'wp-ai-bridge.zip',
 			'state'                => 'uploaded',
 			'size'                 => filesize( $archive ),
+			'id'                   => 987654,
+			'url'                  => 'https://api.github.com/repos/AChWorks/wp-ai-bridge/releases/assets/987654',
+			'digest'               => 'sha256:' . hash_file( 'sha256', $archive ),
 			'browser_download_url' => $package_url,
 		),
 	),
 );
 
 $github_checks   = 0;
+$direct_failures = 0;
+$asset_calls     = 0;
 $wporg_available = true;
-$http_override = static function ( $preempt, $arguments, $url ) use ( $fake_api, &$github_checks, &$wporg_available ) {
+$http_override   = static function ( $preempt, $arguments, $url ) use ( $fake_api, $archive, $package_url, &$github_checks, &$direct_failures, &$asset_calls, &$wporg_available ) {
 	if ( 'https://api.github.com/repos/AChWorks/wp-ai-bridge/releases/latest' === $url ) {
 		++$github_checks;
 		return array(
-			'response' => array( 'code' => 200, 'message' => 'OK' ),
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
 			'headers'  => array(),
 			'cookies'  => array(),
 			'body'     => wp_json_encode( $fake_api ),
 		);
 	}
-	if ( 0 === strpos( $url, 'https://api.wordpress.org/plugins/update-check/' ) ) {
-		if ( ! $wporg_available ) {
-			return array( 'response' => array( 'code' => 503, 'message' => 'Simulated unavailable WordPress.org' ) );
+	if ( $package_url === $url ) {
+		++$direct_failures;
+		return array(
+			'response' => array(
+				'code'    => 504,
+				'message' => 'Synthetic GitHub Release CDN timeout',
+			),
+			'headers'  => array(),
+			'body'     => 'Gateway timed out',
+		);
+	}
+	if ( 'https://api.github.com/repos/AChWorks/wp-ai-bridge/releases/assets/987654' === $url ) {
+		++$asset_calls;
+		if ( 'application/octet-stream' !== ( $arguments['headers']['Accept'] ?? null )
+			|| empty( $arguments['stream'] )
+			|| empty( $arguments['filename'] )
+			|| ! copy( $archive, $arguments['filename'] )
+		) {
+			throw new RuntimeException( 'Official fallback did not stream the binary release asset.' );
 		}
 		return array(
-			'response' => array( 'code' => 200, 'message' => 'OK' ),
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'headers'  => array(),
+			'body'     => '',
+		);
+	}
+	if ( 0 === strpos( $url, 'https://api.wordpress.org/plugins/update-check/' ) ) {
+		if ( ! $wporg_available ) {
+			return array(
+				'response' => array(
+					'code'    => 503,
+					'message' => 'Simulated unavailable WordPress.org',
+				),
+			);
+		}
+		return array(
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
 			'headers'  => array(),
 			'cookies'  => array(),
 			'body'     => '{"plugins":[],"no_update":[],"translations":[]}',
@@ -116,15 +161,8 @@ $http_override = static function ( $preempt, $arguments, $url ) use ( $fake_api,
 	}
 	return $preempt;
 };
-$download_override = static function ( $reply, $download_url, $upgrader ) use ( $archive, $package_url ) {
-	if ( $package_url === $download_url ) {
-		return $archive;
-	}
-	return $reply;
-};
 
 add_filter( 'pre_http_request', $http_override, 10, 3 );
-add_filter( 'upgrader_pre_download', $download_override, 10, 3 );
 
 try {
 	update_option( 'wpai171_native_update_preservation_probe', 'must-survive-update', false );
@@ -135,8 +173,8 @@ try {
 	$offline_transient = get_site_transient( 'update_plugins' );
 	$offline_offer     = $offline_transient->response[ $plugin_file ] ?? null;
 	if ( ! is_object( $offline_offer )
-		|| $next !== ( $offline_offer->new_version ?? '' )
-		|| $package_url !== ( $offline_offer->package ?? '' )
+		|| ( $offline_offer->new_version ?? '' ) !== $next
+		|| ( $offline_offer->package ?? '' ) !== $package_url
 		|| 1 !== $github_checks
 	) {
 		throw new RuntimeException( 'Missing native Bridge update offer when the global WordPress.org update API returns 503.' );
@@ -149,8 +187,8 @@ try {
 	$transient = get_site_transient( 'update_plugins' );
 	$offer     = $transient->response[ $plugin_file ] ?? null;
 	if ( ! is_object( $offer )
-		|| $next !== ( $offer->new_version ?? '' )
-		|| $package_url !== ( $offer->package ?? '' )
+		|| ( $offer->new_version ?? '' ) !== $next
+		|| ( $offer->package ?? '' ) !== $package_url
 		|| 1 !== $github_checks
 	) {
 		throw new RuntimeException( 'Native update check did not discover the exact synthetic GitHub ZIP.' );
@@ -165,8 +203,13 @@ try {
 		throw new RuntimeException( 'Core bulk upgrade failed to replace the canonical plugin.' );
 	}
 
+	if ( 1 !== $direct_failures || 1 !== $asset_calls || 2 !== $github_checks ) {
+		throw new RuntimeException( 'Expected one failed native direct ZIP fetch followed by one verified official asset fallback.' );
+	}
+	echo "PASS: Core download recovered one GitHub Release HTTP 504 using the official SHA-256-verified asset endpoint.\n";
+
 	$after = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin_file, false, false );
-	if ( $next !== ( $after['Version'] ?? '' )
+	if ( ( $after['Version'] ?? '' ) !== $next
 		|| ! is_plugin_active( $plugin_file )
 		|| 'must-survive-update' !== get_option( 'wpai171_native_update_preservation_probe' )
 		|| ! is_dir( $plugin_root )
@@ -176,7 +219,6 @@ try {
 	echo "PASS: Core bulk_upgrade preserves activation, canonical path and WordPress options.\n";
 } finally {
 	remove_filter( 'pre_http_request', $http_override, 10 );
-	remove_filter( 'upgrader_pre_download', $download_override, 10 );
 	if ( is_file( $archive ) ) {
 		unlink( $archive );
 	}
