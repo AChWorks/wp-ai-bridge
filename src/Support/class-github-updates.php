@@ -18,6 +18,7 @@ final class GitHub_Updates {
 	const UPDATE_URI  = 'https://github.com/AChWorks/wp-ai-bridge';
 	const RELEASE_API = 'https://api.github.com/repos/AChWorks/wp-ai-bridge/releases/latest';
 	const CACHE_KEY   = 'wp_ai_bridge_github_stable_release';
+	const ASSET_API   = 'https://api.github.com/repos/AChWorks/wp-ai-bridge/releases/assets/';
 
 	/**
 	 * Registers native custom-host update discovery.
@@ -29,6 +30,7 @@ final class GitHub_Updates {
 		// Core returns before its custom-host filter when WordPress.org fails.
 		// Present our own bounded update offer through Core's normal transient.
 		add_filter( 'site_transient_update_plugins', array( $this, 'filter_site_transient' ) );
+		add_filter( 'upgrader_pre_download', array( $this, 'filter_package_download' ), 20, 4 );
 		add_action( 'load-update-core.php', array( $this, 'clear_cache_on_force_check' ), 1 );
 	}
 
@@ -87,6 +89,162 @@ final class GitHub_Updates {
 		}
 
 		return $updates;
+	}
+
+	/**
+	 * Recover one failed native Bridge ZIP download with the official asset API.
+	 * Core still owns update authority, replacement and rollback.
+	 *
+	 * @param false|string|\WP_Error $reply Earlier download result.
+	 * @param string                $package Release ZIP URL.
+	 * @param \WP_Upgrader          $upgrader Core upgrader (unused).
+	 * @param array<string,mixed>   $hook_extra Core plugin update context.
+	 * @return false|string|\WP_Error
+	 */
+	public function filter_package_download( $reply, $package, $upgrader, $hook_extra ) {
+		unset( $upgrader );
+		if ( false !== $reply
+			|| ! is_string( $package )
+			|| ! is_array( $hook_extra )
+			|| 'wp-ai-bridge/wp-ai-bridge.php' !== ( $hook_extra['plugin'] ?? null )
+			|| ( isset( $hook_extra['type'] ) && 'plugin' !== $hook_extra['type'] )
+			|| ( isset( $hook_extra['action'] ) && 'update' !== $hook_extra['action'] )
+			|| ! preg_match( '~^https://github\.com/AChWorks/wp-ai-bridge/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/wp-ai-bridge\.zip$~D', $package )
+		) {
+			return $reply;
+		}
+		if ( ! function_exists( 'download_url' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		$direct = download_url( $package, 60 );
+		if ( ! is_wp_error( $direct ) ) {
+			return $direct;
+		}
+		return $this->download_official_api_asset( $package, $direct );
+	}
+
+	/**
+	 * Preserve meaningful failure stages without leaking signed asset URLs.
+	 *
+	 * @param \WP_Error $direct Failed direct download.
+	 * @param string    $stage Official API failure stage.
+	 * @return \WP_Error
+	 */
+	private function download_error( $direct, $stage ) {
+		// Core download_url() uses http_404 for any non-200 response; the
+		// actual HTTP status is the integer in error data['code']. Never
+		// propagate the accompanying upstream response body or signed URL.
+		$data        = $direct->get_error_data();
+		$http_status = is_array( $data ) && isset( $data['code'] ) && is_int( $data['code'] )
+			&& 100 <= $data['code'] && 599 >= $data['code'] ? $data['code'] : null;
+		$summary     = $direct->get_error_code();
+		if ( null !== $http_status ) {
+			$summary .= ', HTTP ' . $http_status;
+		}
+		// Preserve an ordinary, fixed HTTP reason without copying arbitrary
+		// transport messages that may contain secrets or signed asset URLs.
+		$reason = $direct->get_error_message();
+		if ( in_array( $reason, array( 'Bad Gateway', 'Service Unavailable', 'Gateway Timeout' ), true ) ) {
+			$summary .= ': ' . $reason;
+		}
+		return new \WP_Error(
+			'wp_ai_bridge_release_download_failed',
+			sprintf(
+				/* translators: 1: direct download error code and HTTP status, 2: official GitHub API failure stage. */
+				__( 'WP AI Bridge update download failed via GitHub (%1$s) and the official API fallback (%2$s).', 'wp-ai-bridge' ),
+				$summary,
+				$stage
+			),
+			array(
+				'direct_error'       => $direct->get_error_code(),
+				'direct_http_status' => $http_status,
+				'api_stage'          => $stage,
+			)
+		);
+	}
+
+	/**
+	 * Stream a checksum-verified official asset only after direct download fails.
+	 *
+	 * @param string    $package Exact official release package URL.
+	 * @param \WP_Error $direct Failed direct GitHub download.
+	 * @return string|\WP_Error Local ZIP file or diagnostic failure.
+	 */
+	private function download_official_api_asset( $package, $direct ) {
+		$response = $this->request_release_metadata();
+		if ( is_wp_error( $response ) ) {
+			return $this->download_error( $direct, 'metadata_transport:' . $response->get_error_code() );
+		}
+		if ( 200 !== wp_remote_retrieve_response_code( $response ) ) {
+			return $this->download_error( $direct, 'metadata_http_' . wp_remote_retrieve_response_code( $response ) );
+		}
+		$release = json_decode( wp_remote_retrieve_body( $response ), true );
+		$valid   = $this->validate_release( $release );
+		if ( ! $valid || $package !== $valid['package'] ) {
+			return $this->download_error( $direct, 'release_or_package_mismatch' );
+		}
+		$asset = null;
+		foreach ( $release['assets'] as $candidate ) {
+			if ( is_array( $candidate )
+				&& 'wp-ai-bridge.zip' === ( $candidate['name'] ?? null )
+				&& ( $candidate['browser_download_url'] ?? null ) === $package
+				&& 'uploaded' === ( $candidate['state'] ?? null )
+			) {
+				$asset = $candidate;
+				break;
+			}
+		}
+		if ( ! is_array( $asset )
+			|| ! isset( $asset['id'], $asset['size'], $asset['digest'], $asset['url'] )
+			|| ! is_int( $asset['id'] ) || 0 >= $asset['id']
+			|| ! is_int( $asset['size'] ) || 0 >= $asset['size']
+			|| ! is_string( $asset['digest'] )
+			|| ! preg_match( '/^sha256:([a-f0-9]{64})$/D', $asset['digest'], $digest )
+		) {
+			return $this->download_error( $direct, 'asset_integrity_metadata_missing' );
+		}
+		$api_url = self::ASSET_API . $asset['id'];
+		if ( $api_url !== $asset['url'] ) {
+			return $this->download_error( $direct, 'asset_api_url_mismatch' );
+		}
+		$temp = wp_tempnam( 'wp-ai-bridge.zip' );
+		if ( ! is_string( $temp ) || '' === $temp ) {
+			return $this->download_error( $direct, 'temporary_file_unavailable' );
+		}
+		// GitHub may stream 200 or redirect 302 to its asset CDN.
+		$result = wp_safe_remote_get(
+			$api_url,
+			array(
+				'timeout'             => 90,
+				'redirection'         => 5,
+				'stream'              => true,
+				'filename'            => $temp,
+				'limit_response_size' => $asset['size'] + 1,
+				'headers'             => array(
+					'Accept'               => 'application/octet-stream',
+					'X-GitHub-Api-Version' => '2022-11-28',
+					'User-Agent'           => 'WP-AI-Bridge-WordPress-Updater',
+				),
+			)
+		);
+		if ( is_wp_error( $result ) ) {
+			@unlink( $temp );
+			return $this->download_error( $direct, 'asset_transport:' . $result->get_error_code() );
+		}
+		if ( 200 !== wp_remote_retrieve_response_code( $result ) ) {
+			@unlink( $temp );
+			return $this->download_error( $direct, 'asset_http_' . wp_remote_retrieve_response_code( $result ) );
+		}
+		if ( filesize( $temp ) !== $asset['size'] ) {
+			@unlink( $temp );
+			return $this->download_error( $direct, 'asset_size_mismatch' );
+		}
+		$actual = hash_file( 'sha256', $temp );
+		if ( ! is_string( $actual ) || ! hash_equals( $digest[1], $actual ) ) {
+			@unlink( $temp );
+			return $this->download_error( $direct, 'asset_sha256_mismatch' );
+		}
+		return $temp;
 	}
 
 	/**
@@ -164,18 +322,7 @@ final class GitHub_Updates {
 			);
 		}
 
-		$response = wp_safe_remote_get(
-			self::RELEASE_API,
-			array(
-				'timeout'             => 8,
-				'redirection'         => 0,
-				'limit_response_size' => 524288,
-				'headers'             => array(
-					'Accept'     => 'application/vnd.github+json',
-					'User-Agent' => 'WP-AI-Bridge-WordPress-Updater',
-				),
-			)
-		);
+		$response = $this->request_release_metadata();
 
 		if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ) {
 			set_site_transient( self::CACHE_KEY, array( 'unavailable' => true ), 15 * MINUTE_IN_SECONDS );
@@ -191,6 +338,26 @@ final class GitHub_Updates {
 
 		set_site_transient( self::CACHE_KEY, $valid, HOUR_IN_SECONDS );
 		return $valid;
+	}
+
+	/**
+	 * Read the public stable-release metadata through bounded WordPress HTTP.
+	 *
+	 * @return array|\WP_Error HTTP response or error.
+	 */
+	private function request_release_metadata() {
+		return wp_safe_remote_get(
+			self::RELEASE_API,
+			array(
+				'timeout'             => 8,
+				'redirection'         => 0,
+				'limit_response_size' => 524288,
+				'headers'             => array(
+					'Accept'     => 'application/vnd.github+json',
+					'User-Agent' => 'WP-AI-Bridge-WordPress-Updater',
+				),
+			)
+		);
 	}
 
 	/**

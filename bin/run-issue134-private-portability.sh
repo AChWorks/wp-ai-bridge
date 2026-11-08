@@ -5,6 +5,7 @@ set -euo pipefail
 # lease -> candidate native upgrade -> served WP_TEMP_DIR fallback and denial.
 # No production hosts, settings or data are touched.
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$root/bin/ci-official-mcp-adapter.sh"
 tag="${1:-6.9-php8.4-apache}"
 export WORDPRESS_TAG="$tag"
 safe_tag="$(printf '%s' "$tag" | tr -c 'A-Za-z0-9' '-')"
@@ -49,7 +50,7 @@ done
 "${compose[@]}" cp "$root/tests/integration/issue134-existing-lease-upgrade-smoke.php" wordpress:/var/www/html/wpai134-lease-upgrade.php
 wp=("${compose[@]}" run --rm cli)
 "${wp[@]}" core install --url=https://localhost --title='Private portability acceptance'     --admin_user=admin --admin_password='test-only-password'     --admin_email=admin@example.invalid --skip-email --allow-root
-"${wp[@]}" plugin install "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip}" --activate --allow-root
+"${wp[@]}" plugin install "$(wpai_ci_mcp_adapter_package "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip}")" --activate --allow-root
 "${wp[@]}" plugin install /var/www/html/wpai134-baseline.zip --activate --allow-root
 test "$("${wp[@]}" plugin get wp-ai-bridge --field=version --allow-root | tail -n 1)" = '0.6.5'
 echo '== Published v0.6.5 incomplete lease, before candidate upgrade =='

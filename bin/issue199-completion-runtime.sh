@@ -218,7 +218,16 @@ wpai199c_install_as() {
         *) echo 'ERROR: unpinned Action Scheduler fixture version.' >&2; return 1 ;;
     esac
     tmpfile="$(mktemp "${TMPDIR:-/tmp}/wpai199c-as.XXXXXX")"
-    if ! curl -fsSL --connect-timeout 15 --max-time 120 \
+    if [[ "${GITHUB_ACTIONS:-}" == 'true' ]]; then
+        # Cache is downloaded and SHA-pinned once in the supply job.
+        # Verify this archive independently before using it.
+        local verified_zip="${RUNNER_TEMP:?}/wpai-ci-images/wpai-ci-action-scheduler-${version}.zip"
+        if [[ ! -s "$verified_zip" ]] || ! cp -- "$verified_zip" "$tmpfile"; then
+            rm -f "$tmpfile"
+            echo "ERROR: missing pinned CI Action Scheduler ${version} release archive." >&2
+            return 1
+        fi
+    elif ! curl -fsSL --connect-timeout 15 --max-time 120 \
         "https://github.com/woocommerce/action-scheduler/releases/download/$version/action-scheduler.zip" -o "$tmpfile"; then
         rm -f "$tmpfile"; return 1
     fi

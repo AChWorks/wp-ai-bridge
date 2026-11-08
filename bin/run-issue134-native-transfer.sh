@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
+source "$root/bin/ci-official-mcp-adapter.sh"
 tag="${1:-6.9-php8.4-apache}"
 export WORDPRESS_TAG="$tag"
 export COMPOSE_PROJECT_NAME="wpai134-native-$(printf '%s' "$tag" | tr -c 'A-Za-z0-9' '-')-$$"
@@ -30,7 +31,7 @@ if [[ "${WPAI_ISSUE134_PUBLIC_TEMP:-0}" == "1" ]]; then
     "${wp[@]}" config set WP_TEMP_DIR /var/www/html/wp-content --allow-root
 fi
 "${wp[@]}" plugin install \
-    "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip}" \
+    "$(wpai_ci_mcp_adapter_package "${MCP_ADAPTER_URL:-https://github.com/WordPress/mcp-adapter/releases/download/v0.7.0/mcp-adapter.zip}")" \
     --activate --allow-root
 "${wp[@]}" plugin install /var/www/html/wp-ai-bridge.zip --activate --allow-root
 "${compose[@]}" exec -T wordpress rm -f /var/www/html/wp-ai-bridge.zip

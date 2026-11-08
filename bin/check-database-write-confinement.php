@@ -361,6 +361,11 @@ function wpai_filesystem_boundary( $source, $relative, array $pins ) {
  */
 $boundary_pins = array(
 	'writes'       => array(
+		// #186: GitHub Core updater cleans up ONLY its own wp_tempnam() ZIP on failed HTTP or integrity verification.
+		// The exact operation is pinned in one method so caller-controlled files cannot become cleanup targets.
+		'src/Support/class-github-updates.php' => array(
+			'GitHub_Updates::download_official_api_asset|unlink($temp)' => 4,
+		),
 		// #209: exact local wp-config.php server-policy setup, no caller path or shell.
 		'src/Admin/class-native-sql-config-setup.php' => array(
 			'Native_SQL_Config_Setup::publish|chmod($stage,$mode)' => 1,
@@ -779,6 +784,16 @@ foreach ( array(
 	}
 	$fs_fixtures[] = array( $owner, $mutated );
 }
+// #186: the updater can remove only its own failed wp_tempnam() ZIP;
+// a caller-selected path must fail the exact primitive-owner inventory.
+$updater_owner    = 'src/Support/class-github-updates.php';
+$updater_original = file_get_contents( $root . '/' . $updater_owner );
+$updater_mutated  = str_replace( 'unlink( $temp )', 'unlink( $caller_path )', $updater_original, $updater_replacements );
+if ( 4 !== $updater_replacements || wpai_filesystem_boundary( $updater_original, $updater_owner, $boundary_pins ) ) {
+	fwrite( STDERR, 'Updater temporary-ZIP cleanup boundary baseline failed.' . PHP_EOL );
+	$failed = true;
+}
+$fs_fixtures[] = array( $updater_owner, $updater_mutated );
 $config_owner  = 'src/Support/class-administration-configuration.php';
 $fs_fixtures[] = array( $config_owner, file_get_contents( $root . '/' . $config_owner ) . "\nfunction wpai_probe(){file_get_contents(\$path);}\n" );
 $fs_owner      = 'src/Support/class-scoped-filesystem.php';
